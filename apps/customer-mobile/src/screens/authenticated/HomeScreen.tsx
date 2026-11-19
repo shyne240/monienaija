@@ -267,6 +267,14 @@ export const HomeScreen: React.FC = () => {
           <TouchableOpacity
             accessibilityRole="button"
             style={styles.actionTile}
+            onPress={() => navigation.navigate('BankWithdrawal')}
+          >
+            <Text style={styles.actionGlyph}>⇄</Text>
+            <Text style={styles.actionLabel}>To bank</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            style={styles.actionTile}
             onPress={() => navigation.navigate('Transactions')}
           >
             <Text style={styles.actionGlyph}>≡</Text>

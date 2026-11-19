@@ -9,6 +9,8 @@ interface AmountInputProps {
   onChangeValue: (value: string, amountMinor: number) => void;
   error?: string;
   currencySymbol?: string;
+  /** Optional testID forwarded to the underlying text input (used by screen tests). */
+  inputTestID?: string;
 }
 
 export const AmountInput: React.FC<AmountInputProps> = ({
@@ -17,6 +19,7 @@ export const AmountInput: React.FC<AmountInputProps> = ({
   onChangeValue,
   error,
   currencySymbol = '₦',
+  inputTestID,
 }) => {
   const [isFocused, setIsFocused] = React.useState(false);
 
@@ -59,6 +62,7 @@ export const AmountInput: React.FC<AmountInputProps> = ({
           onChangeText={handleChangeText}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          testID={inputTestID}
         />
       </View>
       {error && <Text style={styles.errorText}>{error}</Text>}

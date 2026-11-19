@@ -30,6 +30,13 @@ export type RootStackParamList = {
   // (open item D-01). Registration is the mobile owner's decision once D-01 is settled.
   FundWallet: undefined;
   Withdraw: undefined;
+  /**
+   * ARENA 5: customer self-service bank withdrawal, backed by
+   * POST /customers/me/withdrawal-commitments. Bound to the customer's own session, PIN and a
+   * verified BANK_ACCOUNT beneficiary; it reserves funds and creates the dispatch intent, but
+   * never submits to a provider itself.
+   */
+  BankWithdrawal: undefined;
   Transactions: undefined;
   /** ARENA 4: single-transaction details/receipt, backed by GET /customers/me/transactions/:transferId. */
   TransactionDetail: {

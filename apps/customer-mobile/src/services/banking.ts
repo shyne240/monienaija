@@ -46,25 +46,33 @@ export interface Deposit {
   state: DepositState;
 }
 
+/**
+ * The states the server actually reports, verbatim. There is no `UNKNOWN` or `PENDING` member
+ * here: the server collapses UNKNOWN/MANUAL_REVIEW into `CONFIRMING`, and an operation the provider
+ * has not yet been asked about reads as `AUTHORIZED`. Do not remap these — rename a member and the
+ * screen would silently misreport what happened.
+ */
 export type TransferState =
-  | 'PENDING'
-  | 'SUBMITTING'
-  | 'UNKNOWN'
+  | 'AUTHORIZED'
+  | 'PROCESSING'
+  | 'CONFIRMING'
   | 'SUCCESSFUL'
-  | 'FAILED'
-  | 'REVERSED';
+  | 'REJECTED'
+  | 'REVERSED'
+  | 'CANCELLED';
 
 export interface TransferStatus {
   operationReference: string;
   state: TransferState;
   amountMinor: string;
   currency: string;
-  destinationAccountNumber: string | null;
-  destinationBankName: string | null;
-  /** Present only once the provider gave an authoritative outcome. */
-  providerReference: string | null;
-  failureCode: string | null;
+  /** The destination bank's code as bound to the commitment. */
+  bankCode: string;
+  /** Last four digits only — the server never serves the full account number back. */
+  accountNumberLast4: string;
   createdAt: string;
+  submittedAt: string | null;
+  resolvedAt: string | null;
 }
 
 export const BankingApi = {
@@ -96,7 +104,7 @@ export const BankingApi = {
   /**
    * Status of an outbound transfer.
    *
-   * `UNKNOWN` is a real answer, not an error: it means we submitted and have not yet obtained an
+   * `CONFIRMING` is a real answer, not an error: it means we submitted and have not yet obtained an
    * authoritative outcome. The customer must not be told to try again.
    */
   transferStatus: (operationReference: string) =>

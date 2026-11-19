@@ -23,10 +23,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'TransferStatus'>;
  * Bank transfer status and recovery.
  *
  * This screen exists for one situation: a customer sent money, is not sure whether it worked, and is
- * about to make it worse by sending it again. Its most important job is the `UNKNOWN` state, where the
+ * about to make it worse by sending it again. Its most important job is the `CONFIRMING` state, where the
  * honest answer is "we submitted this and have not yet confirmed the outcome". Telling that customer to
  * retry risks paying twice; telling them it failed when it may have succeeded is worse. So the copy for
- * `UNKNOWN` is explicit that they must not retry, and there is no button that would resubmit.
+ * copy is explicit that they must not retry, and there is no button that would resubmit.
  *
  * Statuses are rendered from the server's vocabulary, never inferred. The screen never says "successful"
  * unless the provider gave an authoritative outcome, and it never invents a receipt reference.
@@ -73,15 +73,19 @@ export const TransferStatusScreen: React.FC<Props> = ({ route, navigation }) => 
         <Text style={styles.title}>
           {state === 'SUCCESSFUL'
             ? 'Transfer completed'
-            : state === 'FAILED'
+            : state === 'REJECTED'
               ? 'Transfer failed'
               : state === 'REVERSED'
                 ? 'Transfer reversed'
-                : state === 'UNKNOWN'
-                  ? 'Still confirming'
-                  : state === 'SUBMITTING'
-                    ? 'Sending'
-                    : 'Pending'}
+                : state === 'CANCELLED'
+                  ? 'Transfer cancelled'
+                  : state === 'CONFIRMING'
+                    ? 'Still confirming'
+                    : state === 'PROCESSING'
+                      ? 'Sending'
+                      : state === 'AUTHORIZED'
+                        ? 'Authorised, awaiting the bank'
+                        : 'Pending'}
         </Text>
 
         {!!error && (
@@ -93,10 +97,10 @@ export const TransferStatusScreen: React.FC<Props> = ({ route, navigation }) => 
         {status ? (
           <View style={styles.card}>
             {/*
-              The UNKNOWN warning comes first and is the most prominent element on the screen, because
+              The CONFIRMING warning comes first and is the most prominent element on the screen, because
               it is the only thing that prevents a duplicate payment.
             */}
-            {state === 'UNKNOWN' ? (
+            {state === 'CONFIRMING' ? (
               <View style={styles.warningCard} accessibilityLiveRegion="polite">
                 <Text style={styles.warningTitle}>Do not send this again</Text>
                 <Text style={styles.warningBody}>
@@ -114,51 +118,50 @@ export const TransferStatusScreen: React.FC<Props> = ({ route, navigation }) => 
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Status</Text>
               {/*
-                StatusBadge only accepts its known vocabulary; UNKNOWN and SUBMITTING are real states that
+                StatusBadge only accepts its known vocabulary; AUTHORIZED and CONFIRMING are real states that
                 it cannot render, and forcing them into PENDING would misstate what is happening. The
                 heading and the warning card carry those states instead.
               */}
               {status.state === 'SUCCESSFUL' ||
-              status.state === 'FAILED' ||
+              status.state === 'REJECTED' ||
               status.state === 'REVERSED' ||
-              status.state === 'PENDING' ? (
-                <StatusBadge status={status.state === 'SUCCESSFUL' ? 'SUCCESS' : status.state} />
+              status.state === 'CANCELLED' ? (
+                <StatusBadge
+                  status={
+                    status.state === 'SUCCESSFUL'
+                      ? 'SUCCESS'
+                      : status.state === 'REJECTED'
+                        ? 'FAILED'
+                        : status.state === 'REVERSED'
+                          ? 'EXPIRED'
+                          : 'CANCELLED'
+                  }
+                />
               ) : (
                 <Text style={styles.rowValue}>{statusLabel(status.state)}</Text>
               )}
             </View>
-            {status.destinationAccountNumber ? (
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Sent to</Text>
-                <Text style={styles.rowValue} selectable>
-                  {status.destinationBankName ?? 'Bank'} · {status.destinationAccountNumber}
-                </Text>
-              </View>
-            ) : null}
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Sent to</Text>
+              <Text style={styles.rowValue} selectable>
+                {status.bankCode} · •••• {status.accountNumberLast4}
+              </Text>
+            </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Reference</Text>
               <Text style={styles.rowValue} selectable>
                 {status.operationReference}
               </Text>
             </View>
-            {status.providerReference ? (
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Bank reference</Text>
-                <Text style={styles.rowValue} selectable>
-                  {status.providerReference}
-                </Text>
-              </View>
-            ) : null}
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Started</Text>
               <Text style={styles.rowValue}>{formatDateTime(status.createdAt)}</Text>
             </View>
 
-            {state === 'FAILED' ? (
+            {state === 'REJECTED' ? (
               <Text style={styles.hint}>
-                {status.failureCode === 'INSUFFICIENT_FUNDS'
-                  ? 'The transfer failed because there were not enough funds. Nothing was taken from your wallet.'
-                  : 'The bank did not complete this transfer. If your balance changed, contact support with the reference above.'}
+                The bank did not complete this transfer. If your balance changed, contact support
+                with the reference above.
               </Text>
             ) : null}
             {state === 'REVERSED' ? (

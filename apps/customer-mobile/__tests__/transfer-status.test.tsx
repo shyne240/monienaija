@@ -20,14 +20,14 @@ const screenProps = (operationReference = 'op-ref-1'): ScreenProps =>
 function statusResponse(overrides: Record<string, unknown> = {}) {
   return {
     operationReference: 'op-ref-1',
-    state: 'UNKNOWN',
+    state: 'CONFIRMING',
     amountMinor: '250000',
     currency: 'NGN',
-    destinationAccountNumber: '0123456789',
-    destinationBankName: 'Wema Bank',
-    providerReference: null,
-    failureCode: null,
+    bankCode: '035',
+    accountNumberLast4: '6789',
     createdAt: new Date().toISOString(),
+    submittedAt: null,
+    resolvedAt: null,
     ...overrides,
   };
 }
@@ -35,9 +35,9 @@ function statusResponse(overrides: Record<string, unknown> = {}) {
 /**
  * Transfer status and recovery.
  *
- * The state that justifies this screen's existence is UNKNOWN: money may have moved and we do not yet
- * know. Every assertion below is about not making that situation worse — specifically, never inviting a
- * retry and never claiming an outcome the provider has not given.
+ * The state that justifies this screen's existence is CONFIRMING: money may have moved and we do not
+ * yet know. Every assertion below is about not making that situation worse — specifically, never
+ * inviting a retry and never claiming an outcome the provider has not given.
  */
 describe('TransferStatusScreen — recovery without repeating a payment', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -59,27 +59,23 @@ describe('TransferStatusScreen — recovery without repeating a payment', () => 
     const { getByText, queryByText } = render(<TransferStatusScreen {...screenProps()} />);
     await waitFor(() => expect(getByText('Still confirming')).toBeTruthy());
     expect(queryByText('Transfer completed')).toBeNull();
-    // No bank reference is invented before the provider supplies one.
-    expect(queryByText('Bank reference')).toBeNull();
+    // Only the last four digits the server serves are shown.
+    expect(getByText(new RegExp('6789'))).toBeTruthy();
+    expect(queryByText('0123456789')).toBeNull();
   });
 
-  test('shows a completed transfer with the provider reference it actually returned', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue(
-      statusResponse({ state: 'SUCCESSFUL', providerReference: 'MFY-778899' }),
-    );
+  test('shows a completed transfer with the destination it was bound to', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(statusResponse({ state: 'SUCCESSFUL' }));
     const { getByText } = render(<TransferStatusScreen {...screenProps()} />);
     await waitFor(() => expect(getByText('Transfer completed')).toBeTruthy());
-    expect(getByText('MFY-778899')).toBeTruthy();
-    expect(getByText(/Wema Bank · 0123456789/)).toBeTruthy();
+    expect(getByText(/035 · •••• 6789/)).toBeTruthy();
   });
 
-  test('explains a failure without implying funds moved', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue(
-      statusResponse({ state: 'FAILED', failureCode: 'INSUFFICIENT_FUNDS' }),
-    );
+  test('explains a rejection without implying funds moved', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(statusResponse({ state: 'REJECTED' }));
     const { getByText } = render(<TransferStatusScreen {...screenProps()} />);
     await waitFor(() => expect(getByText('Transfer failed')).toBeTruthy());
-    expect(getByText(/not enough funds/)).toBeTruthy();
+    expect(getByText(/did not complete this transfer/i)).toBeTruthy();
   });
 
   test('an unreadable status is not reported as a failure', async () => {
@@ -92,7 +88,7 @@ describe('TransferStatusScreen — recovery without repeating a payment', () => 
   });
 
   test('re-checks on request without resubmitting', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue(statusResponse({ state: 'PENDING' }));
+    (ApiClient.get as jest.Mock).mockResolvedValue(statusResponse({ state: 'PROCESSING' }));
     const { getByText } = render(<TransferStatusScreen {...screenProps()} />);
     await waitFor(() => expect(getByText('Check again')).toBeTruthy());
     fireEvent.press(getByText('Check again'));

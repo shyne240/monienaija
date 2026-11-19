@@ -25,6 +25,7 @@ import { TransactionDetailScreen } from '../screens/authenticated/TransactionDet
 import { KycStatusScreen } from '../screens/authenticated/KycStatusScreen';
 import { AddMoneyScreen } from '../screens/authenticated/AddMoneyScreen';
 import { TransferStatusScreen } from '../screens/authenticated/TransferStatusScreen';
+import { BankWithdrawalScreen } from '../screens/authenticated/BankWithdrawalScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -103,6 +104,11 @@ export const AppNavigator: React.FC = () => {
             name="AddMoney"
             component={AddMoneyScreen}
             options={{ title: 'Add Money' }}
+          />
+          <Stack.Screen
+            name="BankWithdrawal"
+            component={BankWithdrawalScreen}
+            options={{ title: 'Withdraw to Bank' }}
           />
           <Stack.Screen
             name="TransferStatus"
