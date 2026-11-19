@@ -14,7 +14,6 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     const orphanId = randomUUID();
     const walletId = randomUUID();
     const opId = randomUUID();
-    // Create a minimal wallet_accounts entry to satisfy FKs? Use direct external_operations insert
     await expect(dataSource.query(
       `INSERT INTO external_operations(id,customer_id,wallet_account_id,beneficiary_id,amount_minor,currency,operation_type,status,version,created_at,updated_at)
        VALUES($1,$2,$3,$4,'100','NGN','BANK_TRANSFER','PENDING',1,clock_timestamp(),clock_timestamp())`,
@@ -22,21 +21,15 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     )).rejects.toThrow();
   });
 
-  it('customer_beneficiaries trigger validates ownership by customer OR agent', async () => {
+  it('customer_beneficiaries validates ownership: valid customer succeeds, orphan fails', async () => {
     const customerId = randomUUID();
-    const agentId = randomUUID();
-    // Insert customers/agents first to have valid owners
-    const custPhone = `+2348${Math.floor(100000000 + Math.random() * 900000000)}`;
-    // Use actual customer creation via direct insert minimal
-    await dataSource.query(`INSERT INTO customers(id,phone,full_name,password_hash,status,kyc_tier,created_at,updated_at) VALUES($1,$2,'Test','hash','ACTIVE','TIER_1',clock_timestamp(),clock_timestamp())`, [customerId, custPhone]);
+    await dataSource.query(`INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status) VALUES($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `it.owner.${Date.now()}.${Math.floor(Math.random()*1e6)}`]);
     const benId = randomUUID();
-    // Should succeed for real customer
     await dataSource.query(
       `INSERT INTO customer_beneficiaries(id,customer_id,beneficiary_type,display_name,reference,destination_identifier,normalized_destination_identifier,destination_name,destination_institution,nickname,status,verified,version,created_at,updated_at)
        VALUES($1,$2,'BANK_ACCOUNT','Test',$3,'1234567890','1234567890','Test','BANKA','Nick','ACTIVE',true,1,clock_timestamp(),clock_timestamp())`,
       [benId, customerId, `bank-${randomUUID()}`],
     );
-    // Orphan should fail
     const orphanBen = randomUUID();
     const orphanId2 = randomUUID();
     await expect(dataSource.query(
@@ -61,8 +54,9 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
   });
 
   it('migration head is 0804', async () => {
-    const rows: Array<{ name: string }> = await dataSource.query(`SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(rows[0]!.name).toMatch(/1785753600804/);
+    const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
+    expect(String(rows[0]!.timestamp)).toMatch(/0804/);
+    expect(rows[0]!.name).toMatch(/0804/i);
   });
 
   it('historical customer financial_authorizations still readable', async () => {

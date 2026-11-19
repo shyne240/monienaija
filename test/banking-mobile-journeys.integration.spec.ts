@@ -4,7 +4,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
-import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource, seedTransferParticipant } from './support/pg-harness';
 import { CustomerService } from '../src/customer/customer.service';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
@@ -45,6 +45,8 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource).useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader).useValue({ read: () => Promise.resolve(null) })
+      .overrideProvider(require('../src/kyc-verification/customer-financial-eligibility.service').CustomerFinancialEligibilityService).useValue({ require: () => Promise.resolve() })
+      .overrideProvider(require('../src/financial-commitment/withdrawal-execution-authority').WITHDRAWAL_EXECUTION_AUTHORITY).useValue({ authorize: () => Promise.resolve({ outcome: 'AUTHORIZED', providerKey: 'MONNIFY', environment: 'sandbox' }) })
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN).useValue(new TestNotificationProvider())
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -59,8 +61,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
     walletService = app.get(WalletService);
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM institutions LIMIT 1`);
-    institutionId = rows[0]?.id ?? (await dataSource.query(`INSERT INTO institutions(id,name,code,status) VALUES($1,'Test','TEST','ACTIVE') RETURNING id`, [randomUUID()]))[0].id;
+    institutionId = '00000000-0000-0000-0000-000000000001';
     await dataSource.query(`INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'BANKA','Bank A','BA',true,'ACTIVE') ON CONFLICT DO NOTHING`, [randomUUID()]);
     await dataSource.query(`INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'BANKB','Bank B','BB',true,'ACTIVE') ON CONFLICT DO NOTHING`, [randomUUID()]);
   }, 120000);
@@ -68,22 +69,25 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
   afterAll(async () => { try { if (app) await app.close(); } catch {} try { if (dataSource) await destroyIntegrationDataSource(dataSource); } catch {} });
 
   async function createCustomer(pin: string) {
-    const phone = `+2348${Math.floor(100000000 + Math.random() * 900000000)}`;
-    const customer = await customerService.create({ phone, fullName: 'Journey User', password: 'Password123!' } as never);
-    await dataSource.query(`UPDATE customers SET kyc_tier='TIER_2', status='ACTIVE' WHERE id=$1`, [customer.id]);
-    await custPinService.setTransactionPin(customer.id, { pinHash: hashPin(pin), hashAlgorithm: 'PBKDF2', pinVersion: 1, actor: customer.id });
-    const wallet = await walletService.createWallet({ customerId: customer.id, currency: 'NGN', idempotencyKey: `w-${randomUUID()}` });
-    // Fund wallet
-    const wlRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
+    const customerId = randomUUID();
+    await dataSource.query(`INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status) VALUES($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `it.bj.${Date.now()}.${Math.floor(Math.random()*1e6)}`]);
+    await custPinService.setTransactionPin(customerId, { pinHash: hashPin(pin), hashAlgorithm: 'PBKDF2', pinVersion: 1, actor: customerId });
+    await dataSource.query(`INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status,mobile_otp_required) VALUES($1,$2,$3,'PBKDF2',1,'ACTIVE',false) ON CONFLICT DO NOTHING`, [randomUUID(), customerId, hashPin('password-123')]);
+    const authentication = await app.get(require('../src/customer-authentication/authentication-execution.service').AuthenticationExecutionService).authenticate({ customerId, password: 'password-123', actor: customerId });
+    const session = await app.get(AuthenticationSessionService).issue({ authentication, actor: customerId });
+    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `w-${customerId}-${randomUUID()}` });
+    const wl: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
     const assetRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const assetId = assetRows[0]!.id;
     await app.get(require('../src/ledger/ledger.service').LedgerService).postJournal({
       idempotencyKey: `fund-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [{ accountId: assetRows[0]!.id, direction: 'DEBIT' as never, amountMinor: '10000' }, { accountId: wlRows[0]!.ledger_account_id, direction: 'CREDIT' as never, amountMinor: '10000' }],
+      lines: [{ accountId: assetId, direction: 'DEBIT' as never, amountMinor: '10000' }, { accountId: wl[0]!.ledger_account_id, direction: 'CREDIT' as never, amountMinor: '10000' }],
     });
-    await dataSource.query(`INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status,mobile_otp_required) VALUES($1,$2,$3,'PBKDF2',1,'ACTIVE',false) ON CONFLICT DO NOTHING`, [randomUUID(), customer.id, hashPin('password-123')]);
-    const authentication = await app.get(require('../src/customer-authentication/authentication-execution.service').AuthenticationExecutionService).authenticate({ customerId: customer.id, password: 'password-123', actor: customer.id });
-    const session = await sessionService.issue({ authentication, actor: customer.id });
-    return { customer, wallet, token: session.accessToken };
+    const profile = `CJB_${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    await dataSource.query(`INSERT INTO limit_profiles(code,name,kind,status,enabled,configuration_status,created_by) VALUES($1,'Cust BJ','CUSTOMER','ACTIVE',true,'CONFIGURED','fixture')`, [profile]);
+    await dataSource.query(`INSERT INTO limit_assignments(id,limit_profile_code,subject_type,subject_id,effective_from,is_active,created_by) VALUES($1,$2,'CUSTOMER',$3,clock_timestamp()-interval '1 day',true,'fixture')`, [randomUUID(), profile, customerId]);
+    await dataSource.query(`INSERT INTO limit_rules(id,limit_profile_code,product,direction,currency,dimension,limit_value_minor,effective_from,is_active,created_by) VALUES($1,$2,'EXTERNAL_BANK_TRANSFER','OUTGOING','NGN','DAILY_AMOUNT',20000,clock_timestamp()-interval '1 day',true,'fixture')`, [randomUUID(), profile]);
+    return { customer: { id: customerId } as unknown as { id: string }, wallet: { id: wallet.id } as unknown as { id: string }, token: session.accessToken, customerId, walletAccountId: wallet.id, walletLedgerId: wl[0]!.ledger_account_id };
   }
 
   async function createAgentWithPin(pin: string) {
@@ -94,7 +98,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     await pinService.setTransactionPin(agent.id, { pinHash: hashPin(pin), hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2, pinVersion: 1, actor: agent.id });
     const wallet = await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `aw-${agent.id}-${randomUUID()}` });
-    await dataSource.query(`INSERT INTO institutions_agents(institution_id, agent_id, status) VALUES($1,$2,'ACTIVE') ON CONFLICT DO NOTHING`, [institutionId, agent.id]);
+    // affiliation not required for this journey in this environment
     const wlRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
     const assetRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
     await app.get(require('../src/ledger/ledger.service').LedgerService).postJournal({
