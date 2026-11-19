@@ -67,12 +67,12 @@ describe('migration inventory', () => {
 
   it('ends at the agent financial authorization generalisation migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
-    // banking range, Arena 2C appended 0800-0802 after that, and Arena 5 appended 0803 for the
-    // dual-lane (customer/agent) A6 financial authorization. The head is pinned exactly —
+    // banking range, Arena 2C appended 0800-0802 after that, and Arena 5 appended 0803–0804 for the
+    // dual-lane (customer/agent) A6 financial authorization + external-ops. The head is pinned exactly —
     // a head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600803',
-      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
+      timestamp: '1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
   });
 
@@ -131,15 +131,16 @@ describe('migration inventory', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
-  it('contains the appended identities 0800-0803 after the Arena 3D range in order', () => {
+  it('contains the appended identities 0800-0804 after the Arena 3D range in order', () => {
     // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
-    // agent verified-phone proof, typed beneficiary ownership) and Arena 5 appended 0803
-    // (dual-lane financial authorization). Each identity is published and is never renumbered.
+    // agent verified-phone proof, typed beneficiary ownership) and Arena 5 appended 0803–0804
+    // (dual-lane financial authorization + external-operations generalisation). Each identity is published and is never renumbered.
     const appended = [
       ['1785753600800', 'BindWalletTransferQuotes1785753600800'],
       ['1785753600801', 'AgentVerifiedPhone1785753600801'],
       ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
       ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
+      ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -152,12 +153,12 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 165 migration identities', () => {
+  it('contains exactly 166 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
-    // Arena 2C, and one by Arena 5 (agent financial authorization). Any additional or missing
+    // Arena 2C, and two by Arena 5 (agent financial authorization + external-ops). Any additional or missing
     // file fails this assertion.
-    expect(migrations.length).toBe(165);
+    expect(migrations.length).toBe(166);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

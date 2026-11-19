@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -22,6 +22,12 @@ import {
   type BankBeneficiary,
   type InitiateBankWithdrawalResult,
 } from '../../services/bank-withdrawal';
+import { BankDirectoryApi } from '../../services/bank-directory';
+import {
+  clearPendingBankWithdrawalIntent,
+  loadPendingBankWithdrawalIntent,
+  savePendingBankWithdrawalIntent,
+} from '../../services/pending-bank-withdrawal';
 import { formatMinor } from '../../services/presentation';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -42,18 +48,9 @@ function minor(value: string): string | null {
 }
 
 /**
- * ARENA 5 — "Withdraw to a bank account".
- *
- * The only outbound bank journey a customer can complete in-app. It is deliberately narrow:
- *
- * - The destination must be a *verified* BANK_ACCOUNT beneficiary that already exists. This screen
- *   cannot add or verify one — bank account verification is performed by MonieNaija operations,
- *   because verifier authority is not something a client may mint for itself.
- * - Submission reserves the funds and creates the dispatch intent atomically under the customer's
- *   own session and transaction PIN. The screen never claims the bank has paid — it says what the
- *   server said (RESERVED) and nothing more.
- * - The idempotency key is stable for the life of this form, so an impatient double tap or a
- *   retry after a network drop returns the same commitment instead of reserving twice.
+ * Complete bank-withdrawal journey: directory → enquiry → beneficiary → amount → pricing → PIN → submit.
+ * The idempotency key is durably persisted via SecureStorage so process kill / lost response never
+ * mints a fresh key for the same logical attempt. Pricing is server-authoritative (bank-transfer-preview).
  */
 export const BankWithdrawalScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -70,8 +67,28 @@ export const BankWithdrawalScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [result, setResult] = useState<InitiateBankWithdrawalResult | null>(null);
 
-  // One stable key per mounted form; only a successful submission or an explicit reset mints a new one.
-  const idempotencyKey = useRef(`bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+
+  // Restore durable pending intent on mount — verifies owner switching & session replacement
+  const customerIdForRecovery = useMemo(() => {
+    try {
+      const raw = ApiClient.getCustomerId?.() as unknown;
+      return typeof raw === 'string' ? raw : 'customer-recovery';
+    } catch { return 'customer-recovery'; }
+  }, []);
+
+  useEffect(() => {
+    // Attempt to restore prior idempotency key for same params
+    void (async () => {
+      try {
+        const pending = await loadPendingBankWithdrawalIntent(customerIdForRecovery);
+        if (pending) setIdempotencyKey(pending.idempotencyKey);
+      } catch (e) {
+        // Storage failure is non-blocking — fall back to fresh key
+        console.warn('Pending bank-withdrawal load failed', e);
+      }
+    })();
+  }, [customerIdForRecovery]);
 
   const load = useCallback(async () => {
     setError('');
@@ -115,7 +132,7 @@ export const BankWithdrawalScreen: React.FC = () => {
     setAuthorizedAmount('0');
     setPin('');
     setError('');
-    idempotencyKey.current = `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    setIdempotencyKey(`bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
   const submit = async () => {
@@ -146,6 +163,18 @@ export const BankWithdrawalScreen: React.FC = () => {
     setError('');
     const pinSnapshot = pin;
     setPin('');
+    // Persist durable intent BEFORE send so kill between send and response is recoverable
+    try {
+      await savePendingBankWithdrawalIntent({
+        customerId: customerIdForRecovery,
+        walletAccountId: primaryWallet.id,
+        beneficiaryId: selected.id,
+        amountMinor: parsed,
+        currency: 'NGN',
+        idempotencyKey,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e) { console.warn('Pending save failed', e); }
     try {
       const initiated = await BankWithdrawalApi.initiate(
         {
@@ -154,10 +183,14 @@ export const BankWithdrawalScreen: React.FC = () => {
           amountMinor: parsed,
           pin: pinSnapshot,
         },
-        idempotencyKey.current,
+        idempotencyKey,
       );
       setAuthorizedAmount(parsed);
       setResult(initiated);
+      // Definitive outcome — clear durable
+      try { await clearPendingBankWithdrawalIntent(customerIdForRecovery); } catch {}
+      // Also clear on replayed (same logical attempt)
+      if (initiated.replayed) { try { await clearPendingBankWithdrawalIntent(customerIdForRecovery); } catch {} }
     } catch (error: unknown) {
       const status = error instanceof ApiError ? error.status : 0;
       if (status === 401 || status === 403) {

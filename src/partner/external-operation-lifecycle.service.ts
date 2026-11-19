@@ -243,12 +243,27 @@ export class ExternalOperationLifecycleService {
     }
 
     if (command.nextState === ExternalOperationLifecycleState.SUBMITTING) {
-      await this.walletBoundary.requireCustomerWallet(
-        manager,
-        operation.customerId,
-        operation.walletAccountId,
-        operation.ledgerAccountId,
+      // Agent operations carry the owner in customer_id column (see 0804 migration).
+      // The wallet ownership class distinguishes lanes; the boundary enforces each.
+      const ownerRows: Array<{ owner_class: string }> = await manager.query(
+        `SELECT owner_class FROM wallet_accounts WHERE id=$1 LIMIT 1`,
+        [operation.walletAccountId],
       );
+      if (ownerRows[0]?.owner_class === 'AGENT') {
+        await this.walletBoundary.requireAgentWallet(
+          manager,
+          operation.customerId,
+          operation.walletAccountId,
+          operation.ledgerAccountId,
+        );
+      } else {
+        await this.walletBoundary.requireCustomerWallet(
+          manager,
+          operation.customerId,
+          operation.walletAccountId,
+          operation.ledgerAccountId,
+        );
+      }
       await this.walletBoundary.requireWithdrawalOperation(manager, operation);
     }
 

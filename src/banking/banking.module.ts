@@ -43,6 +43,7 @@ import { BankingCustomerController } from './banking-customer.controller';
 import { BankingWebhookController } from './banking-webhook.controller';
 import { BankingDirectoryService } from './banking-directory.service';
 import { BankingAccountEnquiryService } from './banking-account-enquiry.service';
+import { BankingTransferPricingController } from './banking-transfer-pricing.controller';
 import {
   AgentBankingDirectoryController,
   CustomerBankingDirectoryController,
@@ -267,6 +268,7 @@ export interface BankingRuntime {
     AgentBankingDirectoryController,
     CustomerBankBeneficiaryController,
     AgentBankBeneficiaryController,
+    BankingTransferPricingController,
   ],
   exports: [
     BankingProviderRegistry,

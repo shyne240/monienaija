@@ -203,7 +203,7 @@ export class LedgerService {
               a.amount_minor::text AS amount_minor, a.currency
        FROM financial_authorizations a JOIN external_operations o ON o.id=$2
        JOIN ledger_accounts r ON r.code='PAYMENT-WITHDRAWAL_RESERVE-NGN' AND r.is_active=true
-       WHERE a.id=$1 AND o.customer_id=a.customer_id AND o.wallet_account_id=a.wallet_account_id
+       WHERE a.id=$1 AND o.customer_id=a.principal_id::uuid AND o.wallet_account_id=a.wallet_account_id
          AND o.ledger_account_id=a.ledger_account_id AND o.amount_minor=a.amount_minor AND o.currency=a.currency
          AND a.xmin::text::bigint=(txid_current() % 4294967296)
          AND o.xmin::text::bigint=(txid_current() % 4294967296)`,
@@ -310,7 +310,7 @@ export class LedgerService {
     >(
       `SELECT a.ledger_account_id::text AS source_id, c.reserve_account_id::text AS reserve_id,
               a.amount_minor::text, a.currency, c.reservation_journal_id::text,
-              a.customer_id::text, a.wallet_account_id::text AS wallet_id, o.target_mapping_reference, a.request_hash
+              a.principal_id AS customer_id, a.wallet_account_id::text AS wallet_id, o.target_mapping_reference, a.request_hash
        FROM financial_commitments c JOIN financial_authorizations a ON a.id=c.authorization_id
        JOIN external_operations o ON o.id=c.external_operation_id
        JOIN withdrawals w ON w.id=c.withdrawal_id
@@ -318,29 +318,45 @@ export class LedgerService {
        JOIN financial_commitment_destinations d ON d.commitment_id=c.id AND d.target_reference=o.target_mapping_reference
        WHERE c.external_operation_id=$1 AND c.state='RESERVED' AND c.request_hash=a.request_hash
          AND o.resource_type='WITHDRAWAL' AND o.resource_id=w.id AND o.internal_command_id=c.id
-         AND o.customer_id=a.customer_id AND o.wallet_account_id=a.wallet_account_id
+         AND o.customer_id=a.principal_id::uuid AND o.wallet_account_id=a.wallet_account_id
          AND o.ledger_account_id=a.ledger_account_id AND o.amount_minor=a.amount_minor AND o.currency=a.currency
          AND w.wallet_id=a.wallet_account_id AND w.amount_minor=a.amount_minor AND w.currency=a.currency
          AND w.status IN ('PENDING','PROCESSING')
-         AND wa.customer_id=a.customer_id::text AND wa.ledger_account_id=a.ledger_account_id
-         AND wa.owner_class='CUSTOMER' AND wallet_owner_class(wa.customer_id)='CUSTOMER'
+         AND wa.customer_id=a.principal_id AND wa.ledger_account_id=a.ledger_account_id
+         AND ((wa.owner_class='CUSTOMER' AND wallet_owner_class(wa.customer_id)='CUSTOMER' AND a.principal_type='CUSTOMER')
+           OR (wa.owner_class='AGENT' AND wallet_owner_class(wa.customer_id)='AGENT' AND a.principal_type='AGENT'))
        FOR UPDATE OF c,w`,
       [operationId],
     );
     const binding = rows[0];
     if (!binding) throw new ConflictException('An exact reserved financial commitment is required');
-    const requestHash = createHash('sha256')
-      .update(
-        JSON.stringify({
-          customerId: binding.customer_id,
-          walletId: binding.wallet_id,
-          amountMinor: binding.amount_minor,
-          currency: binding.currency,
-          target: binding.target_mapping_reference,
-        }),
-      )
-      .digest('hex');
-    if (requestHash !== binding.request_hash)
+    // Customer lane hashes { customerId, walletId, ... }; agent lane hashes { agentId, walletId, ... }.
+    // The commitment stores the hash already, so we verify against both forms.
+    const candidateHashes = [
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            customerId: binding.customer_id,
+            walletId: binding.wallet_id,
+            amountMinor: binding.amount_minor,
+            currency: binding.currency,
+            target: binding.target_mapping_reference,
+          }),
+        )
+        .digest('hex'),
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            agentId: binding.customer_id,
+            walletId: binding.wallet_id,
+            amountMinor: binding.amount_minor,
+            currency: binding.currency,
+            target: binding.target_mapping_reference,
+          }),
+        )
+        .digest('hex'),
+    ];
+    if (!candidateHashes.includes(binding.request_hash))
       throw new ConflictException('Financial commitment authorization binding does not match');
     return binding;
   }

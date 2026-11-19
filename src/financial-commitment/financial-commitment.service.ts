@@ -448,6 +448,7 @@ export class FinancialCommitmentService {
         walletLedgerAccountId: wallet.ledger_account_id,
         principalWalletCustomerId: input.id,
         requireConfiguration: true,
+        strictConfiguredRules: true,
         institutionId: wallet.institution_id,
         serviceClass: null,
       });
