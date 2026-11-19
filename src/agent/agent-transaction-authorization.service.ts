@@ -180,11 +180,16 @@ export class AgentTransactionAuthorizationService {
     const actor = input.actor?.trim() ? input.actor.trim() : (principal.principalId ?? agentId);
 
     // Delegate to existing PIN verification (reuses hashing, lockout, attempt counting, policy)
-    let verifyResult: { verified: boolean; locked?: boolean; failureReason?: string };
+    let verifyResult: {
+      verified: boolean;
+      locked?: boolean;
+      failureReason?: string;
+      auditId?: string;
+    };
     try {
       verifyResult = await this.agentAuthService.verifyTransactionPin(
         agentId,
-        { pin, actor },
+        { pin, actor, financialBinding: input.financialBinding },
         this.verificationService,
       );
     } catch {
@@ -202,7 +207,8 @@ export class AgentTransactionAuthorizationService {
     }
 
     if (verifyResult.verified) {
-      // AUTHORIZED — produce reusable context
+      // AUTHORIZED — produce reusable context. When the caller asked for a financial binding,
+      // the audit id of the bound PIN verification is carried so the command can re-check it.
       const ctx = {
         agentId,
         principal,
@@ -214,6 +220,9 @@ export class AgentTransactionAuthorizationService {
         applicableServices: cap.applicableServices,
         applicableLimits: cap.applicableLimits,
         authorizedAt: new Date(),
+        ...(input.financialBinding && verifyResult.auditId
+          ? { pinAuditId: verifyResult.auditId }
+          : {}),
       };
       // Optional success audit (best-effort, no PIN)
       try {
@@ -247,6 +256,9 @@ export class AgentTransactionAuthorizationService {
         agentClassActive: true,
         applicableServices: cap.applicableServices,
         applicableLimits: cap.applicableLimits,
+        ...(input.financialBinding && verifyResult.auditId
+          ? { pinAuditId: verifyResult.auditId }
+          : {}),
       };
     }
 

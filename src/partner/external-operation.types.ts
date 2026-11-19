@@ -34,6 +34,13 @@ export interface CreateExternalOperationCommand {
   idempotencyKey: string;
   requestContext: RequestContext;
   causationId?: string | null;
+  /**
+   * ARENA 5 — which authenticated lane owns the operating wallet. Defaults to `CUSTOMER` so
+   * existing callers are unchanged; `AGENT` binds the same wallet boundary to the agent owner
+   * reference instead (AGENT wallet-owner evidence, agent ACTIVE required, no customer KYC).
+   * `customerId` carries the owner reference in both lanes, matching wallet_accounts.customer_id.
+   */
+  participantKind?: 'CUSTOMER' | 'AGENT';
 }
 
 export interface ExternalOperationView {

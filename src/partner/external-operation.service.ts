@@ -239,12 +239,21 @@ export class ExternalOperationService {
       return replayed;
     }
 
-    await this.walletBoundary.requireCustomerWallet(
-      manager,
-      command.customerId,
-      command.walletAccountId,
-      command.ledgerAccountId,
-    );
+    if (command.participantKind === 'AGENT') {
+      await this.walletBoundary.requireAgentWallet(
+        manager,
+        command.customerId,
+        command.walletAccountId,
+        command.ledgerAccountId,
+      );
+    } else {
+      await this.walletBoundary.requireCustomerWallet(
+        manager,
+        command.customerId,
+        command.walletAccountId,
+        command.ledgerAccountId,
+      );
+    }
     await this.walletBoundary.requireWithdrawalOperation(manager, command);
 
     const profile = this.partnerConnectionService.getProfile();

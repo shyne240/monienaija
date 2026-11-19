@@ -1070,8 +1070,8 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600802',
-      name: 'ExtendBeneficiaryOwnership1785753600802',
+      timestamp: '1785753600803',
+      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
     });
     const outletTable: Array<{ table_name: string }> = await dataSource.query(
       `SELECT table_name FROM information_schema.tables WHERE table_name='agent_outlets'`,
@@ -1097,8 +1097,8 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600802',
-      name: 'ExtendBeneficiaryOwnership1785753600802',
+      timestamp: '1785753600803',
+      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
     });
   });
   it('versioned lifecycle transitions reject stale and concurrent outlet/terminal decisions', async () => {

@@ -18,6 +18,10 @@ export enum AgentService {
   CASH_TO_CASH = 'CASH_TO_CASH',
   AGENT_FUNDING = 'AGENT_FUNDING',
   AGENT_DEFUNDING = 'AGENT_DEFUNDING',
+  // ARENA 5 — agent-initiated transfer from the operating wallet to an external bank
+  // beneficiary. Governed like every other agent service; the operating wallet is resolved
+  // from the authenticated agent's authority, never from request input.
+  EXTERNAL_BANK_TRANSFER = 'EXTERNAL_BANK_TRANSFER',
 }
 
 /**
@@ -32,6 +36,9 @@ export const AGENT_SERVICE_ALIASES: Readonly<Record<string, AgentService>> = {
   CASH_TO_CASH: AgentService.CASH_TO_CASH,
   AGENT_FUNDING: AgentService.AGENT_FUNDING,
   AGENT_DEFUNDING: AgentService.AGENT_DEFUNDING,
+  EXTERNAL_BANK_TRANSFER: AgentService.EXTERNAL_BANK_TRANSFER,
+  BANK_TRANSFER: AgentService.EXTERNAL_BANK_TRANSFER,
+  BANK_TRANSFER_OUT: AgentService.EXTERNAL_BANK_TRANSFER,
 } as const;
 
 export const CANONICAL_AGENT_SERVICES = new Set<string>([
@@ -41,6 +48,7 @@ export const CANONICAL_AGENT_SERVICES = new Set<string>([
   AgentService.CASH_TO_CASH,
   AgentService.AGENT_FUNDING,
   AgentService.AGENT_DEFUNDING,
+  AgentService.EXTERNAL_BANK_TRANSFER,
 ]);
 
 /**

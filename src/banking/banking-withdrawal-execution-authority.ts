@@ -50,6 +50,7 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
       targetReference: string;
       amountMinor: string;
       currency: string;
+      participantKind?: 'CUSTOMER' | 'AGENT';
     },
   ): Promise<WithdrawalExecutionAuthorization> {
     const refused = (outcome: 'DENIED' | 'UNAVAILABLE'): WithdrawalExecutionAuthorization => ({
@@ -65,12 +66,17 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
 
     // The institution comes from the wallet as locked by the caller's own transaction, so a caller
     // cannot point the check at a different institution than the wallet it is debiting.
+    const agentLane = input.participantKind === 'AGENT';
     const wallets = await manager.query<Array<{ institution_id: string | null; status: string }>>(
-      // Same authoritative-ownership predicate as the wallet layer: a CUSTOMER-classified wallet
-      // whose owner reference resolves to exactly this customer. A mismatch denies, and denial here
+      // Same authoritative-ownership predicate as the wallet layer: a CUSTOMER/AGENT-classified wallet
+      // whose owner reference resolves to exactly this owner. A mismatch denies, and denial here
       // means the commitment cannot proceed.
-      `SELECT institution_id,status FROM wallet_accounts
-        WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' FOR SHARE`,
+      agentLane
+        ? `SELECT institution_id,status FROM wallet_accounts
+            WHERE id=$1 AND customer_id=$2::text AND owner_class='AGENT'
+              AND wallet_owner_class(customer_id)='AGENT' FOR SHARE`
+        : `SELECT institution_id,status FROM wallet_accounts
+            WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' FOR SHARE`,
       [input.walletAccountId, input.customerId],
     );
     const wallet = wallets[0];

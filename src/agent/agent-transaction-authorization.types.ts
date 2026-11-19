@@ -43,6 +43,12 @@ export interface AgentAuthorizedTransactionContext {
   applicableLimits: unknown;
   /** Authorization timestamp */
   authorizedAt: Date;
+  /**
+   * ARENA 5 — audit id of the bound PIN verification. Present only when the caller supplied a
+   * `financialBinding` and the PIN verified; carries the binding for financial commands to
+   * re-check inside their transaction.
+   */
+  pinAuditId?: string;
 }
 
 export interface AgentTransactionAuthorizationResult {
@@ -60,6 +66,8 @@ export interface AgentTransactionAuthorizationResult {
   agentClassActive?: boolean;
   applicableServices?: unknown;
   applicableLimits?: unknown;
+  /** ARENA 5 — bound PIN audit id (same semantics as `AgentAuthorizedTransactionContext.pinAuditId`). */
+  pinAuditId?: string;
 }
 
 export interface AuthorizeAgentTransactionInput {
@@ -75,4 +83,11 @@ export interface AuthorizeAgentTransactionInput {
     | { type: string; agentId?: string; customerId?: string; principalId?: string };
   /** Optional actor override for PIN audit (defaults to principalId or agentId) */
   actor?: string;
+  /**
+   * ARENA 5 — optional financial binding for the PIN audit. When present, the produced
+   * PIN_VERIFIED audit records the request hash and session so a financial command can re-bind
+   * the exact authorization inside its transaction. Shape is validated by the authentication
+   * service; anything malformed is refused rather than silently dropped.
+   */
+  financialBinding?: { requestHash: string; sessionId: string };
 }

@@ -14,6 +14,7 @@ import {
   CustomerBeneficiaryType,
 } from '../src/customer-beneficiary/customer-beneficiary.enums';
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
+import { AgentTransactionAuthorizationService } from '../src/agent/agent-transaction-authorization.service';
 import { BankingCommitmentBridgeService } from '../src/banking/banking-commitment-bridge.service';
 import { BankingFeeBindingService } from '../src/banking/banking-fee-binding.service';
 import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
@@ -178,6 +179,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
             environment: 'sandbox' as const,
           }),
       },
+      app.get(AgentTransactionAuthorizationService),
       app.get(BankingCommitmentBridgeService),
       app.get(BankingFeeBindingService),
     );

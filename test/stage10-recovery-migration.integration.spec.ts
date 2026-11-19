@@ -85,10 +85,11 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       const positions = ordered.map((id) => position.get(id)!);
       expect(positions.every((value) => value !== undefined)).toBe(true);
       expect(positions).toEqual([...positions].sort((left, right) => left - right));
-      // The parity head follows the unchanged ARENA 3D banking chain in its own allocation.
+      // The Arena 5 dual-lane financial authorization migration follows the unchanged
+      // Arena 2C allocation.
       expect(rows.at(-1)).toEqual({
-        timestamp: '1785753600802',
-        name: 'ExtendBeneficiaryOwnership1785753600802',
+        timestamp: '1785753600803',
+        name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
       });
     });
 
@@ -206,7 +207,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('ExtendBeneficiaryOwnership1785753600802');
+        expect(applied.at(-1)).toBe('GeneralizeFinancialAuthorizationsForAgents1785753600803');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
@@ -388,7 +389,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(result.migrations.missing).toEqual([]);
       expect(result.migrations.unexpected).toEqual([]);
       // Tracks the readiness service's expected parity head.
-      expect(result.migrations.latestTimestamp).toBe('1785753600802');
+      expect(result.migrations.latestTimestamp).toBe('1785753600803');
       expect(result.status).toBe('error');
       expect(result.reason).toBe('financial_dependencies_not_ready');
     }, 120_000);

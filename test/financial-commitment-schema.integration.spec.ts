@@ -46,6 +46,7 @@ describe('financial commitment schema (real PostgreSQL)', () => {
         repository.insertAuthorization(manager, {
           id: randomUUID(),
           customerId: randomUUID(),
+          principalType: 'CUSTOMER',
           sessionId: randomUUID(),
           pinAuditId: randomUUID(),
           walletAccountId: randomUUID(),

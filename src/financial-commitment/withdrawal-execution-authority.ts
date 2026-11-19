@@ -34,6 +34,12 @@ export interface WithdrawalExecutionAuthority {
       targetReference: string;
       amountMinor: string;
       currency: string;
+      /**
+       * ARENA 5 — which authenticated lane is debiting. Defaults to `CUSTOMER`, which is the
+       * historical contract. `AGENT` binds the same check to the agent operating wallet and the
+       * agent owner reference instead. `customerId` carries the owner reference in both lanes.
+       */
+      participantKind?: 'CUSTOMER' | 'AGENT';
     },
   ): Promise<WithdrawalExecutionAuthorization>;
 }

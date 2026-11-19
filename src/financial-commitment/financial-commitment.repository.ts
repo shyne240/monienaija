@@ -4,7 +4,12 @@ import type { EntityManager } from 'typeorm';
 /** Internal persistence only. Callers must independently perform authorization and ledger checks. */
 export interface NewFinancialAuthorization {
   id: string;
-  customerId: string;
+  /** Owner reference. Customer lane: the customer id; agent lane: the agent id. Exactly one lane is set. */
+  customerId: string | null;
+  /** Agent lane owner reference; null on the customer lane. */
+  agentId?: string | null;
+  /** Lane selector; matches the `principal_type` CHECK added in migration 0803. */
+  principalType: 'CUSTOMER' | 'AGENT';
   sessionId: string;
   pinAuditId: string;
   walletAccountId: string;
@@ -48,12 +53,13 @@ export class FinancialCommitmentRepository {
   ): Promise<void> {
     await manager.query(
       `INSERT INTO financial_authorizations
-       (id, customer_id, session_id, pin_audit_id, wallet_account_id, ledger_account_id,
+       (id, customer_id, agent_id, session_id, pin_audit_id, wallet_account_id, ledger_account_id,
         amount_minor, currency, request_hash, principal_type, principal_id, institution)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'CUSTOMER',$10,$11)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         value.id,
         value.customerId,
+        value.agentId ?? null,
         value.sessionId,
         value.pinAuditId,
         value.walletAccountId,
@@ -61,6 +67,7 @@ export class FinancialCommitmentRepository {
         value.amountMinor,
         value.currency,
         value.requestHash,
+        value.principalType,
         value.principalId,
         value.institution,
       ],

@@ -33,6 +33,7 @@ import {
   UnavailableAgentFloatFundingAuthority,
 } from './agent-float-funding-authority';
 import { BankingAgentController } from './banking-agent.controller';
+import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { BankingWithdrawalExecutionAuthority } from './banking-withdrawal-execution-authority';
 import { BankingExternalOperationStatusVerifier } from './banking-external-operation-status-verifier';
 import { BankingInboundFundingVerifier } from './banking-inbound-funding-verifier';
@@ -40,6 +41,17 @@ import { BankingInboundInstitutionAuthority } from './banking-inbound-institutio
 import { BankingAdminController } from './banking-admin.controller';
 import { BankingCustomerController } from './banking-customer.controller';
 import { BankingWebhookController } from './banking-webhook.controller';
+import { BankingDirectoryService } from './banking-directory.service';
+import { BankingAccountEnquiryService } from './banking-account-enquiry.service';
+import {
+  AgentBankingDirectoryController,
+  CustomerBankingDirectoryController,
+} from './banking-directory.controller';
+import { BankBeneficiaryCreationService } from './bank-beneficiary-creation.service';
+import {
+  AgentBankBeneficiaryController,
+  CustomerBankBeneficiaryController,
+} from './bank-beneficiary.controller';
 import { buildBankingRegistry } from './banking.config';
 import { PostgresWebhookAttribution } from './banking-webhook.config';
 
@@ -73,6 +85,10 @@ export interface BankingRuntime {
     ProtectedAuthorityModule,
     LedgerModule,
     OperationsModule,
+    // Bank-account beneficiary persistence reuses the existing customer-beneficiary model
+    // and its TypeORM feature set; importing the module avoids re-declaring the entities.
+    // Circular guard: banking does not depend on customer-beneficiary controllers.
+    CustomerBeneficiaryModule,
   ],
   providers: [
     {
@@ -167,6 +183,9 @@ export interface BankingRuntime {
     AgentFloatFundingService,
     BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
+    BankingDirectoryService,
+    BankingAccountEnquiryService,
+    BankBeneficiaryCreationService,
     {
       provide: BankingWebhookService,
       inject: [BankingInboundService, ConfigService, PostgresWebhookAttribution],
@@ -244,6 +263,10 @@ export interface BankingRuntime {
     BankingAgentController,
     BankingCustomerController,
     BankingWebhookController,
+    CustomerBankingDirectoryController,
+    AgentBankingDirectoryController,
+    CustomerBankBeneficiaryController,
+    AgentBankBeneficiaryController,
   ],
   exports: [
     BankingProviderRegistry,

@@ -106,10 +106,10 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations
         ORDER BY timestamp DESC LIMIT 1`,
     );
-    // The parity head follows the unchanged ARENA 3D chain in its separate 0800–0899 allocation.
+    // The Arena 5 dual-lane financial authorization migration follows the unchanged Arena 2C chain.
     expect(rows[0]).toEqual({
-      timestamp: '1785753600802',
-      name: 'ExtendBeneficiaryOwnership1785753600802',
+      timestamp: '1785753600803',
+      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
     });
   });
 
@@ -216,7 +216,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('ExtendBeneficiaryOwnership1785753600802');
+      expect(appliedNames.at(-1)).toBe('GeneralizeFinancialAuthorizationsForAgents1785753600803');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
@@ -366,7 +366,7 @@ describe('Stage 8 readiness detection of a missing earlier migration (real Postg
     // The readiness service's expected head is the current migration head. This assertion tracks it
     // rather than re-deriving it, so a stale expectation fails loudly instead of quietly accepting a
     // tree the service does not consider compatible.
-    expect(result.migrations.latestTimestamp).toBe('1785753600802');
+    expect(result.migrations.latestTimestamp).toBe('1785753600803');
     // Financial dependency gates are unverified by design, so overall readiness still refuses.
     expect(result.status).toBe('error');
     expect(result.reason).toBe('financial_dependencies_not_ready');

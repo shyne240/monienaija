@@ -24,6 +24,34 @@ export class WalletFinancialBoundaryService {
     await this.eligibility.require(manager, customerId);
   }
 
+  /**
+   * Agent operating wallet boundary (ARENA 5). Mirror of `requireCustomerWallet` for the agent lane:
+   * the same evidence, resolved from the agent owner reference, never from a caller claim — and no
+   * customer KYC eligibility is applied (agents are governed by their class-of-service, not by
+   * customer tier policy). The operating wallet remains the only agent wallet a commitment may draw on.
+   */
+  async requireAgentWallet(
+    manager: EntityManager,
+    agentId: string,
+    walletId: string,
+    ledgerAccountId: string,
+  ): Promise<void> {
+    const rows = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM wallet_accounts WHERE id=$1 AND ledger_account_id=$2 AND customer_id=$3 AND owner_class='AGENT' AND wallet_owner_class(customer_id)='AGENT' FOR SHARE`,
+      [walletId, ledgerAccountId, agentId],
+    );
+    if (rows.length !== 1)
+      throw new ConflictException(
+        'Agent operating wallet ownership requires review (unresolved or non-agent wallet)',
+      );
+    const active = await manager.query<Array<{ id: string }>>(
+      "SELECT id FROM agents WHERE id=$1::uuid AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
+      [agentId],
+    );
+    if (active.length !== 1)
+      throw new ConflictException('Agent wallet owner is not active');
+  }
+
   /** Lock the underlying obligation and bind every financial field before create or submission. */
   async requireWithdrawalOperation(
     manager: EntityManager,

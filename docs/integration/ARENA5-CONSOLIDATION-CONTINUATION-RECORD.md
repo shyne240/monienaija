@@ -414,25 +414,80 @@ consumption site as well (`false/0/no → disabled`, `true/1/yes → enabled`, a
 with regression coverage in `test/kyc-customer-verification.config.spec.ts` (unit suite 3403/3403).
 Environment validation was not weakened and `.env.example` was not edited.
 
-## 6. Immediate next groups
+## 6. Groups 9–10 — shared external bank-transfer authority + bank directory (in progress)
 
-3. **Group 5–6** — P2P directions preservation on the consolidated runtime (run the 2C P2P parity
-   suites: customer/agent directions); D1–D8 constraints carried as recorded above.
-4. **Group 7–8** — customer/agent banking journey wiring. The customer half of Group 7 is done and
-   verified (see §5, Group 7): customer self-service withdrawal to a verified bank account, wired end
-   to end on real contracts. Remaining: the agent half (agent-initiated outbound against the
-   operating wallet, including the own-account policy and agent-facing surfaces), agent P2P parity
-   re-verification on the combined runtime, and Group 8's shared authority hardening. No
-   own-bank-account product; no workforce acting-on-behalf; agent may transfer from the operating
-   wallet including to own account.
-5. **Group 9–10** — shared external bank-transfer authority extension of the A6 commitment path
-   (typed CUSTOMER/AGENT participants, immutable refs, institution attribution, provider destination
-   binding, scoped idempotency) + bank directory/name-enquiry via provider capability contracts.
-6. **Group 11–19** — beneficiaries for customer+agent; confirmation evidence; financial auth; fees;
-   limits; commitment authority extension; provider governance/dispatch/verification reuse; completed/rejected
-   financial effects via the commitment/settlement bridge.
-7. **Groups 20–33** — funding/defunding/cash journeys re-verified on the combined runtime; reversal and
-   unresolved-funds governance; reconciliation discipline; mobile banking surfaces; history/receipts;
-   idempotency/recovery; notifications/outbox; admin console; conservation under concurrency (real PG).
-8. **Groups 34–40** — adversarial verification; operations/readiness preservation; full regression
-   (unit + PG matrix + builds + lint + inventory); acceptance matrix; combined handoff; final record.
+### Group 9 — shared authority (customer + agent, one engine)
+
+Completed at `1785753600803:GeneralizeFinancialAuthorizationsForAgents`. The A6 commitment/authorization
+architecture was extended from customer-only to typed CUSTOMER/AGENT without a second financial engine:
+
+- `financial_authorizations` now carries `agent_id` (nullable FK→agents, RESTRICT), `customer_id` nullable,
+  `principal_type IN ('CUSTOMER','AGENT')`, and `chk_financial_authorizations_owner` binding type↔principal_id↔owner column.
+  The `session_id` FK was dropped because one column cannot reference two session tables; the validation trigger
+  is the sole authority for session validity in both lanes (as it already was for customers).
+- `validate_financial_authorization()` was replaced with a dual-lane function: the CUSTOMER branch is byte-for-byte
+  the prior predicate; the AGENT branch requires ACTIVE undeleted agent, ACTIVE agent-api session + ACTIVE credential
+  (no lock, no rotation, live password, issued_at ≥ password_changed_at), an unlocked agent_transaction_pins row
+  and a matching `AGENT_TRANSACTION_PIN/PIN_VERIFIED` audit binding requestHash+sessionId+pinVersion, plus an
+  AGENT wallet via `wallet_owner_class()`.
+- `validate_financial_commitment()` now matches `o.customer_id = a.principal_id::uuid` so both lanes bind the same
+  provider operation column; all reservation/settlement/release evidence rules are unchanged.
+- `validate_financial_commitment_destination()` was updated to accept both customer-owned and agent-owned
+  BANK_ACCOUNT beneficiaries, with the target-reference hash now using `COALESCE(b.customer_id,b.agent_id)`.
+- `FinancialCommitmentService` now exposes `initiate()` (customer) and `initiateForAgent()` (agent) sharing one
+  `ParticipantPlan` and one transactional `initiateWithin()`: source-wallet ownership, beneficiary ownership,
+  institution/provider routing, limits, PIN, idempotency, reservation, fee binding and immutable destination are
+  all shared; only the session/credential/PIN lane differs. The agent lane resolves the source wallet from the
+  authenticated agent's authority (exactly one ACTIVE NGN operating wallet when not explicitly located) and
+  re-validates the agent lane inside the SERIALIZABLE transaction.
+- `WalletFinancialBoundaryService.requireAgentWallet()` and `BankingWithdrawalExecutionAuthority` participant-kind
+  branching were added so the agent operating wallet is the only wallet the agent lane can debit.
+
+Evidence: `test/migration-inventory.spec.ts` 10/10 (165 identities, head 0803), `test/migration-chain.integration.spec.ts`
+20/20, `test/arena5-consolidation-migration-upgrade.integration.spec.ts` 4/4 (3D→0800-0803, 2C→0606-0614, fresh 165),
+`test/financial-commitment-initiation.integration.spec.ts` 43/43 including customer-lane destination-change guard,
+all run on disposable PostgreSQL via `PG_TEST_RUN_ID`. `npx tsc --noEmit` exit 0.
+
+Route `POST /agents/me/banking/bank-transfers` (`AgentBankTransferCommitmentController`) is the agent-self counterpart
+to `POST /customers/me/withdrawal-commitments`; it takes the agent id+session from the authenticated principal,
+never from the body, and the optional `walletAccountId` is only a locator for the agent's own operating wallet.
+
+### Group 10 — bank directory and account-name enquiry (G10)
+
+The authoritative directory is the stored `banks` table; the provider directory is operational observability,
+not a customer source of truth. G10 exposes the stored directory to self-service and gates name enquiry on the
+provider's `enquireAccountName` capability:
+
+- `GET /customers/me/banking/banks?search=` and `GET /agents/me/banking/banks?search=` — ACTIVE+NIP_SUPPORTED
+  subset from `BankingDirectoryService`, ordered by bank_name.
+- `POST /customers/me/banking/account-enquiry {bankCode,accountNumber,walletId?}` and
+  `POST /agents/me/banking/account-enquiry` — validates format, checks bank exists and is ACTIVE+NIP_SUPPORTED,
+  resolves the caller institution from their wallet, then delegates to a usable provider's
+  `enquireAccountName`. The result is `RESOLVED` (with `accountName`), `NOT_FOUND`, or `UNAVAILABLE`;
+  `establishesAccountOwnership` is always false. No provider configured → UNAVAILABLE, never a guess.
+- `POST /customers/me/banking/beneficiaries/bank-accounts {bankCode,accountNumber,nickname?,walletId?}` and
+  `POST /agents/me/banking/beneficiaries/bank-accounts` — creates a verified ACTIVE BANK_ACCOUNT beneficiary
+  only after the enquiry above returns RESOLVED; otherwise refuses (NOT_FOUND/UNAVAILABLE). Duplicate
+  destinations are rejected; the binding is immutable per `guard_beneficiary_owner_binding`.
+- Mobile durable recovery: `apps/customer-mobile/src/services/pending-bank-withdrawal.ts` and
+  `apps/agent-mobile/src/services/pending-bank-withdrawal.ts` persist the idempotency key via
+  `SecureStorage` so process termination/lost responses never cause a fresh key for the same attempt;
+  `BankDirectoryApi` clients added for both mobiles.
+
+Remaining for the banking journey: server-authoritative principal/fee/VAT/total-debit confirmation surface,
+idempotency-key survival assertion in PG, unified history/receipt with operationReference, settlement/rejection
+commercial effects already internal but need customer/agent visible confirmation, and full mobile screens
+(bank selection → enquiry → beneficiary create → confirmation → PIN → tracking).
+
+## 7. Immediate next groups
+
+3. **Group 11** — bank-account beneficiary management surfacing (list/get/patch already exposed via
+   `CustomerBankBeneficiaryController`/`AgentBankBeneficiaryController`; verify against PG).
+4. **Group 12–13** — server-authoritative confirmation (principal/fee/VAT/total) bound to beneficiary+amount;
+   immutable destination+pricing authorization evidence surfaced.
+5. **Groups 14–19** — limits, commitment authority extension for bank transfers, provider governance/dispatch/
+   verification reuse, settled/rejected financial effects, commercial accounting.
+6. **Groups 20–33** — funding/defunding/cash journeys on the combined runtime, reversal, reconciliation,
+   mobile banking screens, history/receipts, interrupted-operation recovery verification, notifications, admin.
+7. **Groups 34–40** — adversarial verification, operations/readiness, full regression (unit + PG matrix +
+   builds + lint + inventory), acceptance matrix, combined handoff.

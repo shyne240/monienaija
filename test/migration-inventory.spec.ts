@@ -65,13 +65,14 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the allocated beneficiary ownership migration', () => {
+  it('ends at the agent financial authorization generalisation migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
-    // banking range and Arena 2C appended 0800-0802 after that. The consolidated head is 0802 and
-    // it is pinned exactly — a head-only allowance would let a skipped earlier identity pass.
+    // banking range, Arena 2C appended 0800-0802 after that, and Arena 5 appended 0803 for the
+    // dual-lane (customer/agent) A6 financial authorization. The head is pinned exactly —
+    // a head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600802',
-      name: 'ExtendBeneficiaryOwnership1785753600802',
+      timestamp: '1785753600803',
+      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
     });
   });
 
@@ -130,19 +131,20 @@ describe('migration inventory', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
-  it('contains the Arena 2C appended identities 0800-0802 in order after the 3D range', () => {
-    // Arena 2C appended these after the Arena 3D range. They carry the wallet-transfer quote
-    // binding, agent verified-phone proof and typed beneficiary ownership. Each identity is
-    // published and is never renumbered.
-    const arena2c = [
+  it('contains the appended identities 0800-0803 after the Arena 3D range in order', () => {
+    // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
+    // agent verified-phone proof, typed beneficiary ownership) and Arena 5 appended 0803
+    // (dual-lane financial authorization). Each identity is published and is never renumbered.
+    const appended = [
       ['1785753600800', 'BindWalletTransferQuotes1785753600800'],
       ['1785753600801', 'AgentVerifiedPhone1785753600801'],
       ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
+      ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
     );
-    for (const [timestamp, name] of arena2c) {
+    for (const [timestamp, name] of appended) {
       expect(byTimestamp.get(timestamp)).toBe(name);
     }
     const last3d = migrations.findIndex((migration) => migration.timestamp === '1785753600614');
@@ -150,11 +152,12 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 164 migration identities', () => {
+  it('contains exactly 165 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
-    // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D and three by
-    // Arena 2C. Any additional or missing file fails this assertion.
-    expect(migrations.length).toBe(164);
+    // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
+    // Arena 2C, and one by Arena 5 (agent financial authorization). Any additional or missing
+    // file fails this assertion.
+    expect(migrations.length).toBe(165);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

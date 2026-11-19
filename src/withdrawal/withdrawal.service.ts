@@ -207,13 +207,13 @@ export class WithdrawalService {
       const ownedWallet = await manager
         .getRepository(WalletAccount)
         .findOne({ where: { id: existing.walletId } });
-      assertWalletOwnership(command.ownership, ownedWallet?.customerId);
+      assertWalletOwnership(command.ownership, ownedWallet?.customerId, ownedWallet?.ownerClass);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return existing.id;
     }
 
     const wallet = await this.lockWallet(manager, command.walletId);
-    assertWalletOwnership(command.ownership, wallet?.customerId);
+    assertWalletOwnership(command.ownership, wallet?.customerId, wallet?.ownerClass);
     if (!wallet) {
       throw new NotFoundException(`Wallet ${command.walletId} was not found`);
     }

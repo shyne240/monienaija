@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AgentModule } from '../agent/agent.module';
 import { BankingModule } from '../banking/banking.module';
 import { BankingWithdrawalExecutionAuthority } from '../banking/banking-withdrawal-execution-authority';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
@@ -7,6 +8,7 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { PartnerModule } from '../partner/partner.module';
 import { WithdrawalModule } from '../withdrawal/withdrawal.module';
+import { AgentBankTransferCommitmentController } from './agent-bank-transfer-commitment.controller';
 import { FinancialCommitmentController } from './financial-commitment.controller';
 import { FinancialCommitmentRepository } from './financial-commitment.repository';
 import { FinancialCommitmentService } from './financial-commitment.service';
@@ -15,6 +17,8 @@ import { WITHDRAWAL_EXECUTION_AUTHORITY } from './withdrawal-execution-authority
 @Module({
   imports: [
     BankingModule,
+    // Agent module publishes the A11 agent transaction authorization service the agent lane binds to.
+    AgentModule,
     CustomerAuthenticationModule,
     CustomerModule,
     LedgerModule,
@@ -22,7 +26,7 @@ import { WITHDRAWAL_EXECUTION_AUTHORITY } from './withdrawal-execution-authority
     PartnerModule,
     WithdrawalModule,
   ],
-  controllers: [FinancialCommitmentController],
+  controllers: [FinancialCommitmentController, AgentBankTransferCommitmentController],
   providers: [
     FinancialCommitmentService,
     FinancialCommitmentRepository,
