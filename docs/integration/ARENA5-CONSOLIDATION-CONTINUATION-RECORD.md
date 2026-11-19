@@ -182,21 +182,33 @@ normalised them; `format:check` now passes. No semantic change.
 
 ## 3. What was verified, and how
 
-Executed on the consolidated tree (branch tip `25f971fc` at the time of writing):
+Executed on the consolidated tree (branch tip at the time of writing):
 
 - `npx tsc --noEmit -p tsconfig.json` → exit 0.
-- Root unit suite → **3402/3402 tests in 291 suites** (the run inside the acceptance regeneration at
-  `c8bac743`; both previously failing suites fixed at `b66238be` and verified in isolation, 16/16,
-  plus `consolidated-matrix` and `migration-inventory` green at `25f971fc`).
+- Root unit suite → **3402/3402 tests in 291 suites** (the run inside the acceptance regeneration;
+  both previously failing suites fixed at `b66238be` and verified in isolation, plus
+  `consolidated-matrix`, `platform-journeys`, `migration-inventory` green at `25f971fc`).
 - `npm run lint` → clean (0 errors). `npm run format:check` → clean.
 - Migration inventory and chain assertions (`test/migration-inventory.spec.ts`, head pin, 164 identities,
   0606–0614 and 0800–0802 present, banking chain scoped ≤605) → pass.
 - Consolidated acceptance artefact → 0 failing rows; release gate NOT_READY (16 blockers, 4 conditions).
+- Real PostgreSQL 18.4 (embedded, loopback-only, disposable) with
+  `PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, unique `PG_TEST_RUN_ID` per suite, network guard loaded:
+  - `test/arena5-consolidation-migration-upgrade.integration.spec.ts` (new, Group 3) → **4/4 pass** —
+    filesystem union is exactly 152 common + 9 (3D 0606–0614) + 3 (2C 0800–0802) = **164** identities;
+    upgrade from a full **3D** chain applies exactly `0800, 0801, 0802` in order, then replay no-ops and
+    the applied ledger equals the filesystem identity-for-identity (timestamp+name, unique, head
+    `1785753600802 / ExtendBeneficiaryOwnership1785753600802`); upgrade from a full **2C** chain applies
+    exactly `0606…0614` in order with the same end-state assertions; fresh install from empty applies
+    164 exactly once.
+  - `test/migration-chain.integration.spec.ts` → **20/20 pass**, including the extended
+    "institution 0400 historical upgrade" sequence that now carries 0606–0614 between 0605 and 0800.
+  - `test/v1-release-01-production-readiness-migration-sync.integration.spec.ts` → **8/8 pass** —
+    readiness still fails closed (protected authority unavailable; empty/wrong/duplicate/missing
+    inventory each rejected) on a fully migrated combined chain.
 
-Not yet re-executed on the combined source (tracked for Group 3): the real-PostgreSQL suites —
-fresh install from empty, upgrade-from-3D, upgrade-from-2C, idempotent replay, exact applied inventory,
-head `…0802`. Those require the guarded disposable cluster (`PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`,
-a unique `PG_TEST_RUN_ID`, loopback-only `DB_HOST`) and are the next checkpoint.
+The two frozen predecessors remain the definition of their own applied chains: the suite splices the
+real configured migration lists rather than fabricating a third inventory. Nothing was renumbered.
 
 ## 4. Preservation statements
 
