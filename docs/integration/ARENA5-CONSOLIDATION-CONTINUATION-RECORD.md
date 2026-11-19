@@ -369,6 +369,51 @@ commits `ca81dcad` backend, `dd1b6314` mobile):
   operating wallet, including own-account policy), agent-facing banking surfaces, and any provider
   execution (D8 remains not authorized). Settlement never becomes automatic.
 
+## 5a. Group 7 — customer banking contract inventory (original numbering restored)
+
+Produced at `docs/integration/ARENA5-GROUP7-CUSTOMER-BANKING-CONTRACT-INVENTORY.md`. Summary of
+verified truth at `6a47a6d5`:
+
+- IMPLEMENTED: virtual-account view/provision (`customers/me/banking/virtual-account`), deposit
+  history, outbound commitment (`POST /customers/me/withdrawal-commitments`, `operationReference` on
+  response), transfer tracking (`GET /customers/me/banking/transfers/:operationReference`),
+  wallet-recipient beneficiaries CRUD, transaction PIN, settlement lifecycle internals, commercial
+  accounting/reconciliation internals.
+- PARTIAL/MISSING: customer-facing bank directory, account-name enquiry, self-service BANK_ACCOUNT
+  beneficiary creation (backend `createBeneficiary` exists, no HTTP self-service route),
+  server-authoritative principal/fee/VAT/total-debit confirmation for the bank flow, durable
+  interrupted-submission recovery for the bank flow (client-side form-lifetime key only), unified
+  bank-transfer history/receipt, customer notifications for outbound bank outcomes.
+- Binding decision honored: no own-account restriction anywhere; workforce-only `/api/v1/banks`
+  remains workforce-only; no fabricated provider references; RESERVED never rendered as settled.
+
+## 5b. Group 8 — agent banking contract inventory (original numbering restored)
+
+Produced at `docs/integration/ARENA5-GROUP8-AGENT-BANKING-CONTRACT-INVENTORY.md`. Summary of
+verified truth at `6a47a6d5`:
+
+- IMPLEMENTED: funding account view/provision/deposit history (`agents/me/banking/funding-account*`),
+  wallet-recipient beneficiaries, agent transaction PIN + A11 authorization + A10 class-of-service
+  capability evaluation, `AgentFinancialExecutionService` operating-wallet execution boundary, agent
+  pending-operation SecureStorage pattern.
+- MISSING: agent-initiated outbound bank transfer end-to-end (no service vocabulary code, no
+  commitment binding, no beneficiary self-service for BANK_ACCOUNT, no confirmation surface, no
+  mobile experience), agent-facing bank directory and account-name enquiry, bank-transfer
+  tracking/history/receipt, outcome notifications.
+- Hard constraint carried forward: agent uses the operating wallet only; no separate personal wallet;
+  no second financial engine; not a workforce treasury action; not restricted to own account.
+
+## 5c. Raw-boolean triage verdict (Group 6 deliverable, completed 2026-11-19)
+
+The `KYC_CUSTOMER_VERIFICATION_ENABLED` raw-string finding is **test-harness-local, not a production
+defect**: the validated boot path (`validateEnvironment` in `AppModule` and `main.ts`) parses the
+flag with `z.enum(['true','false']).transform(v => v === 'true')`, so `'false'` cannot be truthy in
+production and any other value fails at startup. The unvalidated unit-test `ConfigModule` was the
+only path that inverted the gate. A config-layer hardening now normalises raw booleans at the
+consumption site as well (`false/0/no → disabled`, `true/1/yes → enabled`, anything else throws),
+with regression coverage in `test/kyc-customer-verification.config.spec.ts` (unit suite 3403/3403).
+Environment validation was not weakened and `.env.example` was not edited.
+
 ## 6. Immediate next groups
 
 3. **Group 5–6** — P2P directions preservation on the consolidated runtime (run the 2C P2P parity
