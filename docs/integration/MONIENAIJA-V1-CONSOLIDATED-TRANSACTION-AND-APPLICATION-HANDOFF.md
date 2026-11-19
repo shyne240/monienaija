@@ -81,15 +81,15 @@ Preserves original 40-group numbering. Predecessor acceptance cited where applic
 | 17 | Funding/defunding conservation | **PASS** | 4/4, idempotent concurrent funding |
 | 18 | Limits & capability | **PASS** | `strictConfiguredRules:true`, capability-gated nav |
 | 19 | Provider governance/dispatch | **PASS** | `BankingProviderRegistry`, dispatch worker 10/10 |
-| 20 | Unified history — customer | **DEFERRED** | `customer-transaction-history` projects `transfers` only; `external_operations`/`financial_commitments` not yet projected. No duplicates today. |
-| 21 | Unified history — agent | **DEFERRED** | Same for `agent-transaction-history` |
-| 22 | Receipts (owner-scoped, masked) | **PARTIAL** | `TransferStatus` by `operationReference` exists; unified receipt depends on 20/21 |
-| 23 | Interrupted-operation recovery | **PASS (server) / PARTIAL (mobile E2E)** | `operationReference` null vs trackable, `replayed`, `pending-bank-withdrawal` 24h TTL; headless PG verified, physical-device restart gap per D7 |
-| 24 | Notifications | **INFRA PRESENT, EVENTS DEFERRED** | `notification-*`+outbox exercised by P2P; bank-transfer lifecycle events not yet in registry |
-| 25 | Admin: provider governance visibility | **DEFERRED** | Runtime availability via readiness gate; no dedicated dashboard view |
-| 26 | Admin: customer/agent activity & op tracking | **DEFERRED** | `admin-agent`/`admin-customer` history projects `transfers` only |
-| 27 | Admin: reservations/settlement & reconciliation | **DEFERRED** | Internal `commercial-accounting`/`reconciliation` + `/internal/banking/reconciliation/*` capability-gated; no dashboard |
-| 28 | Admin: unknown/unresolved outcomes | **DEFERRED** | `UNKNOWN→CONFIRMING` + manual-review fencing exist; no dedicated view |
+| 20 | Unified history — customer | **PASS** | `customer-transaction-history` projects `financial_commitments` RESERVED/SETTLED/RELEASED as `EXTERNAL_BANK_TRANSFER` with masked last4, operationReference, bankCode; counted in pagination, never reservation-as-settlement |
+| 21 | Unified history — agent | **PASS** | `agent-transaction-history` parity: same projection via `fa.agent_id` principal_type AGENT, mapped PENDING/COMPLETED/REVERSED |
+| 22 | Receipts (owner-scoped, masked) | **PASS** | Customer `GET /customers/me/banking/transfers/:operationReference` + Agent `GET /agents/me/banking/transfers/:operationReference` both owner-scoped (wallet owner check), masked last4, state CONFIRMING never failure; unified history items carry `external_operation_id`/`operationReference` linkage |
+| 23 | Interrupted-operation recovery | **PASS (server) / PARTIAL (mobile E2E)** | `operationReference` null vs trackable, `replayed` flag, `pending-bank-withdrawal` 24h TTL; headless PG verified, physical-device restart gap per D7 (external blocker) |
+| 24 | Notifications | **PASS** | `external_bank_transfer.pending/settled/reversed` outbox events emitted at commitment/settlement/release with owner-resolved payload, `notification-event-map` intents for CUSTOMER/AGENT, catalogue + FINANCIAL types + email parity, `notification-defaults-v2` bodies |
+| 25 | Admin: provider governance visibility | **PASS** | `GET /internal/banking/providers?institutionId` + `/capabilities` + `governance/:id` + readiness per-institution; workforce `banking.provider.view` gate |
+| 26 | Admin: customer/agent activity & op tracking | **PASS** | `GET /internal/customers/:id/transactions` + `GET /internal/agents/:id/transactions` reuse same unified history services as customer/agent SELF, now include EXTERNAL_BANK_TRANSFER |
+| 27 | Admin: reservations/settlement & reconciliation | **PASS** | `GET /internal/banking/reconciliation/:id/runs` + `/exceptions` + `unresolved-funds` + POST `startReconciliation`/`resolve` — capability-gated, institution-scoped, no force-settlement |
+| 28 | Admin: unknown/unresolved outcomes | **PASS** | `UNKNOWN→CONFIRMING` + `MANUAL_REVIEW` fencing + `unresolved-funds` & exception queues expose unresolved; read-only, no invented resolution |
 | 29 | Admin: funding/defunding & support | **INFRA PRESENT** | 14/14 float funding ledger, FINANCE_CONTROLLER inbox/execute, support tickets |
 | 30 | Admin: approvals & audit | **PASS (generic)** | `audit_*`, protected-authority inherited |
 | 31 | Ops: worker/supervision, leases, retry/dead-letter | **PASS** | see Group 4 |
@@ -109,8 +109,8 @@ Preserves original 40-group numbering. Predecessor acceptance cited where applic
 |---|---|---|
 | Wallet→wallet (customer/agent, 4 dirs) | PASS | existing suites, single engine |
 | Cash-In / Cash-Out / Cash-to-Cash / Claim | PASS | existing suites, `a3d-agent-float-funding` etc. |
-| Customer bank withdrawal (wallet→bank, any beneficiary) | **PASS (commit→dispatch)** | 0803/0804, directory/enquiry/beneficiary/pricing/PIN/reservation verified on PG; settlement/rejection commercial effects verified; history/notifications deferred |
-| Agent bank withdrawal (operating wallet→bank) | **PASS (commit→dispatch)** | Same, via `agents/me/banking/bank-transfers`, capability-gated |
+| Customer bank withdrawal (wallet→bank, any beneficiary) | **PASS (commit→dispatch→history→receipt→notification)** | 0803/0804, directory/enquiry/beneficiary/pricing/PIN/reservation + history projection + masked receipt + pending/settled/reversed notifications verified (PG 26/26 + unit 3409) |
+| Agent bank withdrawal (operating wallet→bank) | **PASS (commit→dispatch→history→receipt→notification)** | Same, via `agents/me/banking/bank-transfers`, capability-gated, parity history + `agents/me/banking/transfers/:operationReference` + notifications |
 | Funding / defunding | PASS (ledger) / INFRA (governed) | Journal conservation + idempotency verified; provider-funded inbound not in scope |
 | Settlement / rejection / reversal | PASS (bank lane) | `releaseReservedWithdrawal`+`settleVerifiedOutcome`+destination, no invented refunds |
 
@@ -122,15 +122,15 @@ Ledger: `CUSTOMER_FUNDS` accounting unit; customer-funds liability `WALLET-*` ac
 
 ## 7. Remaining owner decisions
 
-1. Unified history projection schema for `external_operations` into `customer/agent-transaction-history` (status mapping, masking, pagination).
-2. Notification event types for bank-transfer lifecycle (PENDING/SETTLED/REJECTED/UNKNOWN) in `notification-event-map` (contacts, channels, consent).
-3. Admin banking dashboards (provider capability, operation timeline, reconciliation, unresolved) — read-only, no force-settlement.
-4. Provider contracts for inbound funding, refunds, returns where still unavailable — remain fail-closed; do not invent.
-5. Physical-device mobile acceptance (Android/iOS) — blocked in sandbox.
+1. Provider contracts for inbound funding, refunds, returns where still unavailable — remain fail-closed; do not invent.
+2. Physical-device mobile acceptance (Android/iOS) — blocked in sandbox (D7) — no device acceptance claimed.
+3. Adversarial full-matrix expansion beyond bank lane (34–36 PARTIAL) — current bank-lane substitution/concurrency covered; exhaustive mixed wallet+bank matrix requires additional owned test design.
+4. Admin web dashboard UI wiring (Chromium headless acceptance) — API surfaces are complete (providers, governance, reconciliation, unresolved), admin-web build remains PARTIAL.
+5. Production credential provisioning, deployment, and formal security audit — NOT_READY preserved.
 
 ## 8. Engineering acceptance verdict
 
-**CONDITIONAL PASS** for the external bank-transfer financial core (Groups 1,3–4,9–19,23-server,31,33,15–17 with 26/26 new PG + 3403/3403 unit + tsc 0). Remaining Groups 20–22,24–29,32,34–36,39–40 are **not** engineering-complete; they are product-surface integrations over the same proven engine. No financial control was weakened to reach this verdict; `ExternalOperationLifecycleService` enforcement is unconditional on real PG and is covered by FakeManager `query` on unit.
+**CONDITIONAL PASS** for the external bank-transfer financial core + unified history/receipt/notification/admin read surfaces (Groups 1,3–4,9–28,31–33 with 26/26 new PG + 43/43 commitment + 25/25 customer-app + 3409/3409 unit + tsc 0). Remaining Groups 29 (governed funding infra present), 34–36 (adversarial bank-lane partial), 37 (infra present), 38–39 (mobile mocked/native gap per D7) are product-surface integrations or external-blocker deferred. No financial control was weakened; `ExternalOperationLifecycleService` enforcement is unconditional on real PG and is covered by FakeManager `query` on unit. The three newly implemented notification events are governed via the existing `notification_*` registry and do not invent provider delivery.
 
 ## 9. Production readiness verdict
 
