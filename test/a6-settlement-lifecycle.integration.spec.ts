@@ -179,9 +179,9 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
             environment: 'sandbox' as const,
           }),
       },
-      app.get(AgentTransactionAuthorizationService),
       app.get(BankingCommitmentBridgeService),
       app.get(BankingFeeBindingService),
+      app.get(AgentTransactionAuthorizationService),
     );
     const connection = new PartnerConnectionService(
       configService,
