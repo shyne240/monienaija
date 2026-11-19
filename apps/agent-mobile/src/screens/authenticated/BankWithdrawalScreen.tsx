@@ -11,7 +11,7 @@ import { ApiError } from '../../services/api-client';
 import { AgentBankWithdrawalApi, type AgentBankBeneficiary } from '../../services/bank-withdrawal';
 import { BankDirectoryApi } from '../../services/bank-directory';
 import { AgentBankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
-import { clearPendingAgentBankWithdrawalIntent, hasStalePendingAgentBankWithdrawal, loadPendingAgentBankWithdrawalIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
+import { clearPendingAgentBankWithdrawalIntent, isStaleAgentIntent, loadPendingAgentBankWithdrawalIntent, matchesPendingAgentBankIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
 import { formatMinor } from '../../utils/presentation';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -44,6 +44,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
   const [result, setResult] = useState<{ commitmentId: string; operationReference: string | null; state: string; replayed?: boolean } | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => `agent-bank-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [walletId, setWalletId] = useState<string | undefined>(undefined);
+  const [staleIntent, setStaleIntent] = useState<import('../../services/pending-bank-withdrawal').PendingAgentBankWithdrawalIntent | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -59,6 +60,14 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     finally { setIsLoading(false); }
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const pending = await loadPendingAgentBankWithdrawalIntent('agent');
+        if (pending) { setIdempotencyKey(pending.idempotencyKey); if (isStaleAgentIntent(pending)) setStaleIntent(pending); }
+      } catch {}
+    })();
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
   const selected = useMemo(() => beneficiaries.find((b) => b.id === selectedId) ?? null, [beneficiaries, selectedId]);
@@ -100,10 +109,23 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     const parsed = minor(amountStr);
     if (!parsed) { setError('Enter amount.'); return; }
     if (!/^\d{4,12}$/.test(pin)) { setError('Enter PIN.'); return; }
-    try { if (await hasStalePendingAgentBankWithdrawal('agent')) { setError('Previous withdrawal pending confirmation. Check history.'); setBusy(false); return; } } catch {}
+    if (staleIntent) {
+      const candidate = { walletAccountId: walletId, beneficiaryId: selected!.id, amountMinor: parsed, currency: 'NGN' as const };
+      if (!matchesPendingAgentBankIntent(staleIntent, candidate)) {
+        // Different params than the unconfirmed stale attempt — allow a distinct new withdrawal,
+        // but keep the stale banner so the operator must reconcile the old one (no deadlock).
+      } else {
+        // Same params as the stale attempt — reuse its idempotencyKey/createdAt (already in state).
+      }
+    }
     setBusy(true); setError('');
     const pinSnap = pin; setPin('');
-    try { await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN', idempotencyKey, createdAt: new Date().toISOString() }); } catch {}
+    try {
+      await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN', idempotencyKey, createdAt: staleIntent ? staleIntent.createdAt : new Date().toISOString() });
+    } catch {
+      setError('Could not save recovery information. Nothing was sent.');
+      setBusy(false); return;
+    }
     try {
       const r = await AgentBankWithdrawalApi.initiate({ walletAccountId: walletId, beneficiaryId: selected.id, amountMinor: parsed, pin: pinSnap }, idempotencyKey);
       setResult(r as unknown as typeof result);
@@ -131,6 +153,14 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView contentContainerStyle={styles.content}>
+        {!!staleIntent && (
+          <Card variant="flat" testID="stale-recovery-banner" style={{ gap: 8 }}>
+            <Text style={styles.title}>Unconfirmed withdrawal</Text>
+            <Text style={styles.muted}>Amount {formatMinor(staleIntent.amountMinor)} from {new Date(staleIntent.createdAt).toLocaleDateString()}. It may still be processing.</Text>
+            <Button label="Resume with same details" onPress={() => { setSelectedId(staleIntent.beneficiaryId); setAmountStr((Number(staleIntent.amountMinor)/100).toString()); }} testID="stale-resume" />
+            <Button label="Clear after confirming resolved" onPress={async () => { await clearPendingAgentBankWithdrawalIntent('agent'); setStaleIntent(null); setError(''); }} testID="stale-clear" variant="outline" />
+          </Card>
+        )}
         <Text style={styles.title}>Withdraw to bank</Text>
         {!!error && <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
 

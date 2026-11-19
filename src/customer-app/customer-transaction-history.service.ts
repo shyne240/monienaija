@@ -129,22 +129,14 @@ export class CustomerTransactionHistoryService {
       }
     }
     if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
-      try {
-        const rows: Array<{ count: string }> = await this.dataSource.query(
-          `SELECT count(*)::text as count FROM financial_commitments fc
+      // Consolidated application: financial_commitments is required. Missing table is a hard failure — never silently omit banking transactions.
+      const rows: Array<{ count: string }> = await this.dataSource.query(
+        `SELECT count(*)::text as count FROM financial_commitments fc
            JOIN financial_authorizations fa ON fa.id = fc.authorization_id
            WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'`,
-          [customerId],
-        );
-        total += Number(rows[0]?.count ?? '0');
-      } catch (e: unknown) {
-        const msg = (e as { message?: string })?.message ?? '';
-        const code = (e as { code?: string })?.code;
-        // Only missing-table rehearsals may degrade; any other failure must surface, not hide transactions
-        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
-          // older migration rehearsal without financial_commitments — degrade gracefully
-        } else throw e;
-      }
+        [customerId],
+      );
+      total += Number(rows[0]?.count ?? '0');
     }
     if (shouldInclude('CASH_IN') || shouldInclude('CASH_OUT')) {
       if (ledgerAccountIds.length > 0) {
@@ -203,13 +195,13 @@ export class CustomerTransactionHistoryService {
       allRows.push(...rows);
     }
     if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
-      try {
-        const rows: Array<any> = await this.dataSource.query(
-          `SELECT fc.id::text as id, 'EXTERNAL_BANK_TRANSFER'::text as type,
+      const rows: Array<any> = await this.dataSource.query(
+        `SELECT fc.id::text as id, 'EXTERNAL_BANK_TRANSFER'::text as type,
                   fc.state::text as status,
                   fc.amount_minor::text as amount_minor, fc.currency::text as currency,
                   fc.created_at, fc.updated_at as completed_at,
                   bo.operation_reference::text as reference,
+                  bo.provider_transaction_reference::text as provider_reference,
                   eo.target_mapping_reference::text as internal_target_reference,
                   COALESCE(cb.display_name, cb.nickname, bo.operation_reference, eo.target_mapping_reference)::text as narration,
                   fc.wallet_account_id::text as source_wallet_id,
@@ -217,6 +209,7 @@ export class CustomerTransactionHistoryService {
                   fa.institution::text as destination_institution,
                   eo.id::text as external_operation_id,
                   bo.operation_reference::text as banking_operation_reference,
+                  bo.provider_transaction_reference::text as banking_provider_reference,
                   fc.resolution_journal_id::text as resolution_journal_id,
                   fc.reservation_journal_id::text as reservation_journal_id,
                   substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
@@ -233,23 +226,12 @@ export class CustomerTransactionHistoryService {
            LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id = eo.id
            WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'
            ORDER BY fc.created_at DESC, fc.id DESC`,
-          [customerId],
-        );
-        for (const r of rows) {
-          // Map internal states to customer-visible statuses: RESERVED→PENDING (never settled yet),
-          // SETTLED→COMPLETED, RELEASED→REVERSED. Never represent reservation as settlement.
-          const rawStatus = String(r.status ?? 'PENDING');
-          const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
-          // Never expose internal target_mapping_reference as provider-issued operation reference;
-          // reference is banking_outbound_operations.operation_reference (trackable) or null if no dispatch
-          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
-        }
-      } catch (e: unknown) {
-        const msg = (e as { message?: string })?.message ?? '';
-        const code = (e as { code?: string })?.code;
-        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
-          // older rehearsal without financial_commitments — degrade gracefully
-        } else throw e;
+        [customerId],
+      );
+      for (const r of rows) {
+        const rawStatus = String(r.status ?? 'PENDING');
+        const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
+        allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
       }
     }
     if (shouldInclude('CASH_TO_CASH')) {
@@ -522,10 +504,16 @@ export class CustomerTransactionHistoryService {
           maskedAccountNumber: last4 ? `****${last4}` : null,
           displayName: r.narration ?? null,
           destinationInstitution: r.destination_institution ?? null,
+          // Platform banking operation tracking reference (deterministic OP..., immutable) — the receipt/history trackable id
           operationReference: r.reference ?? null,
+          platformReference: r.reference ?? null,
+          // Provider-issued reference (e.g. Monnify transaction ref), only after provider confirms — never fabricated
+          providerReference: r.provider_reference ?? r.banking_provider_reference ?? null,
+          // Internal routing reference (a6-target:...) — never presented as provider-issued
           internalReference: r.internal_target_reference ?? null,
           externalOperationId: r.external_operation_id ?? null,
           bankingOperationReference: r.banking_operation_reference ?? null,
+          bankingProviderReference: r.banking_provider_reference ?? r.provider_reference ?? null,
           principalMinor: r.principal_minor ?? r.amount_minor ?? '0',
           rawStatus: r._rawStatus ?? r.status,
         };

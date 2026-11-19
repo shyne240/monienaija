@@ -50,8 +50,7 @@ export async function loadPendingAgentBankWithdrawalIntent(agentId: string): Pro
     return null;
   }
   if (ageMs > MAX_PENDING_AGE_MS) {
-    // TTL expiry must not authorize new submission while prior unresolved — keep stale durable
-    return null;
+    return parsed;
   }
   return parsed;
 }
@@ -67,9 +66,28 @@ export async function hasStalePendingAgentBankWithdrawal(agentId: string): Promi
   } catch { return false; }
 }
 
+export async function loadStalePendingAgentBankWithdrawalIntent(agentId: string): Promise<PendingAgentBankWithdrawalIntent | null> {
+  const raw = await SecureStorage.getDurable(storageKeyFor(agentId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPendingIntent(parsed) || parsed.agentId !== agentId) return false as unknown as null;
+    const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
+    if (!Number.isFinite(ageMs) || ageMs < 0) return null;
+    if (ageMs > MAX_PENDING_AGE_MS) return parsed;
+    return null;
+  } catch { return null; }
+}
+
+export function isStaleAgentIntent(intent: PendingAgentBankWithdrawalIntent): boolean {
+  const ageMs = Date.now() - new Date(intent.createdAt).getTime();
+  return Number.isFinite(ageMs) && ageMs > MAX_PENDING_AGE_MS;
+}
+
 export function matchesPendingAgentBankIntent(intent: PendingAgentBankWithdrawalIntent, candidate: PendingAgentBankWithdrawalParams): boolean {
+  const walletOk = !intent.walletAccountId || !candidate.walletAccountId || intent.walletAccountId === candidate.walletAccountId;
   return (
-    (intent.walletAccountId ?? null) === (candidate.walletAccountId ?? null) &&
+    walletOk &&
     intent.beneficiaryId === candidate.beneficiaryId &&
     intent.amountMinor === candidate.amountMinor &&
     intent.currency === candidate.currency

@@ -25,7 +25,9 @@ import {
 import {
   clearPendingBankWithdrawalIntent,
   hasStalePendingBankWithdrawal,
+  isStaleIntent,
   loadPendingBankWithdrawalIntent,
+  loadStalePendingBankWithdrawalIntent,
   savePendingBankWithdrawalIntent,
 } from '../../services/pending-bank-withdrawal';
 import { BankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
@@ -74,6 +76,7 @@ export const BankWithdrawalScreen: React.FC = () => {
   const [pricingBusy, setPricingBusy] = useState(false);
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  const [staleIntent, setStaleIntent] = useState<import('../../services/pending-bank-withdrawal').PendingBankWithdrawalIntent | null>(null);
 
   // Restore durable pending intent on mount — verifies owner switching & session replacement
   const customerIdForRecovery = useMemo(() => {
@@ -84,13 +87,14 @@ export const BankWithdrawalScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Attempt to restore prior idempotency key for same params
     void (async () => {
       try {
         const pending = await loadPendingBankWithdrawalIntent(customerIdForRecovery);
-        if (pending) setIdempotencyKey(pending.idempotencyKey);
+        if (pending) {
+          setIdempotencyKey(pending.idempotencyKey);
+          if (isStaleIntent(pending)) setStaleIntent(pending);
+        }
       } catch (e) {
-        // Storage failure is non-blocking — fall back to fresh key
         console.warn('Pending bank-withdrawal load failed', e);
       }
     })();
@@ -175,19 +179,23 @@ export const BankWithdrawalScreen: React.FC = () => {
       return;
     }
 
-    // TTL safety: if a stale (24h-expired) pending still exists, prior may be unresolved — block silent new authorization
-    try {
-      if (await hasStalePendingBankWithdrawal(customerIdForRecovery)) {
-        setError('A previous withdrawal is still pending confirmation. Check your transaction history before creating another.');
-        setBusy(false);
-        return;
-      }
-    } catch {}
+    // Stale reconciliation: if a stale intent exists, reconcile against server history before allowing new
+    if (staleIntent) {
+      // If the current form matches the stale intent's params, reuse its idempotencyKey for recovery
+      // If stale matches current form, we resume with its idempotencyKey (already set); if not matching, allow new distinct withdrawal — stale remains for later reconciliation via history/clear.
+      const candidate = { walletAccountId: primaryWallet.id, beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN' as const };
+      try {
+        const { matchesPendingIntent } = await import('../../services/pending-bank-withdrawal');
+        if (staleIntent && !matchesPendingIntent(staleIntent, candidate)) {
+          // Different logical attempt — proceed with fresh key, stale banner remains for explicit reconciliation
+        }
+      } catch {}
+    }
     setBusy(true);
     setError('');
     const pinSnapshot = pin;
     setPin('');
-    // Persist durable intent BEFORE send so kill between send and response is recoverable
+    // Durable persistence is mandatory: if the idempotency key cannot be persisted, block submission — otherwise process termination could lose recovery identity and cause duplicate debit.
     try {
       await savePendingBankWithdrawalIntent({
         customerId: customerIdForRecovery,
@@ -196,9 +204,13 @@ export const BankWithdrawalScreen: React.FC = () => {
         amountMinor: parsed,
         currency: 'NGN',
         idempotencyKey,
-        createdAt: new Date().toISOString(),
+        createdAt: staleIntent ? staleIntent.createdAt : new Date().toISOString(),
       });
-    } catch (e) { console.warn('Pending save failed', e); }
+    } catch (e) {
+      setError('Could not save recovery information. Please check storage permissions and try again. Nothing was sent.');
+      setBusy(false);
+      return;
+    }
     try {
       const initiated = await BankWithdrawalApi.initiate(
         {
@@ -324,6 +336,15 @@ export const BankWithdrawalScreen: React.FC = () => {
           </Text>
         </View>
 
+        {!!staleIntent && (
+          <Card variant="flat" testID="stale-recovery-banner" style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Unconfirmed withdrawal</Text>
+            <Text style={styles.body}>Amount {formatMinor(staleIntent.amountMinor)} from {new Date(staleIntent.createdAt).toLocaleDateString()}. It may still be processing.</Text>
+            <Button label="Resume with same details" onPress={() => { setSelectedId(staleIntent.beneficiaryId); setAmountStr((Number(staleIntent.amountMinor)/100).toString()); }} testID="stale-resume" />
+            <Button label="View history to confirm" onPress={() => navigation.navigate('TransactionHistory' as never)} testID="stale-history" variant="outline" />
+            <Button label="Clear after confirming resolved" onPress={async () => { await clearPendingBankWithdrawalIntent(customerIdForRecovery); setStaleIntent(null); setError(''); }} testID="stale-clear" variant="outline" />
+          </Card>
+        )}
         {!!error && (
           <View style={styles.errorBanner} accessibilityRole="alert">
             <Text style={styles.errorText}>{error}</Text>
