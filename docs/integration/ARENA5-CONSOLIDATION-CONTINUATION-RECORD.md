@@ -318,7 +318,7 @@ commits `ca81dcad` backend, `dd1b6314` mobile):
   PASS; release gate remains NOT_READY (16 blockers, 4 conditions); UNAVAILABLE rows unchanged.
 - **Local test-environment findings (this sandbox, `.env` is git-ignored, untracked).** Suites that
   boot the real `AppModule` require the documented `node scripts/prepare-pg-test-env.js
-  --create-if-missing` output; without it they fail closed with "Workforce authentication
+--create-if-missing` output; without it they fail closed with "Workforce authentication
   disabled" (401 at the workforce guard). The generated `.env` additionally required two local
   fixes to boot at all here: `HTTP_CORS_ORIGINS_JSON=[]` (shipped by `.env.example`) is rejected by
   the CORS allowlist validator ("expected a non-empty JSON array of origins") — unset instead; and
@@ -330,7 +330,6 @@ commits `ca81dcad` backend, `dd1b6314` mobile):
 - **Not done / not claimed:** the AGENT half of Group 7 (agent-initiated outbound against the
   operating wallet, including own-account policy), agent-facing banking surfaces, and any provider
   execution (D8 remains not authorized). Settlement never becomes automatic.
-
 
 ## 6. Immediate next groups
 
