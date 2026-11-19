@@ -24,6 +24,16 @@ jest.mock('../../src/services/api-client', () => ({ ApiClient: { get: jest.fn().
 
 async function renderScreen(){ const u=render(<AgentBankWithdrawalScreen />); await act(async()=>{}); return u; }
 
+function mockAgentGets(serverTransactions?: { items: Array<{ type: string; status: string }> }) {
+  const { ApiClient } = require('../src/services/api-client');
+  const history = serverTransactions ?? { items: [] };
+  ApiClient.get.mockImplementation((url: string) => {
+    if (url.includes('/agents/me/wallets')) return Promise.resolve([{ id: 'wallet-1' }]);
+    if (url.startsWith('/agents/me/transactions')) return Promise.resolve(history);
+    return Promise.resolve([]);
+  });
+}
+
 describe('Agent BankWithdrawal recovery', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -32,6 +42,7 @@ describe('Agent BankWithdrawal recovery', () => {
     const { AgentBankWithdrawalApi } = require('../src/services/bank-withdrawal');
     if (AgentBankWithdrawalApi.initiate?.mockReset) AgentBankWithdrawalApi.initiate.mockReset();
     if (AgentBankWithdrawalApi.initiate?.mockResolvedValue) AgentBankWithdrawalApi.initiate.mockResolvedValue({ commitmentId: 'c1', operationReference: 'OP1', state: 'RESERVED' });
+    mockAgentGets({ items: [] });
   });
   test('if durable persistence fails, block submission', async () => {
     const spy=jest.spyOn(SecureStorage,'setDurable').mockRejectedValueOnce(new Error('disk full'));
@@ -73,5 +84,31 @@ describe('Agent BankWithdrawal recovery', () => {
     await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: 'b1', amountMinor: '10000', currency: 'NGN', idempotencyKey: 'kA', createdAt: new Date().toISOString() });
     expect(await loadPendingAgentBankWithdrawalIntent('agent')).not.toBeNull();
     expect(await loadPendingAgentBankWithdrawalIntent('other-agent')).toBeNull();
+  });
+  test('Clear blocked when server shows unresolved', async () => {
+    const staleAt=new Date(Date.now()-25*60*60*1000).toISOString();
+    await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: 'b1', amountMinor: '10000', currency: 'NGN', idempotencyKey: 'k-clear-block', createdAt: staleAt });
+    mockAgentGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    const { getByTestId, getByText, queryByTestId } = await renderScreen();
+    await waitFor(()=> expect(getByTestId('stale-recovery-banner')).toBeTruthy());
+    fireEvent.press(getByTestId('stale-clear'));
+    await waitFor(()=> expect(getByText(/still pending confirmation on the server/i)).toBeTruthy());
+    expect(queryByTestId('stale-recovery-banner')).toBeTruthy();
+    expect(await loadPendingAgentBankWithdrawalIntent('agent')).not.toBeNull();
+  });
+  test('Different withdrawal blocked when prior unresolved', async () => {
+    const staleAt=new Date(Date.now()-25*60*60*1000).toISOString();
+    await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: 'b1', amountMinor: '10000', currency: 'NGN', idempotencyKey: 'k-block-new', createdAt: staleAt });
+    mockAgentGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    const { getByTestId, getByText } = await renderScreen();
+    await waitFor(()=> expect(getByTestId('stale-recovery-banner')).toBeTruthy());
+    fireEvent.press(getByTestId('beneficiary-b1'));
+    fireEvent.changeText(getByTestId('bank-amount'), '999');
+    fireEvent.changeText(getByTestId('bank-pin'), '1234');
+    const { AgentBankWithdrawalApi } = require('../src/services/bank-withdrawal');
+    AgentBankWithdrawalApi.initiate.mockResolvedValue({ commitmentId: 'c2', operationReference: 'OP2', state: 'RESERVED' });
+    fireEvent.press(getByTestId('bank-submit'));
+    await waitFor(()=> expect(getByText(/previous withdrawal is still pending/i)).toBeTruthy());
+    expect(AgentBankWithdrawalApi.initiate).not.toHaveBeenCalled();
   });
 });

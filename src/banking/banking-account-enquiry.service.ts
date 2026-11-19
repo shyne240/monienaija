@@ -47,7 +47,8 @@ export class BankingAccountEnquiryService {
     const bank = await this.directory.findOneByCode(bankCode);
     if (!bank) throw new NotFoundException('Bank not found in the authoritative directory');
     if (bank.status !== 'ACTIVE') throw new BadRequestException('The requested bank is not ACTIVE');
-    if (!bank.nipSupported) throw new BadRequestException('The requested bank is not NIP-supported');
+    if (!bank.nipSupported)
+      throw new BadRequestException('The requested bank is not NIP-supported');
 
     // Institution is derived from the wallet when supplied, otherwise from any ACTIVE wallet of the customer.
     // This keeps the institution check from being bypassable via an absent wallet.
@@ -76,7 +77,8 @@ export class BankingAccountEnquiryService {
     const bank = await this.directory.findOneByCode(bankCode);
     if (!bank) throw new NotFoundException('Bank not found in the authoritative directory');
     if (bank.status !== 'ACTIVE') throw new BadRequestException('The requested bank is not ACTIVE');
-    if (!bank.nipSupported) throw new BadRequestException('The requested bank is not NIP-supported');
+    if (!bank.nipSupported)
+      throw new BadRequestException('The requested bank is not NIP-supported');
 
     const institutionId = await this.resolveInstitutionForAgent(agentId, walletId);
     const correlationId = randomUUID();
@@ -102,7 +104,12 @@ export class BankingAccountEnquiryService {
     // that advertises ACCOUNT_NAME_ENQUIRY and is usable per readiness.
     for (const provider of this.registry.list()) {
       if (!provider.descriptor.capabilities.ACCOUNT_NAME_ENQUIRY) continue;
-      const usable = await this.readiness.capabilityUsable(institutionId, provider.descriptor.key, provider.descriptor.environment, 'ACCOUNT_NAME_ENQUIRY');
+      const usable = await this.readiness.capabilityUsable(
+        institutionId,
+        provider.descriptor.key,
+        provider.descriptor.environment,
+        'ACCOUNT_NAME_ENQUIRY',
+      );
       if (!usable.usable) continue;
       const adapter = provider;
       if (!adapter.enquireAccountName) continue;
@@ -117,7 +124,9 @@ export class BankingAccountEnquiryService {
         // Provider rejected in a way that maps to NOT_FOUND is already normalized by the adapter.
         // Any other error (transport, auth, timeout) is UNAVAILABLE — we never treat an outage as
         // \"this account does not exist\".
-        this.logger.warn(`Account enquiry provider error ${result.error.code}: ${result.error.detail}`);
+        this.logger.warn(
+          `Account enquiry provider error ${result.error.code}: ${result.error.detail}`,
+        );
         return {
           outcome: 'UNAVAILABLE',
           providerBankCode: bankCode,
@@ -146,23 +155,33 @@ export class BankingAccountEnquiryService {
   }
 
   private normalizeBankCode(raw: string): string {
-    if (typeof raw !== 'string' || !raw.trim()) throw new BadRequestException('bankCode is required');
+    if (typeof raw !== 'string' || !raw.trim())
+      throw new BadRequestException('bankCode is required');
     const v = raw.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,20}$/.test(v)) throw new BadRequestException('bankCode is invalid');
     return v;
   }
 
   private normalizeAccountNumber(raw: string): string {
-    if (typeof raw !== 'string' || !raw.trim()) throw new BadRequestException('accountNumber is required');
+    if (typeof raw !== 'string' || !raw.trim())
+      throw new BadRequestException('accountNumber is required');
     const v = raw.trim();
-    if (!/^\d{10}$/.test(v)) throw new BadRequestException('accountNumber must be exactly 10 digits');
+    if (!/^\d{10}$/.test(v))
+      throw new BadRequestException('accountNumber must be exactly 10 digits');
     return v;
   }
 
-  private async resolveInstitutionForCustomer(customerId: string, walletId?: string): Promise<string | null> {
+  private async resolveInstitutionForCustomer(
+    customerId: string,
+    walletId?: string,
+  ): Promise<string | null> {
     if (walletId) {
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(walletId)) throw new BadRequestException('walletId must be a UUID');
-      const rows = await this.dataSource.query<Array<{ institution_id: string | null }>>(`SELECT institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' LIMIT 1`, [walletId.toLowerCase(), customerId]);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(walletId))
+        throw new BadRequestException('walletId must be a UUID');
+      const rows = await this.dataSource.query<Array<{ institution_id: string | null }>>(
+        `SELECT institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' LIMIT 1`,
+        [walletId.toLowerCase(), customerId],
+      );
       if (rows[0]?.institution_id) return rows[0].institution_id;
     }
     // Fallback: any ACTIVE customer wallet with institution
@@ -173,10 +192,17 @@ export class BankingAccountEnquiryService {
     return fallback[0]?.institution_id ?? null;
   }
 
-  private async resolveInstitutionForAgent(agentId: string, walletId?: string): Promise<string | null> {
+  private async resolveInstitutionForAgent(
+    agentId: string,
+    walletId?: string,
+  ): Promise<string | null> {
     if (walletId) {
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(walletId)) throw new BadRequestException('walletId must be a UUID');
-      const rows = await this.dataSource.query<Array<{ institution_id: string | null }>>(`SELECT institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2::text AND owner_class='AGENT' LIMIT 1`, [walletId.toLowerCase(), agentId]);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(walletId))
+        throw new BadRequestException('walletId must be a UUID');
+      const rows = await this.dataSource.query<Array<{ institution_id: string | null }>>(
+        `SELECT institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2::text AND owner_class='AGENT' LIMIT 1`,
+        [walletId.toLowerCase(), agentId],
+      );
       if (rows[0]?.institution_id) return rows[0].institution_id;
     }
     const fallback = await this.dataSource.query<Array<{ institution_id: string }>>(

@@ -353,8 +353,20 @@ export class AgentTransactionHistoryService {
       );
       for (const r of rows) {
         const rawStatus = String(r.status ?? 'PENDING');
-        const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
-        allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
+        const mapped =
+          rawStatus === 'RESERVED'
+            ? 'PENDING'
+            : rawStatus === 'SETTLED'
+              ? 'COMPLETED'
+              : rawStatus === 'RELEASED'
+                ? 'REVERSED'
+                : rawStatus;
+        allRows.push({
+          ...r,
+          status: mapped,
+          _rawStatus: rawStatus,
+          reference: r.reference ?? null,
+        });
       }
     }
 
@@ -533,14 +545,14 @@ export class AgentTransactionHistoryService {
               : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         ...(r.type === 'WALLET_TRANSFER' || r.type === 'EXTERNAL_BANK_TRANSFER'
           ? {
-              vatMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
-                ? String(r.vat_minor ?? '0')
-                : direction === 'DEBIT' && r.status === 'COMPLETED'
+              vatMinor:
+                r.type === 'EXTERNAL_BANK_TRANSFER'
                   ? String(r.vat_minor ?? '0')
-                  : '0',
-              totalDebitMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
-                ? (r.total_debit_minor ?? null)
-                : undefined,
+                  : direction === 'DEBIT' && r.status === 'COMPLETED'
+                    ? String(r.vat_minor ?? '0')
+                    : '0',
+              totalDebitMinor:
+                r.type === 'EXTERNAL_BANK_TRANSFER' ? (r.total_debit_minor ?? null) : undefined,
             }
           : {}),
         counterparty,

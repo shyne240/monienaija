@@ -48,8 +48,7 @@ export class WalletFinancialBoundaryService {
       "SELECT id FROM agents WHERE id=$1::uuid AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
       [agentId],
     );
-    if (active.length !== 1)
-      throw new ConflictException('Agent wallet owner is not active');
+    if (active.length !== 1) throw new ConflictException('Agent wallet owner is not active');
   }
 
   /** Lock the underlying obligation and bind every financial field before create or submission. */

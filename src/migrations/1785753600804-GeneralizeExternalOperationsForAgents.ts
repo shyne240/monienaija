@@ -20,8 +20,12 @@ export class GeneralizeExternalOperationsForAgents1785753600804 implements Migra
   name = 'GeneralizeExternalOperationsForAgents1785753600804';
 
   async up(q: QueryRunner): Promise<void> {
-    await q.query(`ALTER TABLE external_operations DROP CONSTRAINT IF EXISTS fk_external_operations_customer`);
-    await q.query(`ALTER TABLE external_operations DROP CONSTRAINT IF EXISTS fk_external_operations_customer_id`);
+    await q.query(
+      `ALTER TABLE external_operations DROP CONSTRAINT IF EXISTS fk_external_operations_customer`,
+    );
+    await q.query(
+      `ALTER TABLE external_operations DROP CONSTRAINT IF EXISTS fk_external_operations_customer_id`,
+    );
     // Defensive: the constraint name in older dumps is exactly this; if it was already dropped
     // the IF EXISTS is a no-op.
     await q.query(`
@@ -35,7 +39,9 @@ export class GeneralizeExternalOperationsForAgents1785753600804 implements Migra
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query(`DROP TRIGGER IF EXISTS external_operations_validate_owner ON external_operations`);
+    await q.query(
+      `DROP TRIGGER IF EXISTS external_operations_validate_owner ON external_operations`,
+    );
     await q.query(
       `CREATE TRIGGER external_operations_validate_owner BEFORE INSERT OR UPDATE ON external_operations FOR EACH ROW EXECUTE FUNCTION validate_external_operation_owner()`,
     );

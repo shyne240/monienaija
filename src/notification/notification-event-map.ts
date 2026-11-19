@@ -303,11 +303,31 @@ export function mapEventToIntents(
     const customerId = payload.customerId as string | undefined;
     const agentId = payload.agentId as string | undefined;
     const intents: NotificationIntent[] = [];
-    if (customerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) {
-      intents.push({ recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS', templateKey: eventType, correlationId, causationId });
+    if (
+      customerId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)
+    ) {
+      intents.push({
+        recipientType: 'CUSTOMER',
+        recipientId: customerId,
+        channel: 'SMS',
+        templateKey: eventType,
+        correlationId,
+        causationId,
+      });
     }
-    if (agentId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId)) {
-      intents.push({ recipientType: 'AGENT', recipientId: agentId, channel: 'SMS', templateKey: eventType, correlationId, causationId });
+    if (
+      agentId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId)
+    ) {
+      intents.push({
+        recipientType: 'AGENT',
+        recipientId: agentId,
+        channel: 'SMS',
+        templateKey: eventType,
+        correlationId,
+        causationId,
+      });
     }
     return intents;
   }

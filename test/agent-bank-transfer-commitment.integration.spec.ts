@@ -24,16 +24,27 @@ import { AgentAuthenticationService } from '../src/agent-authentication/agent-au
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerBeneficiaryService } from '../src/customer-beneficiary/customer-beneficiary.service';
-import { CustomerBeneficiaryType, CustomerBeneficiaryStatus } from '../src/customer-beneficiary/customer-beneficiary.enums';
+import {
+  CustomerBeneficiaryType,
+  CustomerBeneficiaryStatus,
+} from '../src/customer-beneficiary/customer-beneficiary.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import { WITHDRAWAL_EXECUTION_AUTHORITY } from '../src/financial-commitment/withdrawal-execution-authority';
 import { ExternalOperationLifecycleService } from '../src/partner/external-operation-lifecycle.service';
 import { ExternalSettlementService } from '../src/partner/external-settlement.service';
 import { ExternalOperationService } from '../src/partner/external-operation.service';
-import { ExternalOperationReferenceSource, ExternalOperationReferenceType, ExternalOperationResourceType } from '../src/partner/external-operation.enums';
+import {
+  ExternalOperationReferenceSource,
+  ExternalOperationReferenceType,
+  ExternalOperationResourceType,
+} from '../src/partner/external-operation.enums';
 import { ExternalOperationLifecycleState } from '../src/partner/external-operation-lifecycle.enums';
 import { ExternalSettlement } from '../src/partner/external-settlement.entity';
 import { ExternalSuspenseEntry } from '../src/partner/external-suspense-entry.entity';
@@ -64,7 +75,8 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   let ledger: LedgerService;
   let agentFunding: LedgerService extends never ? never : never;
   let withdrawalAuthority: 'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE' = 'AUTHORIZED';
-  let verificationState: 'VERIFIED_SETTLED' | 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' = 'VERIFIED_SETTLED';
+  let verificationState: 'VERIFIED_SETTLED' | 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
+    'VERIFIED_SETTLED';
   let service: FinancialCommitmentService;
   let agentClassService: AgentClassService;
   let agentAppService: AgentApplicationService;
@@ -72,7 +84,11 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   let pinService: AgentAuthenticationService;
   let walletService: WalletService;
   let beneficiaryService: CustomerBeneficiaryService;
-  const requestContext = { requestId: 'agent-bank-test', correlationId: 'agent-bank-test', traceId: 'agent-bank-test' };
+  const requestContext = {
+    requestId: 'agent-bank-test',
+    correlationId: 'agent-bank-test',
+    traceId: 'agent-bank-test',
+  };
   let settlement: ExternalSettlementService;
   let agentSessions = new Map<string, string>();
 
@@ -98,7 +114,9 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     ledger = app.get(LedgerService);
@@ -117,7 +135,9 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
           providerStatus: 'controlled-test',
           providerReferenceHash: createHash('sha256')
             .update(
-              operation.providerReferences.find((r) => r.source === ExternalOperationReferenceSource.STATUS_QUERY)?.referenceValue ?? correlationId,
+              operation.providerReferences.find(
+                (r) => r.source === ExternalOperationReferenceSource.STATUS_QUERY,
+              )?.referenceValue ?? correlationId,
             )
             .digest('hex'),
           observedAt: new Date().toISOString(),
@@ -152,12 +172,19 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       allowNegativeBalance: false,
     });
 
-    await dataSource.query(`INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'AGENTBANK','Agent Bank Test','AG Bank',true,'ACTIVE') ON CONFLICT DO NOTHING`, [randomUUID()]);
+    await dataSource.query(
+      `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'AGENTBANK','Agent Bank Test','AG Bank',true,'ACTIVE') ON CONFLICT DO NOTHING`,
+      [randomUUID()],
+    );
   }, 120000);
 
   afterAll(async () => {
-    try { if (app) await app.close(); } catch {}
-    try { if (dataSource) await destroyIntegrationDataSource(dataSource); } catch {}
+    try {
+      if (app) await app.close();
+    } catch {}
+    try {
+      if (dataSource) await destroyIntegrationDataSource(dataSource);
+    } catch {}
   });
 
   beforeEach(() => {
@@ -182,7 +209,10 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       actor: 'applicant-agb',
     });
     await agentAppService.submit(appEntity.id, 'applicant-agb');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -207,12 +237,15 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
     await fixture.affiliateAgent(agent.id, institutionId);
-    const walletLedger: Array<{ ledger_account_id: string; ledger_account_code: string }> = await dataSource.query(
-      `SELECT ledger_account_id, (SELECT code FROM ledger_accounts WHERE id = wallet_accounts.ledger_account_id) AS ledger_account_code FROM wallet_accounts WHERE id=$1 LIMIT 1`,
-      [wallet.id],
-    );
+    const walletLedger: Array<{ ledger_account_id: string; ledger_account_code: string }> =
+      await dataSource.query(
+        `SELECT ledger_account_id, (SELECT code FROM ledger_accounts WHERE id = wallet_accounts.ledger_account_id) AS ledger_account_code FROM wallet_accounts WHERE id=$1 LIMIT 1`,
+        [wallet.id],
+      );
     const wlId = walletLedger[0]!.ledger_account_id;
-    const assetRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const assetRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     await ledger.postJournal({
       idempotencyKey: `fund-agb-${randomUUID()}`,
       currency: 'NGN',
@@ -223,8 +256,14 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       ],
     });
     // Agent auth session
-    const [credential] = await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`, [agent.id, hashPin('login-password')]);
-    const [session] = await dataSource.query(`INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`, [agent.id, credential.id, randomBytes(32).toString('hex')]);
+    const [credential] = await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+      [agent.id, hashPin('login-password')],
+    );
+    const [session] = await dataSource.query(
+      `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
+      [agent.id, credential.id, randomBytes(32).toString('hex')],
+    );
     agentSessions.set(agent.id, session.id);
     return { cls, agent, wallet, appEntity };
   }
@@ -252,21 +291,36 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
        VALUES ($1,$2,'BANK_ACCOUNT',$3,$4,'1234567890','1234567890','Test Account','AGENTBANK','My Bank','ACTIVE',true,1,clock_timestamp(),clock_timestamp())`,
       [benId, agentId, 'Test Account', ref],
     );
-    await dataSource.query(`INSERT INTO beneficiary_ownerships (id, beneficiary_id, agent_id, version) VALUES ($1,$2,$3,1)`, [randomUUID(), benId, agentId]);
+    await dataSource.query(
+      `INSERT INTO beneficiary_ownerships (id, beneficiary_id, agent_id, version) VALUES ($1,$2,$3,1)`,
+      [randomUUID(), benId, agentId],
+    );
     return benId;
   }
 
   async function configureAgentLimit(agentId: string, agentClassId?: string) {
     const profile = `AGB_${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
-    await dataSource.query(`INSERT INTO limit_profiles(code,name,kind,status,enabled,configuration_status,created_by) VALUES($1,'Agent bank test','AGENT','ACTIVE',true,'CONFIGURED','fixture')`, [profile]);
+    await dataSource.query(
+      `INSERT INTO limit_profiles(code,name,kind,status,enabled,configuration_status,created_by) VALUES($1,'Agent bank test','AGENT','ACTIVE',true,'CONFIGURED','fixture')`,
+      [profile],
+    );
     const subjectType = agentClassId ? 'AGENT_CLASS' : 'AGENT';
     const subjectId = agentClassId ?? agentId;
-    await dataSource.query(`INSERT INTO limit_assignments(id,limit_profile_code,subject_type,subject_id,effective_from,is_active,created_by) VALUES($1,$2,$3,$4,clock_timestamp()-interval '1 day',true,'fixture')`, [randomUUID(), profile, subjectType, subjectId]);
-    await dataSource.query(`INSERT INTO limit_rules(id,limit_profile_code,product,direction,currency,dimension,limit_value_minor,effective_from,is_active,created_by) VALUES($1,$2,'EXTERNAL_BANK_TRANSFER','OUTGOING','NGN','DAILY_AMOUNT',10000,clock_timestamp()-interval '1 day',true,'fixture')`, [randomUUID(), profile]);
+    await dataSource.query(
+      `INSERT INTO limit_assignments(id,limit_profile_code,subject_type,subject_id,effective_from,is_active,created_by) VALUES($1,$2,$3,$4,clock_timestamp()-interval '1 day',true,'fixture')`,
+      [randomUUID(), profile, subjectType, subjectId],
+    );
+    await dataSource.query(
+      `INSERT INTO limit_rules(id,limit_profile_code,product,direction,currency,dimension,limit_value_minor,effective_from,is_active,created_by) VALUES($1,$2,'EXTERNAL_BANK_TRANSFER','OUTGOING','NGN','DAILY_AMOUNT',10000,clock_timestamp()-interval '1 day',true,'fixture')`,
+      [randomUUID(), profile],
+    );
   }
 
   it('authorizes agent-self with operating wallet, class-of-service and PIN', async () => {
-    const { agent, wallet } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER, AgentService.CASH_OUT], '1234');
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.EXTERNAL_BANK_TRANSFER, AgentService.CASH_OUT],
+      '1234',
+    );
     const beneficiaryId = await createAgentBeneficiary(agent.id);
     await configureAgentLimit(agent.id);
     const result = await service.initiateForAgent({
@@ -282,13 +336,22 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     expect(result.commitment.state).toBe('RESERVED');
     expect(result.replayed).toBe(false);
     // Reservation journal exists
-    const journals: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_journals WHERE id=$1`, [result.commitment.reservation_journal_id]);
+    const journals: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_journals WHERE id=$1`,
+      [result.commitment.reservation_journal_id],
+    );
     expect(journals.length).toBe(1);
   });
 
   it('rejects foreign agent attempting to use another agent beneficiary', async () => {
-    const { agent: owner } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
-    const { agent: attacker } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
+    const { agent: owner } = await createActiveAgentWithPin(
+      [AgentService.EXTERNAL_BANK_TRANSFER],
+      '1234',
+    );
+    const { agent: attacker } = await createActiveAgentWithPin(
+      [AgentService.EXTERNAL_BANK_TRANSFER],
+      '1234',
+    );
     const benId = await createAgentBeneficiary(owner.id);
     await configureAgentLimit(attacker.id);
     await expect(
@@ -306,11 +369,17 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   });
 
   it('rejects stale agent session (expired)', async () => {
-    const { agent, wallet } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.EXTERNAL_BANK_TRANSFER],
+      '1234',
+    );
     const benId = await createAgentBeneficiary(agent.id);
     await configureAgentLimit(agent.id);
     // Expire session
-    await dataSource.query(`UPDATE agent_authentication_sessions SET expires_at=clock_timestamp()-interval '1 hour' WHERE id=$1`, [agentSessions.get(agent.id)]);
+    await dataSource.query(
+      `UPDATE agent_authentication_sessions SET expires_at=clock_timestamp()-interval '1 hour' WHERE id=$1`,
+      [agentSessions.get(agent.id)],
+    );
     await expect(
       service.initiateForAgent({
         agentId: agent.id,
@@ -452,7 +521,12 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     const opId = initiated.commitment.external_operation_id;
     const opLifecycle = app.get(ExternalOperationLifecycleService);
     // SUBMITTING is the only valid transition from CREATED (checks agent wallet)
-    const attempt = await opLifecycle.beginAttempt(opId, `attempt-${randomUUID()}`, requestContext, 1);
+    const attempt = await opLifecycle.beginAttempt(
+      opId,
+      `attempt-${randomUUID()}`,
+      requestContext,
+      1,
+    );
     expect(attempt.lifecycleState).toBe(ExternalOperationLifecycleState.SUBMITTING);
     const provRef = `prov-${randomUUID()}`;
     await app.get(ExternalOperationService).recordProviderReference({
@@ -487,7 +561,10 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       requestContext,
     });
     expect(settleResult).toBeDefined();
-    const dest: Array<{ target_reference: string }> = await dataSource.query(`SELECT target_reference FROM financial_commitment_destinations WHERE commitment_id=$1`, [initiated.commitment.id]);
+    const dest: Array<{ target_reference: string }> = await dataSource.query(
+      `SELECT target_reference FROM financial_commitment_destinations WHERE commitment_id=$1`,
+      [initiated.commitment.id],
+    );
     expect(dest.length).toBe(1);
     expect(dest[0]!.target_reference).toMatch(/^a6-target:/);
   });
@@ -512,7 +589,21 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     await expect(
       dataSource.query(
         `INSERT INTO financial_authorizations (id, customer_id, agent_id, session_id, pin_audit_id, wallet_account_id, ledger_account_id, amount_minor, currency, request_hash, principal_type, principal_id, institution) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [randomUUID(), null, agent.id, randomUUID(), randomUUID(), randomUUID(), randomUUID(), '100', 'NGN', 'a'.repeat(64), 'AGENT', agent.id, null],
+        [
+          randomUUID(),
+          null,
+          agent.id,
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          '100',
+          'NGN',
+          'a'.repeat(64),
+          'AGENT',
+          agent.id,
+          null,
+        ],
       ),
     ).rejects.toThrow(/Financial authorization evidence is not bound/);
   });

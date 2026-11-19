@@ -2,7 +2,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-const VALID_TYPES = new Set(['WALLET_TRANSFER', 'CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'FUNDING', 'EXTERNAL_BANK_TRANSFER']);
+const VALID_TYPES = new Set([
+  'WALLET_TRANSFER',
+  'CASH_IN',
+  'CASH_OUT',
+  'CASH_TO_CASH',
+  'FUNDING',
+  'EXTERNAL_BANK_TRANSFER',
+]);
 
 export interface UnifiedHistoryQuery {
   customerId: string;
@@ -230,8 +237,20 @@ export class CustomerTransactionHistoryService {
       );
       for (const r of rows) {
         const rawStatus = String(r.status ?? 'PENDING');
-        const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
-        allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
+        const mapped =
+          rawStatus === 'RESERVED'
+            ? 'PENDING'
+            : rawStatus === 'SETTLED'
+              ? 'COMPLETED'
+              : rawStatus === 'RELEASED'
+                ? 'REVERSED'
+                : rawStatus;
+        allRows.push({
+          ...r,
+          status: mapped,
+          _rawStatus: rawStatus,
+          reference: r.reference ?? null,
+        });
       }
     }
     if (shouldInclude('CASH_TO_CASH')) {
@@ -553,8 +572,8 @@ export class CustomerTransactionHistoryService {
         type: String(r.type),
         status: String(r.status),
         amountMinor:
-          r.type === 'EXTERNAL_BANK_TRANSFER' && (r.principal_minor !== undefined)
-            ? (String(r.principal_minor ?? r.amount_minor ?? '0'))
+          r.type === 'EXTERNAL_BANK_TRANSFER' && r.principal_minor !== undefined
+            ? String(r.principal_minor ?? r.amount_minor ?? '0')
             : ((r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         currency: String(r.currency ?? 'NGN'),
         direction,
@@ -570,16 +589,18 @@ export class CustomerTransactionHistoryService {
               : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         ...(r.type === 'WALLET_TRANSFER' || r.type === 'EXTERNAL_BANK_TRANSFER'
           ? {
-              vatMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
-                ? String(r.vat_minor ?? '0')
-                : direction === 'RECEIVED' || r.status !== 'COMPLETED'
-                  ? '0'
-                  : String(r.vat_minor ?? '0'),
-              totalDebitMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
-                ? (r.total_debit_minor ?? null)
-                : direction === 'RECEIVED'
-                  ? null
-                  : (r.total_debit_minor ?? null),
+              vatMinor:
+                r.type === 'EXTERNAL_BANK_TRANSFER'
+                  ? String(r.vat_minor ?? '0')
+                  : direction === 'RECEIVED' || r.status !== 'COMPLETED'
+                    ? '0'
+                    : String(r.vat_minor ?? '0'),
+              totalDebitMinor:
+                r.type === 'EXTERNAL_BANK_TRANSFER'
+                  ? (r.total_debit_minor ?? null)
+                  : direction === 'RECEIVED'
+                    ? null
+                    : (r.total_debit_minor ?? null),
             }
           : {}),
         sourceWalletId,

@@ -42,7 +42,10 @@ export class BankingDirectoryService {
         nip_supported: boolean;
         status: string;
       }>
-    >(`SELECT bank_code,bank_name,short_name,nip_supported,status FROM banks ${where} ORDER BY bank_name ASC, bank_code ASC`, params);
+    >(
+      `SELECT bank_code,bank_name,short_name,nip_supported,status FROM banks ${where} ORDER BY bank_name ASC, bank_code ASC`,
+      params,
+    );
     return rows.map((r) => ({
       bankCode: r.bank_code,
       bankName: r.bank_name,
@@ -52,14 +55,29 @@ export class BankingDirectoryService {
     }));
   }
 
-  async findOneByCode(
-    bankCode: string,
-  ): Promise<{ id: string; bankCode: string; bankName: string; shortName: string; nipSupported: boolean; status: string } | null> {
+  async findOneByCode(bankCode: string): Promise<{
+    id: string;
+    bankCode: string;
+    bankName: string;
+    shortName: string;
+    nipSupported: boolean;
+    status: string;
+  } | null> {
     const normalized = bankCode.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,20}$/.test(normalized)) return null;
     const rows = await this.dataSource.query<
-      Array<{ id: string; bank_code: string; bank_name: string; short_name: string; nip_supported: boolean; status: string }>
-    >(`SELECT id,bank_code,bank_name,short_name,nip_supported,status FROM banks WHERE bank_code=$1 LIMIT 1`, [normalized]);
+      Array<{
+        id: string;
+        bank_code: string;
+        bank_name: string;
+        short_name: string;
+        nip_supported: boolean;
+        status: string;
+      }>
+    >(
+      `SELECT id,bank_code,bank_name,short_name,nip_supported,status FROM banks WHERE bank_code=$1 LIMIT 1`,
+      [normalized],
+    );
     const row = rows[0];
     if (!row) return null;
     return {

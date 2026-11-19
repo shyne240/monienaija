@@ -38,9 +38,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * new agent-lane rows are bound the same way, and `down()` refuses because dropping the agent lane
  * would discard authorization evidence.
  */
-export class GeneralizeFinancialAuthorizationsForAgents1785753600803
-  implements MigrationInterface
-{
+export class GeneralizeFinancialAuthorizationsForAgents1785753600803 implements MigrationInterface {
   name = 'GeneralizeFinancialAuthorizationsForAgents1785753600803';
 
   async up(q: QueryRunner): Promise<void> {

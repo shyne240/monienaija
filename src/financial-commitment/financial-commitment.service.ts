@@ -403,7 +403,9 @@ export class FinancialCommitmentService {
     const wallet = wallets[0];
     if (!wallet)
       throw new ConflictException(
-        input.kind === 'CUSTOMER' ? 'Customer wallet is not active' : 'Agent operating wallet is not active',
+        input.kind === 'CUSTOMER'
+          ? 'Customer wallet is not active'
+          : 'Agent operating wallet is not active',
       );
     if (input.kind === 'CUSTOMER') {
       await this.walletBoundary.requireCustomerWallet(
@@ -635,7 +637,9 @@ export class FinancialCommitmentService {
           correlationId: commitmentId,
           causationId: commitmentId,
         });
-      } catch { /* outbox is best-effort; financial commitment remains authoritative */ }
+      } catch {
+        /* outbox is best-effort; financial commitment remains authoritative */
+      }
     }
     return { commitment, replayed: false };
   }
@@ -728,10 +732,7 @@ export class FinancialCommitmentService {
    * unexpired, unrevoked and bound to an ACTIVE agent credential with no lock, no rotation pending
    * and a live password, and the bound agent PIN verification still matches this request.
    */
-  private async revalidateAgentLane(
-    manager: EntityManager,
-    plan: ParticipantPlan,
-  ): Promise<void> {
+  private async revalidateAgentLane(manager: EntityManager, plan: ParticipantPlan): Promise<void> {
     const agents = await manager.query<Array<{ id: string }>>(
       "SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
       [plan.id],

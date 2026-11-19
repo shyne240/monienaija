@@ -1,11 +1,19 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { Customer } from '../customer/customer.entity';
 import { BankingDirectoryService } from './banking-directory.service';
 import { BankingAccountEnquiryService } from './banking-account-enquiry.service';
-import { CustomerBeneficiaryStatus, CustomerBeneficiaryType } from '../customer-beneficiary/customer-beneficiary.enums';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../customer-beneficiary/customer-beneficiary.enums';
 
 /**
  * G10/G11 — bank-account beneficiary creation for customer and agent self-service.
@@ -51,16 +59,26 @@ export class BankBeneficiaryCreationService {
     const bank = await this.directory.findOneByCode(bankCode);
     if (!bank) throw new NotFoundException('Bank not found in the authoritative directory');
     if (bank.status !== 'ACTIVE') throw new BadRequestException('The requested bank is not ACTIVE');
-    if (!bank.nipSupported) throw new BadRequestException('The requested bank is not NIP-supported');
+    if (!bank.nipSupported)
+      throw new BadRequestException('The requested bank is not NIP-supported');
 
     // Must be a real, resolvable account — provider enquiry is the gate.
-    const enquiryResult = await this.enquiry.enquireForCustomer(customerId, input.walletId, bankCode, accountNumber);
-    if (enquiryResult.outcome === 'NOT_FOUND') throw new NotFoundException('Account not found at the destination bank');
-    if (enquiryResult.outcome === 'UNAVAILABLE') throw new BadRequestException('Account verification is temporarily unavailable. Try again.');
-    if (!enquiryResult.accountName) throw new BadRequestException('Account name could not be resolved');
+    const enquiryResult = await this.enquiry.enquireForCustomer(
+      customerId,
+      input.walletId,
+      bankCode,
+      accountNumber,
+    );
+    if (enquiryResult.outcome === 'NOT_FOUND')
+      throw new NotFoundException('Account not found at the destination bank');
+    if (enquiryResult.outcome === 'UNAVAILABLE')
+      throw new BadRequestException('Account verification is temporarily unavailable. Try again.');
+    if (!enquiryResult.accountName)
+      throw new BadRequestException('Account name could not be resolved');
 
     const accountName = enquiryResult.accountName.trim();
-    if (accountName.length < 2 || accountName.length > 200) throw new BadRequestException('Resolved account name is invalid');
+    if (accountName.length < 2 || accountName.length > 200)
+      throw new BadRequestException('Resolved account name is invalid');
 
     return this.persistBeneficiary({
       owner: { type: 'CUSTOMER', id: customerId },
@@ -91,14 +109,24 @@ export class BankBeneficiaryCreationService {
     const bank = await this.directory.findOneByCode(bankCode);
     if (!bank) throw new NotFoundException('Bank not found in the authoritative directory');
     if (bank.status !== 'ACTIVE') throw new BadRequestException('The requested bank is not ACTIVE');
-    if (!bank.nipSupported) throw new BadRequestException('The requested bank is not NIP-supported');
+    if (!bank.nipSupported)
+      throw new BadRequestException('The requested bank is not NIP-supported');
 
-    const enquiryResult = await this.enquiry.enquireForAgent(agentId, input.walletId, bankCode, accountNumber);
-    if (enquiryResult.outcome === 'NOT_FOUND') throw new NotFoundException('Account not found at the destination bank');
-    if (enquiryResult.outcome === 'UNAVAILABLE') throw new BadRequestException('Account verification is temporarily unavailable. Try again.');
-    if (!enquiryResult.accountName) throw new BadRequestException('Account name could not be resolved');
+    const enquiryResult = await this.enquiry.enquireForAgent(
+      agentId,
+      input.walletId,
+      bankCode,
+      accountNumber,
+    );
+    if (enquiryResult.outcome === 'NOT_FOUND')
+      throw new NotFoundException('Account not found at the destination bank');
+    if (enquiryResult.outcome === 'UNAVAILABLE')
+      throw new BadRequestException('Account verification is temporarily unavailable. Try again.');
+    if (!enquiryResult.accountName)
+      throw new BadRequestException('Account name could not be resolved');
     const accountName = enquiryResult.accountName.trim();
-    if (accountName.length < 2 || accountName.length > 200) throw new BadRequestException('Resolved account name is invalid');
+    if (accountName.length < 2 || accountName.length > 200)
+      throw new BadRequestException('Resolved account name is invalid');
 
     return this.persistBeneficiary({
       owner: { type: 'AGENT', id: agentId },
@@ -136,10 +164,16 @@ export class BankBeneficiaryCreationService {
     // Transaction: verify owner exists, check destination uniqueness, insert beneficiary + ownership + audit
     const result = await this.dataSource.transaction(async (manager) => {
       if (isCustomer) {
-        const customerRows: Array<{ id: string }> = await manager.query(`SELECT id FROM customers WHERE id=$1 LIMIT 1`, [input.owner.id]);
+        const customerRows: Array<{ id: string }> = await manager.query(
+          `SELECT id FROM customers WHERE id=$1 LIMIT 1`,
+          [input.owner.id],
+        );
         if (customerRows.length === 0) throw new NotFoundException('Customer not found');
       } else {
-        const agentRows: Array<{ id: string }> = await manager.query(`SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`, [input.owner.id]);
+        const agentRows: Array<{ id: string }> = await manager.query(
+          `SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
+          [input.owner.id],
+        );
         if (agentRows.length === 0) throw new NotFoundException('Agent not found or not active');
       }
 
@@ -150,10 +184,15 @@ export class BankBeneficiaryCreationService {
           : `SELECT id FROM customer_beneficiaries WHERE agent_id=$1 AND normalized_destination_identifier=$2 AND deleted_at IS NULL LIMIT 1`,
         [input.owner.id, normalizedDestination],
       );
-      if (existing.length > 0) throw new ConflictException('A beneficiary for this destination already exists');
+      if (existing.length > 0)
+        throw new ConflictException('A beneficiary for this destination already exists');
 
-      const existingRef: Array<{ id: string }> = await manager.query(`SELECT id FROM customer_beneficiaries WHERE reference=$1 LIMIT 1`, [reference]);
-      if (existingRef.length > 0) throw new ConflictException(`Beneficiary reference ${reference} already exists`);
+      const existingRef: Array<{ id: string }> = await manager.query(
+        `SELECT id FROM customer_beneficiaries WHERE reference=$1 LIMIT 1`,
+        [reference],
+      );
+      if (existingRef.length > 0)
+        throw new ConflictException(`Beneficiary reference ${reference} already exists`);
 
       // Insert beneficiary as verified ACTIVE — the account was just resolved by the provider.
       await manager.query(
@@ -203,7 +242,12 @@ export class BankBeneficiaryCreationService {
       await manager.query(
         `INSERT INTO beneficiary_history (id, beneficiary_id, action, actor, previous_status, new_status, previous_verified, new_verified, metadata, created_at)
          VALUES ($1,$2,'CREATED',$3,NULL,'ACTIVE',NULL,true,$4,clock_timestamp())`,
-        [randomUUID(), beneficiaryId, input.actor, JSON.stringify({ type: 'BANK_ACCOUNT', reference })],
+        [
+          randomUUID(),
+          beneficiaryId,
+          input.actor,
+          JSON.stringify({ type: 'BANK_ACCOUNT', reference }),
+        ],
       );
 
       return {
@@ -221,16 +265,19 @@ export class BankBeneficiaryCreationService {
   }
 
   private normalizeBankCode(raw: string): string {
-    if (typeof raw !== 'string' || !raw.trim()) throw new BadRequestException('bankCode is required');
+    if (typeof raw !== 'string' || !raw.trim())
+      throw new BadRequestException('bankCode is required');
     const v = raw.trim().toUpperCase();
     if (!/^[A-Z0-9]{3,20}$/.test(v)) throw new BadRequestException('bankCode is invalid');
     return v;
   }
 
   private normalizeAccountNumber(raw: string): string {
-    if (typeof raw !== 'string' || !raw.trim()) throw new BadRequestException('accountNumber is required');
+    if (typeof raw !== 'string' || !raw.trim())
+      throw new BadRequestException('accountNumber is required');
     const v = raw.trim();
-    if (!/^\d{10}$/.test(v)) throw new BadRequestException('accountNumber must be exactly 10 digits');
+    if (!/^\d{10}$/.test(v))
+      throw new BadRequestException('accountNumber must be exactly 10 digits');
     return v;
   }
 

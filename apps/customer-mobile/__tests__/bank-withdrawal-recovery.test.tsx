@@ -55,13 +55,15 @@ const BENEFICIARY = {
 
 let mockCustomerId: string | null = 'customer-a-uuid';
 
-function mockGets() {
+function mockGets(serverTransactions?: { items: Array<{ type: string; status: string }> }) {
+  const serverHistory = serverTransactions ?? { items: [] };
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === '/customers/me/wallets') return Promise.resolve([NGN_WALLET]);
     if (url === '/customers/me/beneficiaries?limit=100') return Promise.resolve({ items: [BENEFICIARY] });
+    if (url.startsWith('/customers/me/transactions')) return Promise.resolve(serverHistory);
     return Promise.reject(new Error(`unexpected ${url}`));
   });
-  (ApiClient.getCustomerId as unknown as jest.Mock).mockReturnValue(mockCustomerId);
+  ((ApiClient as any).getCustomerId as jest.Mock).mockReturnValue(mockCustomerId);
 }
 
 async function renderScreen() {
@@ -74,10 +76,10 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
   beforeEach(async () => {
     (ApiClient.get as jest.Mock).mockReset();
     (ApiClient.post as jest.Mock).mockReset();
-    (ApiClient.getCustomerId as unknown as jest.Mock).mockReset();
+    ((ApiClient as any).getCustomerId as jest.Mock).mockReset();
     mockNavigate.mockClear();
     mockCustomerId = 'customer-a-uuid';
-    (ApiClient.getCustomerId as unknown as jest.Mock).mockReturnValue(mockCustomerId);
+    ((ApiClient as any).getCustomerId as jest.Mock).mockReturnValue(mockCustomerId);
     await clearPendingBankWithdrawalIntent('customer-a-uuid');
     await clearPendingBankWithdrawalIntent('customer-b-uuid');
     await clearPendingBankWithdrawalIntent('customer-recovery');
@@ -236,7 +238,7 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
     expect(await loadPendingBankWithdrawalIntent('customer-a-uuid')).not.toBeNull();
     expect(await loadPendingBankWithdrawalIntent('customer-b-uuid')).toBeNull();
     mockCustomerId = 'customer-b-uuid';
-    (ApiClient.getCustomerId as unknown as jest.Mock).mockReturnValue('customer-b-uuid');
+    ((ApiClient as any).getCustomerId as jest.Mock).mockReturnValue('customer-b-uuid');
     mockGets();
     const { queryByTestId } = await renderScreen();
     await act(async () => {});
@@ -273,5 +275,72 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
     await waitFor(() => expect(ApiClient.post).toHaveBeenCalled());
     const usedKey = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey;
     expect(usedKey).toBe(savedKey);
+  });
+
+  test('Clear is blocked when server shows unresolved PENDING banking transfer', async () => {
+    const staleCreatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    await savePendingBankWithdrawalIntent({
+      customerId: 'customer-a-uuid',
+      walletAccountId: 'wallet-1',
+      beneficiaryId: 'b-verified',
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: 'stale-key-block-clear',
+      createdAt: staleCreatedAt,
+    });
+    // Server shows an unresolved PENDING external bank transfer
+    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    const { getByTestId, getByText, queryByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
+    fireEvent.press(getByTestId('stale-clear'));
+    await waitFor(() => expect(getByText(/still pending confirmation on the server/i)).toBeTruthy());
+    expect(queryByTestId('stale-recovery-banner')).toBeTruthy();
+    expect(await loadPendingBankWithdrawalIntent('customer-a-uuid')).not.toBeNull();
+  });
+
+  test('Different withdrawal blocked when prior is unresolved on server', async () => {
+    const staleCreatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    await savePendingBankWithdrawalIntent({
+      customerId: 'customer-a-uuid',
+      walletAccountId: 'wallet-1',
+      beneficiaryId: 'b-verified',
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: 'stale-key-block-new',
+      createdAt: staleCreatedAt,
+    });
+    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    const { getByTestId, getByText } = await renderScreen();
+    await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
+    fireEvent.press(getByTestId('beneficiary-b-verified'));
+    fireEvent.changeText(getByTestId('bank-amount'), '999');
+    fireEvent.changeText(getByTestId('bank-pin'), '1234');
+    (ApiClient.post as jest.Mock).mockResolvedValue({ commitmentId: 'c-x', withdrawalId: 'w-x', externalOperationId: 'op-x', state: 'RESERVED', replayed: false, operationReference: 'OPX' });
+    fireEvent.press(getByTestId('bank-submit'));
+    await waitFor(() => expect(getByText(/previous withdrawal is still pending/i)).toBeTruthy());
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('Different withdrawal allowed when server confirms prior is terminal', async () => {
+    const staleCreatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    await savePendingBankWithdrawalIntent({
+      customerId: 'customer-a-uuid',
+      walletAccountId: 'wallet-1',
+      beneficiaryId: 'b-verified',
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: 'stale-key-allow-new',
+      createdAt: staleCreatedAt,
+    });
+    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'COMPLETED' }] });
+    const { getByTestId } = await renderScreen();
+    await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
+    fireEvent.press(getByTestId('beneficiary-b-verified'));
+    fireEvent.changeText(getByTestId('bank-amount'), '999');
+    fireEvent.changeText(getByTestId('bank-pin'), '1234');
+    (ApiClient.post as jest.Mock).mockResolvedValue({ commitmentId: 'c-new2', withdrawalId: 'w-new2', externalOperationId: 'op-new2', state: 'RESERVED', replayed: false, operationReference: 'OPNEW3' });
+    fireEvent.press(getByTestId('bank-submit'));
+    await waitFor(() => expect(ApiClient.post).toHaveBeenCalled());
+    expect((ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey).not.toBe('stale-key-allow-new');
   });
 });

@@ -110,7 +110,9 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
     const threeD = new Set<string>(ARENA3D_ONLY);
     expect(ARENA2C_ONLY.filter((name) => threeD.has(name))).toEqual([]);
     expect(ARENA5_ONLY.filter((name) => threeD.has(name))).toEqual([]);
-    expect(ARENA5_ONLY.filter((name) => (ARENA2C_ONLY as readonly string[]).includes(name))).toEqual([]);
+    expect(
+      ARENA5_ONLY.filter((name) => (ARENA2C_ONLY as readonly string[]).includes(name)),
+    ).toEqual([]);
     expect(onDisk[onDisk.length - 1]!.name).toBe(COMBINED_HEAD_NAME);
   });
 

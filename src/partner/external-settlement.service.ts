@@ -363,7 +363,11 @@ export class ExternalSettlementService {
         manager,
         externalOperationId: operation.id,
         commitmentId: commitment.id,
-        amountMinor: String((operation as unknown as { amountMinor?: string; amount_minor?: string }).amountMinor ?? (operation as unknown as { amount_minor?: string }).amount_minor ?? '0'),
+        amountMinor: String(
+          (operation as unknown as { amountMinor?: string; amount_minor?: string }).amountMinor ??
+            (operation as unknown as { amount_minor?: string }).amount_minor ??
+            '0',
+        ),
         currency: String((operation as unknown as { currency?: string }).currency ?? 'NGN'),
         eventType: 'external_bank_transfer.reversed',
         correlationId: context.correlationId,
@@ -1534,7 +1538,10 @@ export class ExternalSettlementService {
     commitmentId: string | null;
     amountMinor: string;
     currency: string;
-    eventType: 'external_bank_transfer.pending' | 'external_bank_transfer.settled' | 'external_bank_transfer.reversed';
+    eventType:
+      | 'external_bank_transfer.pending'
+      | 'external_bank_transfer.settled'
+      | 'external_bank_transfer.reversed';
     correlationId: string;
     requestContext: RequestContext;
   }): Promise<void> {
@@ -1544,19 +1551,21 @@ export class ExternalSettlementService {
       let customerId: string | null = null;
       let agentId: string | null = null;
       if (input.commitmentId) {
-        const rows: Array<{ principal_type: string; principal_id: string }> = await input.manager.query(
-          `SELECT fa.principal_type, fa.principal_id::text as principal_id FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id WHERE fc.id=$1 LIMIT 1`,
-          [input.commitmentId],
-        );
+        const rows: Array<{ principal_type: string; principal_id: string }> =
+          await input.manager.query(
+            `SELECT fa.principal_type, fa.principal_id::text as principal_id FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id WHERE fc.id=$1 LIMIT 1`,
+            [input.commitmentId],
+          );
         const r = rows[0];
         if (r?.principal_type === 'CUSTOMER') customerId = r.principal_id;
         else if (r?.principal_type === 'AGENT') agentId = r.principal_id;
       }
       if (!customerId && !agentId) {
-        const opRows: Array<{ customer_id: string; wallet_account_id: string }> = await input.manager.query(
-          `SELECT customer_id::text as customer_id, wallet_account_id::text as wallet_account_id FROM external_operations WHERE id=$1 LIMIT 1`,
-          [input.externalOperationId],
-        );
+        const opRows: Array<{ customer_id: string; wallet_account_id: string }> =
+          await input.manager.query(
+            `SELECT customer_id::text as customer_id, wallet_account_id::text as wallet_account_id FROM external_operations WHERE id=$1 LIMIT 1`,
+            [input.externalOperationId],
+          );
         const op = opRows[0];
         if (op) {
           const walletRows: Array<{ owner_class: string }> = await input.manager.query(
@@ -1589,7 +1598,9 @@ export class ExternalSettlementService {
         correlationId: input.correlationId,
         causationId: input.requestContext.requestId,
       });
-    } catch { /* notification is best-effort */ }
+    } catch {
+      /* notification is best-effort */
+    }
   }
 
   private async auditSettlement(

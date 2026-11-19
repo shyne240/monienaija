@@ -1,4 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { BankingDirectoryService } from './banking-directory.service';
@@ -11,12 +20,14 @@ interface AuthenticatedRequest {
 
 function requireCustomer(req: AuthenticatedRequest): string {
   const p = req.authorizationPrincipal;
-  if (!p || p.type !== 'CUSTOMER' || !p.customerId) throw new UnauthorizedException('Customer authentication required');
+  if (!p || p.type !== 'CUSTOMER' || !p.customerId)
+    throw new UnauthorizedException('Customer authentication required');
   return p.customerId;
 }
 function requireAgent(req: AuthenticatedRequest): string {
   const p = req.authorizationPrincipal;
-  if (!p || p.type !== 'AGENT' || !p.agentId) throw new UnauthorizedException('Agent authentication required');
+  if (!p || p.type !== 'AGENT' || !p.agentId)
+    throw new UnauthorizedException('Agent authentication required');
   return p.agentId;
 }
 
@@ -40,7 +51,8 @@ export class CustomerBankingDirectoryController {
   @Get('banks')
   async banks(@Req() req: AuthenticatedRequest, @Query('search') search?: string) {
     requireCustomer(req);
-    if (search !== undefined && typeof search !== 'string') throw new BadRequestException('search must be a string');
+    if (search !== undefined && typeof search !== 'string')
+      throw new BadRequestException('search must be a string');
     const items = await this.directory.listForSelfService(search);
     return { items };
   }
@@ -53,9 +65,16 @@ export class CustomerBankingDirectoryController {
     const customerId = requireCustomer(req);
     if (!body || typeof body !== 'object') throw new BadRequestException('Invalid request body');
     const { bankCode, accountNumber, walletId } = body as Record<string, unknown>;
-    if (typeof bankCode !== 'string' || typeof accountNumber !== 'string') throw new BadRequestException('bankCode and accountNumber are required');
-    if (walletId !== undefined && typeof walletId !== 'string') throw new BadRequestException('walletId must be a string');
-    const result = await this.enquiry.enquireForCustomer(customerId, walletId as string | undefined, bankCode, accountNumber);
+    if (typeof bankCode !== 'string' || typeof accountNumber !== 'string')
+      throw new BadRequestException('bankCode and accountNumber are required');
+    if (walletId !== undefined && typeof walletId !== 'string')
+      throw new BadRequestException('walletId must be a string');
+    const result = await this.enquiry.enquireForCustomer(
+      customerId,
+      walletId as string | undefined,
+      bankCode,
+      accountNumber,
+    );
     return {
       bankCode: result.providerBankCode,
       accountNumber: result.accountNumber,
@@ -77,7 +96,8 @@ export class AgentBankingDirectoryController {
   @Get('banks')
   async banks(@Req() req: AuthenticatedRequest, @Query('search') search?: string) {
     requireAgent(req);
-    if (search !== undefined && typeof search !== 'string') throw new BadRequestException('search must be a string');
+    if (search !== undefined && typeof search !== 'string')
+      throw new BadRequestException('search must be a string');
     const items = await this.directory.listForSelfService(search);
     return { items };
   }
@@ -90,9 +110,16 @@ export class AgentBankingDirectoryController {
     const agentId = requireAgent(req);
     if (!body || typeof body !== 'object') throw new BadRequestException('Invalid request body');
     const { bankCode, accountNumber, walletId } = body as Record<string, unknown>;
-    if (typeof bankCode !== 'string' || typeof accountNumber !== 'string') throw new BadRequestException('bankCode and accountNumber are required');
-    if (walletId !== undefined && typeof walletId !== 'string') throw new BadRequestException('walletId must be a string');
-    const result = await this.enquiry.enquireForAgent(agentId, walletId as string | undefined, bankCode, accountNumber);
+    if (typeof bankCode !== 'string' || typeof accountNumber !== 'string')
+      throw new BadRequestException('bankCode and accountNumber are required');
+    if (walletId !== undefined && typeof walletId !== 'string')
+      throw new BadRequestException('walletId must be a string');
+    const result = await this.enquiry.enquireForAgent(
+      agentId,
+      walletId as string | undefined,
+      bankCode,
+      accountNumber,
+    );
     return {
       bankCode: result.providerBankCode,
       accountNumber: result.accountNumber,

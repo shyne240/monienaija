@@ -12,6 +12,7 @@ import { AgentBankWithdrawalApi, type AgentBankBeneficiary } from '../../service
 import { BankDirectoryApi } from '../../services/bank-directory';
 import { AgentBankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
 import { clearPendingAgentBankWithdrawalIntent, isStaleAgentIntent, loadPendingAgentBankWithdrawalIntent, matchesPendingAgentBankIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
+import { ApiClient } from '../../services/api-client';
 import { formatMinor } from '../../utils/presentation';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -45,6 +46,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
   const [idempotencyKey, setIdempotencyKey] = useState(() => `agent-bank-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [walletId, setWalletId] = useState<string | undefined>(undefined);
   const [staleIntent, setStaleIntent] = useState<import('../../services/pending-bank-withdrawal').PendingAgentBankWithdrawalIntent | null>(null);
+  const [restoredIntent, setRestoredIntent] = useState<import('../../services/pending-bank-withdrawal').PendingAgentBankWithdrawalIntent | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -60,11 +62,28 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     finally { setIsLoading(false); }
   }, []);
 
+  const hasUnresolvedBankTransferOnServer = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await ApiClient.get<{ items: Array<{ type: string; status: string }> }>('/agents/me/transactions?type=EXTERNAL_BANK_TRANSFER&limit=50&page=1');
+      return Array.isArray((res as any)?.items) && (res as any).items.some((i: any) => i.status === 'PENDING');
+    } catch { return true; }
+  }, []);
+
+  const handleClearStale = useCallback(async () => {
+    setError('');
+    if (staleIntent || restoredIntent) {
+      const unresolved = await hasUnresolvedBankTransferOnServer();
+      if (unresolved) { setError('This withdrawal is still pending confirmation on the server. Check history or transfer status before clearing. Nothing was discarded.'); return; }
+    }
+    try { await clearPendingAgentBankWithdrawalIntent('agent'); } catch {}
+    setStaleIntent(null); setRestoredIntent(null); setError('');
+  }, [staleIntent, restoredIntent, hasUnresolvedBankTransferOnServer]);
+
   useEffect(() => {
     void (async () => {
       try {
         const pending = await loadPendingAgentBankWithdrawalIntent('agent');
-        if (pending) { setIdempotencyKey(pending.idempotencyKey); if (isStaleAgentIntent(pending)) setStaleIntent(pending); }
+        if (pending) { setIdempotencyKey(pending.idempotencyKey); setRestoredIntent(pending); if (isStaleAgentIntent(pending)) setStaleIntent(pending); }
       } catch {}
     })();
   }, []);
@@ -109,25 +128,36 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     const parsed = minor(amountStr);
     if (!parsed) { setError('Enter amount.'); return; }
     if (!/^\d{4,12}$/.test(pin)) { setError('Enter PIN.'); return; }
-    if (staleIntent) {
+    let effectiveIdempotencyKey = idempotencyKey;
+    let effectiveCreatedAt = restoredIntent?.createdAt ?? (staleIntent ? staleIntent.createdAt : null);
+    if (staleIntent || restoredIntent) {
+      const anchor = (staleIntent ?? restoredIntent)!;
       const candidate = { walletAccountId: walletId, beneficiaryId: selected!.id, amountMinor: parsed, currency: 'NGN' as const };
-      if (!matchesPendingAgentBankIntent(staleIntent, candidate)) {
-        // Different params than the unconfirmed stale attempt — allow a distinct new withdrawal,
-        // but keep the stale banner so the operator must reconcile the old one (no deadlock).
+      const matches = matchesPendingAgentBankIntent(anchor, candidate);
+      if (!matches) {
+        const unresolved = await hasUnresolvedBankTransferOnServer();
+        if (unresolved) { setError('A previous withdrawal is still pending confirmation. Check your history or transfer status before starting a new one. Nothing was sent.'); return; }
+        effectiveIdempotencyKey = `agent-bank-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        effectiveCreatedAt = new Date().toISOString();
+        setIdempotencyKey(effectiveIdempotencyKey);
       } else {
-        // Same params as the stale attempt — reuse its idempotencyKey/createdAt (already in state).
+        effectiveIdempotencyKey = anchor.idempotencyKey;
+        effectiveCreatedAt = anchor.createdAt;
+        setIdempotencyKey(effectiveIdempotencyKey);
       }
+    } else {
+      effectiveCreatedAt = new Date().toISOString();
     }
     setBusy(true); setError('');
     const pinSnap = pin; setPin('');
     try {
-      await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN', idempotencyKey, createdAt: staleIntent ? staleIntent.createdAt : new Date().toISOString() });
+      await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN', idempotencyKey: effectiveIdempotencyKey, createdAt: effectiveCreatedAt ?? new Date().toISOString() });
     } catch {
       setError('Could not save recovery information. Nothing was sent.');
       setBusy(false); return;
     }
     try {
-      const r = await AgentBankWithdrawalApi.initiate({ walletAccountId: walletId, beneficiaryId: selected.id, amountMinor: parsed, pin: pinSnap }, idempotencyKey);
+      const r = await AgentBankWithdrawalApi.initiate({ walletAccountId: walletId, beneficiaryId: selected.id, amountMinor: parsed, pin: pinSnap }, effectiveIdempotencyKey);
       setResult(r as unknown as typeof result);
       try { await clearPendingAgentBankWithdrawalIntent('agent'); } catch {}
     } catch (e) {
@@ -158,7 +188,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
             <Text style={styles.title}>Unconfirmed withdrawal</Text>
             <Text style={styles.muted}>Amount {formatMinor(staleIntent.amountMinor)} from {new Date(staleIntent.createdAt).toLocaleDateString()}. It may still be processing.</Text>
             <Button label="Resume with same details" onPress={() => { setSelectedId(staleIntent.beneficiaryId); setAmountStr((Number(staleIntent.amountMinor)/100).toString()); }} testID="stale-resume" />
-            <Button label="Clear after confirming resolved" onPress={async () => { await clearPendingAgentBankWithdrawalIntent('agent'); setStaleIntent(null); setError(''); }} testID="stale-clear" variant="outline" />
+            <Button label="Clear after confirming resolved" onPress={handleClearStale} testID="stale-clear" variant="outline" />
           </Card>
         )}
         <Text style={styles.title}>Withdraw to bank</Text>

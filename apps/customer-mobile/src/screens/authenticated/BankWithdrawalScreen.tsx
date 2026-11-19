@@ -28,6 +28,7 @@ import {
   isStaleIntent,
   loadPendingBankWithdrawalIntent,
   loadStalePendingBankWithdrawalIntent,
+  matchesPendingIntent,
   savePendingBankWithdrawalIntent,
 } from '../../services/pending-bank-withdrawal';
 import { BankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
@@ -77,14 +78,47 @@ export const BankWithdrawalScreen: React.FC = () => {
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   const [staleIntent, setStaleIntent] = useState<import('../../services/pending-bank-withdrawal').PendingBankWithdrawalIntent | null>(null);
+  const [restoredIntent, setRestoredIntent] = useState<import('../../services/pending-bank-withdrawal').PendingBankWithdrawalIntent | null>(null);
 
   // Restore durable pending intent on mount — verifies owner switching & session replacement
   const customerIdForRecovery = useMemo(() => {
     try {
-      const raw = ApiClient.getCustomerId?.() as unknown;
+      const raw = (ApiClient as unknown as { getCustomerId?: () => string | null }).getCustomerId?.() as unknown;
       return typeof raw === 'string' ? raw : 'customer-recovery';
     } catch { return 'customer-recovery'; }
   }, []);
+
+  // Authoritative server check: is there an unresolved (PENDING) banking commitment for this owner?
+  // Uses existing durable operation recovery via unified history; fail-closed if we cannot verify.
+  const hasUnresolvedBankTransferOnServer = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await ApiClient.get<{ items: Array<{ type: string; status: string }> }>(
+        '/customers/me/transactions?type=EXTERNAL_BANK_TRANSFER&limit=50&page=1',
+      );
+      return Array.isArray(res?.items) && res.items.some((i) => i.status === 'PENDING');
+    } catch {
+      return true;
+    }
+  }, []);
+
+  const handleClearStale = useCallback(async () => {
+    setError('');
+    // Guard: Clear must not discard the only recoverable identity of an unresolved operation.
+    // Verify against authoritative server state (history) before discarding.
+    if (staleIntent || restoredIntent) {
+      const unresolved = await hasUnresolvedBankTransferOnServer();
+      if (unresolved) {
+        setError('This withdrawal is still pending confirmation on the server. Check history or transfer status before clearing. Nothing was discarded.');
+        return;
+      }
+    }
+    try {
+      await clearPendingBankWithdrawalIntent(customerIdForRecovery);
+    } catch {}
+    setStaleIntent(null);
+    setRestoredIntent(null);
+    setError('');
+  }, [customerIdForRecovery, staleIntent, restoredIntent, hasUnresolvedBankTransferOnServer]);
 
   useEffect(() => {
     void (async () => {
@@ -92,6 +126,7 @@ export const BankWithdrawalScreen: React.FC = () => {
         const pending = await loadPendingBankWithdrawalIntent(customerIdForRecovery);
         if (pending) {
           setIdempotencyKey(pending.idempotencyKey);
+          setRestoredIntent(pending);
           if (isStaleIntent(pending)) setStaleIntent(pending);
         }
       } catch (e) {
@@ -179,17 +214,36 @@ export const BankWithdrawalScreen: React.FC = () => {
       return;
     }
 
-    // Stale reconciliation: if a stale intent exists, reconcile against server history before allowing new
-    if (staleIntent) {
-      // If the current form matches the stale intent's params, reuse its idempotencyKey for recovery
-      // If stale matches current form, we resume with its idempotencyKey (already set); if not matching, allow new distinct withdrawal — stale remains for later reconciliation via history/clear.
+    // Recovery safeguard: stale/unresolved intent must not be silently overwritten by a different logical withdrawal.
+    // Different params => check authoritative server state; if unresolved, block and keep recoverable identity.
+    let effectiveIdempotencyKey = idempotencyKey;
+    let effectiveCreatedAt = restoredIntent?.createdAt ?? (staleIntent ? staleIntent.createdAt : null);
+    if (staleIntent || restoredIntent) {
+      const anchor = staleIntent ?? restoredIntent!;
       const candidate = { walletAccountId: primaryWallet.id, beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN' as const };
+      let matches = true;
       try {
-        const { matchesPendingIntent } = await import('../../services/pending-bank-withdrawal');
-        if (staleIntent && !matchesPendingIntent(staleIntent, candidate)) {
-          // Different logical attempt — proceed with fresh key, stale banner remains for explicit reconciliation
-        }
+        matches = matchesPendingIntent(anchor, candidate);
       } catch {}
+      if (!matches) {
+        // Different logical attempt — must not destroy the recoverable identity of the earlier unresolved withdrawal.
+        const unresolved = await hasUnresolvedBankTransferOnServer();
+        if (unresolved) {
+          setError('A previous withdrawal is still pending confirmation. Check your history or transfer status before starting a new one. Nothing was sent.');
+          return;
+        }
+        // Server confirms prior is terminal (no PENDING) — safe to mint a fresh identity for the distinct attempt.
+        effectiveIdempotencyKey = `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        effectiveCreatedAt = new Date().toISOString();
+        setIdempotencyKey(effectiveIdempotencyKey);
+      } else {
+        // Same logical params — reuse existing recoverable identity for safe replay.
+        effectiveIdempotencyKey = anchor.idempotencyKey;
+        effectiveCreatedAt = anchor.createdAt;
+        setIdempotencyKey(effectiveIdempotencyKey);
+      }
+    } else {
+      effectiveCreatedAt = new Date().toISOString();
     }
     setBusy(true);
     setError('');
@@ -203,8 +257,8 @@ export const BankWithdrawalScreen: React.FC = () => {
         beneficiaryId: selected.id,
         amountMinor: parsed,
         currency: 'NGN',
-        idempotencyKey,
-        createdAt: staleIntent ? staleIntent.createdAt : new Date().toISOString(),
+        idempotencyKey: effectiveIdempotencyKey,
+        createdAt: effectiveCreatedAt ?? new Date().toISOString(),
       });
     } catch (e) {
       setError('Could not save recovery information. Please check storage permissions and try again. Nothing was sent.');
@@ -219,7 +273,7 @@ export const BankWithdrawalScreen: React.FC = () => {
           amountMinor: parsed,
           pin: pinSnapshot,
         },
-        idempotencyKey,
+        effectiveIdempotencyKey,
       );
       setAuthorizedAmount(parsed);
       setResult(initiated);
@@ -342,7 +396,7 @@ export const BankWithdrawalScreen: React.FC = () => {
             <Text style={styles.body}>Amount {formatMinor(staleIntent.amountMinor)} from {new Date(staleIntent.createdAt).toLocaleDateString()}. It may still be processing.</Text>
             <Button label="Resume with same details" onPress={() => { setSelectedId(staleIntent.beneficiaryId); setAmountStr((Number(staleIntent.amountMinor)/100).toString()); }} testID="stale-resume" />
             <Button label="View history to confirm" onPress={() => navigation.navigate('TransactionHistory' as never)} testID="stale-history" variant="outline" />
-            <Button label="Clear after confirming resolved" onPress={async () => { await clearPendingBankWithdrawalIntent(customerIdForRecovery); setStaleIntent(null); setError(''); }} testID="stale-clear" variant="outline" />
+            <Button label="Clear after confirming resolved" onPress={handleClearStale} testID="stale-clear" variant="outline" />
           </Card>
         )}
         {!!error && (
