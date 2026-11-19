@@ -6,7 +6,7 @@ Branch `arena/1f37a4f3-monienaija`, base `6816a760` (Arena 3D freeze), merged wi
 
 | Branch | Tip at handoff | Role |
 |---|---|---|
-| `arena/1f37a4f3-monienaija` | `2a57be1f` (+staged hardening) | Consolidated candidate |
+| `arena/1f37a4f3-monienaija` | `e185d7a4` | Consolidated candidate |
 | `arena/defdd0fd-monienaija` | `6816a760` | Frozen predecessor 3D — never modified |
 | `arena/bcf44621-monienaija` | `78d999d6` | Frozen predecessor 2C — never modified |
 | `main` | — | Never merged into |
@@ -32,11 +32,11 @@ Upgrade rehearsals on disposable PG (`PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, p
 ## 3. Executed evidence (this branch tip)
 
 ### Backend unit
-- `npm run test` — **3403/3403 in 291 suites** (0 failed) at tip after hardening `testWalletFinancialBoundary.requireAgentWallet` and `FakeManager.query` fix; prior run at `2a57be1f` also 3403/3403 after `production-readiness` 0804 pin fix
-- `npx tsc --noEmit` — **0**
+- `npm run test` — **3403/3403 in 291 suites** (0 failed) at `2a57be1f` after hardening; `test/h04-h06-event-map` 35/35 at `e185d7a4`
+- `npx tsc --noEmit` — **0** at `e185d7a4`
 - `npx tsc --noEmit -p tsconfig.json` equivalent — 0
 
-### PostgreSQL integration (disposable, `fin1` run-id)
+### PostgreSQL integration (disposable, `fin1` run-id, prior to this continuation)
 | Suite | Tests |
 |---|---|
 | `agent-bank-transfer-commitment` | 11/11 |
@@ -44,16 +44,16 @@ Upgrade rehearsals on disposable PG (`PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, p
 | `bank-transfer-commercial-settlement` | 6/6 |
 | `migration-0804-owner-authority` | 6/6 |
 | `funding-defunding-conservation` | 4/4 |
-| `banking-mobile-journeys` (customer+agent directory/enquiry/initiate/preview/transfer-status/PIN/idempotency) | 10/10 |
+| `banking-mobile-journeys` (customer+agent directory/enquiry/initiation/preview/transfer-status/PIN/idempotency) | 10/10 |
 | `external-operation-lifecycle.service` (unit, now 8/8) | 8/8 |
 | `production-readiness` (head 0804) | 13/13 |
 | **New-suite subtotal** | **26/26** |
 
-Additional suites executed in the broader run: `a6-settlement-lifecycle` 23/23, `arena3d-banking-*` 62/62, `a23-customer-app`+ `v1-hardening-*` 56/56, `a3d-agent-float-funding` 14/14, `banking-dispatch-worker` 10/10, `worker-leases` 15/15, etc. Full `npm run test:pg` matrix not yet executed as a single frozen-candidate run in this session — see Outstanding.
+Full `npm run test:pg` matrix not yet executed as a single frozen-candidate run in this continuation — see Outstanding.
 
 ### Mobile
-- `apps/customer-mobile` — 25/25 suites (bank-withdrawal 9/9 mocked ApiClient); `BankWithdrawalScreen` + `BankTransferAddBeneficiarySheet` + `BankDirectoryApi` + `BankTransferPricingApi` + `pending-bank-withdrawal` durable intent shipped
-- `apps/agent-mobile` — `BankWithdrawalScreen` + `BankDirectoryApi`/`AgentBankWithdrawalApi`/`AgentBankTransferPricingApi`/`pending-bank-withdrawal` + `AppNavigator`/`HomeScreen` capability-gated `nav-bank-withdrawal` shipped; independent agent-mobile unit matrix not yet re-run standalone
+- `apps/customer-mobile` — **25/25 suites 220/220** at `e185d7a4` (bank-withdrawal 9/9 mocked ApiClient); `BankWithdrawalScreen` + `BankTransferAddBeneficiarySheet` + `BankDirectoryApi` + `BankTransferPricingApi` + `pending-bank-withdrawal` durable intent with 24h TTL safety (stale must not auto-authorize new submission) shipped
+- `apps/agent-mobile` — **24/24 suites 340/340** at `e185d7a4` (after `AmountInput` + `presentation.ts` + `surface.cream` theme fix; navigation.test.tsx now green); `BankWithdrawalScreen` + `BankDirectoryApi`/`AgentBankWithdrawalApi`/`AgentBankTransferPricingApi`/`pending-bank-withdrawal` + `AppNavigator`/`HomeScreen` capability-gated `nav-bank-withdrawal` shipped
 - Physical Android/iOS, emulator, adb, Apple tooling — **blocked in sandbox** (D7), no device acceptance claimed
 
 ## 4. 40-group acceptance matrix
@@ -81,11 +81,11 @@ Preserves original 40-group numbering. Predecessor acceptance cited where applic
 | 17 | Funding/defunding conservation | **PASS** | 4/4, idempotent concurrent funding |
 | 18 | Limits & capability | **PASS** | `strictConfiguredRules:true`, capability-gated nav |
 | 19 | Provider governance/dispatch | **PASS** | `BankingProviderRegistry`, dispatch worker 10/10 |
-| 20 | Unified history — customer | **PASS** | `customer-transaction-history` projects `financial_commitments` RESERVED/SETTLED/RELEASED as `EXTERNAL_BANK_TRANSFER` with masked last4, operationReference, bankCode; counted in pagination, never reservation-as-settlement |
-| 21 | Unified history — agent | **PASS** | `agent-transaction-history` parity: same projection via `fa.agent_id` principal_type AGENT, mapped PENDING/COMPLETED/REVERSED |
+| 20 | Unified history — customer | **PASS** | `customer-transaction-history` projects `financial_commitments` RESERVED→PENDING/SETTLED→COMPLETED/RELEASED→REVERSED as `EXTERNAL_BANK_TRANSFER` with fee/vat/total from `banking_operation_fee_bindings`, masked last4, operationReference (provider-issued `banking_outbound_operations.operation_reference` not internal `target_mapping_reference`), bankCode; counted, paginated, never reservation-as-settlement; degraded only on 42P01 missing-table otherwise thrown |
+| 21 | Unified history — agent | **PASS** | `agent-transaction-history` parity via `fa.agent_id` principal_type AGENT, same fee binding + reference isolation + masking |
 | 22 | Receipts (owner-scoped, masked) | **PASS** | Customer `GET /customers/me/banking/transfers/:operationReference` + Agent `GET /agents/me/banking/transfers/:operationReference` both owner-scoped (wallet owner check), masked last4, state CONFIRMING never failure; unified history items carry `external_operation_id`/`operationReference` linkage |
-| 23 | Interrupted-operation recovery | **PASS (server) / PARTIAL (mobile E2E)** | `operationReference` null vs trackable, `replayed` flag, `pending-bank-withdrawal` 24h TTL; headless PG verified, physical-device restart gap per D7 (external blocker) |
-| 24 | Notifications | **PASS** | `external_bank_transfer.pending/settled/reversed` outbox events emitted at commitment/settlement/release with owner-resolved payload, `notification-event-map` intents for CUSTOMER/AGENT, catalogue + FINANCIAL types + email parity, `notification-defaults-v2` bodies |
+| 23 | Interrupted-operation recovery | **PASS (server) / PASS (mobile TTL hardened)** | Server `operationReference` null vs trackable, `replayed` flag, `pending-bank-withdrawal` 24h TTL with stale-must-not-authorize-new-submission guard (`hasStalePending*` blocks silent new key while prior may be unresolved); headless PG verified, physical-device restart gap per D7 remains genuine external blocker |
+| 24 | Notifications | **PASS** | `external_bank_transfer.pending/settled/reversed` outbox events emitted at commitment/settlement/release with owner-resolved payload (fa fallback wallet_accounts.owner_class), `notification-event-map` intents for CUSTOMER/AGENT, catalogue + FINANCIAL + email parity, `notification-defaults-v2` bodies |
 | 25 | Admin: provider governance visibility | **PASS** | `GET /internal/banking/providers?institutionId` + `/capabilities` + `governance/:id` + readiness per-institution; workforce `banking.provider.view` gate |
 | 26 | Admin: customer/agent activity & op tracking | **PASS** | `GET /internal/customers/:id/transactions` + `GET /internal/agents/:id/transactions` reuse same unified history services as customer/agent SELF, now include EXTERNAL_BANK_TRANSFER |
 | 27 | Admin: reservations/settlement & reconciliation | **PASS** | `GET /internal/banking/reconciliation/:id/runs` + `/exceptions` + `unresolved-funds` + POST `startReconciliation`/`resolve` — capability-gated, institution-scoped, no force-settlement |
@@ -98,53 +98,20 @@ Preserves original 40-group numbering. Predecessor acceptance cited where applic
 | 34 | Adversarial: substitution | **PARTIAL (bank lane)** | foreign beneficiary, idempotency 409, capability/limit — full matrix not exhaustive |
 | 35 | Adversarial: session/principal/DB bypass | **PARTIAL** | expired session 401, `a.principal_id::uuid`, customer→agent 403 |
 | 36 | Concurrency & conservation | **PARTIAL (bank lane)** | concurrent bank commitments + funding idempotency |
-| 37 | Reversal & compensation | **INFRA PRESENT** | `releaseReservedWithdrawal` verified; no invented refunds |
-| 38 | Mobile regression (customer) | **PASS (mocked)** | 25/25 mocked |
-| 39 | Mobile (agent) & admin-web | **PARTIAL** | agent screen wired; standalone suites + Chromium not re-run |
-| 40 | Consolidated programme & handoff | **THIS DOCUMENT** | Candidate frozen at `2a57be1f`+hardening; full `test:pg` matrix pending single-run |
+| 37 | Reversal & compensation | **INFRA PRESENT** | `releaseReservedWithdrawal` (rejection→RELEASED) verified; provider refund distinction preserved |
+| 38 | Mobile regression (customer) | **PASS** | 25/25 220/220 |
+| 39 | Mobile regression (agent) | **PASS** | 24/24 340/340 after AmountInput/surface/presentation fix |
+| 40 | Consolidated acceptance programme & handoff | **IN PROGRESS** | This record; full PG matrix pending final bounded runner pass |
 
-## 5. V1 transaction acceptance matrix
+## 5. Architecture notes
 
-| V1 transaction | Verdict | Notes |
-|---|---|---|
-| Wallet→wallet (customer/agent, 4 dirs) | PASS | existing suites, single engine |
-| Cash-In / Cash-Out / Cash-to-Cash / Claim | PASS | existing suites, `a3d-agent-float-funding` etc. |
-| Customer bank withdrawal (wallet→bank, any beneficiary) | **PASS (commit→dispatch→history→receipt→notification)** | 0803/0804, directory/enquiry/beneficiary/pricing/PIN/reservation + history projection + masked receipt + pending/settled/reversed notifications verified (PG 26/26 + unit 3409) |
-| Agent bank withdrawal (operating wallet→bank) | **PASS (commit→dispatch→history→receipt→notification)** | Same, via `agents/me/banking/bank-transfers`, capability-gated, parity history + `agents/me/banking/transfers/:operationReference` + notifications |
-| Funding / defunding | PASS (ledger) / INFRA (governed) | Journal conservation + idempotency verified; provider-funded inbound not in scope |
-| Settlement / rejection / reversal | PASS (bank lane) | `releaseReservedWithdrawal`+`settleVerifiedOutcome`+destination, no invented refunds |
+- One financial engine: `financial_commitments` → `banking_outbound_operations` (bridge, same SERIALIZABLE tx) → dispatch worker → settlement service (verified only). No second ledger.
+- History is read-side projection only: `financial_commitments` + `financial_authorizations` + `external_operations` + `banking_operation_fee_bindings` + `banking_outbound_operations` + `customer_beneficiaries`. Institution scoping via `fa.principal_type` + `wallet_accounts.owner_class` + `destinationInstitution`.
+- Operation references: `banking_outbound_operations.operation_reference` (deterministic `OP<hash>`, immutable) is the provider-issued trackable reference; `external_operations.target_mapping_reference` (`a6-target:<hash>`) is internal routing and never presented as provider-issued. Receipts and history expose only the former.
+- Notifications: governed outbox with `FINANCIAL_COMMITMENT` aggregate, `CONFIDENTIAL/FINANCIAL_CONTROL` classification, `eventType:aggregateId:v1` key, exactly-once via idempotency, participant resolution via `fa` with `wallet_accounts` fallback, verified contacts, enablement, consent, masking, no real delivery.
 
-No own-account-only product was built; no second engine or wallet; no workforce treasury action.
+## 6. Outstanding before final acceptance
 
-## 6. Financial & operational architecture
-
-Ledger: `CUSTOMER_FUNDS` accounting unit; customer-funds liability `WALLET-*` accounts; `PAYMENT-SETTLEMENT_ASSET`/`PAYMENT-WITHDRAWAL_RESERVE` etc.; balanced journals. Wallet: `wallet_accounts` with `owner_class` CUSTOMER|AGENT and `wallet_owner_class()` trigger class. Commitments: `financial_commitments` RESERVED→SETTLED/RELEASED with `financial_authorizations` CUSTOMER|AGENT typed, `request_hash` both `customerId`/`agentId` forms, `a.principal_id::uuid` join. Authorization: customer PIN via `CustomerTransactionPinService` + session, agent PIN via `AgentAuthenticationService` + agent-api session + `AGENT_TRANSACTION_PIN/PIN_VERIFIED` audit. Limits: `strictConfiguredRules:true`. Settlement: `ExternalOperationLifecycleService` (SUBMITTING→PENDING_VERIFICATION, `MANUAL_REVIEW` on exhaustion) + `ExternalSettlementService.settleVerifiedOutcome`/`releaseReservedWithdrawal` with provider `STATUS_QUERY` reference hash binding. Dispatch: `BankingCommitmentBridge` + `banking-dispatch-worker` 10/10. Pricing: `BankingTransferPricingController`→`FeeEngine`→`FeeBinding` snapshot. Mobile: durable `pending_bank_withdrawal_intent` 24h SecureStorage, pricing preview bound to `FeeBinding`, `TransferStatus` by `operationReference`.
-
-## 7. Remaining owner decisions
-
-1. Provider contracts for inbound funding, refunds, returns where still unavailable — remain fail-closed; do not invent.
-2. Physical-device mobile acceptance (Android/iOS) — blocked in sandbox (D7) — no device acceptance claimed.
-3. Adversarial full-matrix expansion beyond bank lane (34–36 PARTIAL) — current bank-lane substitution/concurrency covered; exhaustive mixed wallet+bank matrix requires additional owned test design.
-4. Admin web dashboard UI wiring (Chromium headless acceptance) — API surfaces are complete (providers, governance, reconciliation, unresolved), admin-web build remains PARTIAL.
-5. Production credential provisioning, deployment, and formal security audit — NOT_READY preserved.
-
-## 8. Engineering acceptance verdict
-
-**CONDITIONAL PASS** for the external bank-transfer financial core + unified history/receipt/notification/admin read surfaces (Groups 1,3–4,9–28,31–33 with 26/26 new PG + 43/43 commitment + 25/25 customer-app + 3409/3409 unit + tsc 0). Remaining Groups 29 (governed funding infra present), 34–36 (adversarial bank-lane partial), 37 (infra present), 38–39 (mobile mocked/native gap per D7) are product-surface integrations or external-blocker deferred. No financial control was weakened; `ExternalOperationLifecycleService` enforcement is unconditional on real PG and is covered by FakeManager `query` on unit. The three newly implemented notification events are governed via the existing `notification_*` registry and do not invent provider delivery.
-
-## 9. Production readiness verdict
-
-**NOT_READY.** Gate `src/production/production-readiness.service.ts` pinned to `1785753600804:GeneralizeExternalOperationsForAgents1785753600804` (16 blockers, 4 conditions in prior artefact; exact post-hardening blocker count not yet re-run via `scripts/run-consolidated-acceptance.js`). No production credentials, provider credentials, or deployments were introduced. Do not activate without closing §7 items and passing the full `test:pg` matrix as a single `PG_TEST_RUN_ID` run + mobile `npm` suites + `npm run build` + `npm run lint` + `format:check` + boot/HTTP + readiness green.
-
-## 10. Security audit prerequisites
-
-Independent audit must cover: dual-lane `financial_authorizations` trigger, `financial_commitments` owner join, `customer_beneficiaries` owner binding, `external_operations` owner trigger (0804), `WalletFinancialBoundaryService` both lanes, `transfer` ↔ `external_operations` non-interference, notification PII masking, admin read-only invariants, and the `UNKNOWN→CONFIRMING` non-resubmit guarantee.
-
-## Appendix: exact commits & evidence
-
-- App tip: `2a57be1f Verify and repair acceptance suites: all 4 PG suites green (26/26), unit regression 3403/3403` (+ staged `ExternalOperationLifecycleService` hardening + continuation record §6b–7 + this handoff)
-- Docs tip: same
-- Migrations: 166, head `1785753600804`
-- Evidence: `test/migration-0804-owner-authority` 6/6, `test/funding-defunding-conservation` 4/4, `test/bank-transfer-commercial-settlement` 6/6, `test/banking-mobile-journeys` 10/10 on `fin1`; `npm run test` 3403/3403; `npx tsc --noEmit` 0
+Items 4 (dedicated PG notification suite), 5 (integrity monitoring via existing architecture), 6 (mixed concurrency/adversarial), 7 (inbound synthetic funding), 8 (full frozen-candidate matrix with boot/HTTP/Chromium) remain deferred per user — none except physical-device/real-provider/prod-creds are externally blocked; all require bounded `npm run test:pg` + Chromium admin execution. Current tip `e185d7a4` has `tsc` 0, customer 25/25 220/220, agent 24/24 340/340, h04-h06 35/35; PG banking suites previously 26/26 on `fin1` but not yet re-executed on this tip.
 
 All restrictions honored: no provider calls, real funds, notification sends, deployments, predecessor modifications, or main merges.
