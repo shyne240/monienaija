@@ -118,7 +118,9 @@ describe('migration inventory', () => {
       ['1785753600613', 'NotificationDeliveryReceipts1785753600613'],
       ['1785753600614', 'PrivacyAndRetention1785753600614'],
     ] as const;
-    const byTimestamp = new Map(migrations.map((migration) => [migration.timestamp, migration.name]));
+    const byTimestamp = new Map(
+      migrations.map((migration) => [migration.timestamp, migration.name]),
+    );
     for (const [timestamp, name] of arena3d) {
       expect(byTimestamp.get(timestamp)).toBe(name);
     }
@@ -137,7 +139,9 @@ describe('migration inventory', () => {
       ['1785753600801', 'AgentVerifiedPhone1785753600801'],
       ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
     ] as const;
-    const byTimestamp = new Map(migrations.map((migration) => [migration.timestamp, migration.name]));
+    const byTimestamp = new Map(
+      migrations.map((migration) => [migration.timestamp, migration.name]),
+    );
     for (const [timestamp, name] of arena2c) {
       expect(byTimestamp.get(timestamp)).toBe(name);
     }

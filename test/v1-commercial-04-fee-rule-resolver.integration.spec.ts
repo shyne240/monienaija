@@ -188,14 +188,12 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   it('prices transfer debit using server fee rules and existing accounting treatment', async () => {
     const pricing = app.get(TransferPricingService);
     const config = app.get(CommercialAccountingConfigService);
-    const spy = jest
-      .spyOn(config, 'read')
-      .mockReturnValue({
-        enabled: true,
-        vatTreatment: CommercialVatTreatment.EXCLUSIVE_ADD_ON,
-        commissionTreatment: null,
-        commissionTiming: null,
-      });
+    const spy = jest.spyOn(config, 'read').mockReturnValue({
+      enabled: true,
+      vatTreatment: CommercialVatTreatment.EXCLUSIVE_ADD_ON,
+      commissionTreatment: null,
+      commissionTiming: null,
+    });
     try {
       await registry.createRule(baseRule({ flatFeeMinor: '100', vatBps: 750 }), 'test');
       const price = () =>

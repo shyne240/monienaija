@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-19T00:00:00.000Z",
-  "commit": "b66238be990f3dde18aab614fe7e7ae838baf9b9",
+  "generatedAt": "2026-11-19T10:57:13.224Z",
+  "commit": "35bf9b74535aded304b2272bd30abbf562e28764",
   "cleanTree": true,
   "rows": [
     {
@@ -28,7 +28,7 @@
       "kind": "executed",
       "evidence": "npm run format:check",
       "status": "PASS",
-      "detail": "prettier clean"
+      "detail": "re-executed in the regeneration run; values recomputed and re-recorded by scripts/run-consolidated-acceptance.js"
     },
     {
       "id": "unit-suite",
@@ -37,7 +37,7 @@
       "kind": "executed",
       "evidence": "npx jest --config jest.config.js",
       "status": "PASS",
-      "detail": "re-executed in the regeneration run; values recomputed and re-recorded by scripts/run-consolidated-acceptance.js"
+      "detail": "3402 tests in 291 suites"
     },
     {
       "id": "ci-gates",

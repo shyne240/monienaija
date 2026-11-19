@@ -14,14 +14,12 @@ describe('commercial transfer fee debit quote', () => {
   const fee = { status: 'APPLIED', feeMinor: '100', vatMinor: '7', ruleRefs: [{ vatBps: 750 }] };
   afterEach(() => jest.restoreAllMocks());
   it('uses the same exclusive accounting split as the posting path', () => {
-    jest
-      .spyOn(config, 'read')
-      .mockReturnValue({
-        enabled: true,
-        vatTreatment: CommercialVatTreatment.EXCLUSIVE_ADD_ON,
-        commissionTreatment: null,
-        commissionTiming: null,
-      });
+    jest.spyOn(config, 'read').mockReturnValue({
+      enabled: true,
+      vatTreatment: CommercialVatTreatment.EXCLUSIVE_ADD_ON,
+      commissionTreatment: null,
+      commissionTiming: null,
+    });
     expect(service.quoteFeeDebit(fee)).toEqual({
       feeMinor: '100',
       vatMinor: '7',
@@ -29,14 +27,12 @@ describe('commercial transfer fee debit quote', () => {
     });
   });
   it('separates inclusive VAT without charging it twice', () => {
-    jest
-      .spyOn(config, 'read')
-      .mockReturnValue({
-        enabled: true,
-        vatTreatment: CommercialVatTreatment.INCLUSIVE_IN_FEE,
-        commissionTreatment: null,
-        commissionTiming: null,
-      });
+    jest.spyOn(config, 'read').mockReturnValue({
+      enabled: true,
+      vatTreatment: CommercialVatTreatment.INCLUSIVE_IN_FEE,
+      commissionTreatment: null,
+      commissionTiming: null,
+    });
     expect(service.quoteFeeDebit(fee)).toEqual({
       feeMinor: '94',
       vatMinor: '6',

@@ -167,21 +167,17 @@ export class CustomerBeneficiaryService {
           { ownershipId: ownership.id },
         );
         beneficiary.verified = true;
-        const verification = await manager
-          .getRepository(BeneficiaryVerification)
-          .save(
-            manager
-              .getRepository(BeneficiaryVerification)
-              .create({
-                id: randomUUID(),
-                beneficiaryId: beneficiary.id,
-                verifiedBy: owner.id,
-                verifiedAt: new Date(),
-                verificationMethod: 'WALLET_RECIPIENT_RESOLUTION',
-                remarks: null,
-                deletedAt: null,
-              }),
-          );
+        const verification = await manager.getRepository(BeneficiaryVerification).save(
+          manager.getRepository(BeneficiaryVerification).create({
+            id: randomUUID(),
+            beneficiaryId: beneficiary.id,
+            verifiedBy: owner.id,
+            verifiedAt: new Date(),
+            verificationMethod: 'WALLET_RECIPIENT_RESOLUTION',
+            remarks: null,
+            deletedAt: null,
+          }),
+        );
         beneficiary = await repository.save(beneficiary);
         await this.audit(
           manager,
