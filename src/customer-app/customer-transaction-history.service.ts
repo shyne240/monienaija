@@ -205,13 +205,13 @@ export class CustomerTransactionHistoryService {
       const rows: Array<any> = await this.dataSource.query(
         `SELECT fc.id::text as id, 'EXTERNAL_BANK_TRANSFER'::text as type,
                   fc.state::text as status,
-                  fc.amount_minor::text as amount_minor, fc.currency::text as currency,
-                  fc.created_at, fc.updated_at as completed_at,
+                  fa.amount_minor::text as amount_minor, fa.currency::text as currency,
+                  fc.created_at, fc.resolved_at as completed_at,
                   bo.operation_reference::text as reference,
                   bo.provider_transaction_reference::text as provider_reference,
                   eo.target_mapping_reference::text as internal_target_reference,
                   COALESCE(cb.display_name, cb.nickname, bo.operation_reference, eo.target_mapping_reference)::text as narration,
-                  fc.wallet_account_id::text as source_wallet_id,
+                  fa.wallet_account_id::text as source_wallet_id,
                   null::text as destination_wallet_id,
                   fa.institution::text as destination_institution,
                   eo.id::text as external_operation_id,
@@ -220,16 +220,17 @@ export class CustomerTransactionHistoryService {
                   fc.resolution_journal_id::text as resolution_journal_id,
                   fc.reservation_journal_id::text as reservation_journal_id,
                   substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
-                  cb.bank_code::text as bank_code,
+                  fcd.bank_code::text as bank_code,
                   COALESCE(fb.service_fee_minor::text,'0') as fee_minor,
                   COALESCE(fb.tax_minor::text,'0') as vat_minor,
-                  COALESCE(fb.customer_debit_minor::text, fc.amount_minor::text) as total_debit_minor,
-                  COALESCE(fb.beneficiary_amount_minor::text, fc.amount_minor::text) as principal_minor
+                  COALESCE(fb.customer_debit_minor::text, fa.amount_minor::text) as total_debit_minor,
+                  COALESCE(fb.beneficiary_amount_minor::text, fa.amount_minor::text) as principal_minor
            FROM financial_commitments fc
            JOIN financial_authorizations fa ON fa.id = fc.authorization_id
            LEFT JOIN external_operations eo ON eo.id = fc.external_operation_id
            LEFT JOIN banking_outbound_operations bo ON bo.external_operation_id = eo.id
-           LEFT JOIN customer_beneficiaries cb ON cb.id = fc.beneficiary_id
+           LEFT JOIN financial_commitment_destinations fcd ON fcd.commitment_id = fc.id
+           LEFT JOIN customer_beneficiaries cb ON cb.id = fcd.beneficiary_id
            LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id = eo.id
            WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'
            ORDER BY fc.created_at DESC, fc.id DESC`,
