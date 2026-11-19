@@ -24,7 +24,7 @@ function runBatch(files, batchIndex) {
   const runId = `${RUN_ID_PREFIX}${String(batchIndex+1).padStart(2,'0')}`; // e.g., f04b01
   const outFile = `/tmp/batch-${runId}.json`;
   const start = Date.now();
-  const args = ['--max-old-space-size=1536', '-r', NETWORK_GUARD, JEST_BIN, '--config', CONFIG, '--runInBand', '--json', `--outputFile=${outFile}`, ...files];
+  const args = ['--max-old-space-size=3072', '-r', NETWORK_GUARD, JEST_BIN, '--config', CONFIG, '--runInBand', '--json', `--outputFile=${outFile}`, ...files];
   console.log(`\n=== Batch ${batchIndex+1} runId=${runId} ${files.length} files ===`);
   const child = spawnSync(process.execPath, args, {
     cwd: ROOT,
@@ -112,7 +112,7 @@ async function main(){
       for (const file of batches[i]) {
         const singleRunId = `${RUN_ID_PREFIX}${String(i+1).padStart(2,'0')}s${path.basename(file).slice(0,2)}`;
         const singleOut = `/tmp/batch-${singleRunId}.json`;
-        const singleArgs = ['--max-old-space-size=1536', '-r', NETWORK_GUARD, JEST_BIN, '--config', CONFIG, '--runInBand', '--json', `--outputFile=${singleOut}`, file];
+        const singleArgs = ['--max-old-space-size=3072', '-r', NETWORK_GUARD, JEST_BIN, '--config', CONFIG, '--runInBand', '--json', `--outputFile=${singleOut}`, file];
         const singleStart = Date.now();
         const singleChild = spawnSync(process.execPath, singleArgs, {cwd: ROOT, encoding:'utf8', env: {...process.env, PG_TEST_RUN_ID: singleRunId.slice(0,15), NODE_ENV:'test', DB_HOST:'127.0.0.1', PG_TEST_CONFIRM_DISPOSABLE_CLUSTER:'yes'}, maxBuffer: 64*1024*1024, timeout: 300000});
         let singleJson=null; try{ if(fs.existsSync(singleOut)) singleJson=JSON.parse(fs.readFileSync(singleOut,'utf8')); }catch{}

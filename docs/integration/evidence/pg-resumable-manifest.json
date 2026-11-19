@@ -1021,40 +1021,9 @@
       "completedAt": "2026-11-19T22:33:29.383Z",
       "candidate": "b5b65d0f",
       "status": "PASSED"
-    },
-    {
-      "batch": 31,
-      "runId": "f04b31",
-      "suitePaths": [
-        "test/a5t11-b2f03-convergence.integration.spec.ts",
-        "test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts",
-        "test/arena3d-agent-banking-http.integration.spec.ts"
-      ],
-      "command": "PG_TEST_RUN_ID=f04b31 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b31.json test/a5t11-b2f03-convergence.integration.spec.ts test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts test/arena3d-agent-banking-http.integration.spec.ts",
-      "env": {
-        "PG_TEST_RUN_ID": "f04b31",
-        "NODE_ENV": "test",
-        "DB_HOST": "127.0.0.1",
-        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
-        "PG_TEST_BATCH_SIZE": "3",
-        "candidate": "b5b65d0f"
-      },
-      "exitCode": null,
-      "signal": "SIGTERM",
-      "durationMs": 182176,
-      "passed": 0,
-      "failed": 0,
-      "skipped": 0,
-      "total": 0,
-      "suitesPassed": [],
-      "suitesFailed": [],
-      "completedAt": "2026-11-19T22:36:32.561Z",
-      "candidate": "b5b65d0f",
-      "status": "INCOMPLETE",
-      "note": "Process terminated with signal SIGTERM or timeout, not passing"
     }
   ],
-  "completed": 31,
-  "remaining": 31,
-  "lastUpdated": "2026-11-19T22:36:32.561Z"
+  "completed": 30,
+  "remaining": 32,
+  "lastUpdated": "2026-11-19T22:36:51.525174Z"
 }
