@@ -131,10 +131,37 @@ function buildService(rows: PrivilegedActionApproval[]) {
     }),
     createQueryBuilder: jest.fn(() => {
       const filters: Record<string, unknown> = {};
+      let skipN = 0;
+      let takeN = 50;
+      const applyFilters = () =>
+        Array.from(store.values()).filter((r) => {
+          if (filters.status && r.status !== filters.status) return false;
+          if (filters.actionType && r.actionType !== filters.actionType) return false;
+          if (filters.resourceType && r.resourceType !== filters.resourceType) return false;
+          if (Array.isArray(filters.scopes) && !filters.scopes.includes(r.approvalScope)) {
+            return false;
+          }
+          if (filters.mfaAssurance && r.requiredAssurance === filters.mfaAssurance) return false;
+          if (
+            Array.isArray(filters.agentFundingActions) &&
+            filters.agentFundingActions.includes(r.actionType)
+          ) {
+            return false;
+          }
+          if (
+            Array.isArray(filters.forbiddenRegisteredActions) &&
+            filters.forbiddenRegisteredActions.includes(r.actionType)
+          ) {
+            return false;
+          }
+          return true;
+        });
       const qb: {
         orderBy: jest.Mock;
         andWhere: jest.Mock;
-        getMany: jest.Mock;
+        skip: jest.Mock;
+        take: jest.Mock;
+        getManyAndCount: jest.Mock;
       } = {
         orderBy: jest.fn().mockReturnThis(),
         andWhere: jest.fn((clause: string, params: Record<string, unknown>) => {
@@ -142,14 +169,18 @@ function buildService(rows: PrivilegedActionApproval[]) {
           void clause;
           return qb;
         }),
-        getMany: jest.fn(async () =>
-          Array.from(store.values()).filter((r) => {
-            if (filters.status && r.status !== filters.status) return false;
-            if (filters.actionType && r.actionType !== filters.actionType) return false;
-            if (filters.resourceType && r.resourceType !== filters.resourceType) return false;
-            return true;
-          }),
-        ),
+        skip: jest.fn((n: number) => {
+          skipN = n;
+          return qb;
+        }),
+        take: jest.fn((n: number) => {
+          takeN = n;
+          return qb;
+        }),
+        getManyAndCount: jest.fn(async () => {
+          const all = applyFilters();
+          return [all.slice(skipN, skipN + takeN), all.length];
+        }),
       };
       return qb;
     }),
@@ -349,5 +380,52 @@ describe('Commercial Approvals & Governance', () => {
     });
     expect(valid.approved).toBe(true);
     expect(valid.reason).toBe('APPROVED');
+  });
+
+  it('paginates and counts database-filtered results accurately across large mixed-authority datasets', async () => {
+    const rows: PrivilegedActionApproval[] = [];
+    for (let i = 0; i < 60; i += 1) {
+      rows.push(
+        makeApprovalRow({
+          id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+          actionType: 'FEE_RULE_CREATE',
+          resourceType: 'FEE_RULE',
+          approvalScope: 'privileged:approve',
+        }),
+      );
+    }
+    for (let i = 60; i < 80; i += 1) {
+      rows.push(
+        makeApprovalRow({
+          id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+          actionType: Object.values(AGENT_FUNDING_ACTIONS)[0]!.action,
+          resourceType: 'AGENT_FUNDING',
+          approvalScope: 'agent.fund',
+        }),
+      );
+    }
+    const { service } = buildService(rows);
+
+    const page1 = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve'],
+      }),
+      limit: 25,
+      offset: 0,
+    });
+    expect(page1.total).toBe(60);
+    expect(page1.items).toHaveLength(25);
+
+    const page3 = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve'],
+      }),
+      limit: 25,
+      offset: 50,
+    });
+    expect(page3.total).toBe(60);
+    expect(page3.items).toHaveLength(10);
   });
 });

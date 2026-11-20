@@ -9,7 +9,7 @@ import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
 import { AuthorizationService } from './authorization.service';
-import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import { AGENT_FUNDING_ACTIONS, GOVERNED_ACTIONS, governedAction } from './governed-action.registry';
 import { isProtectedAuthorityAction } from './protected-authority.actions';
 import { ProtectedAuthorityService } from './protected-authority.service';
 import { NotificationDispatcherService } from '../notification/notification-dispatcher.service';
@@ -69,9 +69,39 @@ export class PrivilegedActionApprovalService {
     if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       return { items: [], total: 0 };
     }
+    if (!principal.scopes.length) {
+      return { items: [], total: 0 };
+    }
+
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+    const offset = Math.max(query.offset ?? 0, 0);
+
     const qb = this.approvalRepository
       .createQueryBuilder('approval')
-      .orderBy('approval.requestedAt', 'DESC');
+      .orderBy('approval.requestedAt', 'DESC')
+      .andWhere('approval.approvalScope IN (:...scopes)', { scopes: principal.scopes });
+
+    if (principal.assuranceLevel !== 'MFA') {
+      qb.andWhere('approval.requiredAssurance != :mfaAssurance', { mfaAssurance: 'MFA' });
+    }
+
+    if (principal.roles.includes('SUPER_ADMIN')) {
+      const agentFundingActions = Object.values(AGENT_FUNDING_ACTIONS).map((a) => a.action);
+      if (agentFundingActions.length > 0) {
+        qb.andWhere('approval.actionType NOT IN (:...agentFundingActions)', {
+          agentFundingActions,
+        });
+      }
+    }
+
+    const forbiddenRegisteredActions = Object.values(GOVERNED_ACTIONS)
+      .filter((def) => !def.approvingRoles.some((role) => principal.roles.includes(role)))
+      .map((def) => def.action);
+    if (forbiddenRegisteredActions.length > 0) {
+      qb.andWhere('approval.actionType NOT IN (:...forbiddenRegisteredActions)', {
+        forbiddenRegisteredActions,
+      });
+    }
 
     if (query.status) {
       qb.andWhere('approval.status = :status', { status: query.status });
@@ -86,68 +116,19 @@ export class PrivilegedActionApprovalService {
         resourceType: query.resourceType.trim(),
       });
     }
-
-    const rows = await qb.getMany();
-    const institutionId = query.institutionId?.trim();
-    const filtered = rows.filter((approval) => {
-      if (!this.canPrincipalViewApproval(principal, approval)) {
-        return false;
-      }
-      if (institutionId) {
-        const policyInstitutionId =
-          typeof approval.policy?.institutionId === 'string'
-            ? approval.policy.institutionId
-            : undefined;
-        const details = approval.policy?.requestDetails as Record<string, unknown> | undefined;
-        const detailsInstitutionId =
-          typeof details?.institutionId === 'string' ? details.institutionId : undefined;
-        if (
-          approval.resourceId !== institutionId &&
-          policyInstitutionId !== institutionId &&
-          detailsInstitutionId !== institutionId
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
-    const offset = Math.max(query.offset ?? 0, 0);
-    const paged = filtered.slice(offset, offset + limit).map((a) => this.toView(a));
-    return { items: paged, total: filtered.length };
-  }
-
-  private canPrincipalViewApproval(
-    principal: AuthorizationPrincipal,
-    approval: PrivilegedActionApproval,
-  ): boolean {
-    if (approval.requiredAssurance === 'MFA' && principal.assuranceLevel !== 'MFA') {
-      return false;
-    }
-    if (this.isAgentFundingAction(approval.actionType) && principal.roles.includes('SUPER_ADMIN')) {
-      return false;
-    }
-    if (!principal.scopes.includes(approval.approvalScope)) {
-      return false;
-    }
-    const registered = governedAction(approval.actionType);
-    if (registered) {
-      return registered.approvingRoles.some((role) => principal.roles.includes(role));
-    }
-    const policyRoles = Array.isArray(approval.policy?.approvingRoles)
-      ? (approval.policy.approvingRoles as string[])
-      : Array.isArray(approval.policy?.requiredRoles)
-        ? (approval.policy.requiredRoles as string[])
-        : null;
-    if (policyRoles && policyRoles.length > 0) {
-      return (
-        policyRoles.some((role) => principal.roles.includes(role)) ||
-        principal.roles.includes('FINANCE_CONTROLLER') ||
-        principal.roles.includes('SUPER_ADMIN')
+    if (query.institutionId?.trim()) {
+      const institutionId = query.institutionId.trim();
+      qb.andWhere(
+        "(approval.resourceId = :institutionId OR approval.policy ->> 'institutionId' = :institutionId OR approval.policy -> 'requestDetails' ->> 'institutionId' = :institutionId)",
+        { institutionId },
       );
     }
-    return true;
+
+    const [rows, total] = await qb.skip(offset).take(limit).getManyAndCount();
+    return {
+      items: rows.map((a) => this.toView(a)),
+      total,
+    };
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
