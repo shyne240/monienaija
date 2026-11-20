@@ -800,6 +800,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const selectedAgentId = useRef<string | null>(null);
   const positionRequest = useRef(0);
+  const receivingRequest = useRef(0);
+  const resetReceivingLookup = () => {
+    receivingRequest.current += 1;
+    setReceivingLoading(false);
+    setReceivingInfo(null);
+    setReceivingError('');
+    setReceivingNotEntitled(false);
+  };
+
   useEffect(
     () => () => {
       positionRequest.current += 1;
@@ -867,9 +876,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setLifecycleReason('');
     setActionMsg('');
     setActionErr('');
-    setReceivingInfo(null);
-    setReceivingError('');
-    setReceivingNotEntitled(false);
+    resetReceivingLookup();
     setOutletsLoaded(false);
     setOutletsLoading(false);
     setOutlets([]);
@@ -1556,6 +1563,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (!updated || updated.id !== id || updated.status !== expected)
         throw new Error('Lifecycle receipt did not match the Agent and requested status.');
       setSelected((cur) => (cur && cur.id === id ? { ...cur, status: expected } : cur));
+      resetReceivingLookup();
       setActionMsg(
         `Agent ${action} confirmed (status: ${expected}). Review the Agent record and audit history for details.`,
       );
@@ -1604,6 +1612,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setSelected((current) =>
         current && current.id === id ? { ...current, status: fresh.status } : current,
       );
+      resetReceivingLookup();
       setLifecycleReviewStatus(fresh.status);
       setActionErr('');
     } catch (e: any) {
@@ -1616,7 +1625,18 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const loadReceivingNumber = async (agentId: string) => {
-    if (!canViewReceivingNumber || receivingLoading || receivingNotEntitled) return;
+    if (
+      !canViewReceivingNumber ||
+      receivingLoading ||
+      receivingNotEntitled ||
+      selectedAgentId.current !== agentId
+    )
+      return;
+    const request = ++receivingRequest.current;
+    const valid = () =>
+      mountedRef.current &&
+      selectedAgentId.current === agentId &&
+      receivingRequest.current === request;
     setReceivingLoading(true);
     setReceivingError('');
     setReceivingInfo(null);
@@ -1624,17 +1644,19 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       const view = await ApiClient.get<AgentReceivingNumberView>(
         `/internal/agents/${encodeURIComponent(agentId)}/receiving-number`,
       );
+      if (!valid()) return;
+      if (!view || view.agentId !== agentId)
+        throw new Error('Receiving number response did not match the selected Agent.');
       setReceivingInfo(view);
     } catch (e: any) {
-      setReceivingInfo(null);
+      if (!valid()) return;
       if (e?.status === 403) {
         setReceivingNotEntitled(true);
-        setReceivingError('');
       } else {
         setReceivingError(e?.message || 'Failed to load receiving number');
       }
     } finally {
-      setReceivingLoading(false);
+      if (valid()) setReceivingLoading(false);
     }
   };
 
@@ -1666,16 +1688,27 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         new Set(terminalRows.map((row) => row.id)).size !== terminalRows.length
       )
         throw new Error('Invalid or cross-Agent outlet/terminal response.');
+      const outletIds = new Set(outletRows.map((row) => row.id));
+      if (terminalRows.some((row) => !outletIds.has(row.outletId)))
+        throw new Error(
+          'Terminal response contains an outlet outside the selected Agent’s estate. Refresh both lists.',
+        );
       setOutlets(outletRows);
       setTerminals(terminalRows);
       setOutletsLoaded(true);
       if (outletUnconfirmed) setOutletReviewReady(true);
-      setTerminalForm((cur) => ({
-        ...cur,
-        outletId: outletRows.some((o) => o.id === cur.outletId && o.status === 'ACTIVE')
-          ? cur.outletId
-          : (outletRows.find((o) => o.status === 'ACTIVE')?.id ?? ''),
-      }));
+      setTerminalForm((cur) => {
+        const active = outletRows.filter((outlet) => outlet.status === 'ACTIVE');
+        if (active.some((outlet) => outlet.id === cur.outletId)) return cur;
+        // Never silently change the parent of a partially entered terminal on refresh.
+        const hasDraft = Object.entries(cur).some(
+          ([key, value]) => key !== 'outletId' && value.trim(),
+        );
+        return {
+          ...cur,
+          outletId: !hasDraft && !cur.outletId && active.length === 1 ? active[0]!.id : '',
+        };
+      });
     } catch (e: any) {
       if (valid()) {
         setOutletsError(e?.message || 'Failed to load outlets and terminals');
@@ -2515,6 +2548,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     detailLookupGeneration.current += 1;
     setDetailLookup(null);
     selectedAgentId.current = null;
+    resetReceivingLookup();
     positionRequest.current += 1;
     agentHistoryRequest.current += 1;
     setAgentHistoryLoading(false);
@@ -4880,6 +4914,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     lifecycleUnconfirmed
                                   }
                                 >
+                                  <option value="">Select an active outlet</option>
                                   {activeOutlets.map((o) => (
                                     <option key={o.id} value={o.id}>
                                       {o.reference} ({o.status})

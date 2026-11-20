@@ -319,3 +319,75 @@ test('an explicit aggregator context selects the relationship-gated outlet creat
     },
   );
 });
+
+test('late receiving-number data cannot appear in another Agent drawer', async () => {
+  const previous = deferred<{ agentId: string; receivingNumber: string; status: string }>();
+  get.mockImplementation(async (path: string) => {
+    if (path.startsWith('/internal/agents?')) return list(1, [onPage, offPage], 2);
+    if (path.endsWith('/financial-position'))
+      return { agentId: path.split('/')[3], walletExists: false };
+    if (path === `/internal/agents/${onPage.id}/receiving-number`) return previous.promise;
+    if (path === `/internal/agents/${offPage.id}/receiving-number`)
+      return { agentId: offPage.id, receivingNumber: '8222222222', status: 'ACTIVE' };
+    throw new Error(path);
+  });
+  render(<AgentNetworkScreen />);
+  const view = (reference: string) =>
+    within(screen.getByText(reference).closest('tr')!).getByRole('button', { name: 'View' });
+  await screen.findByText(onPage.reference);
+  fireEvent.click(view(onPage.reference));
+  fireEvent.click(screen.getByRole('button', { name: 'Load receiving number' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  fireEvent.click(view(offPage.reference));
+  fireEvent.click(screen.getByRole('button', { name: 'Load receiving number' }));
+  await screen.findByText('8222222222');
+  await act(async () =>
+    previous.resolve({ agentId: onPage.id, receivingNumber: '8111111111', status: 'ACTIVE' }),
+  );
+  expect(screen.queryByText('8111111111')).toBeNull();
+  expect(screen.getByText('8222222222')).toBeTruthy();
+});
+
+test('an estate response with a terminal outside the Agent’s listed outlets fails closed', async () => {
+  get.mockImplementation(async (path: string) => {
+    if (path.startsWith('/internal/agents?')) return list(1);
+    if (path.endsWith('/financial-position')) return { agentId: onPage.id, walletExists: false };
+    if (path.endsWith('/outlets')) return [outlet];
+    if (path.endsWith('/terminals')) return [{ ...terminal, outletId: 'foreign-parent' }];
+    throw new Error(path);
+  });
+  render(<AgentNetworkScreen />);
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Load outlets & terminals' }));
+  await screen.findByText(/outside the selected Agent’s estate/);
+  expect(screen.queryByRole('button', { name: 'Create terminal' })).toBeNull();
+  expect(screen.queryByText(terminal.reference)).toBeNull();
+});
+
+test('refreshing an ineligible parent does not silently reassign a terminal draft', async () => {
+  let refreshed = false;
+  const otherOutlet = { ...outlet, id: 'other-outlet', reference: 'OTHER-OUTLET' };
+  get.mockImplementation(async (path: string) => {
+    if (path.startsWith('/internal/agents?')) return list(1);
+    if (path.endsWith('/financial-position')) return { agentId: onPage.id, walletExists: false };
+    if (path.endsWith('/outlets'))
+      return refreshed ? [{ ...outlet, status: 'SUSPENDED' }, otherOutlet] : [outlet];
+    if (path.endsWith('/terminals')) return [];
+    throw new Error(path);
+  });
+  render(<AgentNetworkScreen />);
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Load outlets & terminals' }));
+  fireEvent.change(await screen.findByLabelText('Terminal reference'), {
+    target: { value: 'DRAFT-TERMINAL' },
+  });
+  refreshed = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh outlets & terminals' }));
+  expect(((await screen.findByLabelText('Terminal outlet')) as HTMLSelectElement).value).toBe('');
+  expect((screen.getByLabelText('Terminal reference') as HTMLInputElement).value).toBe(
+    'DRAFT-TERMINAL',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Create terminal' }));
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  await screen.findByText(/an outlet selection are required/);
+});

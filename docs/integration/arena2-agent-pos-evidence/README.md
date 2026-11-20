@@ -23,7 +23,11 @@ Integration target: `arena/5-main-web-integration`. This session is bound to `ar
 
 Cash-in, cash-out and Cash-to-Cash initiation use `AgentTransactionAuthorizationService` and the existing class capability service before execution; Agent-cash redemption also checks current `CASH_TO_CASH` capability inside the claim transaction. Agent wallet transfer checks the class's `WALLET_TRANSFER` permission in quote and transfer execution. Agent external bank transfer uses the authorization service with `EXTERNAL_BANK_TRANSFER` and passes the server-resolved class to limit admission. The funding service owns its capability checks and maker/checker rules. This change adds a negative operation test for a valid, active Agent whose class permits `CASH_OUT` but not `CASH_IN`, and verifies transfer history using an actual bank commitment in the disposable integration database. It does not edit the underlying engines.
 
-## Browser evidence
+## Stabilization and acceptance
+
+See [the PR #5 stabilization report](STABILIZATION.md) for baseline CI comparison, the disposable real-backend browser result, and the Arena 5 checklist.
+
+## Browser evidence (original synthetic smoke test)
 
 Playwright/Chromium against the actual Admin Web bundle in Vite, using synthetic HTTP fixtures intercepted in the browser. The smoke run checked page two and back, opening an off-page Agent from the application queue, loading the assigned terminals for an outlet, and server query parameters for search. No browser exceptions. Backend contracts are tested separately against disposable PostgreSQL.
 

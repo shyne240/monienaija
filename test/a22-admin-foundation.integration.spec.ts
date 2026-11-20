@@ -429,6 +429,30 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         .expect(400);
     }
     await request(app.getHttpServer()).get(base).query(filter).expect(401);
+    const denied = `Bearer ${workforceToken('SUPPORT', 'SUPPORT')}`;
+    for (const path of [base, `${base}/${second}`]) {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', denied)
+        .expect(403);
+      expect(JSON.stringify(response.body)).not.toContain(unique);
+    }
+    const reader = `Bearer ${workforceToken('OPERATOR', 'FINANCE_AUDITOR')}`;
+    const detail = await request(app.getHttpServer())
+      .get(`${base}/${second}`)
+      .set('Authorization', reader)
+      .expect(200);
+    expect(detail.body).toEqual(byId.body.data[0]);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${second}/suspend`)
+      .set('Authorization', reader)
+      .send({ reason: 'view permission must not allow lifecycle writes' })
+      .expect(403);
+    const unchanged = await request(app.getHttpServer())
+      .get(`${base}/${second}`)
+      .set('Authorization', reader)
+      .expect(200);
+    expect(unchanged.body).toEqual(detail.body);
   });
 
   it('projects the linked Agent status independently of the application approval status', async () => {
@@ -549,6 +573,40 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
       })
       .expect(201);
     expect(termRes.body.id).toBeDefined();
+    const secondAgent = await createActiveAgent();
+    const otherOutlet = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${secondAgent}/outlets`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        reference: `other-${randomUUID()}`,
+        name: 'Other outlet',
+        displayName: 'Other',
+        addressLine: '2 Test',
+        city: 'Lagos',
+        state: 'Lagos',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/outlets/${outletId}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        outletId: otherOutlet.body.id,
+        reference: `mismatch-${randomUUID()}`,
+        label: 'Wrong parent',
+      })
+      .expect(401);
+    const assigned = await request(app.getHttpServer())
+      .get(`/api/v1/internal/outlets/${outletId}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(assigned.body).toEqual([
+      expect.objectContaining({ id: termRes.body.id, outletId, agentId }),
+    ]);
+    const foreign = await request(app.getHttpServer())
+      .get(`/api/v1/internal/agents/${secondAgent}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(foreign.body).toEqual([]);
   });
 
   it('10. Agent Network Manager funding remains pending until independent approval', async () => {
