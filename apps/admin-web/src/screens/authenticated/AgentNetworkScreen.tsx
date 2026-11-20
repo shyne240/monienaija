@@ -33,6 +33,10 @@ interface Agent {
   updatedAt: string;
 }
 
+const DIRECTORY_PAGE_SIZE = 20;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMPTY_DIRECTORY_FILTERS = { search: '', agentClassId: '', aggregatorId: '', sort: 'newest' };
+
 interface AgentClassFullOption extends AgentClassOption {
   reference?: string;
   requiredInformation?: unknown | null;
@@ -70,6 +74,7 @@ interface AgentApplicationRecord {
   rejectedAt?: string | null;
   version?: number;
   agentId: string | null;
+  linkedAgentStatus?: string | null;
   rejectionReason: string | null;
   createdAt: string;
 }
@@ -324,6 +329,10 @@ interface TerminalRecord {
   version: number;
 }
 
+type EstateInspection =
+  | { kind: 'outlet'; outlet: OutletRecord; terminals: TerminalRecord[] }
+  | { kind: 'terminal'; terminal: TerminalRecord };
+
 interface AgentLimitAssignmentRecord {
   id: string;
   limitProfileCode: string;
@@ -433,7 +442,44 @@ function canPerformAgentLifecycle(
   }
 }
 
+function estateCreationPath(
+  agentId: string,
+  collection: 'outlets' | 'terminals',
+  aggregatorId: string,
+) {
+  const base = aggregatorId
+    ? `/internal/aggregators/${encodeURIComponent(aggregatorId)}`
+    : '/internal';
+  return `${base}/agents/${encodeURIComponent(agentId)}/${collection}`;
+}
+
+function EstateAggregatorField({
+  kind,
+  value,
+  disabled,
+  onChange,
+}: {
+  kind: 'Outlet' | 'Terminal';
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="agent-sites__field">
+      <span>{kind} aggregator ID (optional)</span>
+      <input
+        value={value}
+        maxLength={36}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <small>Checks an active relationship to this Agent; it does not change ownership.</small>
+    </label>
+  );
+}
+
 const EMPTY_OUTLET_FORM = {
+  aggregatorId: '',
   reference: '',
   code: '',
   name: '',
@@ -445,6 +491,7 @@ const EMPTY_OUTLET_FORM = {
 };
 
 const EMPTY_TERMINAL_FORM = {
+  aggregatorId: '',
   reference: '',
   code: '',
   outletId: '',
@@ -521,16 +568,19 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     hasFn('agent.review_application') &&
     (principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED');
   const canChangeApplications = canReviewApplications && !principal?.readOnlyPrincipal;
-  const canManageOutletsTerminals =
-    hasFn('agent.manage_outlets_terminals') && !principal?.readOnlyPrincipal;
-  const canAssignLimit = hasFn('agent.assign_limit') && !principal?.readOnlyPrincipal;
   const isOperatorOrPrivilegedWorkforce = ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(
     principal?.type ?? '',
   );
+  const canManageOutletsTerminals =
+    isOperatorOrPrivilegedWorkforce &&
+    hasFn('agent.manage_outlets_terminals') &&
+    !principal?.readOnlyPrincipal;
+  const canAssignLimit =
+    isOperatorOrPrivilegedWorkforce && hasFn('agent.assign_limit') && !principal?.readOnlyPrincipal;
   const canViewReceivingNumber = canView && isOperatorOrPrivilegedWorkforce;
   const canViewUnifiedHistory = canView && isOperatorOrPrivilegedWorkforce;
   const canManageClasses = hasFn('agent.manage_classes') && !principal?.readOnlyPrincipal;
-  const canViewLimitCatalog = hasFn('limit.view');
+  const canViewLimitCatalog = isOperatorOrPrivilegedWorkforce && hasFn('limit.view');
   const canViewTransactions = hasFn('transaction.view') && isOperatorOrPrivilegedWorkforce;
   const canManageSupport = hasFn('customer.manage_support_case');
 
@@ -545,6 +595,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
+  const [directoryDraft, setDirectoryDraft] = useState(EMPTY_DIRECTORY_FILTERS);
+  const [directoryFilters, setDirectoryFilters] = useState(EMPTY_DIRECTORY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [fundingTargetAgentId, setFundingTargetAgentId] = useState('');
@@ -615,6 +667,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [outletUnconfirmed, setOutletUnconfirmed] = useState(false);
   const [outletReviewReady, setOutletReviewReady] = useState(false);
   const outletWriteInFlight = useRef(false);
+  const [estateInspection, setEstateInspection] = useState<{
+    label: string;
+    data?: EstateInspection;
+    error?: string;
+  } | null>(null);
+  const estateInspectionGeneration = useRef(0);
+  const closeEstateInspection = () => {
+    estateInspectionGeneration.current += 1;
+    setEstateInspection(null);
+  };
   const outletReadGeneration = useRef(0);
   const outletDraft =
     Object.values(outletForm).some((value) => value.trim()) ||
@@ -733,13 +795,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const agentHistoryRequest = useRef(0);
   const [walletTransfers, setWalletTransfers] = useState<WalletTransferRow[]>([]);
   const [agentC2CRows, setAgentC2CRows] = useState<AgentCashToCashRow[]>([]);
-  const [handledInitialAgentId, setHandledInitialAgentId] = useState<string | null>(null);
+  const [detailLookup, setDetailLookup] = useState<{ id: string; error?: string } | null>(null);
+  const detailLookupGeneration = useRef(0);
 
   const selectedAgentId = useRef<string | null>(null);
   const positionRequest = useRef(0);
   useEffect(
     () => () => {
       positionRequest.current += 1;
+      detailLookupGeneration.current += 1;
       selectedAgentId.current = null;
     },
     [],
@@ -774,6 +838,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       (selectedAgentId.current !== a.id && !mayLeaveAgent())
     )
       return;
+    detailLookupGeneration.current += 1;
+    setDetailLookup(null);
     if (selectedAgentId.current !== a.id) {
       setLifecycleUnconfirmed(false);
       setLifecycleReviewStatus(null);
@@ -784,6 +850,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setLimitUnconfirmed(false);
       setLimitReviewReady(false);
     }
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     limitReadGeneration.current += 1;
     selectedAgentId.current = a.id;
@@ -829,42 +896,116 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     await loadPosition(a.id);
   };
 
-  const agentListRequest = useRef(0);
-
-  const fetchAgents = async () => {
-    if (!canView) {
-      setLoading(false);
-      return;
-    }
-    const request = ++agentListRequest.current;
-    setLoading(true);
-    setError('');
-    try {
-      const params: string[] = [`page=${page}`, `limit=20`];
-      if (statusFilter) params.push(`status=${statusFilter}`);
-      const res: any = await ApiClient.get(`/internal/agents?${params.join('&')}`);
-      const rows: Agent[] = Array.isArray(res) ? res : res?.data;
-      if (!Array.isArray(rows)) throw new Error('Agent list returned an invalid response.');
-      if (request !== agentListRequest.current) return;
-      setAgents(rows);
-      setTotal(res.total ?? rows.length);
-      setSelected((current) =>
-        current ? (rows.find((item) => item.id === current.id) ?? current) : null,
-      );
-    } catch (e: any) {
-      if (request === agentListRequest.current) setError(e?.message || 'Failed to load agents');
-    } finally {
-      if (request === agentListRequest.current) setLoading(false);
-    }
+  const openCurrentDetail = useRef(openDetail);
+  openCurrentDetail.current = openDetail;
+  const findAgentDetail = (id: string) => {
+    if (!canView) return null;
+    const generation = ++detailLookupGeneration.current;
+    const valid = () => mountedRef.current && generation === detailLookupGeneration.current;
+    setDetailLookup({ id });
+    void (async () => {
+      try {
+        const fetched = await ApiClient.get<Agent>(`/internal/agents/${encodeURIComponent(id)}`);
+        if (!valid()) return;
+        if (
+          !fetched ||
+          typeof fetched.id !== 'string' ||
+          fetched.id.toLowerCase() !== id.toLowerCase() ||
+          typeof fetched.reference !== 'string' ||
+          !fetched.reference.trim() ||
+          !['PENDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(fetched.status)
+        )
+          throw new Error('Agent detail did not match the requested Agent.');
+        setDetailLookup(null);
+        // Use the current write/draft guards, not those captured when the request started.
+        await openCurrentDetail.current(fetched);
+      } catch (e: any) {
+        if (!valid()) return;
+        setDetailLookup({
+          id,
+          error:
+            e?.status === 403
+              ? 'You are not entitled to view this Agent.'
+              : e?.status === 404
+                ? 'Agent not found.'
+                : e?.message || 'Failed to open Agent details.',
+        });
+      }
+    })();
+    return generation;
   };
 
   useEffect(() => {
+    if (!initialAgentId || !canView) return;
+    const generation = findAgentDetail(initialAgentId);
+    return () => {
+      if (detailLookupGeneration.current === generation) {
+        detailLookupGeneration.current += 1;
+        if (mountedRef.current) setDetailLookup(null);
+      }
+    };
+  }, [initialAgentId, canView]);
+
+  const agentListRequest = useRef(0);
+  const params = new URLSearchParams({ page: String(page), limit: String(DIRECTORY_PAGE_SIZE) });
+  if (statusFilter) params.set('status', statusFilter);
+  if (directoryFilters.search) params.set('search', directoryFilters.search);
+  if (directoryFilters.agentClassId) params.set('agentClassId', directoryFilters.agentClassId);
+  if (directoryFilters.aggregatorId) params.set('aggregatorId', directoryFilters.aggregatorId);
+  if (directoryFilters.sort !== 'newest') params.set('sort', directoryFilters.sort);
+  const directoryPath = `/internal/agents?${params.toString()}`;
+  const currentDirectoryPath = useRef(directoryPath);
+  currentDirectoryPath.current = directoryPath;
+
+  const fetchAgents = async () => {
+    if (!canView || !mountedRef.current || currentDirectoryPath.current !== directoryPath) return;
+    const request = ++agentListRequest.current;
+    const valid = () =>
+      mountedRef.current &&
+      request === agentListRequest.current &&
+      currentDirectoryPath.current === directoryPath;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await ApiClient.get<{
+        data: Agent[];
+        total: number;
+        page: number;
+        limit: number;
+      }>(directoryPath);
+      if (!valid()) return;
+      if (
+        !res ||
+        !Array.isArray(res.data) ||
+        !Number.isSafeInteger(res.total) ||
+        res.total < res.data.length ||
+        res.data.length > DIRECTORY_PAGE_SIZE ||
+        (res.page !== undefined && res.page !== page) ||
+        (res.limit !== undefined && res.limit !== DIRECTORY_PAGE_SIZE)
+      )
+        throw new Error('Agent list returned an invalid response.');
+      const lastPage = Math.max(1, Math.ceil(res.total / DIRECTORY_PAGE_SIZE));
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
+      setAgents(res.data);
+      setTotal(res.total);
+    } catch (e: any) {
+      if (valid()) setError(e?.message || 'Failed to load agents');
+    } finally {
+      if (valid()) setLoading(false);
+    }
+  };
+  // Mutations may finish after a filter change; refresh the current page, not the old query.
+  const refreshDirectory = useRef(fetchAgents);
+  refreshDirectory.current = fetchAgents;
+  useEffect(() => {
     if (canView) void fetchAgents();
-    else setLoading(false);
     return () => {
       agentListRequest.current += 1;
     };
-  }, [page, statusFilter, canView]);
+  }, [directoryPath, canView]);
 
   const loadClassCatalog = async () => {
     if (!canView || classCatalogLoading) return;
@@ -934,25 +1075,6 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       void loadApplications();
     }
   }, [initialOpenApplications, canReviewApplications]);
-
-  useEffect(() => {
-    if (!initialAgentId || !canView || loading || handledInitialAgentId === initialAgentId) {
-      return;
-    }
-    const matched = agents.find((item) => item.id === initialAgentId);
-    setHandledInitialAgentId(initialAgentId);
-    if (matched) {
-      void openDetail(matched);
-      return;
-    }
-    void ApiClient.get<Agent>(`/internal/agents/${encodeURIComponent(initialAgentId)}`)
-      .then((fetched) => {
-        if (fetched && fetched.id) void openDetail(fetched);
-      })
-      .catch(() => {
-        // Leave directory visible if Agent UUID is not found.
-      });
-  }, [initialAgentId, canView, loading, agents, handledInitialAgentId]);
 
   const startNewApplication = () => {
     if (
@@ -1438,7 +1560,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         `Agent ${action} confirmed (status: ${expected}). Review the Agent record and audit history for details.`,
       );
       setLifecycleReason('');
-      await Promise.all([fetchAgents(), loadPosition(id)]);
+      await Promise.all([
+        refreshDirectory.current(),
+        loadPosition(id),
+        applicationsLoaded ? loadApplications() : Promise.resolve(),
+      ]);
     } catch (e: any) {
       if (!mountedRef.current || selectedAgentId.current !== id) return;
       const status = typeof e?.status === 'number' ? e.status : undefined;
@@ -1513,6 +1639,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const loadOutletsAndTerminals = async (agentId: string) => {
+    closeEstateInspection();
     const request = ++outletReadGeneration.current;
     const valid = () =>
       mountedRef.current &&
@@ -1545,9 +1672,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (outletUnconfirmed) setOutletReviewReady(true);
       setTerminalForm((cur) => ({
         ...cur,
-        outletId: outletRows.some((o) => o.id === cur.outletId)
+        outletId: outletRows.some((o) => o.id === cur.outletId && o.status === 'ACTIVE')
           ? cur.outletId
-          : (outletRows.find((o) => o.status === 'ACTIVE')?.id ?? outletRows[0]?.id ?? ''),
+          : (outletRows.find((o) => o.status === 'ACTIVE')?.id ?? ''),
       }));
     } catch (e: any) {
       if (valid()) {
@@ -1556,6 +1683,57 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       }
     } finally {
       if (valid()) setOutletsLoading(false);
+    }
+  };
+
+  const inspectEstateRecord = async (
+    kind: 'outlet' | 'terminal',
+    row: OutletRecord | TerminalRecord,
+  ) => {
+    const agentId = selectedAgentId.current;
+    if (!agentId || !outletsLoaded || row.agentId !== agentId || outletWriteInFlight.current)
+      return;
+    const generation = ++estateInspectionGeneration.current;
+    const valid = () =>
+      mountedRef.current &&
+      selectedAgentId.current === agentId &&
+      generation === estateInspectionGeneration.current;
+    const label = kind === 'outlet' ? 'Outlet record details' : 'Terminal record details';
+    const id = encodeURIComponent(row.id);
+    setEstateInspection({ label });
+    try {
+      let data: EstateInspection;
+      if (kind === 'outlet') {
+        const [outlet, assigned] = await Promise.all([
+          ApiClient.get<OutletRecord>(`/internal/outlets/${id}`),
+          ApiClient.get<TerminalRecord[]>(`/internal/outlets/${id}/terminals`),
+        ]);
+        if (
+          !validOutlet(outlet, agentId) ||
+          outlet.id !== row.id ||
+          !Array.isArray(assigned) ||
+          !assigned.every(
+            (terminal) => validTerminal(terminal, agentId) && terminal.outletId === row.id,
+          ) ||
+          new Set(assigned.map((terminal) => terminal.id)).size !== assigned.length
+        )
+          throw new Error('Outlet and terminal details did not match the selected records.');
+        data = { kind, outlet, terminals: assigned };
+      } else {
+        const terminal = await ApiClient.get<TerminalRecord>(`/internal/terminals/${id}`);
+        if (
+          !validTerminal(terminal, agentId) ||
+          terminal.id !== row.id ||
+          !('outletId' in row) ||
+          terminal.outletId !== row.outletId
+        )
+          throw new Error('Terminal details did not match the selected record.');
+        data = { kind, terminal };
+      }
+      if (valid()) setEstateInspection({ label, data });
+    } catch (e: any) {
+      if (valid())
+        setEstateInspection({ label, error: e?.message || 'Unable to load record details.' });
     }
   };
 
@@ -1573,6 +1751,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     event.preventDefault();
     if (
       !selected ||
+      selected.status !== 'ACTIVE' ||
       !canManageOutletsTerminals ||
       outletBusy ||
       outletWriteInFlight.current ||
@@ -1596,7 +1775,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Outlet code must be 3–80 characters when provided.');
       return;
     }
+    const aggregatorId = outletForm.aggregatorId.trim();
+    if (aggregatorId && !UUID_PATTERN.test(aggregatorId)) {
+      setOutletsError('Aggregator ID must be a UUID.');
+      return;
+    }
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -1611,7 +1796,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (outletForm.state.trim()) body.state = outletForm.state.trim();
       if (outletForm.country.trim()) body.country = outletForm.country.trim();
       const receipt = await ApiClient.post<OutletRecord>(
-        `/internal/agents/${encodeURIComponent(selected.id)}/outlets`,
+        estateCreationPath(selected.id, 'outlets', aggregatorId),
         body,
       );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
@@ -1692,6 +1877,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       return;
     }
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -1760,7 +1946,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       editingTerminalId ||
       !current ||
       (action === 'suspend' && current.status !== 'ACTIVE') ||
-      (action === 'reactivate' && current.status !== 'SUSPENDED') ||
+      (action === 'reactivate' &&
+        (current.status !== 'SUSPENDED' || selected.status !== 'ACTIVE')) ||
       (action === 'terminate' && current.status === 'TERMINATED')
     )
       return;
@@ -1770,6 +1957,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     )
       return;
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -1806,6 +1994,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     event.preventDefault();
     if (
       !selected ||
+      selected.status !== 'ACTIVE' ||
       !canManageOutletsTerminals ||
       outletBusy ||
       outletWriteInFlight.current ||
@@ -1825,11 +2014,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Terminal reference (min 3 chars) and an outlet selection are required.');
       return;
     }
+    if (!outlets.some((outlet) => outlet.id === outletId && outlet.status === 'ACTIVE')) {
+      setOutletsError('Select an active outlet assigned to this Agent.');
+      return;
+    }
     if (code && (code.length < 3 || code.length > 80)) {
       setOutletsError('Terminal code must be 3–80 characters when provided.');
       return;
     }
+    const aggregatorId = terminalForm.aggregatorId.trim();
+    if (aggregatorId && !UUID_PATTERN.test(aggregatorId)) {
+      setOutletsError('Aggregator ID must be a UUID.');
+      return;
+    }
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -1841,7 +2040,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (terminalForm.label.trim()) body.label = terminalForm.label.trim();
       if (terminalForm.serialNumber.trim()) body.serialNumber = terminalForm.serialNumber.trim();
       const receipt = await ApiClient.post<TerminalRecord>(
-        `/internal/agents/${encodeURIComponent(selected.id)}/terminals`,
+        estateCreationPath(selected.id, 'terminals', aggregatorId),
         body,
       );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
@@ -1858,6 +2057,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         throw new Error('Terminal receipt did not match the request.');
       setTerminalForm((cur) => ({
         ...cur,
+        aggregatorId: '',
         reference: '',
         code: '',
         label: '',
@@ -1914,6 +2114,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     )
       return;
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -1934,6 +2135,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (
         !validTerminal(receipt, selected.id) ||
         receipt.id !== terminal.id ||
+        receipt.outletId !== terminal.outletId ||
+        receipt.reference !== terminal.reference ||
+        receipt.status !== terminal.status ||
         receipt.version !== (editingTerminalForm.expectedVersion ?? 0) + 1 ||
         receipt.label !== nullableTrim(editingTerminalForm.label) ||
         receipt.serialNumber !== nullableTrim(editingTerminalForm.serialNumber)
@@ -1974,7 +2178,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       editingTerminalId ||
       !current ||
       (action === 'suspend' && current.status !== 'ACTIVE') ||
-      (action === 'reactivate' && current.status !== 'SUSPENDED') ||
+      (action === 'reactivate' &&
+        (current.status !== 'SUSPENDED' ||
+          selected.status !== 'ACTIVE' ||
+          !outlets.some(
+            (outlet) => outlet.id === current.outletId && outlet.status === 'ACTIVE',
+          ))) ||
       (action === 'terminate' && current.status === 'TERMINATED')
     )
       return;
@@ -1984,6 +2193,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     )
       return;
     outletWriteInFlight.current = true;
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
@@ -2212,7 +2422,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   ) => {
     if (
       !canChangeApplications ||
-      (action === 'activate' && !canActivate) ||
+      (action === 'activate' &&
+        (!canActivate ||
+          app.status !== 'APPROVED' ||
+          (!!app.agentId && app.linkedAgentStatus !== 'PENDING'))) ||
       applicationBusyId ||
       onboardingOpen ||
       applicationActionRef.current ||
@@ -2249,7 +2462,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         setApplicationsMsg(
           `Application ${app.reference} activated as Agent ${activated.reference}.`,
         );
-        await Promise.all([loadApplications(), fetchAgents()]);
+        await Promise.all([loadApplications(), refreshDirectory.current()]);
       } else if (action === 'reject') {
         const rejected = await ApiClient.post<AgentApplicationRecord>(
           `/internal/agents/applications/${encodeURIComponent(app.id)}/reject`,
@@ -2299,12 +2512,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const closeDetail = () => {
     if (detailBusy || !mayLeaveAgent()) return;
+    detailLookupGeneration.current += 1;
+    setDetailLookup(null);
     selectedAgentId.current = null;
     positionRequest.current += 1;
     agentHistoryRequest.current += 1;
     setAgentHistoryLoading(false);
     catalogRequest.current += 1;
     setLimitCatalogLoading(false);
+    closeEstateInspection();
     outletReadGeneration.current += 1;
     limitReadGeneration.current += 1;
     setLimitUnconfirmed(false);
@@ -2331,8 +2547,28 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     );
   }
 
-  const hasNextPage = total > 0 ? page * 20 < total : agents.length >= 20;
+  const hasNextPage = page * DIRECTORY_PAGE_SIZE < total;
   const activeClassOptions = classCatalog.filter((c) => c.isActive !== false);
+  const activeOutlets = outlets.filter((outlet) => outlet.status === 'ACTIVE');
+
+  const detailLookupNotice = detailLookup && (
+    <div
+      style={detailLookup.error ? errBox : loadingBox}
+      role={detailLookup.error ? 'alert' : 'status'}
+    >
+      {detailLookup.error || 'Loading Agent details…'}{' '}
+      {detailLookup.error && (
+        <button
+          type="button"
+          style={smallBtn}
+          disabled={agentBusy}
+          onClick={() => findAgentDetail(detailLookup.id)}
+        >
+          Retry opening Agent
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="mn-operational" style={wrap}>
@@ -2896,22 +3132,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         const isDraft = app.status === 'DRAFT';
                         const canReviewOrDecide =
                           app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
-                        // INTEGRATION FIX (Mission 16): the backend sets `agentId` when an application
-                        // is APPROVED — it creates the Agent record in PENDING status and a separate
-                        // `POST .../applications/:id/activate` transition (agent.activate) moves it to
-                        // ACTIVE. The previous condition `APPROVED && !app.agentId` was therefore
-                        // unsatisfiable, so a newly approved Agent could never be activated from the
-                        // console and stayed PENDING forever. Offer activation whenever the application
-                        // is APPROVED and its linked Agent is not known to be already ACTIVE
-                        // (SUSPENDED/TERMINATED are not activatable; the backend answers 409 and the
-                        // error is surfaced rather than silently ignored).
-                        const linkedAgent = app.agentId
-                          ? agents.find((candidate) => candidate.id === app.agentId)
-                          : undefined;
+                        // Application approval and Agent activation are separate. Use the review
+                        // projection, not the (possibly filtered or off-page) Agent directory.
                         const canActivateFromApp =
                           canActivate &&
                           app.status === 'APPROVED' &&
-                          (!app.agentId || (linkedAgent ? linkedAgent.status === 'PENDING' : true));
+                          (!app.agentId || app.linkedAgentStatus === 'PENDING');
                         const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
                         return (
                           <tr key={app.id}>
@@ -2920,6 +3146,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               {app.agentId && (
                                 <div style={smallMuted}>
                                   Agent: <code>{app.agentId}</code>
+                                  {app.linkedAgentStatus && (
+                                    <div>Linked Agent: {app.linkedAgentStatus}</div>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -3037,10 +3266,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={smallBtn}
-                                    onClick={() => {
-                                      const found = agents.find((item) => item.id === app.agentId);
-                                      if (found) void openDetail(found);
-                                    }}
+                                    disabled={agentBusy}
+                                    onClick={() => app.agentId && findAgentDetail(app.agentId)}
                                   >
                                     Open agent
                                   </button>
@@ -3121,6 +3348,80 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
           <p>Find an agent to inspect their profile, financial position and available controls.</p>
         </div>
       </div>
+      <form
+        aria-label="Search agent directory"
+        className="agent-network-filters agent-directory-search"
+        style={filters}
+        onSubmit={(event) => {
+          event.preventDefault();
+          setDirectoryFilters({
+            search: directoryDraft.search.trim(),
+            agentClassId: directoryDraft.agentClassId.trim(),
+            aggregatorId: directoryDraft.aggregatorId.trim(),
+            sort: directoryDraft.sort,
+          });
+          setPage(1);
+        }}
+      >
+        <label>
+          Agent reference or ID{' '}
+          <input
+            maxLength={160}
+            value={directoryDraft.search}
+            onChange={(event) =>
+              setDirectoryDraft({ ...directoryDraft, search: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          Agent class ID{' '}
+          <input
+            maxLength={36}
+            value={directoryDraft.agentClassId}
+            onChange={(event) =>
+              setDirectoryDraft({ ...directoryDraft, agentClassId: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          Aggregator ID (active assignments){' '}
+          <input
+            maxLength={36}
+            value={directoryDraft.aggregatorId}
+            placeholder="Aggregator UUID"
+            onChange={(event) =>
+              setDirectoryDraft({ ...directoryDraft, aggregatorId: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          Sort agents{' '}
+          <select
+            value={directoryDraft.sort}
+            onChange={(event) => setDirectoryDraft({ ...directoryDraft, sort: event.target.value })}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </label>
+        <div className="agent-directory-search__actions">
+          <button type="submit" style={btn}>
+            Search agents
+          </button>
+          <button
+            type="button"
+            style={smallBtn}
+            onClick={() => {
+              setDirectoryDraft(EMPTY_DIRECTORY_FILTERS);
+              setDirectoryFilters(EMPTY_DIRECTORY_FILTERS);
+              setStatusFilter('');
+              setPage(1);
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      </form>
       <div className="agent-network-filters" style={filters}>
         <WorkspaceFilterTabs
           label="Agent status filter"
@@ -3210,6 +3511,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         </div>
       )}
 
+      {!selected && detailLookupNotice}
       {selected && (
         <WorkspaceDrawer
           label="Agent details"
@@ -3244,12 +3546,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
+              <button
+                type="button"
+                style={smallBtn}
+                disabled={agentBusy || detailGuard || !!(detailLookup && !detailLookup.error)}
+                onClick={() => findAgentDetail(selected.id)}
+              >
+                Refresh agent record
+              </button>
               <button type="button" disabled={detailBusy} onClick={closeDetail} style={smallBtn}>
                 Close
               </button>
             </div>
           </div>
           <div className="agent-network-drawer__body" style={drawerBody}>
+            {detailLookupNotice}
             <div>
               <strong>ID:</strong> <code>{selected.id}</code>
             </div>
@@ -3560,7 +3871,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   <h3>Outlets &amp; terminals</h3>
                   <p>
                     Review locations and their devices for this Agent. Changes to a parent do not
-                    automatically change its existing children.
+                    automatically change its existing children. Reactivation requires an active
+                    Agent and, for a terminal, an active assigned outlet.
                   </p>
                 </div>
                 <button
@@ -3651,6 +3963,64 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               )}
               {outletsLoaded && (
                 <div className="agent-sites__content">
+                  {estateInspection && (
+                    <section style={card} aria-label={estateInspection.label}>
+                      <div style={actionRow}>
+                        <h4>{estateInspection.label}</h4>
+                        <button type="button" style={smallBtn} onClick={closeEstateInspection}>
+                          Close record details
+                        </button>
+                      </div>
+                      {estateInspection.error ? (
+                        <p role="alert">{estateInspection.error}</p>
+                      ) : !estateInspection.data ? (
+                        <p role="status">Loading record details…</p>
+                      ) : estateInspection.data.kind === 'outlet' ? (
+                        <>
+                          <p>
+                            {estateInspection.data.outlet.reference} —{' '}
+                            {estateInspection.data.outlet.name} ·{' '}
+                            {estateInspection.data.outlet.status}
+                          </p>
+                          <p>
+                            Record ID: <code>{estateInspection.data.outlet.id}</code> · Version{' '}
+                            {estateInspection.data.outlet.version}
+                          </p>
+                          <strong>Assigned terminals</strong>
+                          {estateInspection.data.terminals.length === 0 ? (
+                            <p>No terminals assigned to this outlet.</p>
+                          ) : (
+                            <ul>
+                              {estateInspection.data.terminals.map((terminal) => (
+                                <li key={terminal.id}>
+                                  {terminal.reference} · {terminal.status}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            {estateInspection.data.terminal.reference} ·{' '}
+                            {estateInspection.data.terminal.status}
+                          </p>
+                          <p>
+                            Record ID: <code>{estateInspection.data.terminal.id}</code> · Version{' '}
+                            {estateInspection.data.terminal.version}
+                          </p>
+                          <p>
+                            Assigned outlet ID:{' '}
+                            <code>{estateInspection.data.terminal.outletId}</code>
+                          </p>
+                        </>
+                      )}
+                      <p style={smallMuted}>
+                        Status is administrative; it does not indicate device connectivity or
+                        payment readiness.
+                      </p>
+                    </section>
+                  )}
                   <section className="agent-sites__group" aria-label="Outlet records">
                     <div className="agent-sites__group-heading">
                       <div>
@@ -3699,6 +4069,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   : ''}{' '}
                                 <span style={badge(outlet.status)}>{outlet.status}</span>
                               </span>
+                              <button
+                                type="button"
+                                style={smallBtn}
+                                disabled={outletBusy || outletsLoading}
+                                onClick={() => void inspectEstateRecord('outlet', outlet)}
+                                aria-label={`Inspect outlet ${outlet.reference}`}
+                              >
+                                Inspect record
+                              </button>
                               {canManageOutletsTerminals && (
                                 <span style={actionRow}>
                                   {outlet.status !== 'TERMINATED' && (
@@ -3746,7 +4125,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                       lifecycleReviewBusy ||
                                       lifecycleUnconfirmed ||
                                       Boolean(editingOutletId || editingTerminalId) ||
-                                      outlet.status !== 'SUSPENDED'
+                                      outlet.status !== 'SUSPENDED' ||
+                                      selected.status !== 'ACTIVE'
                                     }
                                     onClick={() => void doOutletLifecycle(outlet.id, 'reactivate')}
                                   >
@@ -3989,6 +4369,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   ?.reference ?? terminal.outletId}{' '}
                                 <span style={badge(terminal.status)}>{terminal.status}</span>
                               </span>
+                              <button
+                                type="button"
+                                style={smallBtn}
+                                disabled={outletBusy || outletsLoading}
+                                onClick={() => void inspectEstateRecord('terminal', terminal)}
+                                aria-label={`Inspect terminal ${terminal.reference}`}
+                              >
+                                Inspect record
+                              </button>
                               {canManageOutletsTerminals && (
                                 <span style={actionRow}>
                                   {terminal.status !== 'TERMINATED' && (
@@ -4036,7 +4425,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                       lifecycleReviewBusy ||
                                       lifecycleUnconfirmed ||
                                       Boolean(editingOutletId || editingTerminalId) ||
-                                      terminal.status !== 'SUSPENDED'
+                                      terminal.status !== 'SUSPENDED' ||
+                                      selected.status !== 'ACTIVE' ||
+                                      !activeOutlets.some(
+                                        (outlet) => outlet.id === terminal.outletId,
+                                      )
                                     }
                                     onClick={() =>
                                       void doTerminalLifecycle(terminal.id, 'reactivate')
@@ -4184,6 +4577,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             </p>
                           </div>
                           <div className="agent-sites__fields">
+                            <EstateAggregatorField
+                              kind="Outlet"
+                              value={outletForm.aggregatorId}
+                              disabled={
+                                outletBusy ||
+                                outletsLoading ||
+                                outletUnconfirmed ||
+                                lifecycleBusy ||
+                                lifecycleReviewBusy ||
+                                lifecycleUnconfirmed
+                              }
+                              onChange={(aggregatorId) =>
+                                setOutletForm((current) => ({ ...current, aggregatorId }))
+                              }
+                            />
                             <label className="agent-sites__field">
                               <span>Reference (required)</span>
                               <input
@@ -4381,12 +4789,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                           </div>
                         </form>
 
-                        {outlets.length === 0 && (
+                        {activeOutlets.length === 0 && (
                           <p className="agent-sites__notice">
                             Create an active outlet before adding a terminal.
                           </p>
                         )}
-                        {outlets.length > 0 && (
+                        {activeOutlets.length > 0 && (
                           <form
                             onSubmit={createTerminal}
                             className="agent-sites__form"
@@ -4401,6 +4809,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               </p>
                             </div>
                             <div className="agent-sites__fields">
+                              <EstateAggregatorField
+                                kind="Terminal"
+                                value={terminalForm.aggregatorId}
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                onChange={(aggregatorId) =>
+                                  setTerminalForm((current) => ({ ...current, aggregatorId }))
+                                }
+                              />
                               <label className="agent-sites__field">
                                 <span>Reference (required)</span>
                                 <input
@@ -4457,7 +4880,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     lifecycleUnconfirmed
                                   }
                                 >
-                                  {outlets.map((o) => (
+                                  {activeOutlets.map((o) => (
                                     <option key={o.id} value={o.id}>
                                       {o.reference} ({o.status})
                                     </option>

@@ -619,6 +619,31 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
     ).rejects.toThrow(/PENDING|not permitted/i);
   });
 
+  it('rejects cash-in for a valid Agent and PIN when their active class only permits cash-out', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
+    const available = await walletService.listWallets(agent.id);
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    await createCustomerWithPhone(phone);
+    // A valid PIN, eligible recipient and active class must not turn one service into another.
+    await expect(
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id) as any,
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `no-cash-in-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 403, message: 'Agent does not have CASH_IN capability' });
+    expect(
+      (await walletService.listWallets(agent.id)).find((row) => row.id === wallet.id)?.balanceMinor,
+    ).toEqual(available.find((row) => row.id === wallet.id)?.balanceMinor);
+  });
+
   // M. missing/inactive Agent class denied
   it('M. missing/inactive Agent class denied', async () => {
     const {

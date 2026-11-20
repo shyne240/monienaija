@@ -12,6 +12,8 @@ export const ADMIN_AGENT_UNIFIED_HISTORY_TYPES = [
   'CASH_TO_CASH_CLAIM',
   'AGENT_FUNDING',
   'AGENT_DEFUNDING',
+  'WALLET_TRANSFER',
+  'EXTERNAL_BANK_TRANSFER',
 ] as const;
 
 export type AdminAgentUnifiedHistoryType = (typeof ADMIN_AGENT_UNIFIED_HISTORY_TYPES)[number];
