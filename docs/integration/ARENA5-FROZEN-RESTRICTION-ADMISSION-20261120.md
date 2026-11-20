@@ -204,6 +204,16 @@ npm test (root unit suite, 292 files)          289 suites / 3409 tests passed
 (`signal=SIGKILL`, jest worker OOM) while a second Jest process was running concurrently — both pass
 when re-run alone (`12 passed`). None of the three touches the changed code.
 
+**Isolated KYC suites (`*.isolated-pg.test.ts`, own socket-only cluster).** Eleven suites, run
+per-file: ten green on the first pass, one (`kyc-tier-limit-enforcement`) **failed 12/21 with
+`relation "customer_restrictions" does not exist`** — that suite hand-builds its schema instead of
+running every migration, so the new read needed the table it depends on. Fixed in commit `428b6a19`
+(fixture only; the gate must never tolerate a missing table): **21/21 passing**, and the same file's
+10 siblings re-verified green (`batch2-legacy-registration` 8, `batch2c-eligibility` 18,
+`batch2c-session-remediation` 10, `governed-ledger-reversal` 5, `kyc-foundation` 23,
+`kyc-provider-governance` 10, `kyc-registration-api` 24, `kyc-registration-session` 12,
+`kyc-tier-policy` 6, `kyc-tier-transition` 12).
+
 **Negative control (the tests are not vacuous).** With only the admission check removed from
 `require()` and everything else identical, the same integration file reports **11 failed, 3 passed**
 — every frozen/blacklist transfer, funding, withdrawal-lane, provisioning, idempotency and
@@ -233,7 +243,15 @@ IS NULL`, so an active FROZEN row cannot currently be lifted through the API. Te
 5. **No flags enabled, no deployment.** No `KYC_TIER_*`/financial feature flag was touched; the
    coordination doc's remaining next steps (enabling tier-limit enforcement in non-prod acceptance,
    publishing §4 contracts) are untouched by this patch.
-6. **Files changed:** `src/kyc-verification/customer-financial-eligibility.service.ts` (fix),
+6. **CI on this branch (run 44828105748, commit `428b6a19`):** isolated PostgreSQL suites **success**;
+   admin web and customer mobile **success**; real-PostgreSQL integration **still running at report
+   time**; three jobs fail for reasons outside this patch and reproduced on the shared base —
+   `npm run lint` (16 ESLint errors in banking/financial-commitment files byte-identical to base),
+   `npm run format:check` (`docker-compose.yml`, `infra03-seed-result.json`, both untouched),
+   Agent Mobile `ts:check`, and the container image build. The same three jobs fail identically on
+   PRs #4/#5/#6, whose diffs contain none of these files.
+7. **Files changed:** `src/kyc-verification/customer-financial-eligibility.service.ts` (fix),
    `src/customer-eligibility/customer-eligibility.service.ts` (writer serialization),
    `test/customer-eligibility.service.spec.ts`, `test/customer-financial-eligibility-contention.spec.ts`
-   (fixture support for the new read/lock), plus the three new test files above.
+   (fixture support for the new read/lock), `test/kyc-tier-limit-enforcement.isolated-pg.test.ts`
+   (schema prerequisite), plus the three new test files above.
