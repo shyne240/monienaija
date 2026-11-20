@@ -656,6 +656,59 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       .expect(200);
   });
 
+  it('targeting: class and institution specificity, switching and effective-window boundary', async () => {
+    const institutionId = '11111111-1111-4111-8111-111111111111';
+    await dataSource.query(
+      `INSERT INTO financial_institutions
+        (id, reference, code, legal_name, institution_type, status, created_by)
+       VALUES ($1, 'FEE-TARGET-1', 'FEE_TARGET_1', 'Fee Target Test Institution', 'PSP', 'REGISTERED', 'test')`,
+      [institutionId],
+    );
+    await registry.createRule(baseRule({ effectiveFrom: T1, priority: 4 }), 'test');
+    await registry.createRule(
+      baseRule({ effectiveFrom: T1, priority: 4, customerClassCode: 'GOLD' }),
+      'test',
+    );
+    await registry.createRule(
+      baseRule({
+        effectiveFrom: T2,
+        effectiveTo: '2030-03-01T00:00:00.000Z',
+        priority: 8,
+        institutionId,
+      }),
+      'test',
+    );
+    const classHit = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      customerClassCode: 'GOLD',
+      at: T1,
+    });
+    expect(classHit.status).toBe('RESOLVED');
+    expect(classHit.rule?.customerClassCode).toBe('GOLD');
+    expect(
+      (
+        await resolver.resolve({
+          productCode: 'WALLET_TRANSFER',
+          customerClassCode: 'SILVER',
+          at: T1,
+        })
+      ).rule?.customerClassCode,
+    ).toBeNull();
+    expect(
+      (await resolver.resolve({ productCode: 'WALLET_TRANSFER', institutionId, at: T2 })).rule
+        ?.institutionId,
+    ).toBe(institutionId);
+    expect(
+      (
+        await resolver.resolve({
+          productCode: 'WALLET_TRANSFER',
+          institutionId,
+          at: '2030-03-01T00:00:00.000Z',
+        })
+      ).rule?.institutionId,
+    ).toBeNull();
+  });
+
   it('18. the resolver is read-only: zero mutation of wallets, ledger, limits, reservations, snapshots', async () => {
     await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
     await registry.createRule(

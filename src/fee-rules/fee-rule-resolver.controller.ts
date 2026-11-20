@@ -42,6 +42,9 @@ export class FeeRuleResolverController {
     @Query('productCode') productCode?: string,
     @Query('currency') currency?: string,
     @Query('at') at?: string,
+    @Query('customerClassCode') customerClassCode?: string,
+    @Query('agentClassId') agentClassId?: string,
+    @Query('institutionId') institutionId?: string,
   ) {
     this.requireWorkforce(req);
     if (!productCode) throw new BadRequestException('productCode is required');
@@ -55,6 +58,9 @@ export class FeeRuleResolverController {
       productCode,
       currency: currency === undefined || currency === '' ? undefined : currency,
       at: at === undefined || at === '' ? undefined : new Date(at),
+      customerClassCode: customerClassCode || undefined,
+      agentClassId: agentClassId || undefined,
+      institutionId: institutionId || undefined,
     });
     return {
       status: resolution.status,
@@ -77,6 +83,9 @@ export class FeeRuleResolverController {
                   ? null
                   : resolution.rule.effectiveTo.toISOString(),
               priority: resolution.rule.priority,
+              customerClassCode: resolution.rule.customerClassCode,
+              agentClassId: resolution.rule.agentClassId,
+              institutionId: resolution.rule.institutionId,
             },
           }
         : {}),

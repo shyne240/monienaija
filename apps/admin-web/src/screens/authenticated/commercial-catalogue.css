@@ -44,3 +44,9 @@
 /* Keep the record action discoverable while wide, read-only columns scroll. */
 .commercial-registry .mn-data-table th:last-child,.commercial-registry .mn-data-table td:last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
 .commercial-registry .mn-data-table td:last-child{background:#fff}
+.commercial-fee-preview{display:grid;gap:.75rem;margin:1rem 0;padding:1rem;border:1px solid var(--mn-border,#d8dee8);border-radius:.75rem;background:var(--mn-surface,#fff)}
+.commercial-fee-preview h3,.commercial-fee-preview p{margin:0}
+.commercial-fee-preview__fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.75rem}
+.commercial-fee-preview__fields label{display:grid;gap:.25rem;font-size:.875rem}
+.commercial-fee-preview__fields input{min-width:0;padding:.55rem}
+.commercial-fee-preview__result{padding-top:.5rem;overflow-wrap:anywhere}
