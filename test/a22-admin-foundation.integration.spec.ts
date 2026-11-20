@@ -344,10 +344,11 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     ].sort();
     const [first, second, suspended] = ids;
     const unique = `Directory%_${randomUUID()}`;
-    const [{ agent_class_id: classId }] = await dataSource.query(
+    const classes: Array<{ agent_class_id: string }> = await dataSource.query(
       'SELECT agent_class_id FROM agents WHERE id = $1',
       [first],
     );
+    const classId = classes[0]!.agent_class_id;
     for (const [index, id] of ids.entries()) {
       await dataSource.query(
         `UPDATE agents SET reference = $2, agent_class_id = $3, created_at = '2026-01-01' WHERE id = $1`,
