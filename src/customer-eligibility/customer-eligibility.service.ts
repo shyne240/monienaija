@@ -444,6 +444,7 @@ export class CustomerEligibilityService {
     try {
       return await this.dataSource.transaction(async (manager) => {
         await this.requireCustomer(manager, customerId);
+        await this.lockCustomerFinancialControl(manager, customerId);
         const repository = manager.getRepository(CustomerRestriction);
         const existing = await repository.findOne({ where: { customerId, type: command.type } });
         if (existing && this.isNotDeleted(existing.deletedAt)) {
@@ -639,6 +640,33 @@ export class CustomerEligibilityService {
 
   private isManager(value: Repository<Customer> | EntityManager): value is EntityManager {
     return 'getRepository' in value;
+  }
+
+  /**
+   * ARENA 5 §6 — serialize every restriction change against financial admission.
+   *
+   * `CustomerFinancialEligibilityService.require()` already takes this exact row lock
+   * (`SELECT ... FROM customers WHERE id=$1 FOR UPDATE|FOR SHARE`) as the first statement of a
+   * financial transaction, but a restriction row that does not exist yet cannot be locked, so a
+   * concurrent insertion would otherwise be invisible to an admission that already took its
+   * snapshot. Taking the same customer row lock here closes that hole:
+   *  - the lock serializes a freeze against an in-flight financial transaction, so the
+   *    restriction only becomes effective after that transaction has committed; and
+   *  - the `UPDATE` (a bare locking read would not be enough) makes the conflict visible to a
+   *    SERIALIZABLE admission that already holds an older snapshot: PostgreSQL reports
+   *    `40001 could not serialize access due to concurrent update` when the admission locks the
+   *    row, and the existing bounded retry re-runs admission against a fresh snapshot, where the
+   *    restriction is then present.
+   *
+   * Only `updated_at` is touched — never `version` (the optimistic-lock column) and never a
+   * business/identity column — so admin edits and the identity-revision triggers are unaffected.
+   * Any future restriction deactivation/reactivation must call this as well.
+   */
+  private async lockCustomerFinancialControl(
+    manager: EntityManager,
+    customerId: string,
+  ): Promise<void> {
+    await manager.query('UPDATE customers SET updated_at = NOW() WHERE id=$1', [customerId]);
   }
 
   private async findActiveEligibility(
