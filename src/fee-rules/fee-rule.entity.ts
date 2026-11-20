@@ -35,10 +35,6 @@ const nullableBigintTransformer: ValueTransformer = {
 @Index('idx_fee_rules_currency', ['currency'])
 @Index('idx_fee_rules_active', ['isActive'])
 @Index('idx_fee_rules_effective_from', ['effectiveFrom'])
-@Index('uq_fee_rules_identity', ['productCode', 'currency', 'effectiveFrom'], {
-  unique: true,
-  where: 'deleted_at IS NULL',
-})
 @Check('chk_fee_rules_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_fee_rules_flat', 'flat_fee_minor IS NULL OR flat_fee_minor >= 0')
 @Check(
@@ -64,6 +60,16 @@ export class FeeRuleDefinition {
 
   @Column({ type: 'varchar', length: 3 })
   currency!: string;
+
+  /** Arena 1 customer class code, resolved through the existing SEGMENT/class-code contract. */
+  @Column({ name: 'customer_class_code', type: 'varchar', length: 80, nullable: true })
+  customerClassCode!: string | null;
+
+  @Column({ name: 'agent_class_id', type: 'uuid', nullable: true })
+  agentClassId!: string | null;
+
+  @Column({ name: 'institution_id', type: 'uuid', nullable: true })
+  institutionId!: string | null;
 
   @Column({
     name: 'flat_fee_minor',

@@ -30,6 +30,7 @@ import { LimitReservationRecoveryService } from './limit-reservation-recovery.se
 import { LimitRule } from './limit-rule.entity';
 import { LimitUsage } from './limit-usage.entity';
 import { LimitUsageService } from './limit-usage.service';
+import { LimitRuleGovernanceService } from './limit-rule-governance.service';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { LimitUsageService } from './limit-usage.service';
   ],
   providers: [
     LimitCatalogService,
+    LimitRuleGovernanceService,
     LimitAssignmentService,
     LimitUsageService,
     LimitProfileResolverService,

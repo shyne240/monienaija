@@ -26,14 +26,17 @@ import { FeeRuleDefinition } from './fee-rule.entity';
  *  - Updates are version-checked (@VersionColumn optimistic locking) and audited with
  *    previous/new values, so historical administrative changes are explainable.
  *
- * Eligibility/precedence note: rules target products only. Subject-targeting (KYC levels,
- * agent classes, segments) is deliberately NOT modelled here — that is the resolver/assignment
- * concern and mirrors how limit_assignments keeps targeting separate from limit_rules.
+ * Targeting is immutable rule identity: optional Arena 1 customer-class code, agent class and
+ * institution scopes are recorded at creation. Rules are superseded with a new effective-dated
+ * identity rather than changing historical applicability in place.
  */
 
 export interface FeeRuleCreateInput {
   productCode: string;
   currency?: string;
+  customerClassCode?: string | null;
+  agentClassId?: string | null;
+  institutionId?: string | null;
   flatFeeMinor?: string | number | null;
   percentageBps?: number | null;
   minimumFeeMinor?: string | number | null;
@@ -61,6 +64,9 @@ export interface FeeRuleSafeProjection {
   id: string;
   productCode: string;
   currency: string;
+  customerClassCode: string | null;
+  agentClassId: string | null;
+  institutionId: string | null;
   flatFeeMinor: string | null;
   percentageBps: number | null;
   minimumFeeMinor: string | null;
@@ -94,6 +100,10 @@ export class FeeRuleRegistryService {
     await this.assertProductExists(productCode);
 
     const currency = this.normalizeCurrency(input.currency ?? 'NGN');
+    const customerClassCode = this.normalizeClassCode(input.customerClassCode);
+    const agentClassId = this.normalizeTargetId(input.agentClassId, 'agentClassId');
+    const institutionId = this.normalizeTargetId(input.institutionId, 'institutionId');
+    await this.assertTargetsExist(agentClassId, institutionId);
     const flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
     const percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
     const minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
@@ -124,6 +134,9 @@ export class FeeRuleRegistryService {
     const entity = this.repo.create({
       productCode,
       currency,
+      customerClassCode,
+      agentClassId,
+      institutionId,
       flatFeeMinor,
       percentageBps,
       minimumFeeMinor,
@@ -144,7 +157,7 @@ export class FeeRuleRegistryService {
     } catch (e) {
       if (this.isUniqueViolation(e)) {
         throw new ConflictException(
-          `A fee rule for ${productCode}/${currency} effective ${effectiveFrom.toISOString()} already exists`,
+          `A fee rule for ${productCode}/${currency} with the same targeting and effective time already exists`,
         );
       }
       throw e;
@@ -302,6 +315,40 @@ export class FeeRuleRegistryService {
     return currency.trim().toUpperCase();
   }
 
+  private normalizeClassCode(value: unknown): string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || !/^[A-Z0-9_]{1,80}$/i.test(value.trim()))
+      throw new BadRequestException('customerClassCode must be an alphanumeric class code');
+    return value.trim().toUpperCase();
+  }
+
+  private normalizeTargetId(value: unknown, field: string): string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || !UUID_PATTERN.test(value.trim()))
+      throw new BadRequestException(`${field} must be a UUID`);
+    return value.trim().toLowerCase();
+  }
+
+  private async assertTargetsExist(
+    agentClassId: string | null,
+    institutionId: string | null,
+  ): Promise<void> {
+    if (agentClassId) {
+      const rows: unknown[] = await this.dataSource.query(
+        `SELECT id FROM agent_classes WHERE id = $1 AND deleted_at IS NULL`,
+        [agentClassId],
+      );
+      if (!rows.length) throw new NotFoundException(`Agent class ${agentClassId} not found`);
+    }
+    if (institutionId) {
+      const rows: unknown[] = await this.dataSource.query(
+        `SELECT id FROM financial_institutions WHERE id = $1 AND deleted_at IS NULL`,
+        [institutionId],
+      );
+      if (!rows.length) throw new NotFoundException(`Institution ${institutionId} not found`);
+    }
+  }
+
   private async assertProductExists(productCode: string): Promise<void> {
     const rows: Array<{ code: string }> = await this.dataSource.query(
       `SELECT code FROM products WHERE code = $1 AND deleted_at IS NULL`,
@@ -418,6 +465,9 @@ export class FeeRuleRegistryService {
       id: r.id,
       productCode: r.productCode,
       currency: r.currency,
+      customerClassCode: r.customerClassCode,
+      agentClassId: r.agentClassId,
+      institutionId: r.institutionId,
       flatFeeMinor: r.flatFeeMinor,
       percentageBps: r.percentageBps,
       minimumFeeMinor: r.minimumFeeMinor,
@@ -437,6 +487,9 @@ export class FeeRuleRegistryService {
       id: row.id,
       productCode: row.productCode,
       currency: row.currency,
+      customerClassCode: row.customerClassCode,
+      agentClassId: row.agentClassId,
+      institutionId: row.institutionId,
       flatFeeMinor: row.flatFeeMinor,
       percentageBps: row.percentageBps,
       minimumFeeMinor: row.minimumFeeMinor,

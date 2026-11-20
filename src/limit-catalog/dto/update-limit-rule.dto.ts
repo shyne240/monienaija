@@ -7,6 +7,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -68,4 +69,9 @@ export class UpdateLimitRuleDto {
   @IsInt()
   @Min(1)
   version!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }

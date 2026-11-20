@@ -41,6 +41,9 @@ const COLUMNS: Record<Exclude<Tab, 'limits'>, StructuredColumn[]> = {
     { key: 'id', label: 'Rule ID' },
     { key: 'productCode', label: 'Product' },
     { key: 'currency', label: 'Currency' },
+    { key: 'customerClassCode', label: 'Customer class' },
+    { key: 'agentClassId', label: 'Agent class ID' },
+    { key: 'institutionId', label: 'Institution ID' },
     { key: 'flatFeeMinor', label: 'Flat fee (minor)' },
     { key: 'percentageBps', label: 'Rate (bps)' },
     { key: 'vatBps', label: 'VAT (bps)' },
@@ -384,6 +387,7 @@ const RegistrySection: React.FC<{
           {error} Use Refresh to try again.
         </div>
       )}
+      {endpoint === '/internal/fee-rules' && <FeeResolutionPreview />}
       {loading ? (
         <div className="commercial-state" role="status">
           Loading {title.toLowerCase()}…
@@ -455,6 +459,103 @@ const RegistrySection: React.FC<{
         </WorkspaceDrawer>
       )}
     </section>
+  );
+};
+
+const FeeResolutionPreview: React.FC = () => {
+  const [productCode, setProductCode] = useState('WALLET_TRANSFER');
+  const [customerClassCode, setCustomerClassCode] = useState('');
+  const [agentClassId, setAgentClassId] = useState('');
+  const [institutionId, setInstitutionId] = useState('');
+  const [at, setAt] = useState('');
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const resolve = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = new URLSearchParams({ productCode: productCode.trim(), currency: 'NGN' });
+    if (customerClassCode.trim()) query.set('customerClassCode', customerClassCode.trim());
+    if (agentClassId.trim()) query.set('agentClassId', agentClassId.trim());
+    if (institutionId.trim()) query.set('institutionId', institutionId.trim());
+    if (at) query.set('at', new Date(at).toISOString());
+    setBusy(true);
+    setError('');
+    setResult(null);
+    try {
+      const value = await ApiClient.get(`/internal/fee-rules/resolve?${query.toString()}`);
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !['RESOLVED', 'NOT_CONFIGURED', 'AMBIGUOUS'].includes(String((value as any).status))
+      )
+        throw new Error('Fee resolver returned an invalid response.');
+      setResult(value as Record<string, unknown>);
+    } catch (err: any) {
+      setError(err?.message || 'Could not resolve fee configuration.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="commercial-fee-preview"
+      onSubmit={resolve}
+      aria-label="Effective fee configuration preview"
+    >
+      <h3>Effective fee preview · NGN</h3>
+      <p>
+        Read-only evaluation. Priority wins first; tied priority is resolved by target specificity.
+        Equal top matches fail closed as AMBIGUOUS.
+      </p>
+      <div className="commercial-fee-preview__fields">
+        <label>
+          Product code
+          <input value={productCode} onChange={(e) => setProductCode(e.target.value)} required />
+        </label>
+        <label>
+          Customer class code
+          <input
+            value={customerClassCode}
+            onChange={(e) => setCustomerClassCode(e.target.value)}
+            placeholder="Optional"
+          />
+        </label>
+        <label>
+          Agent class ID
+          <input
+            value={agentClassId}
+            onChange={(e) => setAgentClassId(e.target.value)}
+            placeholder="Optional UUID"
+          />
+        </label>
+        <label>
+          Institution ID
+          <input
+            value={institutionId}
+            onChange={(e) => setInstitutionId(e.target.value)}
+            placeholder="Optional UUID"
+          />
+        </label>
+        <label>
+          Evaluate at
+          <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+        </label>
+      </div>
+      <Button size="sm" type="submit" disabled={busy || !productCode.trim()}>
+        {busy ? 'Resolving…' : 'Preview effective fee'}
+      </Button>
+      {error && (
+        <p role="alert" className="commercial-state--error">
+          {error}
+        </p>
+      )}
+      {result && (
+        <div role="status" className="commercial-fee-preview__result">
+          <strong>{String(result.status)}</strong>
+          <StructuredKeyValueList data={result as DataRecord} />
+        </div>
+      )}
+    </form>
   );
 };
 

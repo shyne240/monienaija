@@ -7,6 +7,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -62,4 +63,9 @@ export class CreateLimitRuleDto {
   @Type(() => Number)
   @IsInt()
   priority?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }
