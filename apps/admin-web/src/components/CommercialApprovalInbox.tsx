@@ -14,6 +14,9 @@ export interface PrivilegedApprovalItem {
   status: string;
   requestedAt: string;
   expiresAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  consumedAt: string | null;
   version: number;
 }
 
@@ -94,8 +97,8 @@ export const CommercialApprovalInbox: React.FC<CommercialApprovalInboxProps> = (
           Commercial &amp; Governance Approval Inbox
         </h2>
         <p style={{ margin: '8px 0 0', fontSize: '13px', opacity: 0.78 }}>
-          You do not currently hold the required checker role (FINANCE_CONTROLLER) and
-          approval scope (privileged:approve) to review commercial governance proposals.
+          Your account does not currently hold the required checker authorization to review
+          commercial or governance approval proposals.
         </p>
       </section>
     );
