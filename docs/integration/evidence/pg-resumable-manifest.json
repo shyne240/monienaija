@@ -1518,9 +1518,111 @@
       "completedAt": "2026-11-20T11:24:07.876Z",
       "candidate": "e9e5651d",
       "status": "PASSED"
+    },
+    {
+      "batch": 40,
+      "runId": "f04b40",
+      "suitePaths": [
+        "test/v1-ledger-reversal-governance.integration.spec.ts",
+        "test/notification-receipts.integration.spec.ts",
+        "test/governed-financial-fixture.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b40 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b40.json test/v1-ledger-reversal-governance.integration.spec.ts test/notification-receipts.integration.spec.ts test/governed-financial-fixture.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b40",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "e9e5651d"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 199303,
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "total": 47,
+      "suitesPassed": [
+        "test/v1-ledger-reversal-governance.integration.spec.ts",
+        "test/notification-receipts.integration.spec.ts",
+        "test/governed-financial-fixture.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T11:27:28.180Z",
+      "candidate": "e9e5651d",
+      "status": "PASSED"
+    },
+    {
+      "batch": 41,
+      "runId": "f04b41",
+      "suitePaths": [
+        "test/v1-w2w-recovery-audit-01.integration.spec.ts",
+        "test/v1-funding-approvals-inbox.integration.spec.ts",
+        "test/v1-agent-receiving-number-authorization.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b41 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b41.json test/v1-w2w-recovery-audit-01.integration.spec.ts test/v1-funding-approvals-inbox.integration.spec.ts test/v1-agent-receiving-number-authorization.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b41",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "e9e5651d"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 93767,
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "total": 26,
+      "suitesPassed": [
+        "test/v1-w2w-recovery-audit-01.integration.spec.ts",
+        "test/v1-funding-approvals-inbox.integration.spec.ts",
+        "test/v1-agent-receiving-number-authorization.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T11:29:02.952Z",
+      "candidate": "e9e5651d",
+      "status": "PASSED"
+    },
+    {
+      "batch": 42,
+      "runId": "f04b42",
+      "suitePaths": [
+        "test/a5t11-b2f03-convergence.integration.spec.ts",
+        "test/mission-19a-workforce-logout.integration.spec.ts",
+        "test/v1-admin-authorization-foundation-01.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b42 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b42.json test/a5t11-b2f03-convergence.integration.spec.ts test/mission-19a-workforce-logout.integration.spec.ts test/v1-admin-authorization-foundation-01.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b42",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "e9e5651d"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 67966,
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "total": 34,
+      "suitesPassed": [
+        "test/a5t11-b2f03-convergence.integration.spec.ts",
+        "test/mission-19a-workforce-logout.integration.spec.ts",
+        "test/v1-admin-authorization-foundation-01.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T11:30:11.920Z",
+      "candidate": "e9e5651d",
+      "status": "PASSED"
     }
   ],
-  "completed": 39,
-  "remaining": 23,
-  "lastUpdated": "2026-11-20T11:24:07.876Z"
+  "completed": 42,
+  "remaining": 20,
+  "lastUpdated": "2026-11-20T11:30:11.920Z"
 }
