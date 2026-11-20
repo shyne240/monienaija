@@ -85,27 +85,38 @@ function runBatch(files, batchIndex) {
 
 async function main(){
   if (process.env.PG_TEST_CONFIRM_DISPOSABLE_CLUSTER!=='yes') throw new Error('PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes required');
-  const allFiles = listTests();
+  let allFiles = listTests();
   console.log(`Discovered ${allFiles.length} suites, batch size ${BATCH_SIZE}, ${Math.ceil(allFiles.length/BATCH_SIZE)} batches`);
-  const batches = chunk(allFiles, BATCH_SIZE);
+  let batches = chunk(allFiles, BATCH_SIZE);
   let manifest = [];
+  let storedAllFiles = null;
   // Load existing manifest if exists to resume — handle both legacy array and current object-with-batches formats
   if (fs.existsSync(MANIFEST_PATH)) {
     try {
       const loaded = JSON.parse(fs.readFileSync(MANIFEST_PATH,'utf8'));
       if (Array.isArray(loaded)) manifest = loaded;
-      else if (loaded && Array.isArray(loaded.batches)) manifest = loaded.batches;
+      else if (loaded && Array.isArray(loaded.batches)) {
+        manifest = loaded.batches;
+        if (Array.isArray(loaded.allFiles) && loaded.allFiles.length>0) {
+          storedAllFiles = loaded.allFiles;
+          console.log(`Using stored allFiles (${storedAllFiles.length}) from manifest to preserve discovery order`);
+          allFiles = storedAllFiles.map(f=> f.startsWith('/') ? f : path.join(ROOT, f));
+          batches = chunk(allFiles, BATCH_SIZE);
+        }
+      }
       else manifest = [];
       console.log(`Resuming from existing manifest with ${manifest.length} batches`);
     } catch {}
   }
+  // Persist allFiles on first creation for future resumes
+  const shouldStoreAllFiles = !storedAllFiles;
   const startBatch = manifest.length; // resume from next batch
   for (let i=startBatch; i<batches.length; i++) {
     const entry = runBatch(batches[i], i);
     manifest.push(entry);
     // Persist after every batch
     fs.mkdirSync(path.dirname(MANIFEST_PATH), {recursive:true});
-    fs.writeFileSync(MANIFEST_PATH, JSON.stringify({ candidate: CANDIDATE, runIdPrefix: RUN_ID_PREFIX, batchSize: BATCH_SIZE, totalBatches: batches.length, totalSuites: allFiles.length, batches: manifest, completed: manifest.length, remaining: batches.length - manifest.length, lastUpdated: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(MANIFEST_PATH, JSON.stringify({ candidate: CANDIDATE, runIdPrefix: RUN_ID_PREFIX, batchSize: BATCH_SIZE, totalBatches: batches.length, totalSuites: allFiles.length, allFiles: allFiles.map(f=>f.replace(ROOT+'/','')), batches: manifest, completed: manifest.length, remaining: batches.length - manifest.length, lastUpdated: new Date().toISOString() }, null, 2));
     console.log(`Batch ${entry.batch} ${entry.status} exit=${entry.exitCode} signal=${entry.signal} passed=${entry.passed} failed=${entry.failed} duration=${entry.durationMs}ms`);
     if (entry.status==='INCOMPLETE') {
       console.log(`Batch ${entry.batch} incomplete due to ${entry.signal}, will retry each suite individually`);
