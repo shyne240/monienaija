@@ -76,13 +76,13 @@ test('commercial tabs reject out-of-order responses', async () => {
   render(<CommercialRulesScreen initialTab="fees" />);
   fireEvent.click(screen.getByRole('tab', { name: 'Commissions' }));
   await act(async () => {
-    commissions.resolve([{ id: 'c1', code: 'COMMISSION' }]);
+    commissions.resolve([{ id: 'c1', productCode: 'COMMISSION' }]);
     await commissions.promise;
   });
   fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   expect(screen.getAllByText('COMMISSION').length).toBeGreaterThan(0);
   await act(async () => {
-    fees.resolve([{ id: 'f1', code: 'OLD FEE' }]);
+    fees.resolve([{ id: 'f1', productCode: 'OLD FEE' }]);
     await fees.promise;
   });
   expect(screen.queryByText('OLD FEE')).toBeNull();
@@ -136,4 +136,5 @@ test('commercial tabs support keyboard navigation', async () => {
   expect(document.activeElement).toBe(second);
   expect(second.getAttribute('aria-selected')).toBe('true');
   expect(first.getAttribute('tabindex')).toBe('-1');
+  await screen.findByText('No commissions were returned by the API.');
 });
