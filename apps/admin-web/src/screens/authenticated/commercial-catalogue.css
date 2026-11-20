@@ -52,3 +52,9 @@
 .commercial-filter-field{display:grid;gap:6px;font-size:12px;font-weight:700;color:#344f43;min-width:0}
 .commercial-filter-field input,.commercial-filter-field select{width:100%;min-height:40px;box-sizing:border-box;border:1px solid #7d9288;border-radius:7px;padding:8px 10px;font:inherit;font-weight:400;color:#132b25;background:#fff}
 .commercial-filter-field input:focus-visible,.commercial-filter-field select:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.commercial-fee-preview{display:grid;gap:.75rem;margin:1rem 0;padding:1rem;border:1px solid var(--mn-border,#d8dee8);border-radius:.75rem;background:var(--mn-surface,#fff)}
+.commercial-fee-preview h3,.commercial-fee-preview p{margin:0}
+.commercial-fee-preview__fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.75rem}
+.commercial-fee-preview__fields label{display:grid;gap:.25rem;font-size:.875rem}
+.commercial-fee-preview__fields input{min-width:0;padding:.55rem}
+.commercial-fee-preview__result{padding-top:.5rem;overflow-wrap:anywhere}

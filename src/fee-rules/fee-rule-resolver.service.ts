@@ -4,8 +4,8 @@ import { DataSource, EntityManager } from 'typeorm';
 /**
  * V1-COMMERCIAL-04 — Fee Rule RESOLUTION foundation (read-only).
  *
- * Answers ONE question: given (productCode, currency, at) — which fee rule row is
- * applicable right then, from the authoritative `fee_rules` registry?
+ * Answers ONE question: given product, currency, target context and evaluation time, which fee
+ * rule row applies from the authoritative `fee_rules` registry?
  *
  * HARD BOUNDARIES:
  *  - READ-ONLY. Never calculates fees, charges anything, or writes any row
@@ -13,12 +13,12 @@ import { DataSource, EntityManager } from 'typeorm';
  *  - Not wired into any financial flow; V1 stays fee-free.
  *  - Zero production fee rules exist; NOT_CONFIGURED is the normal answer today.
  *
- * Matching conditions (ALL required):
- *  - product_code exact match against the requested product (authoritative catalogue identity)
- *  - currency exact match (no conversion — V1 is NGN-only)
- *  - is_active = true
- *  - deleted_at IS NULL (soft-deleted rules are ignored)
- *  - effective_from <= at  AND  (effective_to IS NULL OR at < effective_to)
+ * Matching conditions:
+ *  - product_code and currency exact-match the request; no conversion is performed.
+ *  - each non-null target (customer class code, agent class id, institution id) must match
+ *    the supplied context; null targets are wildcards.
+ *  - is_active = true, deleted_at IS NULL, and effective_from <= at < effective_to
+ *    (open-ended when effective_to is null).
  *
  * Interval convention (single, documented, matches LimitProfileResolverService):
  *    effective_from <= at < effective_to    — a rule WITHOUT effective_to is open-ended.
@@ -26,10 +26,9 @@ import { DataSource, EntityManager } from 'typeorm';
  * Priority convention (matches LimitProfileResolverService `ORDER BY precedence DESC`):
  *    among applicable rules the HIGHEST priority wins. Lower number does NOT win.
  *
- * Tie safety: if two or more applicable rules share the highest priority there is NO approved
- * business tie-break policy, so the resolver NEVER silently picks one. It returns an explicit,
- * deterministic AMBIGUOUS result listing the conflicting rule ids (sorted by id ASC — the sort
- * only makes the ambiguity report deterministic, it never selects a winner). The resolver must
+ * Selection safety: highest priority wins first, then the count of matching target dimensions
+ * (specificity). If two or more applicable rules tie on both, the resolver returns AMBIGUOUS
+ * with sorted ids; the sort makes reporting deterministic and never selects a winner. The resolver must
  * never make commercial policy by accident.
  *
  * Version semantics: the result carries the exact applicable row — id + version + fee
@@ -55,6 +54,9 @@ export interface ResolvedFeeRule {
   effectiveFrom: Date;
   effectiveTo: Date | null;
   priority: number;
+  customerClassCode: string | null;
+  agentClassId: string | null;
+  institutionId: string | null;
 }
 
 export interface FeeRuleResolution {
@@ -75,6 +77,9 @@ export interface FeeRuleResolveInput {
   currency?: string;
   /** Evaluation timestamp; defaults to now. Past timestamps are first-class (historical resolution). */
   at?: Date | string;
+  customerClassCode?: string;
+  agentClassId?: string;
+  institutionId?: string;
 }
 
 const PRODUCT_PATTERN = /^[A-Z0-9_]{3,80}$/;
@@ -91,6 +96,9 @@ interface CandidateRow {
   effective_from: string;
   effective_to: string | null;
   priority: number | string;
+  customer_class_code: string | null;
+  agent_class_id: string | null;
+  institution_id: string | null;
 }
 
 const CANDIDATES_SQL = `
@@ -100,7 +108,8 @@ const CANDIDATES_SQL = `
              minimum_fee_minor::text AS minimum_fee_minor,
              maximum_fee_minor::text AS maximum_fee_minor,
              vat_bps,
-             effective_from, effective_to, priority
+             effective_from, effective_to, priority,
+             customer_class_code, agent_class_id, institution_id
       FROM fee_rules
       WHERE product_code = $1
         AND currency = $2
@@ -121,13 +130,17 @@ export class FeeRuleResolverService {
    * Throws BadRequestException only for malformed input (validation convention).
    */
   async resolve(input: FeeRuleResolveInput): Promise<FeeRuleResolution> {
-    const { productCode, currency, at } = this.normalize(input);
+    const { productCode, currency, at, customerClassCode, agentClassId, institutionId } =
+      this.normalize(input);
     const rows: CandidateRow[] = await this.dataSource.query(CANDIDATES_SQL, [
       productCode,
       currency,
       at,
     ]);
-    return this.select({ productCode, currency, at }, rows);
+    return this.select(
+      { productCode, currency, at, customerClassCode, agentClassId, institutionId },
+      rows,
+    );
   }
 
   /**
@@ -139,9 +152,13 @@ export class FeeRuleResolverService {
     manager: EntityManager,
     input: FeeRuleResolveInput,
   ): Promise<FeeRuleResolution> {
-    const { productCode, currency, at } = this.normalize(input);
+    const { productCode, currency, at, customerClassCode, agentClassId, institutionId } =
+      this.normalize(input);
     const rows: CandidateRow[] = await manager.query(CANDIDATES_SQL, [productCode, currency, at]);
-    return this.select({ productCode, currency, at }, rows);
+    return this.select(
+      { productCode, currency, at, customerClassCode, agentClassId, institutionId },
+      rows,
+    );
   }
 
   // ── internals ──
@@ -150,6 +167,9 @@ export class FeeRuleResolverService {
     productCode: string;
     currency: string;
     at: Date;
+    customerClassCode: string | null;
+    agentClassId: string | null;
+    institutionId: string | null;
   } {
     if (typeof input?.productCode !== 'string' || !input.productCode.trim()) {
       throw new BadRequestException('productCode is required');
@@ -169,7 +189,30 @@ export class FeeRuleResolverService {
     const atRaw = input.at ?? new Date();
     const at = atRaw instanceof Date ? atRaw : new Date(String(atRaw));
     if (Number.isNaN(at.getTime())) throw new BadRequestException('at must be a valid date');
-    return { productCode, currency, at };
+    const customerClassCode = this.normalizeOptionalCode(
+      input.customerClassCode,
+      'customerClassCode',
+    );
+    const agentClassId = this.normalizeOptionalUuid(input.agentClassId, 'agentClassId');
+    const institutionId = this.normalizeOptionalUuid(input.institutionId, 'institutionId');
+    return { productCode, currency, at, customerClassCode, agentClassId, institutionId };
+  }
+
+  private normalizeOptionalCode(value: unknown, field: string): string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || !/^[A-Z0-9_]{1,80}$/i.test(value.trim()))
+      throw new BadRequestException(`${field} must be an alphanumeric code`);
+    return value.trim().toUpperCase();
+  }
+
+  private normalizeOptionalUuid(value: unknown, field: string): string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (
+      typeof value !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+    )
+      throw new BadRequestException(`${field} must be a UUID`);
+    return value.trim().toLowerCase();
   }
 
   /**
@@ -179,7 +222,14 @@ export class FeeRuleResolverService {
    *  - ≥2 candidates share the top priority → AMBIGUOUS (explicit, never silent)
    */
   private select(
-    input: { productCode: string; currency: string; at: Date },
+    input: {
+      productCode: string;
+      currency: string;
+      at: Date;
+      customerClassCode: string | null;
+      agentClassId: string | null;
+      institutionId: string | null;
+    },
     rows: CandidateRow[],
   ): FeeRuleResolution {
     const base = {
@@ -187,11 +237,23 @@ export class FeeRuleResolverService {
       currency: input.currency,
       evaluatedAt: input.at,
     };
+    rows = rows.filter(
+      (row) =>
+        (row.customer_class_code === null || row.customer_class_code === input.customerClassCode) &&
+        (row.agent_class_id === null || row.agent_class_id === input.agentClassId) &&
+        (row.institution_id === null || row.institution_id === input.institutionId),
+    );
     if (rows.length === 0) {
       return { status: 'NOT_CONFIGURED', ...base };
     }
-    const top = Number(rows[0]!.priority);
-    const winners = rows.filter((r) => Number(r.priority) === top);
+    const top = Math.max(...rows.map((row) => Number(row.priority)));
+    const priorityWinners = rows.filter((row) => Number(row.priority) === top);
+    const specificity = (row: CandidateRow) =>
+      Number(row.customer_class_code !== null) +
+      Number(row.agent_class_id !== null) +
+      Number(row.institution_id !== null);
+    const topSpecificity = Math.max(...priorityWinners.map(specificity));
+    const winners = priorityWinners.filter((row) => specificity(row) === topSpecificity);
     if (winners.length === 1) {
       const w = winners[0]!;
       return {
@@ -208,6 +270,9 @@ export class FeeRuleResolverService {
           effectiveFrom: new Date(w.effective_from),
           effectiveTo: w.effective_to === null ? null : new Date(w.effective_to),
           priority: top,
+          customerClassCode: w.customer_class_code,
+          agentClassId: w.agent_class_id,
+          institutionId: w.institution_id,
         },
       };
     }

@@ -515,7 +515,7 @@ test('reward configuration exposes documented targeting and tier fields, not raw
   render(<CommercialRulesScreen initialTab="rewards" />);
   expect(await screen.findByText('Campaign: CAMPAIGN_X')).toBeTruthy();
   expect(screen.getByRole('cell', { name: 'Scheduled' })).toBeTruthy();
-  expect(screen.getByText(/Equal highest priorities are ambiguous/)).toBeTruthy();
+  expect(screen.getByText(/Highest priority wins first, then the most matching target dimensions/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   const dialog = screen.getByRole('dialog', { name: 'Rewards record details' });
   expect(dialog.textContent).toContain('900719925474099301');

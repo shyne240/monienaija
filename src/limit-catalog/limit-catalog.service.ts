@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, QueryFailedError } from 'typeorm';
+import { DataSource, EntityManager, Repository, QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { LimitProfile } from './limit-profile.entity';
@@ -203,9 +203,25 @@ export class LimitCatalogService {
   // ── Rules ──
 
   async createRule(input: LimitRuleCreateInput, actor: string): Promise<LimitRuleSafeProjection> {
+    return this.dataSource.transaction((manager) =>
+      this.createRuleInTransaction(manager, input, actor),
+    );
+  }
+
+  /**
+   * Transaction-aware rule creation used by limit-rule approval execution. The approval row and
+   * the new rule are committed or rolled back together by the caller's manager.
+   */
+  async createRuleInTransaction(
+    manager: EntityManager,
+    input: LimitRuleCreateInput,
+    actor: string,
+  ): Promise<LimitRuleSafeProjection> {
     this.validateRuleCreate(input);
     const profileCode = input.limitProfileCode.trim().toUpperCase();
-    const profile = await this.profileRepo.findOne({ where: { code: profileCode } as never });
+    const profile = await manager.getRepository(LimitProfile).findOne({
+      where: { code: profileCode } as never,
+    });
     if (!profile) throw new NotFoundException(`Limit profile ${profileCode} not found`);
 
     const product = input.product.trim().toUpperCase();
@@ -213,7 +229,6 @@ export class LimitCatalogService {
     const dimension = input.dimension.trim().toUpperCase();
     const direction = input.direction ? input.direction.trim().toUpperCase() : null;
     const channel = input.channel ? input.channel.trim() : null;
-
     const effectiveFrom = input.effectiveFrom
       ? new Date(input.effectiveFrom as string)
       : new Date();
@@ -227,15 +242,13 @@ export class LimitCatalogService {
       if (effectiveTo <= effectiveFrom)
         throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
-
-    // Validate amount vs count exclusive
     this.validateDimensionValue(
       dimension,
       input.limitValueMinor ?? null,
       input.limitValueCount ?? null,
     );
 
-    const entity = this.ruleRepo.create({
+    const entity = manager.getRepository(LimitRule).create({
       limitProfileCode: profileCode,
       product,
       direction,
@@ -252,26 +265,22 @@ export class LimitCatalogService {
       createdBy: actor,
       updatedBy: actor,
     } as never) as unknown as LimitRule;
-
     try {
-      const saved = await this.dataSource.transaction(async (manager) => {
-        const persisted = await manager.getRepository(LimitRule).save(entity);
-        await this.auditService.record(manager, {
-          entityType: 'LIMIT_RULE',
-          entityId: persisted.id,
-          action: 'CREATED',
-          actor,
-          newValues: this.ruleValues(persisted),
-        });
-        return persisted;
+      const persisted = await manager.getRepository(LimitRule).save(entity);
+      await this.auditService.record(manager, {
+        entityType: 'LIMIT_RULE',
+        entityId: persisted.id,
+        action: 'CREATED',
+        actor,
+        newValues: this.ruleValues(persisted),
       });
-      return this.toRuleSafe(saved);
-    } catch (e) {
-      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
+      return this.toRuleSafe(persisted);
+    } catch (error) {
+      if (this.isUniqueViolation(error, 'uq_limit_rules_active_key'))
         throw new ConflictException(
           'Limit rule with same profile/product/direction/channel/currency/dimension/effectiveFrom already exists',
         );
-      throw e;
+      throw error;
     }
   }
 
@@ -280,92 +289,80 @@ export class LimitCatalogService {
     input: LimitRuleUpdateInput,
     actor: string,
   ): Promise<LimitRuleSafeProjection> {
-    // validate inputs that do not depend on the current row state
-    if (input.product !== undefined && !PRODUCT_PATTERN.test(input.product.trim().toUpperCase())) {
+    return this.dataSource.transaction((manager) =>
+      this.updateRuleInTransaction(manager, id, input, actor),
+    );
+  }
+
+  /** Transaction-aware, row-locked update used with atomic approval consumption. */
+  async updateRuleInTransaction(
+    manager: EntityManager,
+    id: string,
+    input: LimitRuleUpdateInput,
+    actor: string,
+  ): Promise<LimitRuleSafeProjection> {
+    if (input.product !== undefined && !PRODUCT_PATTERN.test(input.product.trim().toUpperCase()))
       throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
-    }
-    if (
-      input.currency !== undefined &&
-      !CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())
-    ) {
+    if (input.currency !== undefined && !CURRENCY_PATTERN.test(input.currency.trim().toUpperCase()))
       throw new BadRequestException('currency must be 3-letter');
-    }
     if (input.dimension !== undefined)
       this.assertEnum(input.dimension, LimitDimension, 'dimension');
     let parsedEffectiveFrom: Date | null | undefined;
     if (input.effectiveFrom !== undefined) {
       parsedEffectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
-      if (input.effectiveFrom && parsedEffectiveFrom && isNaN(parsedEffectiveFrom.getTime())) {
+      if (input.effectiveFrom && parsedEffectiveFrom && isNaN(parsedEffectiveFrom.getTime()))
         throw new BadRequestException('effectiveFrom must be valid ISO date');
-      }
     }
     let parsedEffectiveTo: Date | null | undefined;
     if (input.effectiveTo !== undefined) {
       parsedEffectiveTo = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
-      if (input.effectiveTo && parsedEffectiveTo && isNaN(parsedEffectiveTo.getTime())) {
+      if (input.effectiveTo && parsedEffectiveTo && isNaN(parsedEffectiveTo.getTime()))
         throw new BadRequestException('effectiveTo must be valid ISO date');
-      }
     }
 
-    // V1-TEST-02: same findOne()-then-save() lost-update race as updateProfile() above (and the
-    // defect V1-TEST-01 fixed in FeeRuleRegistryService.updateRule()) — reproduced directly via
-    // two genuinely concurrent PATCH requests both returning 200 (test 15,
-    // v1-limit-01-limit-catalogue.integration.spec.ts). Fixed the same way: `SELECT ... FOR
-    // UPDATE` inside an explicit transaction so the loser blocks, re-reads the post-commit
-    // version, and correctly hits assertVersion's existing conflict path.
-    let saved: LimitRule;
+    const repository = manager.getRepository(LimitRule);
+    const rule = await repository
+      .createQueryBuilder('rule')
+      .where('rule.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
+    if (!rule) throw new NotFoundException(`Limit rule ${id} not found`);
+    this.assertVersion(rule.version, input.version);
+    const previousValues = this.ruleValues(rule);
+    if (input.product !== undefined) rule.product = input.product.trim().toUpperCase();
+    if (input.direction !== undefined)
+      rule.direction = input.direction ? input.direction.trim().toUpperCase() : null;
+    if (input.channel !== undefined) rule.channel = input.channel ? input.channel.trim() : null;
+    if (input.currency !== undefined) rule.currency = input.currency.trim().toUpperCase();
+    if (input.dimension !== undefined) rule.dimension = input.dimension;
+    if (input.limitValueMinor !== undefined) rule.limitValueMinor = input.limitValueMinor ?? null;
+    if (input.limitValueCount !== undefined) rule.limitValueCount = input.limitValueCount ?? null;
+    if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom)
+      rule.effectiveFrom = parsedEffectiveFrom;
+    if (parsedEffectiveTo !== undefined) rule.effectiveTo = parsedEffectiveTo;
+    if (rule.effectiveTo && rule.effectiveTo <= rule.effectiveFrom)
+      throw new BadRequestException('effectiveTo must be after effectiveFrom');
+    if (input.isActive !== undefined) rule.isActive = input.isActive;
+    if (input.priority !== undefined) rule.priority = input.priority;
+    rule.updatedBy = actor;
+    this.validateDimensionValue(rule.dimension, rule.limitValueMinor, rule.limitValueCount);
+    rule.version += 1;
     try {
-      saved = await this.dataSource.transaction(async (manager) => {
-        const repository = manager.getRepository(LimitRule);
-        const r = await repository
-          .createQueryBuilder('rule')
-          .where('rule.id = :id', { id })
-          .setLock('pessimistic_write')
-          .getOne();
-        if (!r) throw new NotFoundException(`Limit rule ${id} not found`);
-        this.assertVersion(r.version, input.version);
-        const previousValues = this.ruleValues(r);
-
-        if (input.product !== undefined) r.product = input.product.trim().toUpperCase();
-        if (input.direction !== undefined)
-          r.direction = input.direction ? input.direction.trim().toUpperCase() : null;
-        if (input.channel !== undefined) r.channel = input.channel ? input.channel.trim() : null;
-        if (input.currency !== undefined) r.currency = input.currency.trim().toUpperCase();
-        if (input.dimension !== undefined) r.dimension = input.dimension;
-        // handle limit values — need to validate exclusive again after all changes
-        if (input.limitValueMinor !== undefined) r.limitValueMinor = input.limitValueMinor ?? null;
-        if (input.limitValueCount !== undefined) r.limitValueCount = input.limitValueCount ?? null;
-
-        if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom)
-          r.effectiveFrom = parsedEffectiveFrom;
-        if (parsedEffectiveTo !== undefined) r.effectiveTo = parsedEffectiveTo;
-        if (r.effectiveTo && r.effectiveTo <= r.effectiveFrom)
-          throw new BadRequestException('effectiveTo must be after effectiveFrom');
-        if (input.isActive !== undefined) r.isActive = input.isActive;
-        if (input.priority !== undefined) r.priority = input.priority;
-        r.updatedBy = actor;
-
-        // validate amount vs count exclusive for final state
-        this.validateDimensionValue(r.dimension, r.limitValueMinor, r.limitValueCount);
-
-        r.version += 1;
-        const persisted = await repository.save(r);
-        await this.auditService.record(manager, {
-          entityType: 'LIMIT_RULE',
-          entityId: persisted.id,
-          action: 'UPDATED',
-          actor,
-          previousValues,
-          newValues: this.ruleValues(persisted),
-        });
-        return persisted;
+      const persisted = await repository.save(rule);
+      await this.auditService.record(manager, {
+        entityType: 'LIMIT_RULE',
+        entityId: persisted.id,
+        action: 'UPDATED',
+        actor,
+        previousValues,
+        newValues: this.ruleValues(persisted),
       });
-    } catch (e) {
-      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
+      return this.toRuleSafe(persisted);
+    } catch (error) {
+      if (this.isUniqueViolation(error, 'uq_limit_rules_active_key'))
         throw new ConflictException('Limit rule unique constraint violation');
-      throw e;
+      throw error;
     }
-    return this.toRuleSafe(saved);
   }
 
   async getRule(id: string): Promise<LimitRuleSafeProjection> {
