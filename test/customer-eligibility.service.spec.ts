@@ -80,7 +80,15 @@ class MemoryRepository<T extends ObjectLiteral> {
 }
 
 class MemoryManager {
+  /** Recorded raw statements — restriction changes must take the customer financial control lock. */
+  readonly statements: string[] = [];
+
   constructor(private readonly repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {}
+
+  query(sql: string): Promise<unknown[]> {
+    this.statements.push(sql);
+    return Promise.resolve([]);
+  }
 
   getRepository<T extends ObjectLiteral>(target: EntityTarget<T>): Repository<T> {
     const repository = this.repositories.get(target);
@@ -135,7 +143,8 @@ describe('CustomerEligibilityService', () => {
       [Customer, customerRepository as unknown as MemoryRepository<ObjectLiteral>],
       [CustomerOnboarding, onboardingRepository as unknown as MemoryRepository<ObjectLiteral>],
     ]);
-    const dataSource = new MemoryDataSource(new MemoryManager(repositories));
+    const memoryManager = new MemoryManager(repositories);
+    const dataSource = new MemoryDataSource(memoryManager);
     const audit = { record: jest.fn().mockResolvedValue({}) };
     const service = new CustomerEligibilityService(
       eligibilityRepository as unknown as Repository<CustomerEligibility>,
@@ -151,6 +160,7 @@ describe('CustomerEligibilityService', () => {
     return {
       service,
       audit,
+      statements: memoryManager.statements,
       repositories: {
         customerRepository,
         onboardingRepository,
@@ -403,5 +413,20 @@ describe('CustomerEligibilityService', () => {
       }),
     );
     expect(errors.some((error) => error.property === 'dailyTransactionAmountMinor')).toBe(true);
+  });
+
+  // ARENA 5 §6: a restriction row that does not exist yet cannot be locked by the financial
+  // admission read, so restriction writes take the SAME customers row lock the admission takes.
+  it('serializes restriction writes on the customer financial control lock', async () => {
+    const testFixture = fixture();
+    const customer = await createCustomer(testFixture);
+
+    await testFixture.service.createRestriction(customer.id, {
+      type: CustomerRestrictionType.FROZEN,
+      isActive: true,
+      actor: 'risk-ops',
+    });
+
+    expect(testFixture.statements).toContain('UPDATE customers SET updated_at = NOW() WHERE id=$1');
   });
 });
