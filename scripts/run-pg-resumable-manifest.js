@@ -4,6 +4,7 @@ const { spawnSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
+require('dotenv').config({ path: path.join(ROOT, '.env') });
 const JEST_BIN = path.join(ROOT, 'node_modules/jest/bin/jest.js');
 const CONFIG = path.join(ROOT, 'jest.integration.config.js');
 const NETWORK_GUARD = path.join(ROOT, 'test/support/mission-25c-network-guard.cjs');

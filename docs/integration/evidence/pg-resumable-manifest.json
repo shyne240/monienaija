@@ -1,5 +1,5 @@
 {
-  "candidate": "b5b65d0f",
+  "candidate": "2247aa98",
   "runIdPrefix": "f04b",
   "batchSize": 3,
   "totalBatches": 62,
@@ -7,7 +7,7 @@
   "batches": [
     {
       "batch": 1,
-      "runId": "f04b01",
+      "runId": "f04b01t",
       "suitePaths": [
         "test/v1-security-super-admin-recovery-01.integration.spec.ts",
         "test/a18-aggregator-foundation.integration.spec.ts",
@@ -22,23 +22,26 @@
         "PG_TEST_BATCH_SIZE": "3",
         "candidate": "b5b65d0f"
       },
-      "exitCode": null,
-      "signal": "SIGABRT",
+      "exitCode": 0,
+      "signal": null,
       "durationMs": 29111,
-      "passed": 0,
+      "passed": 59,
       "failed": 0,
       "skipped": 0,
-      "total": 0,
-      "suitesPassed": [],
+      "total": 59,
+      "suitesPassed": [
+        "test/v1-security-super-admin-recovery-01.integration.spec.ts",
+        "test/a18-aggregator-foundation.integration.spec.ts",
+        "test/mission-25g-customer-preference-authorization.integration.spec.ts"
+      ],
       "suitesFailed": [],
-      "completedAt": "2026-11-19T21:40:33.340Z",
-      "candidate": "b5b65d0f",
-      "status": "INCOMPLETE",
-      "note": "Process terminated with signal SIGABRT or timeout, not passing"
+      "completedAt": "2026-11-20T10:42:32Z",
+      "candidate": "2247aa98",
+      "status": "PASSED"
     },
     {
       "batch": 2,
-      "runId": "f04b02",
+      "runId": "f04b02t",
       "suitePaths": [
         "test/v1-limit-05-diagnostics.integration.spec.ts",
         "test/a8-agent-lifecycle.integration.spec.ts",
@@ -53,27 +56,26 @@
         "PG_TEST_BATCH_SIZE": "3",
         "candidate": "b5b65d0f"
       },
-      "exitCode": 1,
+      "exitCode": 0,
       "signal": null,
       "durationMs": 92580,
-      "passed": 39,
-      "failed": 1,
+      "passed": 40,
+      "failed": 0,
       "skipped": 0,
       "total": 40,
       "suitesPassed": [
         "test/v1-limit-05-diagnostics.integration.spec.ts",
+        "test/a8-agent-lifecycle.integration.spec.ts",
         "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts"
       ],
-      "suitesFailed": [
-        "test/a8-agent-lifecycle.integration.spec.ts"
-      ],
-      "completedAt": "2026-11-19T21:44:04.854Z",
-      "candidate": "b5b65d0f",
-      "status": "FAILED"
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T10:42:32Z",
+      "candidate": "2247aa98",
+      "status": "PASSED"
     },
     {
       "batch": 3,
-      "runId": "f04b03",
+      "runId": "f04b03t",
       "suitePaths": [
         "test/v1-admin-authorization-read-surface-01.integration.spec.ts",
         "test/v1-workforce-bootstrap-01.integration.spec.ts",
@@ -88,19 +90,22 @@
         "PG_TEST_BATCH_SIZE": "3",
         "candidate": "b5b65d0f"
       },
-      "exitCode": null,
-      "signal": "SIGABRT",
+      "exitCode": 0,
+      "signal": null,
       "durationMs": 62792,
-      "passed": 0,
+      "passed": 59,
       "failed": 0,
       "skipped": 0,
-      "total": 0,
-      "suitesPassed": [],
+      "total": 59,
+      "suitesPassed": [
+        "test/v1-admin-authorization-read-surface-01.integration.spec.ts",
+        "test/v1-workforce-bootstrap-01.integration.spec.ts",
+        "test/compliance-audit-export.integration.spec.ts"
+      ],
       "suitesFailed": [],
-      "completedAt": "2026-11-19T21:45:08.647Z",
-      "candidate": "b5b65d0f",
-      "status": "INCOMPLETE",
-      "note": "Process terminated with signal SIGABRT or timeout, not passing"
+      "completedAt": "2026-11-20T10:42:32Z",
+      "candidate": "2247aa98",
+      "status": "PASSED"
     },
     {
       "batch": 4,
@@ -138,7 +143,7 @@
     },
     {
       "batch": 5,
-      "runId": "f04b05",
+      "runId": "f04b05c",
       "suitePaths": [
         "test/mobile-client-support.integration.spec.ts",
         "test/v1-admin-local-login-01.integration.spec.ts",
@@ -153,23 +158,22 @@
         "PG_TEST_BATCH_SIZE": "3",
         "candidate": "b5b65d0f"
       },
-      "exitCode": 1,
+      "exitCode": 0,
       "signal": null,
       "durationMs": 86164,
-      "passed": 37,
-      "failed": 1,
+      "passed": 38,
+      "failed": 0,
       "skipped": 0,
       "total": 38,
       "suitesPassed": [
         "test/mobile-client-support.integration.spec.ts",
-        "test/v1-admin-local-login-01.integration.spec.ts"
-      ],
-      "suitesFailed": [
+        "test/v1-admin-local-login-01.integration.spec.ts",
         "test/notification-migration-upgrade-01.integration.spec.ts"
       ],
-      "completedAt": "2026-11-19T21:50:17.421Z",
-      "candidate": "b5b65d0f",
-      "status": "FAILED"
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T10:42:32Z",
+      "candidate": "2247aa98",
+      "status": "PASSED"
     },
     {
       "batch": 6,
@@ -683,7 +687,7 @@
     },
     {
       "batch": 21,
-      "runId": "f04b21",
+      "runId": "f04b21d",
       "suitePaths": [
         "test/a6-settlement-lifecycle.integration.spec.ts",
         "test/v1-fee-runtime-wiring.integration.spec.ts",
@@ -698,23 +702,22 @@
         "PG_TEST_BATCH_SIZE": "3",
         "candidate": "b5b65d0f"
       },
-      "exitCode": 1,
+      "exitCode": 0,
       "signal": null,
       "durationMs": 134343,
-      "passed": 34,
-      "failed": 16,
+      "passed": 50,
+      "failed": 0,
       "skipped": 0,
       "total": 50,
       "suitesPassed": [
+        "test/a6-settlement-lifecycle.integration.spec.ts",
         "test/v1-fee-runtime-wiring.integration.spec.ts",
         "test/v1-agent-credentials-01.integration.spec.ts"
       ],
-      "suitesFailed": [
-        "test/a6-settlement-lifecycle.integration.spec.ts"
-      ],
-      "completedAt": "2026-11-19T22:15:25.980Z",
-      "candidate": "b5b65d0f",
-      "status": "FAILED"
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T10:42:32Z",
+      "candidate": "2247aa98",
+      "status": "PASSED"
     },
     {
       "batch": 22,
@@ -1025,5 +1028,5 @@
   ],
   "completed": 30,
   "remaining": 32,
-  "lastUpdated": "2026-11-19T22:36:51.525174Z"
+  "lastUpdated": "2026-11-20T10:42:32Z"
 }
