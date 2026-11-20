@@ -21,6 +21,7 @@ For a local comparison without changing branches, use `git archive <revision> | 
 
 ## Fresh local acceptance evidence
 
+- **Backend static checks:** `npx tsc --noEmit --incremental false -p tsconfig.build.json` and scoped ESLint for the changed production files and Agent foundation/cash-in specs passed. The bank-commitment spec retains lint diagnostics on unchanged lines.
 - **Admin Web:** `npm run ts:check -- --noEmit`, `npm test -- --runInBand --testTimeout=20000` and `npm run build` from `apps/admin-web`. Typecheck and build passed; **88 suites / 893 tests passed**. The Vite build emitted a chunk-size warning only.
 - **Backend on disposable PostgreSQL 18.7:** **4 suites / 85 tests passed**, including authorization and ownership checks, Agent lifecycle, real cash-in class denial and bank-commitment history. From the root, with `NODE_ENV=test`, a unique `PG_TEST_RUN_ID`, `PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, loopback disposable `DB_*` and the existing test environment, run:
 

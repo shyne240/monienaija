@@ -572,7 +572,8 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         serialNumber: 'SN-A22',
       })
       .expect(201);
-    expect(termRes.body.id).toBeDefined();
+    const terminalId = termRes.body.id as string;
+    expect(terminalId).toBeDefined();
     const secondAgent = await createActiveAgent();
     const otherOutlet = await request(app.getHttpServer())
       .post(`/api/v1/internal/agents/${secondAgent}/outlets`)
@@ -590,7 +591,7 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
       .post(`/api/v1/internal/outlets/${outletId}/terminals`)
       .set('Authorization', `Bearer ${token}`)
       .send({
-        outletId: otherOutlet.body.id,
+        outletId: otherOutlet.body.id as string,
         reference: `mismatch-${randomUUID()}`,
         label: 'Wrong parent',
       })
@@ -599,9 +600,7 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
       .get(`/api/v1/internal/outlets/${outletId}/terminals`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(assigned.body).toEqual([
-      expect.objectContaining({ id: termRes.body.id, outletId, agentId }),
-    ]);
+    expect(assigned.body).toEqual([expect.objectContaining({ id: terminalId, outletId, agentId })]);
     const foreign = await request(app.getHttpServer())
       .get(`/api/v1/internal/agents/${secondAgent}/terminals`)
       .set('Authorization', `Bearer ${token}`)
