@@ -32,6 +32,7 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { FeeRuleResolverService } from '../src/fee-rules/fee-rule-resolver.service';
+import { FeeRuleTargeting1785753600506 } from '../src/migrations/1785753600506-FeeRuleTargeting';
 import { TransferPricingService } from '../src/transfer/transfer-pricing.service';
 import { CommercialAccountingConfigService } from '../src/commercial-accounting/commercial-accounting-config.service';
 import { CommercialVatTreatment } from '../src/commercial-accounting/commercial-accounting.enums';
@@ -342,6 +343,9 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       effectiveFrom: expect.any(Date),
       effectiveTo: null,
       priority: 0,
+      customerClassCode: null,
+      agentClassId: null,
+      institutionId: null,
     });
     // manager-bound variant returns the identical resolution (future flow-integration primitive)
     const rm = await resolver.resolveWithManager(dataSource.manager, {
@@ -707,6 +711,46 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
         })
       ).rule?.institutionId,
     ).toBeNull();
+  });
+
+  it('fee targeting migration rollback/reapply preserves legacy global rules and schema compatibility', async () => {
+    const legacy = await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
+    const migration = new FeeRuleTargeting1785753600506();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    try {
+      await migration.down(queryRunner);
+      const oldColumns: Array<{ column_name: string }> = await queryRunner.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name='fee_rules' AND column_name IN ('customer_class_code','agent_class_id','institution_id')`,
+      );
+      expect(oldColumns).toHaveLength(0);
+      const retained: Array<{ id: string; flat_fee_minor: string }> = await queryRunner.query(
+        `SELECT id, flat_fee_minor::text FROM fee_rules WHERE id=$1`,
+        [legacy.id],
+      );
+      expect(retained).toEqual([{ id: legacy.id, flat_fee_minor: '100' }]);
+
+      await migration.up(queryRunner);
+      const upgraded: Array<{
+        customer_class_code: string | null;
+        agent_class_id: string | null;
+        institution_id: string | null;
+      }> = await queryRunner.query(
+        `SELECT customer_class_code, agent_class_id, institution_id FROM fee_rules WHERE id=$1`,
+        [legacy.id],
+      );
+      expect(upgraded).toEqual([
+        { customer_class_code: null, agent_class_id: null, institution_id: null },
+      ]);
+    } finally {
+      await queryRunner.release();
+    }
+    const resolved = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: T1,
+    });
+    expect(resolved).toMatchObject({ status: 'RESOLVED', rule: { ruleId: legacy.id } });
   });
 
   it('18. the resolver is read-only: zero mutation of wallets, ledger, limits, reservations, snapshots', async () => {
