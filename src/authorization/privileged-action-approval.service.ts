@@ -103,6 +103,43 @@ export class PrivilegedActionApprovalService {
       });
     }
 
+    const registeredActions = Object.keys(GOVERNED_ACTIONS);
+    const hasFallbackRole =
+      principal.roles.includes('FINANCE_CONTROLLER') || principal.roles.includes('SUPER_ADMIN');
+    if (!hasFallbackRole) {
+      const principalRoles = principal.roles.length > 0 ? principal.roles : ['__NONE__'];
+      qb.andWhere(
+        `(
+          approval.actionType IN (:...registeredActions)
+          OR (
+            jsonb_typeof(approval.policy -> 'approvingRoles') = 'array'
+            AND jsonb_array_length(approval.policy -> 'approvingRoles') > 0
+            AND approval.policy -> 'approvingRoles' ?| :principalRoles
+          )
+          OR (
+            (
+              jsonb_typeof(approval.policy -> 'approvingRoles') IS DISTINCT FROM 'array'
+              OR jsonb_array_length(approval.policy -> 'approvingRoles') = 0
+            )
+            AND jsonb_typeof(approval.policy -> 'requiredRoles') = 'array'
+            AND jsonb_array_length(approval.policy -> 'requiredRoles') > 0
+            AND approval.policy -> 'requiredRoles' ?| :principalRoles
+          )
+          OR (
+            (
+              jsonb_typeof(approval.policy -> 'approvingRoles') IS DISTINCT FROM 'array'
+              OR jsonb_array_length(approval.policy -> 'approvingRoles') = 0
+            )
+            AND (
+              jsonb_typeof(approval.policy -> 'requiredRoles') IS DISTINCT FROM 'array'
+              OR jsonb_array_length(approval.policy -> 'requiredRoles') = 0
+            )
+          )
+        )`,
+        { registeredActions, principalRoles },
+      );
+    }
+
     if (query.status) {
       qb.andWhere('approval.status = :status', { status: query.status });
     }

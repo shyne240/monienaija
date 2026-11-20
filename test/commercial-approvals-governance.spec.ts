@@ -154,6 +154,25 @@ function buildService(rows: PrivilegedActionApproval[]) {
           ) {
             return false;
           }
+          if (
+            Array.isArray(filters.registeredActions) &&
+            Array.isArray(filters.principalRoles) &&
+            !filters.registeredActions.includes(r.actionType)
+          ) {
+            const approvingRoles = Array.isArray(r.policy?.approvingRoles)
+              ? (r.policy.approvingRoles as string[])
+              : [];
+            const requiredRoles = Array.isArray(r.policy?.requiredRoles)
+              ? (r.policy.requiredRoles as string[])
+              : [];
+            const rolesToCheck = approvingRoles.length > 0 ? approvingRoles : requiredRoles;
+            if (
+              rolesToCheck.length > 0 &&
+              !rolesToCheck.some((role) => (filters.principalRoles as string[]).includes(role))
+            ) {
+              return false;
+            }
+          }
           return true;
         });
       const qb: {
@@ -427,5 +446,48 @@ describe('Commercial Approvals & Governance', () => {
     });
     expect(page3.total).toBe(60);
     expect(page3.items).toHaveLength(10);
+  });
+
+  it('enforces policy.approvingRoles, policy.requiredRoles, and missing role policies for unregistered actions', async () => {
+    const unregisteredApproving = makeApprovalRow({
+      id: '66666666-6666-4666-8666-666666666661',
+      actionType: 'CUSTOM_UNREGISTERED_ACTION_1',
+      policy: { approvingRoles: ['RISK_REVIEWER'] },
+    });
+    const unregisteredRequired = makeApprovalRow({
+      id: '66666666-6666-4666-8666-666666666662',
+      actionType: 'CUSTOM_UNREGISTERED_ACTION_2',
+      policy: { requiredRoles: ['COMPLIANCE_OFFICER'] },
+    });
+    const unregisteredOpen = makeApprovalRow({
+      id: '66666666-6666-4666-8666-666666666663',
+      actionType: 'CUSTOM_UNREGISTERED_ACTION_3',
+      policy: {},
+    });
+    const { service } = buildService([
+      unregisteredApproving,
+      unregisteredRequired,
+      unregisteredOpen,
+    ]);
+
+    const riskReviewerList = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['RISK_REVIEWER'],
+        scopes: ['privileged:approve'],
+      }),
+    });
+    expect(riskReviewerList.total).toBe(2);
+    expect(riskReviewerList.items.map((i) => i.id)).toEqual([
+      unregisteredApproving.id,
+      unregisteredOpen.id,
+    ]);
+
+    const controllerList = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve'],
+      }),
+    });
+    expect(controllerList.total).toBe(3);
   });
 });
