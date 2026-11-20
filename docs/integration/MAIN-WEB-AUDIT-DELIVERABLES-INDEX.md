@@ -19,7 +19,8 @@
 | 5 | 4 copy-ready implementation prompts (scope/routes/owned dirs/backend reqs/acceptance; baselines corrected, no conflicting shared-file assignments) | `docs/integration/arena-prompts/ARENA-{1,2,3,4}-*.md` | Done — corrected |
 | 6 | Master page-by-page functionality matrix (33 routes × status/missing/Arena/deps/priority/acceptance; source of truth) | `docs/integration/MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md` | Done — reconciled, source of truth (priority overlay in new doc §1) |
 | 7 | This index + reconciled totals + branch/regression instructions | This file | Done |
-| 8 | **Priority overlay P2–P5** — commercial (fees/commissions/limits) audit, claiming flows, automatic-POS resolution, 10-item acceptance gates, approval decisions | `docs/integration/MAIN-WEB-PRIORITY-PLAN-P2-P5.md` | **Done — new (§1–§8)** |
+| 8 | **Priority overlay P2–P5** — commercial (fees/commissions/limits) audit, claiming flows, automatic-POS resolution, 10-item acceptance gates, approval decisions | `docs/integration/MAIN-WEB-PRIORITY-PLAN-P2-P5.md` | **Done — (§1–§8)** |
+| 9 | **Implementation gates & decision register** — KYC enforcement enablement plan, auto-CoS evidence, mobile self-registration plan, POS separation, fees spec to collection, 6-layer acceptance distinction, sequence | `docs/integration/IMPLEMENTATION-GATES-AND-DECISION-REGISTER.md` | **Done — (§1–§8)** |
 
 ---
 
