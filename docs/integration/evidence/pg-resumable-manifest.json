@@ -1450,9 +1450,77 @@
       "completedAt": "2026-11-20T11:17:40.156Z",
       "candidate": "e9e5651d",
       "status": "PASSED"
+    },
+    {
+      "batch": 38,
+      "runId": "f04b38",
+      "suitePaths": [
+        "test/b2f-finance-lifecycle.integration.spec.ts",
+        "test/a10-agent-service-capability.integration.spec.ts",
+        "test/a2-workforce-session.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b38 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b38.json test/b2f-finance-lifecycle.integration.spec.ts test/a10-agent-service-capability.integration.spec.ts test/a2-workforce-session.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b38",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "e9e5651d"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 269008,
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0,
+      "total": 53,
+      "suitesPassed": [
+        "test/b2f-finance-lifecycle.integration.spec.ts",
+        "test/a10-agent-service-capability.integration.spec.ts",
+        "test/a2-workforce-session.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T11:22:10.168Z",
+      "candidate": "e9e5651d",
+      "status": "PASSED"
+    },
+    {
+      "batch": 39,
+      "runId": "f04b39",
+      "suitePaths": [
+        "test/v1-limit-05-recovery.integration.spec.ts",
+        "test/stage8-financial-engine-migration.integration.spec.ts",
+        "test/a5-transfer-lifecycle.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b39 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b39.json test/v1-limit-05-recovery.integration.spec.ts test/stage8-financial-engine-migration.integration.spec.ts test/a5-transfer-lifecycle.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b39",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "e9e5651d"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 116705,
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "total": 41,
+      "suitesPassed": [
+        "test/v1-limit-05-recovery.integration.spec.ts",
+        "test/stage8-financial-engine-migration.integration.spec.ts",
+        "test/a5-transfer-lifecycle.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-20T11:24:07.876Z",
+      "candidate": "e9e5651d",
+      "status": "PASSED"
     }
   ],
-  "completed": 37,
-  "remaining": 25,
-  "lastUpdated": "2026-11-20T11:17:40.156Z"
+  "completed": 39,
+  "remaining": 23,
+  "lastUpdated": "2026-11-20T11:24:07.876Z"
 }
