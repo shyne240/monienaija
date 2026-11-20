@@ -1,0 +1,5 @@
+backup-restore drill: postgres -> /home/user/monienaija/data/backup-drill/2026-11-20T20-34-37-101Z
+backup-restore drill error: Error: table customers does not exist
+    at readTable (/home/user/monienaija/scripts/backup-restore-drill.js:297:38)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async main (/home/user/monienaija/scripts/backup-restore-drill.js:539:33)

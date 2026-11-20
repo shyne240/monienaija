@@ -57,7 +57,18 @@ if [[ -z "$RUNTIME" ]] && command -v podman >/dev/null 2>&1; then
 fi
 
 if [[ -z "$RUNTIME" ]]; then
-  fail "No usable container runtime. Install Docker (https://docs.docker.com/engine/install/) or Podman, ensure the daemon is running and the current user can access it (docker group / rootless)."
+  # Emit ENVIRONMENT_BLOCKED-structured evidence (exit 2), not a generic FAIL,
+  # so run-all.sh distinguishes "no runtime here" from a harness error.
+  _evdir="${PORTABLE_EVIDENCE_DIR:-}"
+  if [[ -z "$_evdir" ]]; then
+    _evdir="$(cd "$(dirname "$0")/../.." && pwd)/docs/integration/evidence/portable-acceptance"
+  fi
+  mkdir -p "$_evdir"
+  cat > "$_evdir/prerequisites.json" <<JSON
+{"at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","project":"$PROJECT","runtime":"none","status":"ENVIRONMENT_BLOCKED","reason":"no container runtime","disposableConfirmed":true}
+JSON
+  echo "ENVIRONMENT_BLOCKED: No usable container runtime. Install Docker (https://docs.docker.com/engine/install/) or Podman." | tee -a "$_evdir/prerequisites.log"
+  exit 2
 fi
 info "Container runtime: $RUNTIME"
 

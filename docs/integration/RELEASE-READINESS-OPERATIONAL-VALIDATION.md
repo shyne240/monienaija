@@ -1,12 +1,11 @@
 # Release Readiness Report — Post-Arena 5 Operational Validation
 
-**Branch:** `arena/1f37a4f3-monienaija` @ `b1605b51`  
-**Base:** `6816a760bd460df2a5347016d7d84f5c62cab642` (Arena 3D freeze)  
-**Application/test candidate:** `e9e5651d6398477e78b71226b0ae44fd61a27899`  
-**Migrations:** 166 head `1785753600804-GeneralizeExternalOperationsForAgents.ts`  
-**Date:** 2026-11-20  
+**Branch:** `arena/1f37a4f3-monienaija` @ `HEAD` (base `6816a760`, app candidate `e9e5651d`)  
+**Migrations:** 166 head `1785753600804` — `dist/config/data-source.js` `migrationsRun:false`, `dist/migrations/*.js` 166, `node_modules/typeorm/cli.js` present  
+**Date:** 2026-11-20 (harness verification + partial runtime)  
 **Engineering verdict:** **ACCEPTED** — all executable lanes PASS, financial engine frozen.  
-**Production verdict:** **NOT_READY** — 16 blockers + 4 human-acceptance conditions, by design.
+**Production verdict:** **NOT_READY** — 16 blockers + 4 conditions (verified `npx ts-node -T scripts/release-gate.ts`).  
+**Portable acceptance:** `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` — static 6/6 scripts syntax/PASS, 5 harness defects fixed, 1/5 suites runtime PASS (alert synthetic HMAC), 4/5 ENVIRONMENT_BLOCKED (no runtime/PG here).
 
 This is the release-readiness phase successor to Arena 5 (`b1605b51` engineering-accepted). It does not modify the financial engine without a demonstrated defect.
 

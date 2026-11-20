@@ -31,6 +31,11 @@ CLEANUP_ONLY=0
 for arg in "$@"; do case "$arg" in --keep) KEEP=1 ;; --cleanup-only) CLEANUP_ONLY=1 ;; --disposable) : ;; *) echo "unknown arg $arg" >&2; exit 1 ;; esac; done
 
 mkdir -p "$EVIDENCE_DIR" "$LOG_DIR"
+# Truncate result.log on each fresh run (idempotent reruns should not append forever)
+if [[ "$CLEANUP_ONLY" != "1" ]]; then : > "$EVIDENCE_DIR/result.log" || true; fi
+
+# Cleanup trap: on INT/TERM, record and preserve evidence (never lose failure logs)
+trap 'echo "[$(date -u +%H:%M:%SZ)] INTERRUPTED — evidence retained at $EVIDENCE_DIR/" | tee -a "$EVIDENCE_DIR/result.log"' INT TERM
 
 fail() { echo "CONTAINER-ACCEPTANCE FAIL: $*" | tee -a "$EVIDENCE_DIR/result.log" >&2; exit 1; }
 info() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$EVIDENCE_DIR/result.log"; }
@@ -53,6 +58,34 @@ if [[ "$CLEANUP_ONLY" == "1" ]]; then
   $COMPOSE -p "$PROJECT" down -v --remove-orphans 2>&1 | tee -a "$EVIDENCE_DIR/cleanup.log" || true
   docker volume rm "${PROJECT}_postgres-data" "${PROJECT}_app-var" 2>&1 | tee -a "$EVIDENCE_DIR/cleanup.log" || true
   info "Cleanup done"; exit 0
+fi
+
+# ── Disposable safety: production guard ────────────────────────────────────────
+# Single-flag is not enough: also reject production-like DB targets, real
+# paging URLs, and real provider mode. A typo that points at a prod host
+# must be caught here, not after a destructive command.
+reject_prod_target() {
+  local url="$1" label="$2"
+  # production DB hosts, cloud DB endpoints, and bare "prod" project names
+  if echo "$url" | grep -qiE "rds\.amazonaws|prod\.monienaija|monienaija\.prod|aurora\.|cloudsql|postgres\.prod|prod-db"; then
+    fail "Refusing $label that looks like production: $url"
+  fi
+  if echo "$PROJECT" | grep -qiE "^monienaija$|^monienaija-prod|^prod-|-prod$"; then
+    fail "Refusing COMPOSE_PROJECT_NAME that looks like production: $PROJECT"
+  fi
+}
+reject_prod_target "${DB_HOST:-postgres}" "DB_HOST"
+reject_prod_target "${ALERT_WEBHOOK_URL:-}" "ALERT_WEBHOOK_URL"
+if echo "${ALERT_WEBHOOK_URL:-}" | grep -qiE "pagerduty\.com|opsgenie\.com|slack\.com/services|hooks\.slack"; then
+  fail "Refusing ALERT_WEBHOOK_URL that points at a real paging provider: ${ALERT_WEBHOOK_URL} — portable acceptance must use a local synthetic receiver"
+fi
+if [[ "${BANKING_ENABLED:-false}" == "true" && "${BANKING_ENVIRONMENT:-sandbox}" == "production" ]]; then
+  fail "Refusing BANKING_ENABLED=true with BANKING_ENVIRONMENT=production in portable acceptance — use sandbox/disabled"
+fi
+# Destructive cleanup is restricted to volumes prefixed with this project
+if [[ -n "${PGHOST:-}" || -n "${DATABASE_URL:-}" ]]; then
+  info "WARNING: PGHOST/DATABASE_URL set in caller env — ignoring (portable run uses compose postgres only)"
+  unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE DATABASE_URL
 fi
 
 # ── Runtime availability ─────────────────────────────────────────────────────
@@ -86,7 +119,15 @@ export COMPOSE_PROJECT_NAME="$PROJECT"
 
 # ── Validate Docker Compose config ───────────────────────────────────────────
 info "Validating docker-compose config..."
-$COMPOSE --env-file "${ENV_FILE:-/dev/null}" config --quiet 2>&1 | tee -a "$EVIDENCE_DIR/compose-config.log" || fail "docker compose config validation failed (see compose-config.log)"
+# --quiet suppresses output; use full config for secret-redacted evidence
+if $COMPOSE --env-file "${ENV_FILE:-/dev/null}" config --quiet 2>&1; then
+  info "Compose config valid"
+  # Redact passwords/secrets in the evidence copy
+  $COMPOSE --env-file "${ENV_FILE:-/dev/null}" config 2>&1 | sed -E 's/(PASSWORD|SECRET|JWT|KEYRING).*/\1: [REDACTED]/I' | tee -a "$EVIDENCE_DIR/compose-config.log" > /dev/null || true
+else
+  $COMPOSE --env-file "${ENV_FILE:-/dev/null}" config 2>&1 | sed -E 's/(PASSWORD|SECRET|JWT|KEYRING).*/\1: [REDACTED]/I' | tee -a "$EVIDENCE_DIR/compose-config.log"
+  fail "docker compose config validation failed (see compose-config.log)"
+fi
 
 # ── Build ────────────────────────────────────────────────────────────────────
 info "Building backend image (this may take several minutes)..."

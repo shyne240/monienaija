@@ -89,7 +89,13 @@ if PORTABLE_ACCEPT_DISPOSABLE=yes PORTABLE_EVIDENCE_DIR="$REPO_ROOT/$EVIDENCE_RO
   PASSED=$((PASSED+1))
 else
   CODE=$?
-  if [[ $CODE -eq 1 ]]; then echo "✗ prerequisites FAIL"; FAIL=$((FAIL+1)); fi
+  if [[ $CODE -eq 2 ]]; then
+    echo "⊘ prerequisites ENVIRONMENT_BLOCKED (no runtime)"
+    BLOCKED=$((BLOCKED+1))
+  else
+    echo "✗ prerequisites FAIL (exit $CODE)"
+    FAIL=$((FAIL+1))
+  fi
 fi
 
 # ── Suites ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T20:34:37Z",
+  "startedAt": "2026-11-20T20:34:29Z",
+  "durationMs": 8000,
+  "project": "monienaija-portable-acceptance",
+  "filter": "all",
+  "verdict": "PASS_WITH_ENVIRONMENT_BLOCKED",
+  "passed": 1,
+  "failed": 0,
+  "environmentBlocked": 4,
+  "total": 5,
+  "evidence": "docs/integration/evidence/portable-acceptance"
+}

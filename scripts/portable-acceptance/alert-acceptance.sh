@@ -15,6 +15,11 @@ EVIDENCE_ROOT="${PORTABLE_EVIDENCE_DIR:-$REPO_ROOT/docs/integration/evidence/por
 EVIDENCE_DIR="$EVIDENCE_ROOT/alert"
 KEEP=0; for arg in "$@"; do case "$arg" in --keep) KEEP=1 ;; --disposable) : ;; *) echo "unknown arg $arg" >&2; exit 1 ;; esac; done
 mkdir -p "$EVIDENCE_DIR"
+: > "$EVIDENCE_DIR/result.log" || true
+# Note: alert retry documented below is harness-controlled (500 → 200) to prove
+# the receiver handles failures. Application retry (AlertingService dispatch loop)
+# is separately proven by test/alert-delivery.spec.ts 12/12 and is not claimed to be
+# exercised via container here — see §5 of runbook.
 
 fail() { echo "ALERT-ACCEPTANCE FAIL: $*" | tee -a "$EVIDENCE_DIR/result.log" >&2; exit 1; }
 info() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$EVIDENCE_DIR/result.log"; }
@@ -25,17 +30,21 @@ if [[ "$PROJECT" != *"portable"* && "$PROJECT" != *"acceptance"* && "$PROJECT" !
 
 COMPOSE="docker compose"
 if command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then COMPOSE="podman compose"; fi
-if ! command -v docker >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
-  cat > "$EVIDENCE_DIR/result.json" <<JSON
-{"verdict":"ENVIRONMENT_BLOCKED","reason":"no container runtime","at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-JSON
-  echo "ENVIRONMENT_BLOCKED: no container runtime" | tee -a "$EVIDENCE_DIR/result.log"; exit 2
-fi
+HAS_RUNTIME=1
+if ! command -v docker >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then HAS_RUNTIME=0; fi
+if [[ $HAS_RUNTIME -eq 1 ]] && command -v docker >/dev/null 2>&1 && ! docker info >/dev/null 2>&1; then HAS_RUNTIME=0; fi
+# Note: synthetic local HMAC tests below do NOT require a container runtime (only Node/curl).
+# Only the final "compose backend alert path" probe needs it.
 
 ENV_FILE="${PORTABLE_ENV_FILE:-infra/portable-acceptance/.env.acceptance.example}"
 if [[ ! -f "$ENV_FILE" ]]; then ENV_FILE=".env.acceptance"; fi
 if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE"; set +a; fi
 export COMPOSE_PROJECT_NAME="$PROJECT"
+# Portable alert must not target a real paging provider
+if echo "${ALERT_WEBHOOK_URL:-}" | grep -qiE "pagerduty\.com|opsgenie\.com|slack\.com/services|hooks\.slack"; then
+  echo "Refusing ALERT_WEBHOOK_URL that points at a real paging provider: $ALERT_WEBHOOK_URL" >&2; exit 1
+fi
+if [[ -n "${DATABASE_URL:-}" ]]; then echo "Refusing DATABASE_URL in portable alert harness (use compose postgres)" >&2; exit 1; fi
 
 ALERT_SECRET="${ALERT_WEBHOOK_SECRET:-portable-acceptance-webhook-secret-32b-min!!}"
 ALERT_PORT="${ALERT_RECEIVER_PORT:-8765}"
@@ -81,9 +90,8 @@ function verifySignature(body, timestamp, signature) {
 const server = http.createServer((req, res) => {
   let body=''; req.on('data', c=> body+=c); req.on('end', () => {
     const entry = { at: new Date().toISOString(), method: req.method, url: req.url, headers: req.headers, bodyLen: body.length, body: body.slice(0,8000) };
-    fs.appendFileSync(LOG, JSON.stringify(entry) + '\\n');
-    if (req.url !== PATH || req.method !== 'POST') { res.writeHead(404); res.end('not found'); return; }
-    if (failNext) { failNext = false; deliveries.push({ ...entry, response: 500 }); res.writeHead(500); res.end('synthetic failure'); return; }
+    if (req.url !== PATH || req.method !== 'POST') { fs.appendFileSync(LOG, JSON.stringify(entry) + '\\n'); res.writeHead(404); res.end('not found'); return; }
+    if (failNext) { entry.response=500; fs.appendFileSync(LOG, JSON.stringify(entry) + '\\n'); failNext = false; deliveries.push({ ...entry, response: 500 }); res.writeHead(500); res.end('synthetic failure'); return; }
     const sig = req.headers['x-monienaija-signature'] || req.headers['x-hub-signature-256'] || req.headers['x-hmac-signature'] || '';
     const ts = req.headers['x-monienaija-timestamp'] || req.headers['x-timestamp'] || '';
     let sigOk = false;
@@ -91,6 +99,7 @@ const server = http.createServer((req, res) => {
     // Also try without timestamp prefix (legacy)
     if (!sigOk && sig) { try { const h2 = crypto.createHmac('sha256', SECRET).update(body).digest('hex'); sigOk = sig.includes(h2); } catch {} }
     entry.sigOk = sigOk; entry.signature = sig;
+    fs.appendFileSync(LOG, JSON.stringify(entry) + '\\n');
     deliveries.push(entry);
     res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({received:true, sigOk}));
   });
@@ -177,14 +186,18 @@ else
   info "PASS no external delivery (only localhost receiver touched)"
 fi
 
-# ── Compose backend alert path (if stack running) ───────────────────────────
-info "If backend is running, triggering application alert evaluation (diagnostics → alert)..."
-# The backend's alert evaluation runs on metrics/diagnostics sources. We hit the internal diagnostics endpoint
-# (requires auth — will 401 without token, but proves connectivity). For portable harness we document the path.
-if curl -sf "http://127.0.0.1:${HTTP_PORT:-18080}/api/v1/internal/readiness" 2>&1 | head -5 | tee -a "$EVIDENCE_DIR/app-alert-probe.log"; then
-  info "Internal readiness reachable (if authenticated, alerting sources are live)"
+# ── Compose backend alert path (if stack running, optional) ─────────────────
+if [[ $HAS_RUNTIME -eq 1 ]]; then
+  info "If backend is running, triggering application alert evaluation (diagnostics → alert)..."
+  # The backend's alert evaluation runs on metrics/diagnostics sources. We hit the internal diagnostics endpoint
+  # (requires auth — will 401 without token, but proves connectivity).
+  if curl -sf "http://127.0.0.1:${HTTP_PORT:-18080}/api/v1/internal/readiness" 2>&1 | head -5 | tee -a "$EVIDENCE_DIR/app-alert-probe.log"; then
+    info "Internal readiness reachable (if authenticated, alerting sources are live)"
+  else
+    info "Internal readiness requires auth (expected) — alerting mechanism validated via direct HMAC path above"
+  fi
 else
-  info "Internal readiness requires auth (expected) — alerting mechanism validated via direct HMAC path above"
+  info "Skipping compose backend probe (no container runtime) — local HMAC path above is the authoritative synthetic evidence"
 fi
 
 # ── Evidence summary ────────────────────────────────────────────────────────

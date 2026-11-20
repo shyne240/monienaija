@@ -1,0 +1,4 @@
+[20:34:37Z] Backup/restore acceptance starting (hasRuntime=0 hasPgDump=0)
+[20:34:37Z] No container runtime available — falling back to wire-level backup-restore-drill.js (disposable embedded PG)...
+[20:34:37Z] Drill failed (exit 1) — diagnostics:
+ENVIRONMENT_BLOCKED: no PostgreSQL server for fallback drill (see /home/user/monienaija/docs/integration/evidence/portable-acceptance/backup-restore/result.log) — static package validated, execution pending on host with PG

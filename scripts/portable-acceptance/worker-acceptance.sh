@@ -26,6 +26,8 @@ EVIDENCE_DIR="$EVIDENCE_ROOT/worker"
 LOG_DIR="$EVIDENCE_DIR/logs"
 KEEP=0; for arg in "$@"; do case "$arg" in --keep) KEEP=1 ;; --disposable) : ;; *) echo "unknown arg $arg" >&2; exit 1 ;; esac; done
 mkdir -p "$EVIDENCE_DIR" "$LOG_DIR"
+: > "$EVIDENCE_DIR/result.log" || true
+trap 'echo "[$(date -u +%H:%M:%SZ)] INTERRUPTED — evidence at $EVIDENCE_DIR" | tee -a "$EVIDENCE_DIR/result.log"' INT TERM
 
 fail() { echo "WORKER-ACCEPTANCE FAIL: $*" | tee -a "$EVIDENCE_DIR/result.log" >&2; exit 1; }
 info() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$EVIDENCE_DIR/result.log"; }
@@ -33,6 +35,17 @@ info() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$EVIDENCE_DIR/result.log"; 
 if [[ "${PORTABLE_ACCEPT_DISPOSABLE:-}" != "yes" ]]; then echo "Refusing without PORTABLE_ACCEPT_DISPOSABLE=yes" >&2; exit 1; fi
 PROJECT="${COMPOSE_PROJECT_NAME:-monienaija-portable-acceptance}"
 if [[ "$PROJECT" != *"portable"* && "$PROJECT" != *"acceptance"* && "$PROJECT" != *"test"* && "$PROJECT" != *"tmp"* ]]; then echo "COMPOSE_PROJECT_NAME=$PROJECT not disposable" >&2; exit 1; fi
+
+# ── Disposable safety: same production guard as container-acceptance ─────────
+reject_prod_target() {
+  local url="$1" label="$2"
+  if echo "$url" | grep -qiE "rds\.amazonaws|prod\.monienaija|monienaija\.prod|aurora\.|cloudsql|postgres\.prod|prod-db"; then
+    fail "Refusing $label that looks like production: $url"
+  fi
+  if echo "$PROJECT" | grep -qiE "^monienaija$|^monienaija-prod|^prod-|-prod$"; then
+    fail "Refusing COMPOSE_PROJECT_NAME that looks like production: $PROJECT"
+  fi
+}
 
 COMPOSE="docker compose"
 if command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then COMPOSE="podman compose"; fi
@@ -55,6 +68,14 @@ ENV_FILE="${PORTABLE_ENV_FILE:-infra/portable-acceptance/.env.acceptance.example
 if [[ ! -f "$ENV_FILE" ]]; then ENV_FILE=".env.acceptance"; fi
 if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE"; set +a; fi
 export COMPOSE_PROJECT_NAME="$PROJECT"
+reject_prod_target "${DB_HOST:-postgres}" "DB_HOST"
+reject_prod_target "${ALERT_WEBHOOK_URL:-}" "ALERT_WEBHOOK_URL"
+if echo "${ALERT_WEBHOOK_URL:-}" | grep -qiE "pagerduty\.com|opsgenie\.com|slack\.com/services|hooks\.slack"; then
+  fail "Refusing ALERT_WEBHOOK_URL that points at a real paging provider: $ALERT_WEBHOOK_URL"
+fi
+if [[ "${BANKING_ENABLED:-false}" == "true" && "${BANKING_ENVIRONMENT:-sandbox}" == "production" ]]; then
+  fail "Refusing BANKING_ENABLED=true with production environment in portable acceptance"
+fi
 
 # ── Ensure base stack is up ──────────────────────────────────────────────────
 info "Ensuring disposable postgres + migrations are ready..."
@@ -88,15 +109,17 @@ info "Checking worker did not expose HTTP (must not listen)..."
 if $COMPOSE --env-file "${ENV_FILE:-/dev/null}" exec -T backend node -e "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>console.log('api http',r.status)).catch(e=>console.log('api no http',e.message))" 2>&1 | tee -a "$EVIDENCE_DIR/api-http.log"; then
   info "API HTTP check emitted (see api-http.log)"
 fi
-# Worker should have log line "worker process running" or describe workers, and not have HTTP listener errors
+# Worker harness defect fix: readiness refusal is EXPECTED with synthetic financial
+# blockers still present (the 8 FINANCIAL_DEPENDENCY_BLOCKERS are not wired in the
+# portable env). The earlier version incorrectly treated that refusal as FAIL,
+# which would make a correct gate look like a broken harness. Now we classify:
 docker logs "$WORKER_NAME" 2>&1 | tail -100 | tee -a "$EVIDENCE_DIR/worker-initial.log"
-if docker logs "$WORKER_NAME" 2>&1 | grep -qi "worker process refused\|production readiness failed"; then
-  docker logs "$WORKER_NAME" 2>&1 | tail -50 >&2
-  fail "Worker refused startup (readiness gate refused — expected with synthetic financial blockers still present; this is the documented 8-blocker gap)"
-fi
-# Portable expectation: worker may refuse due to 8 financial blockers (production readiness gate). That refusal IS evidence.
-# Distinguish: refusal because blockers != process wiring failure. Record it.
-if docker logs "$WORKER_NAME" 2>&1 | grep -qi "refused to start"; then
+WORKER_LOG_DUMP="$(docker logs "$WORKER_NAME" 2>&1 || true)"
+if echo "$WORKER_LOG_DUMP" | grep -qi "worker process refused\|production readiness failed\|readiness failed"; then
+  info "Worker refused startup (readiness gate — expected with 8 synthetic blockers still present)"
+  info "Evidence that worker honors same verifyStartup gate as API: PASS (not a harness failure)"
+  echo "$WORKER_LOG_DUMP" | grep -i "refused\|readiness failed\|blocker" | head -20 | tee -a "$EVIDENCE_DIR/worker-refusal.log" || true
+elif echo "$WORKER_LOG_DUMP" | grep -qi "refused to start"; then
   info "Worker refused startup (financial blockers — documented blocker, not a wiring defect)"
   info "Evidence that worker runtime honors the same verifyStartup gate as API: PASS"
 else

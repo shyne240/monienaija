@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T20:34:37Z",
+  "verdict": "PASS",
+  "project": "monienaija-portable-acceptance",
+  "receiverPort": 8765,
+  "deliveriesRecorded": 4,
+  "hmacVerified": true,
+  "controlledFailure": "500 induced then recovered",
+  "receiverRestart": "pass",
+  "externalDelivery": "none",
+  "note": "Synthetic local webhook only. Production alert-delivery blocker preserved until a real paging provider (PagerDuty/OpsGenie/etc) is configured and verified.",
+  "evidence": "/home/user/monienaija/docs/integration/evidence/portable-acceptance/alert"
+}

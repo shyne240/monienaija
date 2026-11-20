@@ -1,0 +1,21 @@
+[20:34:29Z] Starting synthetic alert webhook receiver on 0.0.0.0:8765/hooks/alerts (HMAC verified, no external delivery)...
+[20:34:31Z] Receiver PID 16400 listening on :8765 and control :8766
+[20:34:31Z] Probing receiver with synthetic signed POST (HMAC round-trip)...
+[20:34:31Z] PASS direct HMAC delivery (2xx)
+[20:34:32Z] PASS delivery recorded in receiver log
+[20:34:32Z] PASS HMAC signature verified (sigOk)
+[20:34:32Z] Arming controlled failure (next POST → 500) to verify retry/failure path...
+[20:34:32Z] Controlled failure response: HTTP 500 (expected 500 on armed receiver)
+[20:34:32Z] PASS controlled failure induced (receiver returned 500)
+[20:34:33Z] PASS recovery after failure (2xx after 500)
+[20:34:33Z] Testing receiver restart recovery (kill + restart, then deliver)...
+[20:34:34Z] Receiver stopped, restarting...
+[20:34:37Z] PASS delivery after receiver restart
+[20:34:37Z] Checking no external delivery occurred (receiver log must contain no external host)...
+[20:34:37Z] PASS no external delivery (only localhost receiver touched)
+[20:34:37Z] Skipping compose backend probe (no container runtime) — local HMAC path above is the authoritative synthetic evidence
+[20:34:37Z] ═══════════════════════════════════════════════════════
+[20:34:37Z] ALERT ACCEPTANCE PASS (synthetic)
+[20:34:37Z] Deliveries recorded: 4 → /home/user/monienaija/docs/integration/evidence/portable-acceptance/alert/receiver.log
+[20:34:37Z] Production blocker alert_delivery_not_observed_against_a_real_channel remains until a real channel is verified.
+[20:34:37Z] ═══════════════════════════════════════════════════════

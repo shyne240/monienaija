@@ -1,10 +1,11 @@
 # Portable Infrastructure Acceptance Runbook
 
-**Branch:** `arena/1f37a4f3-monienaija` @ `35cc8f29` (base `6816a760`)  
-**Application candidate:** `e9e5651d` — migrations 166 head `1785753600804`  
+**Branch:** `arena/1f37a4f3-monienaija` @ `0c603b97` → `HEAD` (base `6816a760`)  
+**Application candidate:** `e9e5651d` — migrations 166 head `1785753600804` — `dist/config/data-source.js` verified `migrationsRun:false`, `typeorm` CLI `node_modules/typeorm/cli.js` present, 166 `dist/migrations/*.js`  
 **Engineering:** ACCEPTED (PG 186/186 3918p, socket 11/11 149p, journeys 10/10 267p, backend 3409p, mobile 576/576, Chromium 27/27, infra03 live PASS, worker 15/15+10/10+15/15, alerting 31/31, DR template-clone 264ms)  
-**Production gate:** NOT_READY — 16 blockers + 4 conditions (no overrides)  
-**Date:** 2026-11-20  
+**Production gate:** NOT_READY — 16 blockers + 4 conditions (no overrides, verified `npx ts-node -T scripts/release-gate.ts`)  
+**Date:** 2026-11-20 (static verification + harness correction pass)  
+**Previous portable HEAD:** `0c603b97` (package preparation); this update corrects 5 harness defects and records static + partial runtime evidence.  
 **Audience:** Operator who did not develop the application, on an authorized Linux server with a container runtime.  
 **Constraints:** No prod deployment, real funds, live provider calls, external notifications, prod credentials, predecessor mutation, or main-branch merge.
 
@@ -602,13 +603,61 @@ PORTABLE_ACCEPT_DISPOSABLE=yes ./scripts/portable-acceptance/container-acceptanc
 
 ---
 
-## 14. Audit trail and change log
+## 14. Static verification and harness corrections (this update)
+
+### 14.1 Static package verification (2026-11-20, sandbox — no container runtime, no PG)
+
+| Check | Result | Evidence / fix |
+|---|---|---|
+| Shell syntax `bash -n` 6/6 scripts | PASS | — |
+| Executable permissions `+x` 6/6 | PASS | — |
+| `dist/config/data-source.js` exists, `migrationsRun:false` via DataSource options | PASS | `dist/config/data-source.js` 427B, `ls dist/migrations/*.js =166`, `node -e require(...).default.options.migrationsRun===false` |
+| `node_modules/typeorm/cli.js` present in runtime stage (production dep) | PASS | `Dockerfile` copies `node_modules` after `npm prune --omit=dev`; `typeorm` is `dependencies` not `devDependencies` |
+| Migration command matches compiled app (no ts-node) | PASS (fixed) | `docker-compose.yml` corrected from `ts-node/register` to `node node_modules/typeorm/cli.js migration:run -d dist/config/data-source.js` (defect C-1) |
+| Backend never auto-migrates (`migrationsRun:false`, no `synchronize` in main.ts) | PASS | `src/config/database.config.ts:40 migrationsRun:false`, `src/main.ts` has no migration call — only `migrate` service |
+| Relative/absolute paths (`REPO_ROOT` via dirname, `PORTABLE_EVIDENCE_DIR` fallback) | PASS | All scripts `REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"` |
+| Environment loading (`set -a; source; set +a`) | PASS | 5/6 scripts (run-all passes `PORTABLE_EVIDENCE_DIR` explicitly) |
+| JSON evidence generation (`result.json`, `prerequisites.json`, `run-summary.json`) | PASS | All suites write machine-readable JSON; worker fix preserves `worker-refusal.log` |
+| Disposable guards (`PORTABLE_ACCEPT_DISPOSABLE=yes` + project name pattern) | PASS | All 6 scripts fail-closed `exit 1` without `yes`; project name must contain `portable/acceptance/test/tmp` |
+| Production guards (DB_HOST, ALERT_WEBHOOK_URL, BANKING_ENVIRONMENT) | PASS (added) | `container/worker/alert/backup` now reject `rds.amazonaws.com`, `prod.*`, `pagerduty.com`, `BANKING_ENVIRONMENT=production` |
+| Secret redaction (`compose config` → `[REDACTED]`) | PASS (added) | `container-acceptance.sh` now `sed s/(PASSWORD\|SECRET\|JWT\|KEYRING).*/[REDACTED]/` |
+| Cleanup traps (`trap INT TERM`) | PASS (added) | `container`, `worker`, `backup` now trap and preserve evidence on interrupt; `alert` already had it |
+| Idempotent reruns (`: > result.log`, `docker rm -f` worker) | PASS (added) | Truncates logs on each run instead of appending forever |
+| Exit-code propagation (`run-all.sh` distinguishes 0 PASS / 2 BLOCKED / other FAIL) | PASS (fixed) | `run-all` now handles `prerequisites` exit 2 as BLOCKED (was silent); all suites exit 2 for no runtime |
+
+### 14.2 Harness defects corrected
+
+| # | File | Defect | Fix |
+|---|---|---|---|
+| H-1 | `worker-acceptance.sh:93` | `if grep refused → fail` made a correct readiness refusal (8 financial blockers) look like a harness failure; second `if refused` expected it as PASS — unreachable contradiction | Removed `fail`; unified into single `if refused → info PASS` with `worker-refusal.log` dump |
+| H-2 | `verify-prerequisites.sh:50` | `EVIDENCE_DIR` used `REPO_ROOT` before it was defined (unbound variable under `set -u`) | Compute `_evdir` from `dirname $0` fallback |
+| H-3 | `verify-prerequisites.sh` | On no runtime, exited 1 → `run-all` counted it as FAIL, not BLOCKED | Exit 2 with `prerequisites.json status=ENVIRONMENT_BLOCKED`; `run-all` now handles exit 2 |
+| H-4 | `alert-acceptance.sh` receiver | Logged `entry` to file *before* `entry.sigOk=sigOk`, so `receiver.log` never contained `sigOk:true` and the `grep sigOk` check always DIdiagnosed | Move `appendFileSync` after `sigOk` assignment (both success and 500 paths) |
+| H-5 | `alert-acceptance.sh` | Required Docker for local HMAC test (exit 2 before receiver) — local receiver only needs Node/curl | Split guard: `HAS_RUNTIME` flag; local HMAC/500/retry/restart now run without Docker, only backend probe is skipped |
+| H-6 | `backup-restore-acceptance.sh:165` | `if ! drill; then fail` had inverted logic via `!` — success would enter failure branch | Fixed to `if drill; then success else fail`; added ENVIRONMENT_BLOCKED classification for `empty password/ECONNREFUSED/does not exist` vs genuine FAIL (unbalanced journals) |
+
+### 14.3 Runtime execution (this sandbox)
+
+```
+$ PORTABLE_ACCEPT_DISPOSABLE=yes ./scripts/portable-acceptance/run-all.sh
+⊘ prerequisites ENVIRONMENT_BLOCKED (no runtime)
+⊘ container ENVIRONMENT_BLOCKED (no runtime)
+⊘ worker ENVIRONMENT_BLOCKED (no runtime)
+✓ alert PASS (synthetic local HMAC — 4 deliveries, sigOk 2, 500→recovery, restart→recovery, no external)
+⊘ backup-restore ENVIRONMENT_BLOCKED (no PG server for fallback drill; prior drill at data/backup-drill/2026-11-20T20-33-39-476Z)
+PASS_WITH_ENVIRONMENT_BLOCKED (1 passed, 4 blocked, 7000ms)
+```
+
+Alert evidence: `evidence/portable-acceptance/alert/receiver.log` (JSONL, 4 lines, `sigOk:true` on 2), `result.json verdict=PASS`, `direct-probe.log 200`, `recovery-probe.log 200`, `after-restart.log 200`. No external host, HMAC `x-monienaija-signature: sha256=<hex of timestamp.body>` verified.
+
+Container/worker/backup remain ENVIRONMENT_BLOCKED — not FAIL. A genuine failed assertion (e.g., `unbalancedJournals !=0`) would still be FAIL (exit 1), never misreported as BLOCKED.
+
+### 14.4 Audit trail and change log
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-11-20 | Portable package created: 4 scripts + verify + runner, env template, this runbook | pending |
-| 2026-11-20 | Generated portable self-signed `infra/nginx/certs/tls.crt+key` (30-day, not for prod) | pending (gitignored `*.key` — host generates) |
-| 2026-11-20 | Documented compose `migrate` ts-node defect C-1 with harness retry | pending |
-| earlier | Dockerfile 3-stage static review, DR template-clone, infra03 live PASS | `35cc8f29` |
+| 2026-11-20 | Portable package: 4 scripts + verify + runner, env template, this runbook (C-1 fix) | `0c603b97` |
+| 2026-11-20 | Harness verification + 6 defects corrected, static checks, partial runtime (alert PASS) | this commit |
+| earlier | Dockerfile 3-stage, DR template-clone 264ms, infra03 live PASS | `35cc8f29` |
 
-**Verification:** `npx ts-node -T scripts/release-gate.ts` at this commit still reports NOT_READY 16+4. No blocker was marked resolved because its procedure was prepared.
+**Verification:** `npx ts-node -T scripts/release-gate.ts` still reports NOT_READY 16+4. No blocker waived; `container_build_unverified` etc. remain until a host with Docker/PG records PASS.
