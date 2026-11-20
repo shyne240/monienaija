@@ -84,7 +84,21 @@ export const CommercialApprovalInbox: React.FC<CommercialApprovalInboxProps> = (
   };
 
   if (!canApprove) {
-    return null;
+    return (
+      <section
+        className="mn-surface-card"
+        aria-label="Commercial and Governance Approval Inbox"
+        style={{ marginTop: '20px', padding: '20px' }}
+      >
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
+          Commercial &amp; Governance Approval Inbox
+        </h2>
+        <p style={{ margin: '8px 0 0', fontSize: '13px', opacity: 0.78 }}>
+          You do not currently hold the required checker role (FINANCE_CONTROLLER) and
+          approval scope (privileged:approve) to review commercial governance proposals.
+        </p>
+      </section>
+    );
   }
 
   return (
@@ -207,9 +221,22 @@ export const CommercialApprovalInbox: React.FC<CommercialApprovalInboxProps> = (
                   <div style={{ fontSize: '13px', opacity: 0.9 }}>{item.reason}</div>
                 )}
                 <div style={{ fontSize: '12px', opacity: 0.72 }}>
-                  Requested by <code>{item.requesterPrincipalId}</code> · Expires{' '}
+                  Requested by <code>{item.requesterPrincipalId}</code> · Created{' '}
+                  {new Date(item.requestedAt).toLocaleString()} · Expires{' '}
                   {new Date(item.expiresAt).toLocaleString()}
                 </div>
+                {(item.approvedBy || item.approvedAt || item.rejectedAt || item.consumedAt) && (
+                  <div style={{ fontSize: '12px', opacity: 0.78 }}>
+                    {item.approvedBy && (
+                      <>
+                        Decided by <code>{item.approvedBy}</code>{' '}
+                      </>
+                    )}
+                    {item.approvedAt && <>· Approved {new Date(item.approvedAt).toLocaleString()} </>}
+                    {item.rejectedAt && <>· Rejected {new Date(item.rejectedAt).toLocaleString()} </>}
+                    {item.consumedAt && <>· Consumed {new Date(item.consumedAt).toLocaleString()}</>}
+                  </div>
+                )}
                 {isPending && (
                   <div
                     style={{
