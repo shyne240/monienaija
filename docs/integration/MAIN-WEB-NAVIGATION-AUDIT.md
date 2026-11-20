@@ -1,8 +1,8 @@
 # Main Web Navigation & Route Audit — Arena 5 Phase 1
 
-**Date:** 2026-11-20 · Branch `arena/1f37a4f3-monienaija` · Baseline `e9e5651d` (166 migrations)
-**Scope:** `apps/admin-web/src/screens/authenticated/` — 38 views, 7 sections, function-scope guarded via `navigation-access.ts`
-**Classification:** COMPLETE (production-grade), PARTIAL (works but gaps), PLACEHOLDER (static/no backend), MISSING (no route), BROKEN (calls failing endpoint)
+**Date:** 2026-11-20 · Branch `arena/1f37a4f3-monienaija` @ `0350563d` · Application candidate `e9e5651d` (166 migrations)
+**Scope:** `apps/admin-web/src/screens/authenticated/Layout.tsx` + `navigation-access.ts` — 8 sections, 32 menu items + 1 contextual route = 33 routable views; `AdminView` union = 42 values (33 canonical + 9 legacy aliases), function-code guarded
+**Classification:** COMPLETE (production-grade), PARTIAL (works but gaps), PLACEHOLDER (static/no backend), MISSING (conceptual capability without route — not a routable view), BROKEN (calls non-existent endpoint)
 
 ## 1. Navigation Map (preserved — do not reorganize)
 
@@ -42,15 +42,18 @@
 | 32 | Administration | `auditEvents` | Audit events | `audit.search` | **COMPLETE** | `AuditTrailScreen.tsx` 428 |
 | 33 | Contextual | `institutionWorkspace` | Institution workspace | `institution.view+id` | **COMPLETE** | `InstitutionWorkspaceScreen.tsx` 1043 + `InstitutionRelationshipTabs.tsx` 1899 |
 
-Legacy aliases: `ledger→ledgerExplorer`, `transactions→transfers`, `commercial→feeRules`, etc. — retained.
+Canonical views (9 legacy aliases mapped via `LEGACY_VIEW_ALIASES`): `ledger→ledgerExplorer`, `transactions→transfers`, `commercial→feeRules`, `compliance→kycQueue`, `riskfraud→fraudCases`, `roles→roleGovernance`, `approvals→approvalsInbox`, `workforce→workforceAccess`, `system→systemHealth` — retained, not counted as separate destinations.
 
-## 2. Status Summary
+## 2. Status Summary — reconciled (source of truth: `MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md`)
 
-- **COMPLETE (18):** dashboard, dashboardSettings, customers, agentClasses, support, cashToCashOps, limitCatalogue, limitAssignments, kycQueue, kycProviders, kycTierPolicies, complianceCases, workforceAccess, roleGovernance, approvalsInbox, superAdminRecovery, notifications, systemHealth, auditEvents, institutions/workspace
-- **PARTIAL (10):** agents, transfers, ledgerExplorer, reconciliation, bankingOperations, feeRules, commissionRules, fraudCases (+ rewardRules/productCatalogue counted as placeholder)
-- **PLACEHOLDER (4):** cashIn, cashOut (aliases), rewardRules, productCatalogue — tab/filter only, no independent operations
-- **MISSING (2 conceptual):** Global reporting/analytics page, unified reports export hub
+Routable views: **33** = 32 menu items + 1 contextual (`institutionWorkspace`, reachable only with `institutionId`).
+Sections: **8** (`home` Overview, `servicing` Customers & agents, `institutions` Institutions, `money` Transactions, `finance` Finance, `commercial` Products & pricing, `compliance` Risk & compliance, `platform` Administration).
+
+- **COMPLETE (21):** dashboard, dashboardSettings, customers, agentClasses, support, institutions, institutionWorkspace, cashToCashOps, limitCatalogue, limitAssignments, kycQueue, kycProviders, kycTierPolicies, complianceCases, workforceAccess, roleGovernance, approvalsInbox, superAdminRecovery, notifications, systemHealth, auditEvents
+- **PARTIAL (8):** agents, transfers, ledgerExplorer, reconciliation, bankingOperations, feeRules, commissionRules, fraudCases
+- **PLACEHOLDER (4):** cashIn, cashOut (intentional filter aliases of transfers), rewardRules, productCatalogue — tab/alias only, no independent operations; governed-notice until wired
 - **BROKEN (0):** No screen calls a non-existent endpoint; all 401s are guard-correct, not broken.
+- **MISSING (conceptual, not routable):** No global reporting/analytics hub, no automatic-POS provisioning UI, no standalone disputes resolver, no wallet/virtual-account admin, no partner-callback inspector. These are backend capabilities without management interfaces — see `MAIN-WEB-BACKEND-SERVICE-MAPPING.md §5` and master matrix § Non-goals. Not counted in the 33.
 
 ## 3. Detail per Screen
 
@@ -82,8 +85,8 @@ Legacy aliases: `ledger→ledgerExplorer`, `transactions→transfers`, `commerci
 - **SystemHealthScreen** — metrics, diagnostics, outbox backlog, worker liveness. Uses `internal/operations/*`. COMPLETE.
 - **AuditTrailScreen** — paginated audit events via `audit.search`. COMPLETE (thin).
 
-### Institutions (cross-Arenas, Arena 5 owned)
-- **InstitutionDirectoryScreen + InstitutionWorkspaceScreen + InstitutionRelationshipTabs** — directory, lifecycle (REGISTERED→APPROVED→OPERATIONAL), agent affiliation, enrolment, ledger purpose, KYC tier-limit policy. COMPLETE; cross-module (customers, agents, ledger, notifications all touch it).
+### Institutions (Arena 5 owned; Arenas 1–2 consume)
+- **InstitutionDirectoryScreen + InstitutionWorkspaceScreen + InstitutionRelationshipTabs** — directory, lifecycle (REGISTERED→APPROVED→OPERATIONAL), agent affiliation, enrolment, ledger purpose, KYC tier-limit policy. COMPLETE; cross-module (customers, agents, ledger, notifications all touch it). Arenas 1/2 do not edit institution files — they read affiliations/enrolments via `institution-admin-api.ts`.
 
 ## 4. Permission Model
 

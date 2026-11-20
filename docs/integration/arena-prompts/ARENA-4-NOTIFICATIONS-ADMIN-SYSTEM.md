@@ -1,8 +1,8 @@
 # ARENA 4 — Notifications (Events/Templates/Config/Provider/Deliveries) + Administration & System Settings
 
-**Copy-ready implementation prompt — paste into Arena 4 branch session**
-**Author:** Arena 5 (integration/architecture) · **Date:** 2026-11-20
-**Baseline:** `arena/1f37a4f3-monienaija @ 98b067bc` (→ `arena/5-main-web-audit` integration branch) · 166 migrations
+**Copy-ready implementation prompt — paste into Arena 4 branch session** — RECONCILED 2026-11-20
+**Author:** Arena 5 (integration/architecture)
+**Baseline:** `arena/1f37a4f3-monienaija` @ `0350563d` → `arena/5-main-web-audit` + `arena/5-main-web-integration` @ `0350563d` · Application candidate `e9e5651d` · 166 migrations · `dist/main.js` + `dist/config/data-source.js` (`migrationsRun:false`) verified — reconciled 8 sections, 33 routable (32 menu + 1 contextual), 21/8/4/0
 **Frozen predecessors:** `arena/defdd0fd-monienaija`, `arena/bcf44621-monienaija`, `main` — never mutate.
 **Financial engine:** Preserved — no `src/ledger|reconciliation|commercial-accounting|banking` core change without Arena 5 + defect proof.
 
@@ -20,7 +20,6 @@ Own **notifications (the deepest screen at 5165 lines) + workforce/roles + appro
 |---|---|---|---|---|
 | Overview | `dashboard` | Dashboard | none | COMPLETE (co-own with Arena 5) |
 | Overview | `dashboardSettings` | Dashboard Settings | `workforce.dashboard.view` | COMPLETE |
-| Risk | `kycProviders` | KYC providers | `kyc.provider.view` | COMPLETE (you own provider contract; Arena 1 consumes) |
 | Admin | `workforceAccess` | Workforce access | `workforce.dashboard.view\|user.create` | COMPLETE |
 | Admin | `roleGovernance` | Role governance | `SUPER_ADMIN+assign` | COMPLETE |
 | Admin | `approvalsInbox` | Approvals | `FINANCE_CONTROLLER+privileged:approve` | COMPLETE |
@@ -53,8 +52,8 @@ Services:
 ```
 apps/admin-web/src/services/notification-domain.ts         # 1708 — owned
 apps/admin-web/src/services/notification-management-api.ts # 1997 — owned (events→templates→config→provider→deliveries)
-apps/admin-web/src/services/kyc-governance-api.ts          # provider contract owner
-apps/admin-web/src/services/banking-admin-api.ts           # read-only consumer for provider credential read
+# kyc-governance-api.ts is Arena 1 (KYC provider routing is not notification provider config — distinct modules)
+# banking-admin-api.ts read-only consumer only when needed for worker/provider status display
 ```
 
 Backend modules (frontend-first; approval execution contract is your key backend touch):
@@ -103,9 +102,7 @@ New view key → issue for Arena 5.
 | Dashboard | `GET internal/a2/workforce/dashboard`, `PUT internal/a2/workforce/dashboard/widgets` | `dashboard`, `a2` |
 | System health | `GET health`, `GET internal/operations/health`, `GET internal/operations/metrics`, `GET internal/operations/outbox`, `GET internal/operations/diagnostics` | `operations`, `health` |
 | Audit | `GET audit/events?actor=&action=&entity=`, `GET audit/search` | `audit`, `support` |
-| KYC providers (contract) | `GET internal/kyc/providers`, `PUT internal/kyc/providers` (proposal) | `kyc-verification` |
-
-Maker→checker: notification template/config/provider/KYC provider changes are proposals → `FINANCE_CONTROLLER+privileged:approve` in your own `approvalsInbox`. You own the checker UX.
+Maker→checker: notification template/config/provider changes are proposals → `FINANCE_CONTROLLER+privileged:approve` in your own `approvalsInbox`. KYC provider routing is Arena 1 — you approve those proposals in the inbox but do not own the KYC provider screen.
 
 ---
 
@@ -114,7 +111,7 @@ Maker→checker: notification template/config/provider/KYC provider changes are 
 - [ ] **Notifications pipeline complete:** Events→templates→config→provider status→deliveries is a navigable pipeline in `NotificationManagementScreen`. Each stage loads real `internal/notifications/*` data with pagination. Console provider test harness is not "mock" — it is the correct provider for test environments.
 - [ ] **Notification maker→checker:** Creating/editing a template or config creates a proposal (maker); the inbox shows it with Approve/Reject (checker with `FINANCE_CONTROLLER`). Test-send (`POST .../test-send`) works with a target address/phone and shows delivery status.
 - [ ] **Deliveries observability:** Paginated deliveries with status filters (QUEUED/SENT/FAILED), detail view with attempt log, retry visibility. No invented delivery status.
-- [ ] **KYC provider contract:** Primary/fallback routing for Monnify/Dojah/Synthetic with capability matrix; changes are proposal-gated; catalogue readiness respected (`confirmedCapabilities`). Consumer Arenas 1 can read via your API contract.
+- [ ] **Inbox also shows KYC provider proposals:** When Arena 1 creates a KYC provider routing proposal, it appears in your approvals inbox (checker) — you do not own the KYC provider screen itself.
 - [ ] **Workforce access:** User CRUD (create/invite/disable), search/filter, scope assignment — all via `internal/a2/workforce/*`; permission `user.create` gates creation.
 - [ ] **Role governance:** Role definitions CRUD with function-code matrix (authorization-catalogue); assignment of roles to users with guard `SUPER_ADMIN+assign`; sensitive-role assignment audit-linked.
 - [ ] **Approvals inbox (critical):** Lists proposals from ALL arenas (KYC, agent lifecycle/funding, fee/commission, ledger reversal, institution, notification config). Approve/reject/execute with correct checker guard. Self-approval blocked (backend enforces; you show correct error). This is the governance sink — if Arenas 1–3 have no proposals yet, inbox correctly shows empty with guidance, not error.

@@ -1,8 +1,8 @@
 # ARENA 1 — Customers, KYC & Customer Service (Complaints/Disputes)
 
-**Copy-ready implementation prompt — paste into Arena 1 branch session**
-**Author:** Arena 5 (integration/architecture) · **Date:** 2026-11-20
-**Baseline:** `arena/1f37a4f3-monienaija @ 98b067bc` (→ `arena/5-main-web-audit` integration branch) · 166 migrations · `dist/main.js` + `dist/config/data-source.js` verified
+**Copy-ready implementation prompt — paste into Arena 1 branch session** — RECONCILED 2026-11-20
+**Author:** Arena 5 (integration/architecture)
+**Baseline:** `arena/1f37a4f3-monienaija` @ `0350563d` → `arena/5-main-web-audit` + `arena/5-main-web-integration` @ `0350563d` · Application candidate `e9e5651d` · 166 migrations · `dist/main.js` + `dist/config/data-source.js` (`migrationsRun:false`) verified — reconciled 8 sections, 33 routable (32 menu + 1 contextual), 21/8/4/0
 **Frozen predecessors:** `arena/defdd0fd-monienaija`, `arena/bcf44621-monienaija`, `main` — never mutate or merge into.
 **Financial engine:** Preserved — do not touch `src/reconciliation`, `src/commercial-accounting`, `src/ledger`, `src/transfer`, `src/banking` double-entry/balance logic unless Arena 5 approves a demonstrated defect with regression.
 
@@ -37,7 +37,7 @@ From `apps/admin-web/src/screens/authenticated/Layout.tsx` (8 sections, 33 views
 
 ## 3) Exact files you own / may create
 
-### Owned (edit freely)
+### Owned (edit freely — exactly one primary owner per file, not shared)
 
 ```
 apps/admin-web/src/screens/authenticated/CustomerDirectoryScreen.tsx
@@ -52,17 +52,16 @@ apps/admin-web/src/screens/authenticated/ComplianceScreen.tsx
 apps/admin-web/src/screens/authenticated/KycProviderManagementScreen.tsx
 apps/admin-web/src/screens/authenticated/KycTierPolicyManagementScreen.tsx
 apps/admin-web/src/screens/authenticated/RiskFraudScreen.tsx
-apps/admin-web/src/screens/authenticated/LimitAssignmentScreen.tsx   # co-owned with Arena 3 — customer-assignment paths
-apps/admin-web/src/components/CountrySelect.tsx                       # you may improve for customer forms
+apps/admin-web/src/screens/authenticated/LimitAssignmentScreen.tsx   # primary Arena 1 — catalogue contract from Arena 3, not co-owned
 apps/admin-web/__tests__/a1-*.test.tsx                                 # you create
 ```
 
-### Services
+### Services (owned)
 
 ```
-apps/admin-web/src/services/kyc-governance-api.ts          # consumer (Arena 4 owns provider contract if conflict)
-apps/admin-web/src/services/institution-admin-api.ts       # read-only consumer for customer-enrolment slice
-# Do not create a new api client — use ApiClient from services/api-client.ts
+apps/admin-web/src/services/kyc-governance-api.ts          # primary Arena 1 — KYC provider routing is Arena 1; Arena 4 owns notification provider config separately (distinct module: notification/provider-config)
+# institution-admin-api.ts is Arena 5 owned — you are a read-only consumer (do not edit) for customer enrolment / KYC tier-limit policy reads
+# Do not create a new api client — use ApiClient from services/api-client.ts (Arena 5 owned)
 ```
 
 ### Backend modules you will touch (only if needed — prefer frontend-first)
@@ -74,20 +73,26 @@ apps/admin-web/src/services/institution-admin-api.ts       # read-only consumer 
 ## 4) Prohibited — never edit these in Arena 1 PRs
 
 ```
-apps/admin-web/src/screens/authenticated/Layout.tsx
-apps/admin-web/src/screens/authenticated/navigation-access.ts
-apps/admin-web/src/services/api-client.ts
-apps/admin-web/src/store/auth-store.ts
-apps/admin-web/src/config/* 
+apps/admin-web/src/screens/authenticated/Layout.tsx          # Arena 5 — 8 sections
+apps/admin-web/src/screens/authenticated/navigation-access.ts # Arena 5 — 42 AdminView, 9 aliases
+apps/admin-web/src/services/api-client.ts                     # Arena 5
+apps/admin-web/src/store/auth-store.ts                        # Arena 5
+apps/admin-web/src/services/institution-admin-api.ts          # Arena 5 — read-only consumer only
+apps/admin-web/src/components/CountrySelect.tsx               # Arena 5 — do not fork
+apps/admin-web/src/config/*
 apps/admin-web/src/design-system/tokens.css
-apps/admin-web/src/screens/authenticated/AgentNetworkScreen.tsx
-apps/admin-web/src/screens/authenticated/AgentClassesScreen.tsx
-apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx
-apps/admin-web/src/screens/authenticated/BankingOperationsScreen.tsx
-apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
-src/ledger/**        # financial engine
-src/reconciliation/** # financial engine
+apps/admin-web/src/screens/authenticated/AgentNetworkScreen.tsx    # Arena 2
+apps/admin-web/src/screens/authenticated/AgentClassesScreen.tsx   # Arena 2
+apps/admin-web/src/components/AgentClassAssignmentPanel.tsx   # Arena 2
+apps/admin-web/src/components/AgentFundingPanel.tsx           # Arena 2
+apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx # Arena 4
+apps/admin-web/src/screens/authenticated/BankingOperationsScreen.tsx      # Arena 3
+apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx       # Arena 3
+apps/admin-web/src/screens/authenticated/CommercialRulesScreen.tsx         # Arena 3
+src/ledger/**        # financial engine — frozen
+src/reconciliation/** # financial engine — frozen
 src/banking/**       # financial engine (readiness display is Arena 3 — not you)
+src/commercial-accounting/** # frozen
 ```
 
 If you need a new view key or nav label → open an issue for Arena 5; Arena 5 adds `AdminView` + alias + guard, then you implement the screen.
@@ -136,9 +141,9 @@ All writes that change governed state are **maker→checker**: your maker screen
 
 ## 7) Branch & integration rules
 
-- **Branch from:** `arena/5-main-web-audit` (Arena 5 will create it from this branch's HEAD). Name: `arena/5-a1-customers-kyc`.
-- **PR into:** `arena/5-main-web-integration` (Arena 5 integration branch).
-- **Shared files:** Never edit `Layout.tsx`/`navigation-access.ts`/`api-client.ts` without Arena 5. `LimitAssignmentScreen` is shared with Arena 3 — coordinate.
+- **Branch from:** `arena/5-main-web-audit` @ `0350563d` (already exists — frozen audit). Name: `arena/5-a1-customers-kyc`.
+- **PR into:** `arena/5-main-web-integration` @ `0350563d` (already exists).
+- **Shared files:** Never edit `Layout.tsx`/`navigation-access.ts`/`api-client.ts`/`institution-admin-api.ts` without Arena 5. `LimitAssignmentScreen` is primary Arena 1 (catalogue contract from Arena 3 via typed `limit-catalog` API) — no co-ownership; catalogue reads do not conflict.
 - **Handoff format:** PR must include `files | routes | endpoints | guards | tests | evidence | regression` (see criterion above).
 
 ---
@@ -147,10 +152,11 @@ All writes that change governed state are **maker→checker**: your maker screen
 
 ```bash
 git fetch origin
-git checkout arena/5-main-web-audit   # Arena 5 creates this — wait for signal or create from arena/1f37a4f3-monienaija
+git checkout arena/5-main-web-audit   # @ 0350563d — already exists
 git checkout -b arena/5-a1-customers-kyc
-# implement owned screens, run:
+# implement owned screens only (see §3 — 13 files, no shared-file violation), then:
 npm run --prefix apps/admin-web test -- --watchAll=false
-# open PR:
-gh pr create --base arena/5-main-web-integration --title "Arena 1: customers/KYC/support — COMPLETE" --body "See acceptance criteria"
+# verify no shared-file violation:
+git diff --name-only origin/arena/5-main-web-audit | grep -E "^(apps/admin-web/src/screens/authenticated/Layout\.tsx|apps/admin-web/src/screens/authenticated/navigation-access\.ts|apps/admin-web/src/services/api-client\.ts|apps/admin-web/src/services/institution-admin-api\.ts|apps/admin-web/src/components/CountrySelect\.tsx)" && echo "BLOCKED — shared file edited, needs Arena 5 approval" || echo "OK"
+gh pr create --base arena/5-main-web-integration --title "Arena 1: customers/KYC/support — COMPLETE" --body "See ARENA-1 prompt §6 acceptance criteria — files | routes | endpoints | guards | tests | evidence | regression"
 ```

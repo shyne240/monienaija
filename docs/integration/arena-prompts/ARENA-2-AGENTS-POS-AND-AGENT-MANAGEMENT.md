@@ -1,8 +1,8 @@
 # ARENA 2 — Agents, POS & Agent Management
 
-**Copy-ready implementation prompt — paste into Arena 2 branch session**
-**Author:** Arena 5 (integration/architecture) · **Date:** 2026-11-20
-**Baseline:** `arena/1f37a4f3-monienaija @ 98b067bc` (→ `arena/5-main-web-audit` integration branch) · 166 migrations
+**Copy-ready implementation prompt — paste into Arena 2 branch session** — RECONCILED 2026-11-20
+**Author:** Arena 5 (integration/architecture)
+**Baseline:** `arena/1f37a4f3-monienaija` @ `0350563d` → `arena/5-main-web-audit` + `arena/5-main-web-integration` @ `0350563d` · Application candidate `e9e5651d` · 166 migrations · `dist/main.js` + `dist/config/data-source.js` (`migrationsRun:false`) verified — reconciled 8 sections, 33 routable (32 menu + 1 contextual), 21/8/4/0
 **Frozen predecessors:** `arena/defdd0fd-monienaija`, `arena/bcf44621-monienaija`, `main` — never mutate.
 **Financial engine:** Preserved — no `src/ledger|reconciliation|commercial-accounting|banking` core change without Arena 5 + defect proof.
 
@@ -56,18 +56,23 @@ Backend modules you may touch (frontend-first preferred):
 ## 4) Prohibited — never edit in Arena 2 PRs
 
 ```
-apps/admin-web/src/screens/authenticated/Layout.tsx
-apps/admin-web/src/screens/authenticated/navigation-access.ts
-apps/admin-web/src/services/api-client.ts
-apps/admin-web/src/store/auth-store.ts
+apps/admin-web/src/screens/authenticated/Layout.tsx          # Arena 5 — 8 sections
+apps/admin-web/src/screens/authenticated/navigation-access.ts # Arena 5 — 42 AdminView, 9 aliases
+apps/admin-web/src/services/api-client.ts                     # Arena 5
+apps/admin-web/src/store/auth-store.ts                        # Arena 5
+apps/admin-web/src/services/institution-admin-api.ts          # Arena 5 — read-only consumer only
+apps/admin-web/src/components/CountrySelect.tsx               # Arena 5
 apps/admin-web/src/config/*
 apps/admin-web/src/design-system/tokens.css
-apps/admin-web/src/screens/authenticated/Customer*.tsx
-apps/admin-web/src/screens/authenticated/SupportTicketsScreen.tsx
-apps/admin-web/src/screens/authenticated/ComplianceScreen.tsx
-apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
-apps/admin-web/src/screens/authenticated/ReconciliationObservabilityScreen.tsx
-apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx
+apps/admin-web/src/screens/authenticated/Customer*.tsx        # Arena 1
+apps/admin-web/src/screens/authenticated/SupportTicketsScreen.tsx # Arena 1
+apps/admin-web/src/screens/authenticated/ComplianceScreen.tsx # Arena 1 (kyc+cases)
+apps/admin-web/src/screens/authenticated/Kyc*.tsx             # Arena 1
+apps/admin-web/src/screens/authenticated/LimitAssignmentScreen.tsx # Arena 1 — primary (catalogue from Arena 3)
+apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx # Arena 3
+apps/admin-web/src/screens/authenticated/ReconciliationObservabilityScreen.tsx # Arena 3
+apps/admin-web/src/screens/authenticated/CommercialRulesScreen.tsx # Arena 3
+apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx # Arena 4
 src/ledger/**  src/reconciliation/**  src/banking/**  src/commercial-accounting/**
 ```
 
@@ -115,9 +120,10 @@ Maker→checker: lifecycle/credential/funding mutations are proposals; checker a
 
 ## 7) Branch & integration
 
-- **Branch from:** `arena/5-main-web-audit` → `arena/5-a2-agents-pos`.
-- **PR into:** `arena/5-main-web-integration`.
-- **Coordination:** Institution affiliations touch Arena 5; funding approvals touch Arena 4. Shared `LimitAssignmentScreen` (agent-assignment paths) — do not break without Arena 1 sync.
+- **Branch from:** `arena/5-main-web-audit` @ `0350563d` (already exists — frozen audit) → `arena/5-a2-agents-pos`.
+- **PR into:** `arena/5-main-web-integration` @ `0350563d` (already exists).
+- **Coordination:** Institution affiliations (Arena 5) + funding approvals (Arena 4) — read-only consumers, not file co-ownership. `LimitAssignmentScreen` is primary Arena 1; you do not edit it — agent limits there are read via `limit-catalog` contract. No conflicting file assigned to Arena 1.
+- **Reconciled baseline guard:** Your 2 views (`agents`, `agentClasses`) are exactly those in master matrix with Arena=2. Verified no shared file assigned to both 1 and 2.
 - **Handoff format:** `files | routes | endpoints | guards | tests | evidence | regression`.
 
 ---
@@ -126,9 +132,11 @@ Maker→checker: lifecycle/credential/funding mutations are proposals; checker a
 
 ```bash
 git fetch origin
-git checkout arena/5-main-web-audit
+git checkout arena/5-main-web-audit   # @ 0350563d — already exists
 git checkout -b arena/5-a2-agents-pos
-# implement, then:
+# implement owned screens only (see §3 — 7 files, no shared-file violation), then:
 npm run --prefix apps/admin-web test -- --watchAll=false
-gh pr create --base arena/5-main-web-integration --title "Arena 2: agents/POS — COMPLETE" --body "See criteria"
+# verify no shared-file violation:
+git diff --name-only origin/arena/5-main-web-audit | grep -E "^(apps/admin-web/src/screens/authenticated/Layout\.tsx|apps/admin-web/src/screens/authenticated/navigation-access\.ts|apps/admin-web/src/services/api-client\.ts|apps/admin-web/src/services/institution-admin-api\.ts|apps/admin-web/src/components/CountrySelect\.tsx)" && echo "BLOCKED — shared file edited, needs Arena 5 approval" || echo "OK"
+gh pr create --base arena/5-main-web-integration --title "Arena 2: agents/POS — COMPLETE" --body "See ARENA-2 prompt §6 acceptance criteria — files | routes | endpoints | guards | tests | evidence | regression"
 ```

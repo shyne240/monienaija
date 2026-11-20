@@ -1,8 +1,8 @@
 # ARENA 3 — Transactions, Banking, Finance & Reconciliation (Commercial)
 
-**Copy-ready implementation prompt — paste into Arena 3 branch session**
-**Author:** Arena 5 (integration/architecture) · **Date:** 2026-11-20
-**Baseline:** `arena/1f37a4f3-monienaija @ 98b067bc` (→ `arena/5-main-web-audit` integration branch) · 166 migrations
+**Copy-ready implementation prompt — paste into Arena 3 branch session** — RECONCILED 2026-11-20
+**Author:** Arena 5 (integration/architecture)
+**Baseline:** `arena/1f37a4f3-monienaija` @ `0350563d` → `arena/5-main-web-audit` + `arena/5-main-web-integration` @ `0350563d` · Application candidate `e9e5651d` · 166 migrations · `dist/main.js` + `dist/config/data-source.js` (`migrationsRun:false`) verified — reconciled 8 sections, 33 routable (32 menu + 1 contextual), 21/8/4/0
 **Frozen predecessors:** `arena/defdd0fd-monienaija`, `arena/bcf44621-monienaija`, `main` — never mutate.
 **Financial engine:** **Preserved and central to your Arena** — you work *around* it, not through it. `src/ledger`, `src/reconciliation`, `src/commercial-accounting`, `src/banking`, `src/transfer` double-entry/balance logic is frozen unless Arena 5 approves a demonstrated defect with reproduction + regression.
 
