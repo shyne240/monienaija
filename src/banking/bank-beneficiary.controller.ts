@@ -15,7 +15,10 @@ import { DataSource } from 'typeorm';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { BankBeneficiaryCreationService } from './bank-beneficiary-creation.service';
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
-import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../customer-beneficiary/customer-beneficiary.enums';
 
 interface AuthenticatedRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
@@ -53,7 +56,7 @@ export class CustomerBankBeneficiaryController {
   async list(@Req() req: AuthenticatedRequest, @Query('search') search?: string) {
     const customerId = requireCustomer(req);
     const all = await this.beneficiaries.listBeneficiaries(customerId);
-    let items = all.filter((b) => b.type === 'BANK_ACCOUNT');
+    let items = all.filter((b) => b.type === CustomerBeneficiaryType.BANK_ACCOUNT);
     if (search && typeof search === 'string' && search.trim()) {
       const needle = search.trim().toLowerCase();
       items = items.filter(
@@ -122,10 +125,11 @@ export class CustomerBankBeneficiaryController {
     }
     let desiredStatus: CustomerBeneficiaryStatus | undefined;
     if (dto.status !== undefined) {
-      const raw = String(dto.status).trim().toUpperCase();
-      if (raw !== CustomerBeneficiaryStatus.ACTIVE && raw !== CustomerBeneficiaryStatus.SUSPENDED)
+      const raw = typeof dto.status === 'string' ? dto.status.trim().toUpperCase() : '';
+      if (raw !== 'ACTIVE' && raw !== 'SUSPENDED')
         throw new BadRequestException('status must be ACTIVE or SUSPENDED');
-      desiredStatus = raw as CustomerBeneficiaryStatus;
+      desiredStatus =
+        raw === 'ACTIVE' ? CustomerBeneficiaryStatus.ACTIVE : CustomerBeneficiaryStatus.SUSPENDED;
     } else if (dto.isActive !== undefined) {
       if (typeof dto.isActive !== 'boolean')
         throw new BadRequestException('isActive must be a boolean');
@@ -158,7 +162,7 @@ export class AgentBankBeneficiaryController {
   async list(@Req() req: AuthenticatedRequest) {
     const agentId = requireAgent(req);
     const all = await this.beneficiaries.listAgentBeneficiaries(agentId);
-    return { items: all.filter((b) => b.type === 'BANK_ACCOUNT') };
+    return { items: all.filter((b) => b.type === CustomerBeneficiaryType.BANK_ACCOUNT) };
   }
 
   @Post('bank-accounts')
@@ -216,10 +220,11 @@ export class AgentBankBeneficiaryController {
     }
     let desiredStatus: CustomerBeneficiaryStatus | undefined;
     if (dto.status !== undefined) {
-      const raw = String(dto.status).trim().toUpperCase();
-      if (raw !== CustomerBeneficiaryStatus.ACTIVE && raw !== CustomerBeneficiaryStatus.SUSPENDED)
+      const raw = typeof dto.status === 'string' ? dto.status.trim().toUpperCase() : '';
+      if (raw !== 'ACTIVE' && raw !== 'SUSPENDED')
         throw new BadRequestException('status must be ACTIVE or SUSPENDED');
-      desiredStatus = raw as CustomerBeneficiaryStatus;
+      desiredStatus =
+        raw === 'ACTIVE' ? CustomerBeneficiaryStatus.ACTIVE : CustomerBeneficiaryStatus.SUSPENDED;
     } else if (dto.isActive !== undefined) {
       if (typeof dto.isActive !== 'boolean')
         throw new BadRequestException('isActive must be a boolean');
