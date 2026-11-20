@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-20T18:07:13.992Z",
+  "generatedAt": "2026-11-20T19:06:26.964Z",
   "command": "node scripts/run-journey-acceptance.js (jest -c jest.integration.config.js --runInBand)",
   "database": {
     "host": "127.0.0.1",
@@ -16,14 +16,14 @@
           "status": "PASS",
           "tests": 2,
           "failed": 0,
-          "durationMs": 8502
+          "durationMs": 6907
         },
         {
           "file": "test/v1-customer-onboarding-01.integration.spec.ts",
           "status": "PASS",
           "tests": 22,
           "failed": 0,
-          "durationMs": 61414
+          "durationMs": 58189
         }
       ],
       "verdict": "PASS",
@@ -38,14 +38,14 @@
           "status": "PASS",
           "tests": 26,
           "failed": 0,
-          "durationMs": 55901
+          "durationMs": 55278
         },
         {
           "file": "test/a13-agent-cash-in.integration.spec.ts",
           "status": "PASS",
           "tests": 33,
           "failed": 0,
-          "durationMs": 7761
+          "durationMs": 7837
         }
       ],
       "verdict": "PASS",
@@ -60,7 +60,7 @@
           "status": "PASS",
           "tests": 15,
           "failed": 0,
-          "durationMs": 26164
+          "durationMs": 26018
         }
       ],
       "verdict": "PASS",
@@ -75,7 +75,7 @@
           "status": "PASS",
           "tests": 33,
           "failed": 0,
-          "durationMs": 28358
+          "durationMs": 26893
         }
       ],
       "verdict": "PASS",
@@ -90,7 +90,7 @@
           "status": "PASS",
           "tests": 14,
           "failed": 0,
-          "durationMs": 8032
+          "durationMs": 7796
         }
       ],
       "verdict": "PASS",
@@ -105,14 +105,14 @@
           "status": "PASS",
           "tests": 43,
           "failed": 0,
-          "durationMs": 21926
+          "durationMs": 19369
         },
         {
           "file": "test/v1-funding-approvals-inbox.integration.spec.ts",
           "status": "PASS",
           "tests": 7,
           "failed": 0,
-          "durationMs": 4428
+          "durationMs": 3797
         }
       ],
       "verdict": "PASS",
@@ -127,7 +127,7 @@
           "status": "PASS",
           "tests": 15,
           "failed": 0,
-          "durationMs": 1546
+          "durationMs": 732
         }
       ],
       "verdict": "PASS",
@@ -142,7 +142,7 @@
           "status": "PASS",
           "tests": 8,
           "failed": 0,
-          "durationMs": 10972
+          "durationMs": 10637
         }
       ],
       "verdict": "PASS",
@@ -157,7 +157,7 @@
           "status": "PASS",
           "tests": 22,
           "failed": 0,
-          "durationMs": 48309
+          "durationMs": 47206
         }
       ],
       "verdict": "PASS",
@@ -172,7 +172,7 @@
           "status": "PASS",
           "tests": 27,
           "failed": 0,
-          "durationMs": 63045
+          "durationMs": 63017
         }
       ],
       "verdict": "PASS",
