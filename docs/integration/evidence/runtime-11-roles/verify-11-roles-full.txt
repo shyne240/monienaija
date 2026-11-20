@@ -1,0 +1,141 @@
+# 11-Role Full Verification (real HTTP via local-admin-sessions)
+
+Date: 2026-11-20T19:16:22.314Z  API: http://127.0.0.1:3000
+
+
+## SUPER_ADMIN
+- email: super-admin@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123
+- roles: SUPER_ADMIN scopes: 79
+- dashboard: EXECUTIVE_GOVERNANCE (expected EXECUTIVE_GOVERNANCE) ✅ isFallback=false widgets=11
+- ledger.view: can=true status=200 ✅ accounts=10
+- internal/agents list: canAgentView=true status=200 count=0
+- support tickets: can=true status=200 total=0
+- reconciliation report: can=true status=200 reportStatus=PASS
+- transaction.view via /transfers/:id: can=true status=404 ✅
+
+## FINANCE_PREPARER
+- email: finance-preparer@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857
+- roles: FINANCE_PREPARER scopes: 24
+- dashboard: FINANCE_PREPARATION (expected FINANCE_PREPARATION) ✅ isFallback=false widgets=4
+- ledger.view: can=true status=200 ✅ accounts=10
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## FINANCE_CONTROLLER
+- email: finance-controller@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04
+- roles: FINANCE_CONTROLLER scopes: 36
+- dashboard: FINANCIAL_CONTROL_APPROVALS (expected FINANCIAL_CONTROL_APPROVALS) ✅ isFallback=false widgets=5
+- ledger.view: can=true status=200 ✅ accounts=10
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## FINANCE_AUDITOR
+- email: finance-auditor@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:67bff13ab7604d1e1c1189be5ab7eb06
+- roles: FINANCE_AUDITOR scopes: 27
+- dashboard: FINANCIAL_AUDIT_ASSURANCE (expected FINANCIAL_AUDIT_ASSURANCE) ✅ isFallback=false widgets=8
+- ledger.view: can=true status=200 ✅ accounts=10
+- internal/agents list: canAgentView=true status=200 count=0
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=true status=200 reportStatus=PASS
+- transaction.view via /transfers/:id: can=true status=404 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## ADMINISTRATOR
+- email: administrator@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:5516d6a79e4a0ae40d1675108ee6a917
+- roles: ADMINISTRATOR scopes: 12
+- dashboard: WORKFORCE_ADMINISTRATION (expected WORKFORCE_ADMINISTRATION) ✅ isFallback=false widgets=3
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=true status=200 count=0
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## OPERATIONS
+- email: operations@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95
+- roles: OPERATIONS scopes: 30
+- dashboard: TRANSACTION_OPERATIONS (expected TRANSACTION_OPERATIONS) ✅ isFallback=false widgets=8
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=true status=200 total=0
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=true status=404 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## AGENT_NETWORK_MANAGER
+- email: agent-network-manager@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:c7a390b2d0839c1bddcb19db5fb0c7f1
+- roles: AGENT_NETWORK_MANAGER scopes: 16
+- dashboard: AGENT_NETWORK_MANAGEMENT (expected AGENT_NETWORK_MANAGEMENT) ✅ isFallback=false widgets=4
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=true status=200 count=0
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+
+## COMPLIANCE
+- email: compliance@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede
+- roles: COMPLIANCE scopes: 19
+- dashboard: COMPLIANCE_KYC (expected COMPLIANCE_KYC) ✅ isFallback=false widgets=4
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## RISK_FRAUD
+- email: risk-fraud@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:17ec70562e68ebce2da9f129b5a3562c
+- roles: RISK_FRAUD scopes: 1
+- dashboard: FRAUD_CASE_MONITORING (expected FRAUD_CASE_MONITORING) ✅ isFallback=false widgets=3
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## CUSTOMER_SERVICE
+- email: customer-service@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:be3e43f40c9f55bf96a37871c302b0f4
+- roles: CUSTOMER_SERVICE scopes: 6
+- dashboard: CUSTOMER_SERVICING (expected CUSTOMER_SERVICING) ✅ isFallback=false widgets=4
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=true status=200 total=0
+- reconciliation report: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## TREASURY
+- email: treasury@monienaija.local
+- principalId: https://idp.example.com:local-admin-credential:45e965e8f17dfaae1d8866c38ecdcd9c
+- roles: TREASURY scopes: 1
+- dashboard: RECONCILIATION_VISIBILITY (expected RECONCILIATION_VISIBILITY) ✅ isFallback=false widgets=3
+- ledger.view: can=false status=403 ✅ {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- internal/agents list: canAgentView=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- support tickets: can=false status=403 {"message":"Authorization denied: FUNCTION_MISSING","error":"Forbidden","statusCode":403}
+- reconciliation report: can=true status=200 reportStatus=PASS
+- transaction.view via /transfers/:id: can=false status=403 ✅
+- agent.suspend denied (expected): status=403 ✅ 
+
+## Reconciliation integrity (SUPER_ADMIN)
+- report status: PASS checks PASS=11/11
+- binding discrepancies: 0
+- trialBalance balanced: true totalDebit=undefined totalCredit=undefined
+
+✅ All checks passed

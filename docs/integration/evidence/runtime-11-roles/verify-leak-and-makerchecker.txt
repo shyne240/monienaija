@@ -1,0 +1,9 @@
+TREASURY transaction-summary leak check: status 403 PASS (correctly denied)
+OPERATIONS ledger-summary leak check: status 403 PASS (denied as expected)
+RISK_FRAUD /customers leak check: status 403 PASS denied
+COMPLIANCE /customers allowed check: status 200 PASS allowed
+FINANCE_AUDITOR operational assign attempt (should deny): status 403 PASS denied
+SUPER_ADMIN second FINANCE_PREPARER assign without approvals: status 403 PASS maker-checker enforced
+SUPER_ADMIN self-assign denied: status 403 PASS
+SUPER_ADMIN operational TREASURY assign (should succeed, no approvals): status 201 PASS
+CUSTOMER_SERVICE my-dashboard before logout: PASS

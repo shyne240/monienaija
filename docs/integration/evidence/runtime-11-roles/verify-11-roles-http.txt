@@ -1,0 +1,94 @@
+{
+  "roleKey": "SUPER_ADMIN",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "FINANCE_PREPARER",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "FINANCE_CONTROLLER",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "FINANCE_AUDITOR",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "ADMINISTRATOR",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "OPERATIONS",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "AGENT_NETWORK_MANAGER",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "COMPLIANCE",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "RISK_FRAUD",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "CUSTOMER_SERVICE",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+{
+  "roleKey": "TREASURY",
+  "templateOk": true,
+  "dashboardSettingsOk": true,
+  "logoutOk": true,
+  "fallbackReason": null
+}
+Wrote /tmp/verify-11-roles-results.json
+ALL 11 ROLES PASSED
+┌─────────┬─────────────────────────┬───────────────────────────────┬──────────┬────────────┬───────────────┬────────┐
+│ (index) │ role                    │ template                      │ fallback │ widgets_ok │ dash_settings │ logout │
+├─────────┼─────────────────────────┼───────────────────────────────┼──────────┼────────────┼───────────────┼────────┤
+│ 0       │ 'SUPER_ADMIN'           │ 'EXECUTIVE_GOVERNANCE'        │ false    │ '7/7'      │ 200           │ 'ok'   │
+│ 1       │ 'FINANCE_PREPARER'      │ 'FINANCE_PREPARATION'         │ false    │ '2/2'      │ 403           │ 'ok'   │
+│ 2       │ 'FINANCE_CONTROLLER'    │ 'FINANCIAL_CONTROL_APPROVALS' │ false    │ '2/2'      │ 403           │ 'ok'   │
+│ 3       │ 'FINANCE_AUDITOR'       │ 'FINANCIAL_AUDIT_ASSURANCE'   │ false    │ '5/5'      │ 403           │ 'ok'   │
+│ 4       │ 'ADMINISTRATOR'         │ 'WORKFORCE_ADMINISTRATION'    │ false    │ '1/1'      │ 200           │ 'ok'   │
+│ 5       │ 'OPERATIONS'            │ 'TRANSACTION_OPERATIONS'      │ false    │ '3/3'      │ 403           │ 'ok'   │
+│ 6       │ 'AGENT_NETWORK_MANAGER' │ 'AGENT_NETWORK_MANAGEMENT'    │ false    │ '1/1'      │ 403           │ 'ok'   │
+│ 7       │ 'COMPLIANCE'            │ 'COMPLIANCE_KYC'              │ false    │ '2/2'      │ 403           │ 'ok'   │
+│ 8       │ 'RISK_FRAUD'            │ 'FRAUD_CASE_MONITORING'       │ false    │ '1/1'      │ 403           │ 'ok'   │
+│ 9       │ 'CUSTOMER_SERVICE'      │ 'CUSTOMER_SERVICING'          │ false    │ '0/0'      │ 403           │ 'ok'   │
+│ 10      │ 'TREASURY'              │ 'RECONCILIATION_VISIBILITY'   │ false    │ '1/1'      │ 403           │ 'ok'   │
+└─────────┴─────────────────────────┴───────────────────────────────┴──────────┴────────────┴───────────────┴────────┘

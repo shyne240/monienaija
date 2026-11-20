@@ -1,0 +1,461 @@
+[
+  {
+    "roleKey": "SUPER_ADMIN",
+    "email": "super-admin@monienaija.local",
+    "loginRoles": [
+      "SUPER_ADMIN"
+    ],
+    "loginScopesCount": 79,
+    "expectedTemplate": "EXECUTIVE_GOVERNANCE",
+    "dashTemplate": "EXECUTIVE_GOVERNANCE",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "transaction-summary",
+      "transaction-trend",
+      "recent-transactions",
+      "ledger-summary",
+      "reconciliation-status",
+      "workforce-overview",
+      "role-governance-queue",
+      "audit-trail",
+      "system-health"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "transaction-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "transaction-trend",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "recent-transactions",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "ledger-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "reconciliation-status",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "workforce-overview",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "audit-trail",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": true,
+    "dashboardSettingsHttp": 200,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "FINANCE_PREPARER",
+    "email": "finance-preparer@monienaija.local",
+    "loginRoles": [
+      "FINANCE_PREPARER"
+    ],
+    "loginScopesCount": 24,
+    "expectedTemplate": "FINANCE_PREPARATION",
+    "dashTemplate": "FINANCE_PREPARATION",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "transaction-summary",
+      "ledger-summary"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "transaction-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "ledger-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "FINANCE_CONTROLLER",
+    "email": "finance-controller@monienaija.local",
+    "loginRoles": [
+      "FINANCE_CONTROLLER"
+    ],
+    "loginScopesCount": 36,
+    "expectedTemplate": "FINANCIAL_CONTROL_APPROVALS",
+    "dashTemplate": "FINANCIAL_CONTROL_APPROVALS",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "transaction-summary",
+      "ledger-summary",
+      "role-governance-queue"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "transaction-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "ledger-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "FINANCE_AUDITOR",
+    "email": "finance-auditor@monienaija.local",
+    "loginRoles": [
+      "FINANCE_AUDITOR"
+    ],
+    "loginScopesCount": 27,
+    "expectedTemplate": "FINANCIAL_AUDIT_ASSURANCE",
+    "dashTemplate": "FINANCIAL_AUDIT_ASSURANCE",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "transaction-summary",
+      "recent-transactions",
+      "ledger-summary",
+      "reconciliation-status",
+      "audit-trail",
+      "system-health"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "transaction-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "recent-transactions",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "ledger-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "reconciliation-status",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "audit-trail",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "ADMINISTRATOR",
+    "email": "administrator@monienaija.local",
+    "loginRoles": [
+      "ADMINISTRATOR"
+    ],
+    "loginScopesCount": 12,
+    "expectedTemplate": "WORKFORCE_ADMINISTRATION",
+    "dashTemplate": "WORKFORCE_ADMINISTRATION",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "workforce-overview"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "workforce-overview",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": true,
+    "dashboardSettingsHttp": 200,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "OPERATIONS",
+    "email": "operations@monienaija.local",
+    "loginRoles": [
+      "OPERATIONS"
+    ],
+    "loginScopesCount": 30,
+    "expectedTemplate": "TRANSACTION_OPERATIONS",
+    "dashTemplate": "TRANSACTION_OPERATIONS",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "transaction-summary",
+      "transaction-trend",
+      "recent-transactions",
+      "support-ticket-queue",
+      "system-health",
+      "customer-directory-shortcut"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "transaction-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "transaction-trend",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "recent-transactions",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "AGENT_NETWORK_MANAGER",
+    "email": "agent-network-manager@monienaija.local",
+    "loginRoles": [
+      "AGENT_NETWORK_MANAGER"
+    ],
+    "loginScopesCount": 16,
+    "expectedTemplate": "AGENT_NETWORK_MANAGEMENT",
+    "dashTemplate": "AGENT_NETWORK_MANAGEMENT",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "agent-lifecycle-summary",
+      "agent-applications-queue"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "agent-lifecycle-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "COMPLIANCE",
+    "email": "compliance@monienaija.local",
+    "loginRoles": [
+      "COMPLIANCE"
+    ],
+    "loginScopesCount": 19,
+    "expectedTemplate": "COMPLIANCE_KYC",
+    "dashTemplate": "COMPLIANCE_KYC",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "kyc-queue-summary",
+      "compliance-case-summary"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "kyc-queue-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      },
+      {
+        "widgetKey": "compliance-case-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "RISK_FRAUD",
+    "email": "risk-fraud@monienaija.local",
+    "loginRoles": [
+      "RISK_FRAUD"
+    ],
+    "loginScopesCount": 1,
+    "expectedTemplate": "FRAUD_CASE_MONITORING",
+    "dashTemplate": "FRAUD_CASE_MONITORING",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "fraud-case-summary"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "fraud-case-summary",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "CUSTOMER_SERVICE",
+    "email": "customer-service@monienaija.local",
+    "loginRoles": [
+      "CUSTOMER_SERVICE"
+    ],
+    "loginScopesCount": 6,
+    "expectedTemplate": "CUSTOMER_SERVICING",
+    "dashTemplate": "CUSTOMER_SERVICING",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "support-ticket-queue",
+      "customer-directory-shortcut"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  },
+  {
+    "roleKey": "TREASURY",
+    "email": "treasury@monienaija.local",
+    "loginRoles": [
+      "TREASURY"
+    ],
+    "loginScopesCount": 1,
+    "expectedTemplate": "RECONCILIATION_VISIBILITY",
+    "dashTemplate": "RECONCILIATION_VISIBILITY",
+    "isFallback": false,
+    "fallbackReason": null,
+    "templateOk": true,
+    "authorizedWidgets": [
+      "identity-session",
+      "entitlements-scopes",
+      "reconciliation-status"
+    ],
+    "restrictedWidgets": [],
+    "widgetResults": [
+      {
+        "widgetKey": "reconciliation-status",
+        "authorized": true,
+        "httpStatus": 200,
+        "correct": true
+      }
+    ],
+    "dashboardSettingsAllowed": false,
+    "dashboardSettingsHttp": 403,
+    "dashboardSettingsOk": true,
+    "logoutHttp": 200,
+    "logoutOk": true
+  }
+]

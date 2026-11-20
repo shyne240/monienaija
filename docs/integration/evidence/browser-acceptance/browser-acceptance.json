@@ -1,7 +1,7 @@
 {
   "mission": "ARENA 3D",
   "group": 33,
-  "generatedAt": "2026-11-18T15:44:57.523Z",
+  "generatedAt": "2026-11-20T19:12:08.128Z",
   "browser": {
     "name": "chromium",
     "version": "153.0.8010.0",
@@ -18,7 +18,7 @@
     "calls": 9
   },
   "bundle": {
-    "path": "/tmp/g33-dist",
+    "path": "/home/user/monienaija/apps/admin-web/dist",
     "assets": 2
   },
   "checks": [
@@ -155,7 +155,7 @@
     {
       "id": "SCREENSHOTS-CAPTURED",
       "ok": true,
-      "detail": "authenticated screenshot 61082 bytes at 1440x900"
+      "detail": "authenticated screenshot 60988 bytes at 1440x900"
     }
   ],
   "summary": {
