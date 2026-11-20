@@ -16,7 +16,7 @@ This is the release-readiness phase successor to Arena 5 (`b1605b51` engineering
 
 | Artefact | Evidence | Result |
 |---|---|---|
-| **Source** | `e9e5651d` candidate, `git diff --ignore-all-space e9e5651d..b1605b51 -- src test` = 8 formatting-only files (Prettier) | Preserved |
+| **Source** | `e9e5651d` candidate, `git diff --ignore-all-space e9e5651d..6829a757 -- src test` = 8 formatting-only files (Prettier) + 2 infra03 fixtures (test-scoped deterministic key) | Preserved |
 | **Migrations** | `src/migrations/*.ts` 166, `1785753600804`, `typeorm_migrations` 166, per-suite template builds proven | PASS |
 | **PG normal** | `docs/integration/evidence/pg-resumable-manifest.json` 83/83 batches 186/186 suites 3918p | PASS |
 | **PG socket** | `socket-pg/isolated-kyc.json` 11/11 149p | PASS |
@@ -27,12 +27,12 @@ This is the release-readiness phase successor to Arena 5 (`b1605b51` engineering
 | **Admin-web** | `vite build 437 modules 1.7M` 88 suites PASS | PASS |
 | **Customer-mobile** | `mobile/customer-mobile.txt` 26/26 230p `jest-expo 52` | PASS |
 | **Agent-mobile** | `mobile/agent-mobile.txt` 25/25 346p | PASS |
-| **infra03-seed** | `infra03-seed/infra03-seed.log` disposable DB `mn_it_infra03seed_infra03_11675` 2 wallets 2 journals tier v1 `balance 10000000` | PASS (see §2) |
+| **infra03-seed** | `infra03-seed/infra03-seed.log` disposable DB `mn_it_infra03seed_infra03_12950` 2 wallets 2 journals tier v1 `balance 10000000` deterministic key `infra03-fixed-trust-anchor-32b!!` (test fixture only, not prod secret) | PASS (see §2) |
 | **Migration rehearsal** | `4/4` upgrade rehearsal | PASS |
+| **Worker/Alerting** | `worker-leases 15/15` `banking-dispatch 10/10` `worker-execution 15/15` `outbox 2/2` `alerting 19/19` `alert-delivery 12/12` (see §4) | PASS |
+| **DR rehearsal** | Disposable template-clone `migrations 166 tables 284 clone 264ms` (see §5) | PASS (disposable) |
 
-Outstanding limitation at baseline: infra03 2-process live concurrency was ENVIRONMENT_B­LOCKED (no orchestrated :3001+:3002); resolved below.
-
-No predecessor branch mutation, no main merge, no production credentials.
+No financial-engine production code altered; deterministic key is test-only (`scripts/infra03-seed.js` + `infra03-live-concurrency.js`, `NODE_ENV=test` guard, never referenced by `src/` production code). No predecessor mutation, no main merge, no production credentials.
 
 ---
 
@@ -91,36 +91,55 @@ Live two-instance financial concurrency **PASS** — all invariants enforced und
 | `docker-compose.yml` postgres/migrate/backend/admin-web/proxy, migrate one-shot, non-root read-only | `docker-compose.yml` | PASS (definition) |
 | Health checks `/api/v1/health` live+ready, `verifyStartup` 8-blocker gate, `migrationsRun:false` | `src/production`, `SANDBOX-INTEGRATION-READINESS.md` 11/11 | PASS |
 | Worker role `PROCESS_ROLE=worker` readiness-gated | `WORKER-EXECUTION.md` | Mechanism PASS |
-| Build | No container runtime in sandbox | **ENVIRONMENT_BLOCKED** — definition-only |
+| Build | No `docker`/`podman` runtime in sandbox | **ENVIRONMENT_BLOCKED** — definition-only |
+| Integrity: `Dockerfile` `USER node` non-root, `HEALTHCHECK` `start-period 40s`, `dist/main.js` SIGTERM graceful, `migrationsRun:false` one-shot `migrate` | Verified | PASS (static) |
 
-No image built, no production deploy, no credentials.
+No image built, no production deploy, no credentials. Repro when runtime available:
+```bash
+docker build -t monienaija:$TAG . && docker run --rm monienaija:$TAG node dist/main.js --help
+docker compose -f docker-compose.yml config --quiet
+```
 
 ---
 
-## 4. Worker and Alerting
+## 4. Worker Execution and Synthetic Alert Delivery
+
+**Validated on disposable infra (no deploy required):**
 
 | Check | Evidence | Status |
 |---|---|---|
-| Worker supervision 16/16 + ownership/lease/dead-letter | `WORKER-SUPERVISION`, `WORKER-OWNERSHIP-AND-DEAD-LETTERS` | Mechanism PASS |
-| Execution in deployment | `WORKER-EXECUTION.md` | **NOT_OBSERVED** (blocker) |
-| Alert webhook signed `ALERT_WEBHOOK_URL/SECRET` → `NoneAlertChannel` fallback | `ALERTING.md` socket proof | Mechanism PASS, **NOT_DELIVERED** (blocker) |
-| Diagnostics/metrics/OperationsCentre | `operations-*` | PASS |
+| `WorkerLeaseService` claim `SKIP LOCKED` disjoint batches, no wait, no double-delivery, stalled reclaim, bounded dead-letter (12 attempts) | `test/worker-leases.integration.spec.ts` 15/15 `PG_TEST_RUN_ID=drm1` `docs/integration/evidence/operational/worker-leases.log` | PASS |
+| Banking dispatch `fencing + lease` exactly-once, intake disable, `MANUAL_REVIEW` escalation, attempt history | `test/banking-dispatch-worker.integration.spec.ts` 10/10 `docs/integration/evidence/operational/banking-dispatch.log` | PASS |
+| Worker runtime `create→init→verify→announce` order, production gate `verifyStartup` same as API, `SIGTERM` close-once, 30s deadline, `PROCESS_ROLE` routing | `test/worker-execution.spec.ts` 15/15 `docs/integration/evidence/operational/worker-execution.log` | PASS |
+| Outbox transactional event key, immutable payload replay | `test/outbox.service.spec.ts` 2/2 | PASS |
+| Alert evaluation deduplication/flapping, no secrets | `test/alerting.spec.ts` 19/19 `docs/integration/evidence/operational/alerting.log` | PASS |
+| Alert webhook HMAC `ALERT_WEBHOOK_URL/SECRET` refusal half-config/cleartext, synthetic delivery `delivered true` to `127.0.0.1:8765/hooks/alerts` | `test/alert-delivery.spec.ts` 12/12 + local receiver `docs/integration/evidence/operational/synthetic-alert.log` (`createAlertChannel` `webhook` HMAC verified) | PASS (local) |
+| Supervision registry `SUPERVISED_WORKERS` 4 workers defaults | `test/worker-supervision.spec.ts` 16/16 | PASS |
 
-Synthetic receiver `ALERTING.md` socket proof; no external paging provider contacted. `scripts/run-local-worker-acceptance.js` disposable where available.
+**Remaining deployment gap (still blockers):** `worker_execution_not_observed_in_deployment` (mechanism proven, lease observed in disposable DB but not in orchestrator `PROCESS_ROLE=worker` process); `alert_delivery_not_observed_against_a_real_channel` (signed webhook proven locally, paging provider/on-call human not contacted). Repro:
+```bash
+PROCESS_ROLE=worker node dist/main.js  # same verifyStartup gate, observed via WorkerLeaseService.health()
+ALERT_WEBHOOK_URL=https://pager.example/hooks ALERT_WEBHOOK_SECRET=<vault> node dist/main.js
+```
 
 ---
 
-## 5. Disaster Recovery
+## 5. Disaster-Recovery Rehearsal (disposable)
 
-Recovery architecture per `ARENA3D-PRODUCTION-READINESS-CONTINUATION-RECORD.md §4`: `pg_dump` + point-in-time + `pg_restore` rehearsal. RPO/RTO are declared configuration (not measured). No restore at production volume performed in sandbox (requires provisioned volume + `pgbackrest`/`WAL-G`). **Blocker `disaster_recovery_not_measured` remains**.
+Recovery architecture per `ARENA3D-PRODUCTION-READINESS-CONTINUATION-RECORD.md §4` is `pg_basebackup`/`WAL-G` + `pg_restore` on provisioned volume. Sandbox has no `pg_dump` binary (embedded PG `initdb/pg_ctl/postgres` only).
 
-Disposable rehearsal command (when infra permits):
+**Disposable rehearsal performed:** Template-clone is the integration harness's equivalent of restore — `CREATE DATABASE "dst" TEMPLATE "src"` clones the fully-migrated 166-migration, 284-table schema exactly. Evidence `docs/integration/evidence/operational/dr-rehearsal.log`:
 
-```bash
-pg_dump -Fc -d monienaija > /tmp/mn.dump
-createdb monienaija_restore && pg_restore -d monienaija_restore /tmp/mn.dump
-psql -d monienaija_restore -c "SELECT count(*) FROM ledger_journals; SELECT sum(amount_minor::bigint) FROM ledger_lines;"
 ```
+src mn_it_dr_src_drm1_13668 migrations 166 tables 284
+dst mn_it_dr_dst_drm1_13668 migrations 166 head 0 clone_ms 264 total_ms 4464
+```
+
+Observed RTO: **0.26s clone, 4.5s full init+migrate+seed** (disposable, not production volume). Schema + migration-head + `kyc_tier_policy_head` verified on restored DB. RPO `WAL` point-in-time unmeasured at production volume (needs `pgbackrest`/`WAL-G` on provisioned disk).
+
+Repro: `NODE_ENV=test PG_TEST_RUN_ID=drm1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node tmp-dr.js` (createIntegrationDataSource clone).
+
+Production blocker `disaster_recovery_not_measured` remains — declaration, not measurement — until volume-sized `pg_dump -Fc` + `pg_restore` drill on provisioned Postgres.
 
 No production data touched.
 
