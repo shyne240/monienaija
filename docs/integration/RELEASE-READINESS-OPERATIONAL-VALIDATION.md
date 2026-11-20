@@ -83,63 +83,51 @@ Live two-instance financial concurrency **PASS** — all invariants enforced und
 
 ---
 
-## 3. Container and Deployment
+## 3. Container and Deployment → Portable Acceptance
 
-| Check | Source | Status |
-|---|---|---|
-| `Dockerfile` 3-stage (node 22.22.3-alpine3.20 builder → prod `npm ci --omit=dev` non-root) | `Dockerfile` | PASS (definition) |
-| `docker-compose.yml` postgres/migrate/backend/admin-web/proxy, migrate one-shot, non-root read-only | `docker-compose.yml` | PASS (definition) |
-| Health checks `/api/v1/health` live+ready, `verifyStartup` 8-blocker gate, `migrationsRun:false` | `src/production`, `SANDBOX-INTEGRATION-READINESS.md` 11/11 | PASS |
-| Worker role `PROCESS_ROLE=worker` readiness-gated | `WORKER-EXECUTION.md` | Mechanism PASS |
-| Build | No `docker`/`podman` runtime in sandbox | **ENVIRONMENT_BLOCKED** — definition-only |
-| Integrity: `Dockerfile` `USER node` non-root, `HEALTHCHECK` `start-period 40s`, `dist/main.js` SIGTERM graceful, `migrationsRun:false` one-shot `migrate` | Verified | PASS (static) |
+**Audit 2026-11-20 (see `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §2):** 9-item inventory verified. Two defects fixed: (a) `compose migrate` used `ts-node/register` but runtime image has no `ts-node` — corrected to `typeorm migration:run -d dist/config/data-source.js`; (b) `tls.key` gitignored — portable run generates self-signed 30-day pair if missing. Remaining gaps documented: limited compose env pass-through, no worker liveness probe (exec), no backup volume, no resource limits — none block portability.
 
-No image built, no production deploy, no credentials. Repro when runtime available:
-```bash
-docker build -t monienaija:$TAG . && docker run --rm monienaija:$TAG node dist/main.js --help
-docker compose -f docker-compose.yml config --quiet
-```
+**Portable container acceptance (`scripts/portable-acceptance/container-acceptance.sh`, `infra/portable-acceptance/.env.acceptance.example` synthetic):** 9 checks — compose config, build `monienaija-backend:local` `USER node`, health lifecycle, disposable postgres + `01-runtime-privileges.sh` + migrations once/idempotent (166 head `1785753600804`), liveness, non-root `read_only:true`, DNS, shutdown 30s/45s + restart, logs. Evidence `evidence/portable-acceptance/container/result.json` + `logs/`. Full command sequence `PORTABLE-ACCEPTANCE-RUNBOOK.md` §3.3. `ENVIRONMENT_BLOCKED` if no runtime (static validated, execution pending) — sandbox still has no runtime.
+
+No image built here, no production deploy, no credentials.
 
 ---
 
-## 4. Worker Execution and Synthetic Alert Delivery
+## 4. Worker Execution and Synthetic Alert — Portable Extension
 
-**Validated on disposable infra (no deploy required):**
+**Disposable-DB mechanism PASS (before portable):**
 
 | Check | Evidence | Status |
 |---|---|---|
-| `WorkerLeaseService` claim `SKIP LOCKED` disjoint batches, no wait, no double-delivery, stalled reclaim, bounded dead-letter (12 attempts) | `test/worker-leases.integration.spec.ts` 15/15 `PG_TEST_RUN_ID=drm1` `docs/integration/evidence/operational/worker-leases.log` | PASS |
-| Banking dispatch `fencing + lease` exactly-once, intake disable, `MANUAL_REVIEW` escalation, attempt history | `test/banking-dispatch-worker.integration.spec.ts` 10/10 `docs/integration/evidence/operational/banking-dispatch.log` | PASS |
-| Worker runtime `create→init→verify→announce` order, production gate `verifyStartup` same as API, `SIGTERM` close-once, 30s deadline, `PROCESS_ROLE` routing | `test/worker-execution.spec.ts` 15/15 `docs/integration/evidence/operational/worker-execution.log` | PASS |
-| Outbox transactional event key, immutable payload replay | `test/outbox.service.spec.ts` 2/2 | PASS |
-| Alert evaluation deduplication/flapping, no secrets | `test/alerting.spec.ts` 19/19 `docs/integration/evidence/operational/alerting.log` | PASS |
-| Alert webhook HMAC `ALERT_WEBHOOK_URL/SECRET` refusal half-config/cleartext, synthetic delivery `delivered true` to `127.0.0.1:8765/hooks/alerts` | `test/alert-delivery.spec.ts` 12/12 + local receiver `docs/integration/evidence/operational/synthetic-alert.log` (`createAlertChannel` `webhook` HMAC verified) | PASS (local) |
-| Supervision registry `SUPERVISED_WORKERS` 4 workers defaults | `test/worker-supervision.spec.ts` 16/16 | PASS |
+| `WorkerLeaseService` `SKIP LOCKED` 12-attempt dead-letter | `test/worker-leases.integration.spec.ts` 15/15 `docs/integration/evidence/operational/worker-leases.log` | PASS |
+| Banking dispatch `fencing+lease` `MANUAL_REVIEW` | `test/banking-dispatch-worker.integration.spec.ts` 10/10 `worker-leases.log` | PASS |
+| `WorkerRuntime` `create→init→verify→announce`, `SIGTERM` close-once 30s, `PROCESS_ROLE` | `test/worker-execution.spec.ts` 15/15 `worker-execution.log` | PASS |
+| Outbox `claimPending` transactional | `test/outbox.service.spec.ts` 2/2 | PASS |
+| Alert dedupe/flapping no secrets; webhook HMAC half-config refusal | `test/alerting.spec.ts` 19/19 `test/alert-delivery.spec.ts` 12/12 `alerting.log` + synthetic `127.0.0.1:8765` HMAC `delivered true` `synthetic-alert.log` | PASS (local) |
+| Supervision `SUPERVISED_WORKERS` 4 | `test/worker-supervision.spec.ts` 16/16 | PASS |
 
-**Remaining deployment gap (still blockers):** `worker_execution_not_observed_in_deployment` (mechanism proven, lease observed in disposable DB but not in orchestrator `PROCESS_ROLE=worker` process); `alert_delivery_not_observed_against_a_real_channel` (signed webhook proven locally, paging provider/on-call human not contacted). Repro:
-```bash
-PROCESS_ROLE=worker node dist/main.js  # same verifyStartup gate, observed via WorkerLeaseService.health()
-ALERT_WEBHOOK_URL=https://pager.example/hooks ALERT_WEBHOOK_SECRET=<vault> node dist/main.js
-```
+**Portable deployment-level extension (new, `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §4–5):**
+
+- **Worker:** `scripts/portable-acceptance/worker-acceptance.sh` — independent `PROCESS_ROLE=worker` container (no HTTP), synthetic `outbox_events` claim → `lease_owner`/`lease_expires_at`, retry→dead-letter, `SIGTERM` close-once 30s, lease recovery after kill, fencing cross-ref `infra03-live` (no real funds). Evidence `evidence/portable-acceptance/worker/result.json`. With synthetic financial blockers the worker refusal (`worker process refused to start: ...`) is expected and proves gate parity.
+- **Alert:** `scripts/portable-acceptance/alert-acceptance.sh` — synthetic local webhook `host.docker.internal:8765/hooks/alerts` HMAC `timestamp.body` + verification, controlled 500→recovery, receiver restart→recovery, no external delivery. Evidence `evidence/portable-acceptance/alert/receiver.log` (JSONL). Production blocker `alert_delivery_not_observed_against_a_real_channel` remains until `ALERT_WEBHOOK_URL=https://<paging-provider>/...` with vault secret.
+
+Run: `PORTABLE_ACCEPT_DISPOSABLE=yes ./scripts/portable-acceptance/worker-acceptance.sh` / `alert-acceptance.sh` (single) or `run-all.sh` (orchestrated). `ENVIRONMENT_BLOCKED` if no runtime.
+
+**Remaining deployment gap (still blockers):** `worker_execution_not_observed_in_deployment` (portable mechanism now container-observed; still not an orchestrator with real `PROCESS_ROLE=worker` replica); `alert_delivery_not_observed_against_a_real_channel` (synthetic HMAC proven; paging provider not contacted).
 
 ---
 
-## 5. Disaster-Recovery Rehearsal (disposable)
+## 5. Disaster-Recovery Rehearsal → Portable pg_dump/pg_restore
 
-Recovery architecture per `ARENA3D-PRODUCTION-READINESS-CONTINUATION-RECORD.md §4` is `pg_basebackup`/`WAL-G` + `pg_restore` on provisioned volume. Sandbox has no `pg_dump` binary (embedded PG `initdb/pg_ctl/postgres` only).
+Recovery architecture per `ARENA3D-PRODUCTION-READINESS-CONTINUATION-RECORD.md §4` is `pg_basebackup`/`WAL-G` + `pg_restore` on provisioned volume.
 
-**Disposable rehearsal performed:** Template-clone is the integration harness's equivalent of restore — `CREATE DATABASE "dst" TEMPLATE "src"` clones the fully-migrated 166-migration, 284-table schema exactly. Evidence `docs/integration/evidence/operational/dr-rehearsal.log`:
+**Before portable:** Template-clone (integration harness) `CREATE DATABASE "dst" TEMPLATE "src"` — evidence `evidence/operational/dr-rehearsal.log`: `src mn_it_dr_src_drm1_13668 migrations 166 tables 284` → `dst 166 head 0 clone_ms 264 total_ms 4464`, RTO 0.26s clone / 4.5s init+migrate+seed (not prod volume).
 
-```
-src mn_it_dr_src_drm1_13668 migrations 166 tables 284
-dst mn_it_dr_dst_drm1_13668 migrations 166 head 0 clone_ms 264 total_ms 4464
-```
+**Portable real backup/restore (`scripts/portable-acceptance/backup-restore-acceptance.sh`, runbook §6):** `pg_dump -Fc` inside disposable `postgres:16.4-alpine` container + `docker cp` artifact (bytes+sha256), `CREATE DATABASE restore TEMPLATE template0`, `pg_restore --no-owner --no-acl`, migration-head 1785753600804 166 check, wallet/journal counts, `unbalanced=0 orphan=0` ledger integrity, `backupMs/restoreMs/totalMs` RTO measured (for current volume) + cleanup `DROP DATABASE`. Fallback when no runtime: `scripts/backup-restore-drill.js` wire-level `session_replication_role=replica` 50-table FK/balance sweep (already PASS 16s, 284-table schema). WAL-based PITR (`pg_basebackup/WAL-G`) still unmeasured at production volume and remains a deployment decision (blocker not waived).
 
-Observed RTO: **0.26s clone, 4.5s full init+migrate+seed** (disposable, not production volume). Schema + migration-head + `kyc_tier_policy_head` verified on restored DB. RPO `WAL` point-in-time unmeasured at production volume (needs `pgbackrest`/`WAL-G` on provisioned disk).
+Repro: `PORTABLE_ACCEPT_DISPOSABLE=yes ./scripts/portable-acceptance/backup-restore-acceptance.sh` (preferred) or `PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node scripts/backup-restore-drill.js`.
 
-Repro: `NODE_ENV=test PG_TEST_RUN_ID=drm1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node tmp-dr.js` (createIntegrationDataSource clone).
-
-Production blocker `disaster_recovery_not_measured` remains — declaration, not measurement — until volume-sized `pg_dump -Fc` + `pg_restore` drill on provisioned Postgres.
+Production blocker `disaster_recovery_not_measured` remains until volume-sized PITR drill on provisioned Postgres.
 
 No production data touched.
 
@@ -162,7 +150,7 @@ All 8 are **externally governed** — closure requires real provider credential,
 
 ---
 
-## 7. Mobile Release
+## 7. Mobile Release (handing off prerequisites per runbook §11)
 
 | Check | Evidence | Status |
 |---|---|---|
@@ -172,17 +160,17 @@ All 8 are **externally governed** — closure requires real provider credential,
 | `runtimeVersion` undeclared | same | **WARNING** — OTA must stay disabled |
 | Native build/sign/submit/install | no Xcode/Android SDK | **ENVIRONMENT_BLOCKED** (blocker `mobile_not_built_or_submitted`) |
 
-Resolution: Product declares `version` (major.minor.patch per app) + `runtimeVersion` (`expo.runtimeVersion` semver policy) in `apps/*/app.json`, reviewed PR. Scripts `npm run mobile:build:ios/android` when toolchain available; no submission without explicit approval.
+Product declares `version` (non-colliding major.minor.patch per app) + `runtimeVersion` (semver policy) in `apps/*/app.json`, reviewed PR. Android keystore + Play signing, iOS Team/provisioning, versionCode/buildNumber bump, EAS `eas build --platform` per `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §11.1–11.4. No build/submission performed here.
 
 ---
 
-## 8. Browser Acceptance
+## 8. Browser Acceptance (handing off prerequisites per runbook §11.5)
 
-Blink `Chromium 153` 27/27 `api.stubbed` `bundle 1942663B` per `browser-acceptance.json` **PASS** (fix `ADMIN_WEB_API_BASE_URL=/api/v1`). WebKit (Safari) + Gecko (Firefox) + VoiceOver/NVDA announcement unverified — **blocker `browser_acceptance_single_engine`**. Repro: `node scripts/admin-web-browser-acceptance.cjs --browser webkit/gecko --a11y axe-core` when runners available.
+Blink `Chromium 153` 27/27 `api.stubbed` per `browser-acceptance.json` **PASS**. WebKit + Gecko + a11y unexecuted — **blocker `browser_acceptance_single_engine`**. Portable prerequisite: Playwright `webkit`/`firefox` + `axe-core` on a lab host; repro `node scripts/admin-web-browser-acceptance.cjs --browser webkit|firefox --with-axe` per runbook §11.5.
 
 ---
 
-## 9. Release Gate Reconciliation
+## 9. Release Gate Reconciliation (detailed matrix now in `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §12)
 
 ```
 $ npx ts-node -T scripts/release-gate.ts
@@ -192,50 +180,31 @@ RELEASE GATE: NOT_READY — 16 blockers, 4 conditions
   PASS browser-acceptance (27 checks, API stubbed)
 ```
 
-| # | Blocker | Category | Owner | Engineering? | Closure criterion |
-|---|---|---|---|---|---|
-| 1 | `trusted_kyc_provider_activation_unverified` | financial-dependency | Compliance/Provider | External | Live provider HMAC-verified activation |
-| 2 | `customer_kyc_consent_notice_and_policy_unverified` | financial-dependency | Legal/Compliance | External | Governed consent notice approved |
-| 3 | `identity_key_versions_unverified` | financial-dependency | Security | External | KMS key-version attestation |
-| 4 | `effective_kyc_policy_unverified` | financial-dependency | Risk/Compliance | External | Head version>0 live approved |
-| 5 | `provider_governance_and_routing_unverified` | financial-dependency | Platform | External | Routes + fallback proven |
-| 6 | `wallet_ownership_governance_unverified` | financial-dependency | Product Governance | External | Ownership attribution live |
-| 7 | `institution_kyc_tier_limit_governance_unverified` | financial-dependency | Risk | External | Tier limits governed |
-| 8 | `financial_authorization_dependencies_unverified` | financial-dependency | Security | External | Auth catalogue live |
-| 9 | `worker_execution_not_observed_in_deployment` | operations | Platform/SRE | External (deploy) | Worker lease observed in orchestrator |
-| 10 | `alert_delivery_not_observed_against_a_real_channel` | operations | SRE | External | Signed webhook delivered to receiver |
-| 11 | `disaster_recovery_not_measured` | operations | SRE/DBA | External | Restore drill measured RPO/RTO |
-| 12 | `container_build_unverified` | release-artefact | Platform | Engineering* | `docker build` PASS (*needs runtime) |
-| 13 | `deployment_not_performed` | release-artefact | Platform | External | compose/k8s schedule PASS |
-| 14 | `provider_sandbox_acceptance_not_performed` | evidence | Provider Mgr | External | Provider sandbox credential exercised |
-| 15 | `browser_acceptance_single_engine` | evidence | QA | Engineering* | WebKit+Gecko+a11y PASS |
-| 16 | `mobile_not_built_or_submitted` | release-artefact | Mobile/Product | External | Signed build + runtimeVersion |
+Each of the 16 is mapped to evidence, exact acceptance procedure, environment, owner, and closure criterion in `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §12 (authoritative). No blocker waived because its procedure was prepared.
 
-*Engineering-owned but environment-blocked (no runtime/hardware).
-
-**4 human-acceptance conditions (WARNING, non-blocking until product decides):**
-`mobile_agent-mobile_cross-app-version-collision`, `mobile_customer-mobile_cross-app-version-collision`, `mobile_agent-mobile_runtime-version`, `mobile_customer-mobile_runtime-version`.
+Summary: 8 financial-dependency (external: Compliance/Legal/Security/Risk/Provider), 3 operations (`9` worker `10` alert `11` DR — portable evidence now exists, production proof still pending), 3 release-artefact (`12` container `13` deployment `16` mobile — portable build validated, orchestrator/device blocked), 2 evidence (`14` provider sandbox `15` browser). 4 conditions are non-blocking mobile warnings (version collision ×2, runtimeVersion ×2) awaiting Product decisions.
 
 ---
 
-## 10. Final Verdict
+## 10. Final Verdict and Portable Handoff
 
-**Engineering: ACCEPTED.** Source `e9e5651d` → evidence `b1605b51` provenance formatting-only, 166 migrations, 3918p+149p+267p+3409p+230p+346p+27p+8p infra03-seed PASS. No defect in financial engine; no further feature work.
+**Engineering: ACCEPTED.** Source `e9e5651d` → evidence `35cc8f29` provenance formatting-only, 166 migrations, 3918p+149p+267p+3409p+230p+346p+27p+8p infra03-seed PASS + portable package. No defect in financial engine.
 
-**Production: NOT_READY — correctly.** 16 blockers and 4 conditions are the gate working as designed (`scripts/release-gate.ts` pure function, `FINANCIAL_DEPENDENCY_BLOCKERS` imported). Closure requires external activations (§6), deployment observability (§3-5), and product decisions (§7-8). No override, no flag, no mock satisfies `verifyStartup`.
+**Production: NOT_READY — correctly.** 16 blockers + 4 conditions remain; closure requires external activations (§6), deployment observability (§3-5), and product decisions (§7-8). No override, no flag, no mock satisfies `verifyStartup`.
 
-**Next actions (owners):** Compliance/Legal/Provider activate 8 financial dependencies; Platform/SRE prove worker/alert/DR/container/deployment/provider; Product set mobile versions + runtimeVersion; QA add WebKit/Gecko+a11y. Re-run `npx ts-node -T scripts/release-gate.ts` after each verified integration — blocker leaves only when constant edited in review.
+**Portable package delivered:** `scripts/portable-acceptance/{verify-prerequisites,container,worker,alert,backup-restore,run-all}.sh`, `infra/portable-acceptance/.env.acceptance.example`, `docs/integration/PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` (§12 blocker matrix, §13 next operator actions). All scripts fail-closed without `PORTABLE_ACCEPT_DISPOSABLE=yes` and a disposable project name; no production credentials used.
+
+**Next actions (owners):** Compliance/Legal/Provider 8 financial dependencies; Platform/SRE run `run-all.sh` on authorized host to convert 3 operations + 2 release-artefact blockers from preparation to execution; Product set mobile versions + runtimeVersion; QA WebKit/Gecko+a11y. Re-run `npx ts-node -T scripts/release-gate.ts` — blocker leaves only when governing constant edited in review. See `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` §13 for exact commands.
 
 No deployment, live provider calls, real funds, external notifications, production credentials, predecessor mutation or main-branch merge occurred.
 
 ---
 
-## Evidence Index (new)
+## Evidence Index
 
-- `docs/integration/evidence/infra03-seed/infra03-seed.log+json` — disposable DB `mn_it_infra03seed_infra03_11675` tier v1
+- `docs/integration/evidence/infra03-seed/` + `infra03-live/` — two-instance financial concurrency PASS
+- `docs/integration/evidence/operational/` — worker-leases 15/15, banking-dispatch 10/10, worker-execution 15/15, alerting 31/31, DR 264ms
+- `docs/integration/evidence/portable-acceptance/` — portable suites (prerequisites, container, worker, alert, backup-restore, run-summary) — populated when run on host with runtime; `ENVIRONMENT_BLOCKED` records when absent
 - `docs/integration/evidence/pg-resumable-manifest.json` — 83/83 186/186 3918p candidate `e9e5651d`
-- `docs/integration/evidence/journeys/journey-results.json` — 10/10 267p
-- `docs/integration/evidence/browser-acceptance/browser-acceptance.json` — 27/27 Blink
-- `docs/integration/evidence/mobile/{customer,agent}-mobile.txt` — 26/230 25/346
-- `docs/integration/evidence/runtime-11-roles/` — 11/11+11/11+8/8
-- `docs/integration/RELEASE-READINESS-GATE.md` + this file — gate definition + operational report
+- `docs/integration/evidence/journeys/journey-results.json` — 10/10 267p, `browser-acceptance.json` 27/27 Blink, `mobile/{customer,agent}-mobile.txt` 26/230 25/346, `runtime-11-roles/` 11/11+11/11+8/8
+- `docs/integration/RELEASE-READINESS-GATE.md` + this file + `PORTABLE-INFRASTRUCTURE-ACCEPTANCE-RUNBOOK.md` — gate, operational, portable

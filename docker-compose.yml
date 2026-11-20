@@ -85,8 +85,6 @@ services:
     command:
       [
         'node',
-        '-r',
-        'ts-node/register',
         'node_modules/typeorm/cli.js',
         'migration:run',
         '-d',
