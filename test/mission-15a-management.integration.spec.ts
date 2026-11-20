@@ -521,10 +521,12 @@ describe('Mission 15A Agent management (real Nest and isolated PostgreSQL)', () 
       const audit = f.moduleRef.get(AuditService);
       const original = AuditService.prototype.record.bind(AuditService.prototype);
       const action = kind === 'outlet' ? 'AGENT_OUTLET_UPDATED' : 'AGENT_TERMINAL_UPDATED';
-      const spy = jest.spyOn(AuditService.prototype, 'record').mockImplementation((manager, event) => {
-        if (event.action === action) throw new Error('synthetic metadata audit failure');
-        return original(manager, event);
-      });
+      const spy = jest
+        .spyOn(AuditService.prototype, 'record')
+        .mockImplementation((manager, event) => {
+          if (event.action === action) throw new Error('synthetic metadata audit failure');
+          return original(manager, event);
+        });
       try {
         if (kind === 'outlet') {
           await expect(
@@ -577,13 +579,15 @@ describe('Mission 15A Agent management (real Nest and isolated PostgreSQL)', () 
         release = resolve;
       });
       const action = kind === 'outlet' ? 'AGENT_OUTLET_SUSPENDED' : 'AGENT_TERMINAL_SUSPENDED';
-      const spy = jest.spyOn(AuditService.prototype, 'record').mockImplementation(async (manager, event) => {
-        if (event.action === action) {
-          reached();
-          await held;
-        }
-        return original(manager, event);
-      });
+      const spy = jest
+        .spyOn(AuditService.prototype, 'record')
+        .mockImplementation(async (manager, event) => {
+          if (event.action === action) {
+            reached();
+            await held;
+          }
+          return original(manager, event);
+        });
       try {
         const transition =
           kind === 'outlet'

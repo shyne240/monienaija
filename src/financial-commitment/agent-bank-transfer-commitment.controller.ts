@@ -91,7 +91,10 @@ export class AgentBankTransferCommitmentController {
     const principal = req.authorizationPrincipal;
     if (!principal || principal.type !== 'AGENT' || !principal.agentId)
       throw new UnauthorizedException('Agent session required');
-    const found = await this.commitments.lookupByIdempotencyForAgent(principal.agentId, idempotencyKey);
+    const found = await this.commitments.lookupByIdempotencyForAgent(
+      principal.agentId,
+      idempotencyKey,
+    );
     if (!found) throw new NotFoundException('Commitment not found');
     return {
       commitmentId: found.commitment.id,

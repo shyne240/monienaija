@@ -143,7 +143,8 @@ export class FinancialCommitmentService {
    */
   async resolveCustomerIdFromToken(token: string): Promise<string> {
     const session = await this.sessions.validate({ token, audience: 'customer-api' });
-    if (!session.valid || !session.principal?.customerId) throw new UnauthorizedException('Customer session is invalid');
+    if (!session.valid || !session.principal?.customerId)
+      throw new UnauthorizedException('Customer session is invalid');
     return session.principal.customerId;
   }
 

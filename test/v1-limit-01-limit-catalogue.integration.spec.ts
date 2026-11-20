@@ -870,7 +870,9 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       createdBy: actor,
     };
     const failAudit = () =>
-      jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(new Error('Synthetic audit unavailable'));
+      jest
+        .spyOn(AuditService.prototype, 'record')
+        .mockRejectedValue(new Error('Synthetic audit unavailable'));
     let failure = failAudit();
     try {
       await expect(service.createProfile(profileInput, actor)).rejects.toThrow(

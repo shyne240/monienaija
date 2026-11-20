@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-18T17:09:09.067Z",
+  "generatedAt": "2026-11-20T18:07:13.992Z",
   "command": "node scripts/run-journey-acceptance.js (jest -c jest.integration.config.js --runInBand)",
   "database": {
     "host": "127.0.0.1",
-    "port": 44679,
+    "port": 5432,
     "disposableCluster": true
   },
   "journeys": [
@@ -16,18 +16,18 @@
           "status": "PASS",
           "tests": 2,
           "failed": 0,
-          "durationMs": 7034
+          "durationMs": 8502
         },
         {
           "file": "test/v1-customer-onboarding-01.integration.spec.ts",
           "status": "PASS",
-          "tests": 20,
+          "tests": 22,
           "failed": 0,
-          "durationMs": 44869
+          "durationMs": 61414
         }
       ],
       "verdict": "PASS",
-      "tests": 22
+      "tests": 24
     },
     {
       "id": "B",
@@ -38,14 +38,14 @@
           "status": "PASS",
           "tests": 26,
           "failed": 0,
-          "durationMs": 63244
+          "durationMs": 55901
         },
         {
           "file": "test/a13-agent-cash-in.integration.spec.ts",
           "status": "PASS",
           "tests": 33,
           "failed": 0,
-          "durationMs": 9217
+          "durationMs": 7761
         }
       ],
       "verdict": "PASS",
@@ -60,7 +60,7 @@
           "status": "PASS",
           "tests": 15,
           "failed": 0,
-          "durationMs": 30145
+          "durationMs": 26164
         }
       ],
       "verdict": "PASS",
@@ -75,7 +75,7 @@
           "status": "PASS",
           "tests": 33,
           "failed": 0,
-          "durationMs": 28150
+          "durationMs": 28358
         }
       ],
       "verdict": "PASS",
@@ -90,7 +90,7 @@
           "status": "PASS",
           "tests": 14,
           "failed": 0,
-          "durationMs": 8010
+          "durationMs": 8032
         }
       ],
       "verdict": "PASS",
@@ -103,20 +103,20 @@
         {
           "file": "test/financial-commitment-initiation.integration.spec.ts",
           "status": "PASS",
-          "tests": 41,
+          "tests": 43,
           "failed": 0,
-          "durationMs": 20071
+          "durationMs": 21926
         },
         {
           "file": "test/v1-funding-approvals-inbox.integration.spec.ts",
           "status": "PASS",
           "tests": 7,
           "failed": 0,
-          "durationMs": 5570
+          "durationMs": 4428
         }
       ],
       "verdict": "PASS",
-      "tests": 48
+      "tests": 50
     },
     {
       "id": "G",
@@ -127,7 +127,7 @@
           "status": "PASS",
           "tests": 15,
           "failed": 0,
-          "durationMs": 727
+          "durationMs": 1546
         }
       ],
       "verdict": "PASS",
@@ -142,7 +142,7 @@
           "status": "PASS",
           "tests": 8,
           "failed": 0,
-          "durationMs": 11101
+          "durationMs": 10972
         }
       ],
       "verdict": "PASS",
@@ -157,7 +157,7 @@
           "status": "PASS",
           "tests": 22,
           "failed": 0,
-          "durationMs": 48553
+          "durationMs": 48309
         }
       ],
       "verdict": "PASS",
@@ -172,7 +172,7 @@
           "status": "PASS",
           "tests": 27,
           "failed": 0,
-          "durationMs": 64052
+          "durationMs": 63045
         }
       ],
       "verdict": "PASS",
@@ -184,7 +184,7 @@
     "passed": 10,
     "failed": 0,
     "notRun": 0,
-    "tests": 263
+    "tests": 267
   },
   "notPerformed": [
     "no provider was contacted: every provider interaction is a controlled fixture",

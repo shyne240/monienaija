@@ -1229,7 +1229,9 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       reference: terminalRef,
       actor: 'test-actor',
     });
-    spy = jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(new Error('synthetic audit failure'));
+    spy = jest
+      .spyOn(AuditService.prototype, 'record')
+      .mockRejectedValue(new Error('synthetic audit failure'));
     try {
       await expect(
         outletService.updateMetadata(outlet.id, {
