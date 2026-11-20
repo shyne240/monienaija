@@ -1,0 +1,16 @@
+loginA: {"status":200,"hasToken":true}
+loginB: {"status":200}
+crossInstanceAuth: {"status":200,"pass":true}
+unauthorizedRejected: {"status":401,"pass":true}
+setPinA: 200
+setPinB: 200
+crossInstancePinVerify: {"status":200,"pass":true}
+balanceBefore: {"bal":"10000000"}
+overdraftRace: {"sA":422,"sB":201,"successes":1,"pass":true}
+idempotencyRace: {"statusA":201,"statusB":201,"sameId":true,"idA":"63443bed-75cc-47d9-93de-e0ad4728cb6b","idB":"63443bed-75cc-47d9-93de-e0ad4728cb6b"}
+idempotencyLedger: {"count":1,"pass":true}
+conflictingPayload: {"first":201,"second":409,"pass":true}
+finalBalance: {"api":"3850000"}
+sqlBalance: {"bal":"3850000","pass":true}
+overdraftJournals: {"count":1,"pass":true}
+conservation: {"unbalancedJournals":0,"pass":true}
