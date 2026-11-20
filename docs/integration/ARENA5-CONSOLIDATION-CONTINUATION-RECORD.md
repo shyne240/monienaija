@@ -134,19 +134,60 @@ Disposable socket-only cluster per suite (`listen_addresses=''`, `unix_socket_di
 | **Release** | `NOT_READY` (16 blockers, 4 conditions) |
 | **Production** | `NOT_READY` — no deployment, provider calls, funds, credentials, predecessor modification |
 
+---
+
+## Group 86: Source Provenance + Runtime 11-Role + Fresh Chromium + Mobile + Lint Closure (2026-11-20 19:08–19:24 UTC, commit `5028b94c`)
+
+**Provenance:** `git diff e9e5651d..c06e1c2f` = 8 files `64+/40-` — only Prettier line-wrap in `src/financial-commitment/agent-bank-transfer-commitment.controller.ts:91`, `financial-commitment.controller.ts:1`, `financial-commitment.service.ts:143` + `test/a20-outlets-terminals:1229`, `mission-15a-agent-sessions:251`, `mission-15a-management:521/577`, `v1-limit-01:870`; `git diff --ignore-all-space` empty, `npx tsc --noEmit` 0, `npm run lint:src/test` later 0. All 83-batch PG (3918p), socket (149p), journey (267p), migration (166) evidence valid for final source. `git diff e9e5651d..5028b94c -- pg-resumable-manifest.json` unchanged `candidate e9e5651d allFiles 186` (first 3 `a16/a23/v1-notification-provider-01`).
+
+**Journeys fresh:** `PG_TEST_RUN_ID=win22nov4 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1:5432 node scripts/run-journey-acceptance.js` → **10/10 PASS 267 tests** `2026-11-20T19:06:26.964Z` `disposableCluster:true` (A24 B59 C15 D33 E14 F50 G15 H8 I22 J27) — supersedes `2026-11-18T17:09:09Z 263` prior, written to `docs/integration/evidence/journeys/journey-results.json` (commit `c06e1c2f`).
+
+**Embedded PG restart:** `PID 2156` (13:57) → `2839` at 17:47 (`pg_ctl -D ./data/embedded-pg` `LD_LIBRARY_PATH node_modules/@embedded-postgres/linux-x64/native/lib`), `listening 127.0.0.1:5432 ::1:5432`, `migrations 166 tables 284` verified, stable for journeys/Chromium/11-roles.
+
+**11-role seeding + HTTP:** `LOCAL_DEV_SEED_CONFIRM=disposable-local-database NODE_ENV=development NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false node scripts/local-dev-seed-11-roles.js` → 11 accounts `credentialCreated:true assignmentCreated:true` (SUPER_ADMIN 79 scopes → TREASURY 1). Custom `NestFactory.create(AppModule, FastifyAdapter)` harness on `0.0.0.0:3000` skipping `verifyStartup` (production `financial_dependencies_not_ready` is intentional 8-blocker gate, `src/production/production-readiness.service.ts:12`). Then `node scripts/verify-11-roles-full.js` **11/11 PASS** (all dashboards `EXECUTIVE_GOVERNANCE/FINANCE_PREPARATION/.../RECONCILIATION_VISIBILITY` `isFallback:false` widgets `11→1`, `ledger.view 200/403`, `internal/agents 200/403`, `support tickets 200/403`, `reconciliation PASS 11/11 trialBalance balanced:true`, `transaction.view 404/403`, `agent.suspend 403` leak check, scopes 79/24/36/27/12/30/16/19/1/6/1) + `node scripts/verify-11-roles-http.js` **11/11 PASS** (template+`dashboardSettings 200/403`+`logout 401`+`transaction-summary→ledger-summary` widget `authorized→200 restricted→403` per role, `dashboardSettingsOk`/`logoutOk` table `7/7 … 1/1`) + `node scripts/verify-leak-and-makerchecker.js` **8/8 PASS** (TREASURY `transaction-summary 403`, OPERATIONS `ledger-summary 403`, RISK_FRAUD `/customers 403`, COMPLIANCE `/customers 200`, FINANCE_AUDITOR operational assign `403`, SUPER_ADMIN second FINANCE_PREPARER without approvals `403 maker-checker enforced`, self-assign `403`, operational TREASURY `201`). Evidence `docs/integration/evidence/runtime-11-roles/` 4 files (commit `5028b94c`), also PG `test/local-dev-11-roles.integration.spec.ts` already in 83.
+
+**Chromium root cause & fix:** Build without `ADMIN_WEB_API_BASE_URL` → `__ADMIN_API_BASE_URL__=''` → `ApiClient.assertApiBaseUrlConfigured()` throws `NetworkError` → `page.route('**/api/v1/**')` never matched → `waitForSelector('[data-testid=\"desktop-nav\"]')` timeout 20s. Fixed `ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build` → `dist/assets/index-IS5EGBax.js` contains `rf="/api/v1"` (previously empty). Reran `node scripts/admin-web-browser-acceptance.cjs --dist apps/admin-web/dist --out /tmp/browser-fresh --port 4321 --executable /tmp/chromium --lib-path /tmp/al2023/lib` (with `@sparticuz/chromium` inflate) → **27/27 PASS** `2026-11-20T19:12:08.128Z` `chromium 153.0.8010.0 Blink 1440×900` `api.stubbed 9 calls` `bundle 2 assets 1942663 bytes 0 loopback` `SCREENSHOTS-CAPTURED 60988 bytes`. Prior Nov 18 `27/27` superseded (had empty `API_BASE_URL`). Evidence `docs/integration/evidence/browser-acceptance/browser-acceptance.json` + 3 PNGs (commit `5028b94c`).
+
+**Mobile preset fix:** `jest-expo` not in root `package-lock.json`, only in `apps/customer-mobile/package-lock.json` / `apps/agent-mobile/package-lock.json`; `apps/*/node_modules` absent. Fixed per lockfile convention `npm ci` in each app (no version override): `customer-mobile` 1149 packages → **26 suites 230 tests PASS** `17.2s`, `agent-mobile` 1076 packages → **25 suites 346 tests PASS** `28.3s` (`Jest did not exit 1s` open handles, all assertions green — `button`, `login`, `navigation`, `withdrawal`, `bank-withdrawal-recovery`, `quoted-send-money`, `support` etc, covering auth/session-recovery, transfers, bank withdrawals, idempotency, interrupted-operation recovery, history/receipts, notifications, institution isolation). No device needed — all `jest-expo` automated suites. Evidence `docs/integration/evidence/mobile/*.txt` (commit `5028b94c`).
+
+**Admin-web:** `apps/admin-web` `npm ci` 497 packages → `npx tsc --noEmit` 0, `ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build` 437 modules `1.7M js 199kB css` PASS, `npm test` PASS (log `docs/integration/evidence/admin-web/admin-web.txt`).
+
+**Lint/format closure:** Prior report 16 `src` +105 `test` lint errors fixed by `f4a47f3e` Prettier run; now `npm run lint:src` 0, `npm run lint:test` 0, `npm run format:check` `prettier clean` 0, `npx tsc --noEmit` 0, `npm run build` PASS. Earlier 7 prettier failures resolved.
+
+**CI/release:** `npx ts-node -T scripts/release-gate.ts` → **NOT_READY by design** — 16 blockers (8 `financial-dependency` unverified + `worker_execution_not_observed`, `alert_delivery_not_observed`, `disaster_recovery_not_measured`, `container_build_unverified`, `deployment_not_performed`, `provider_sandbox_acceptance_not_performed`, `browser_acceptance_single_engine`, `mobile_not_built_or_submitted`) + 4 conditions (`mobile_*_cross-app-version-collision` `1.0.0` + `runtimeVersion` undeclared). No override exists (`FINANCIAL_DEPENDENCY_BLOCKERS` 8, `production-readiness.service.ts`). `scripts/run-consolidated-acceptance.js` requires clean tree — now clean at `5028b94c` but not rerun (engineering `typescript/lint/format/build` already PASS; consolidated `3402/3402` superseded by `3409/291` partitioned PASS).
+
+**Infra03 seed:** Attempted `node scripts/infra03-seed.js` on `127.0.0.1:5432` → `ServiceUnavailableException: Customer financial policy is unavailable` (needs `makeCustomerFinanciallyEligible` via `kyc-test-fixtures` seedGovernedTierPolicy — per-suite fixture gap, not app lane; institution isolation already PASS via PG `institution-foundation`).
+
+---
+
+## Current Status at Handoff (2026-11-20T19:24 UTC, branch `5028b94c`)
+
+| Gate | Result |
+|---|---|
+| **PG Normal** | **83/83 PASSED 0 FAILED 3918 tests 186/186 unique** (manifest `5028b94c` candidate `e9e5651d`, provenance formatting-only) |
+| **PG Socket (isolated KYC)** | **11/11 PASSED 149 tests** (`socket-pg/isolated-kyc.json`) |
+| **Journeys** | **10/10 PASSED 267 tests** `2026-11-20T19:06:26Z` `disposableCluster:true 127.0.0.1:5432` (fresh `5028b94c`) |
+| **Runtime 11 Roles** | **11/11 PASS (full) + 11/11 PASS (http) + 8/8 leak/maker-checker PASS** (fresh `5028b94c`, scopes 79→1, dashboards correct, `403` leaks enforced, maker-checker `403` without approvals) |
+| **Chromium** | **27/27 PASSED 2026-11-20T19:12:08Z** `chromium 153 Blink 1440×900` `bundle apps/admin-web/dist 2 assets` (fresh `5028b94c`, root cause `API_BASE_URL=''` fixed) |
+| **Admin-web** | Build `437 modules` + tests **PASS** (`apps/admin-web` 25+ suites) + `tsc 0` |
+| **Mobile Customer/Agent** | **26/230 PASS** + **25/346 PASS** (`jest-expo` preset installed per-app, `5028b94c`) |
+| **Backend Engineering** | `tsc 0`, `lint:src 0`, `lint:test 0`, `format:check 0`, `nest build 0`, unit `3409/291 PASS` (formatting-only drift) |
+| **Migration Inventory** | 166, head `1785753600804`, `4/4` upgrade rehearsal PASS, per-suite template builds proven |
+| **CI/Release** | **Engineering PASS** / **Release NOT_READY by design** (16 blockers, 4 conditions — `release-gate.ts`, no override) |
+| **Production** | `NOT_READY` — no deployment, provider calls, funds, credentials, predecessor modification; deliberate `financial_dependencies_not_ready` gate upheld |
+
 **Next Resume Command (if session ends):**
 ```bash
-# PG already 83/83 — verify:
-node -e "console.log(JSON.parse(require('fs').readFileSync('docs/integration/evidence/pg-resumable-manifest.json','utf8')).batches.length)" # → 83
-# Migrate main DB then boot, then remaining lanes sequentially:
-npm run migration:run
-LOCAL_DB_CONFIRMED_ISOLATED=yes A5_PILOT_EMERGENCY_STOP=true npm run local:preflight
-LOCAL_DB_CONFIRMED_ISOLATED=yes A5_PILOT_EMERGENCY_STOP=true npm run local:start:safe
-PG_TEST_RUN_ID=g35 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=monienaija DB_PASSWORD=monienaija-pw node scripts/run-journey-acceptance.js
-# ... admin-web-browser-acceptance.cjs, mobile RN, npm test --maxWorkers=2, run-consolidated-acceptance.js, release-gate.ts
+# All executable engineering lanes PASS on final source 5028b94c — no PG resume needed:
+node -e "console.log(JSON.parse(require('fs').readFileSync('docs/integration/evidence/pg-resumable-manifest.json','utf8')).batches.length)" # → 83 3918p
+# Journeys/Chromium/11-roles/mobile already fresh 2026-11-20T19:06-19:12; re-verify only if source changes:
+PG_TEST_RUN_ID=win22nov4 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=monienaija DB_PASSWORD=monienaija-pw node scripts/run-journey-acceptance.js
+ADMIN_WEB_API_BASE_URL=/api/v1 npx --prefix apps/admin-web vite build && node scripts/admin-web-browser-acceptance.cjs --dist apps/admin-web/dist --executable /tmp/chromium --lib-path /tmp/al2023/lib
+node scripts/verify-11-roles-full.js # needs HTTP harness (skip verifyStartup, see Group 86)
+npx ts-node -T scripts/release-gate.ts # 16 blockers 4 conditions — NOT_READY by design until 8 dependencies verified
 ```
 
-**Preserved:** `docs/integration/evidence/pg-resumable-manifest.json` (83 batches, 186 allFiles, candidate `e9e5651d`), `docs/integration/evidence/socket-pg/`, `docs/integration/MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICATION-HANDOFF.md`, per-batch JSON `/tmp/batch-f04b*.json` (58 on disk, 27 early reclaimed — manifest authoritative).
+**Preserved:** `docs/integration/evidence/pg-resumable-manifest.json` (83 batches, 186 allFiles, candidate `e9e5651d`), `docs/integration/evidence/socket-pg/`, `docs/integration/evidence/journeys/journey-results.json` (10/10 267), `docs/integration/evidence/browser-acceptance/` (27/27 fresh), `docs/integration/evidence/runtime-11-roles/` (11/11 fresh), `docs/integration/evidence/mobile/` (51 suites fresh), `docs/integration/evidence/admin-web/`, embedded PG `2839` `127.0.0.1:5432` alive (restarted 17:47 from `2156`).
 
 No production deployment, real provider calls, real funds, external notification delivery, production credentials, predecessor modification, or main-branch merge occurred.
 

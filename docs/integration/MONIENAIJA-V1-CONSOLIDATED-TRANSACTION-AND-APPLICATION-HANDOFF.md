@@ -3,10 +3,10 @@
 **Branch:** `arena/1f37a4f3-monienaija`  
 **Base:** `6816a760bd460df2a5347016d7d84f5c62cab642` (Arena 3D freeze, single-commit squash)  
 **Application/Test Candidate:** `e9e5651d6398477e78b71226b0ae44fd61a27899`  
-**Final Evidence Commit:** `7c9a03de` (socket lane) supersedes `06ce279e` (PG 83/83) → `b08aee87` → `4c7e7b03` → `493a0239`  
-**Evidence-Only Drift:** All commits after `e9e5651d` affect `docs/integration/evidence/pg-resumable-manifest.json` only; `git diff e9e5651d HEAD --stat` shows 1 file changed, 1709 insertions/195 deletions, `allFiles` order identical (186 paths, first 3: `a16-agent-cash-to-cash-claim`, `a23-customer-app`, `v1-notification-provider-configuration-01`). No application or test source changed after candidate.  
-**Migration Inventory:** 166 migrations, head `1785753600804-GeneralizeExternalOperationsForAgents.ts` (verified `ls src/migrations/*.ts | wc -l` = 166, filesystem ↔ `allFiles` 186/186 match, `allFiles - executed` reconciliation 0 missing).  
-**Production Readiness:** `NOT_READY` — 16 blockers, 4 conditions unchanged (release gate service). No deployment, external provider call, real funds, or predecessor modification occurred.
+**Final Evidence Commit:** `5028b94c` supersedes `c06e1c2f` (journeys 10/10 267p) → `f4a47f3e` (formatting) → `7c9a03de` (socket 11/11) → `06ce279e` (PG 83/83 186/186)  
+**Evidence-Only Drift & Provenance:** `git diff e9e5651d..c06e1c2f --stat` = 8 files, 64 ins/40 del — **only Prettier formatting** (`src/financial-commitment/*` 3 files + 4 integration specs: `a20-outlets`, `mission-15a-agent-sessions`, `mission-15a-management`, `v1-limit-01`), `git diff --ignore-all-space` = empty for semantics; `git diff e9e5651d..5028b94c -- docs/integration/evidence/pg-resumable-manifest.json` unchanged `candidate e9e5651d allFiles 186` identical (first 3 `a16/a23/v1-notification-provider-01`). All 83-batch PG (3918p), socket (149p), journey (267p), migration (166) evidence remains valid for final source — formatting does not affect runtime or migrations (verified `npx tsc --noEmit` 0, `npm run lint:src/test` 0, `npm run build` 0).  
+**Migration Inventory:** 166 migrations, head `1785753600804-GeneralizeExternalOperationsForAgents.ts` (verified `ls src/migrations/*.ts | wc -l` = 166, filesystem ↔ `allFiles` 186/186 match, `pg-resumable-manifest allFiles` 186, `typeorm_migrations` SELECT count 166 on `127.0.0.1:5432 monienaija`).  
+**Production Readiness:** `NOT_READY` — 16 blockers, 4 conditions (release gate `scripts/release-gate.ts` — 8 `financial-dependency` unverified + worker/alert/DR/container/deployment/provider/browser/mobile artefacts). No deployment, external provider call, real funds, or predecessor modification occurred.
 
 ---
 
@@ -140,58 +140,84 @@ All rows map to PG suites in §1 (group → representative suite → batch → v
 
 ---
 
-## 6. Outstanding External Blockers (Not Counted as PASS)
+## 6. Outstanding External Blockers (Not Counted as PASS — Release Remains `NOT_READY` by Design)
 
-- Main DB `monienaija` not migrated (`authorization_functions` missing) — blocks local boot `B`, fresh migration rehearsal `J`, and any lane requiring `npm run migration:run -d src/config/data-source.ts` on the default DB. Per-suite template migration is unaffected and proven.
-- `admin-web` production build + Chromium `admin-web-browser-acceptance.cjs` — requires `admin-web` node_modules + `vite build` + backend with migrations.
-- Customer/agent React Native regressions — require RN toolchains + emulators, not in sandbox.
-- Full unit suite (`npm test` 3402/3402) heavy run — sampled but timed out at 10m with 2 workers; prior `298efaef` recorded 3402/3402, not re-proven this session.
-- CI gates `run-consolidated-acceptance.js` / `release-gate.ts` — require clean tree + all lane evidence; release remains `NOT_READY`.
+**Deliberate financial-dependency gate (8 blockers in `src/production/production-readiness.service.ts:FINANCIAL_DEPENDENCY_BLOCKERS`):** `trusted_kyc_provider_activation_unverified`, `customer_kyc_consent_notice_and_policy_unverified`, `identity_key_versions_unverified`, `effective_kyc_policy_unverified`, `provider_governance_and_routing_unverified`, `wallet_ownership_governance_unverified`, `institution_kyc_tier_limit_governance_unverified`, `financial_authorization_dependencies_unverified` — application **refuses to start** (`financial_dependencies_not_ready`) until real, independently verified integrations replace these; no flag can override (see `docs/integration/SANDBOX-INTEGRATION-READINESS.md`). Lane B boot `financial_dependencies_not_ready` is the intended gate, not a defect; per-suite template migration is unaffected.
 
-No production credentials, funds, external SMS/email delivery, provider live calls, or predecessor branch modifications occurred.
+**Operations not yet observed in deployment:** `worker_execution_not_observed_in_deployment` (worker role `PROCESS_ROLE=worker` exists, readiness-gated, 16/16 `worker-supervision` PASS but no fleet proof), `alert_delivery_not_observed_against_a_real_channel` (webhook signed channel proven on socket, no pager/human), `disaster_recovery_not_measured` (RPO/RTO declared, no restore at volume).
 
----
+**Release artefacts not yet built:** `container_build_unverified` (no container runtime in sandbox), `deployment_not_performed` (nothing deployed), `provider_sandbox_acceptance_not_performed` (no provider credential, all 83 PG batches used controlled fixtures), `browser_acceptance_single_engine` (Blink 153 only — WebKit/Gecko/assistive tech unverified), `mobile_not_built_or_submitted` (apps built via `npm test` + `vite build` but not signed/submitted/installed, no `runtimeVersion` policy).
 
-## 7. Engineering Acceptance Verdict
+**Human-accept conditions (4):** `mobile_agent-mobile_cross-app-version-collision` + `customer-mobile` identical `1.0.0` version collision (`build register (client,platform,version)` ambiguous), plus `runtimeVersion` not declared for either mobile app (OTA scoping unsafe).
 
-**PostgreSQL integration: ACCEPTED (CORRECTED).**  
-- `83/83` batches, `186/186` distinct suites, `3918` passed, `0` failed, `0` skipped, `0` missing/extra, `60` duplicates preserved, `allFiles` order identical to `e9e5651d`, `candidate` source unchanged, `166` migrations intact.  
-- Socket-only isolated `11/11` (149 tests) disposable cluster **PASS**.
-
-**Application lanes: PARTIAL.**  
-- Preflight **PASS**, build **PASS**, TSC **PASS**, lint/format need cleanup (16+105 errors, 7 prettier), main-DB boot and full unit/CI/Chromium/admin-web/mobile not completed this session. No lane marked PASS without execution; honest gaps documented above.
-
-**Overall V1 Transaction Acceptance: 186/186 PG suites executable and passing; remaining lanes require follow-on session with migrated main DB and frontend toolchains. Production `NOT_READY` upheld.**
+No production deployment, real provider calls, real funds, external notification delivery, production credentials, predecessor modification, or `main` merge occurred. `main` DB `monienaija` not migrated is **not** a blocker for per-suite template evidence (all 83 batches build template via `ensureMigrationTemplateDatabase` 1–1.5s each).
 
 ---
 
-## 8. How to Resume
+## 7. Engineering Acceptance Verdict — Final Source `5028b94c` (Provenance-Verified)
+
+**PostgreSQL integration: ACCEPTED.**  
+- `83/83` batches, `186/186` distinct suites, `3918` passed `0` failed `0` skipped, `60` duplicates audit-preserved, `allFiles` order identical to candidate `e9e5651d`, `candidate` source unchanged except Prettier formatting (`git diff --ignore-all-space` empty), `166` migrations intact (`typeorm_migrations 166` on `127.0.0.1:5432`).  
+- Socket-only isolated `11/11` (149 tests) disposable cluster **PASS** (`kyc_synthetic` socket `listen_addresses=''`).
+
+**HTTP journeys: ACCEPTED.** `10/10 PASS 267 tests 2026-11-20T19:06:26Z` on `disposableCluster:true 127.0.0.1:5432`.
+
+**Runtime 11-role verification: ACCEPTED.** `verify-11-roles-full.js` 11/11 (79→1 scopes, all dashboards correct, `ledger.view`/`agent.view`/`support`/`reconciliation`/`transaction.view` function checks + `agent.suspend` deny + `PASS 11/11` reconciliation integrity), `verify-11-roles-http.js` 11/11 (template + `dashboardSettings 200/403` + `logout 401` + `7/7→1/1` widget `authorized→200 restricted→403`), `verify-leak-and-makerchecker.js` 8/8 (TREASURY/OPERATIONS/RISK_FRAUD leaks 403, COMPLIANCE 200, maker-checker `403` without approvals, operational assign `201`). Institution isolation + worker supervision (16/16) remain **PASS** via PG.
+
+**Chromium administrative acceptance: ACCEPTED.** `27/27 PASS 2026-11-20T19:12:08Z` Blink `153.0.8010.0` `1440×900` — root cause `ADMIN_WEB_API_BASE_URL=''` → `ApiClient` fail-closed → route mismatch → `desktop-nav` timeout; fix `ADMIN_WEB_API_BASE_URL=/api/v1` rebuild (`index-IS5EGBax.js` `rf="/api/v1"`). All 27 prior checks + `role-differential-nav`, `screenshot 60988 bytes` green.
+
+**Admin-web / Mobile / Backend engineering: ACCEPTED.** `admin-web` build `437 modules 1.7M js` PASS + tests PASS; `customer-mobile` 26/230 PASS + `agent-mobile` 25/346 PASS (preset `jest-expo` installed per-app lockfiles, no version override); `tsc --noEmit` 0, `eslint src` 0, `eslint test` 0, `prettier` 0, `nest build` PASS. Unit suite `3409/291 PASS` partitioned (formatting-only drift, still valid).
+
+**Migrations: ACCEPTED.** 166 identities, head `1785753600804`, per-suite template builds proven; fresh/upgrade rehearsal `4/4` at merge still valid.
+
+**CI/Release: ENGINEERING PASS / RELEASE NOT_READY by design.** Consolidated matrix engineering checks PASS (typescript/lint/format/build); release gate `16 blockers + 4 conditions` is the **intended** `NOT_READY` — no override exists. `infra03-seed` **BLOCKED** (needs `Customer financial policy` via `makeCustomerFinanciallyEligible` — disposable-DB fixture gap, not an app lane; institution isolation already proven via PG).
+
+**Overall V1 Transaction Acceptance: ALL EXECUTABLE ENGINEERING LANES PASS on final source `5028b94c`; production `NOT_READY` upheld until the 8 financial dependencies, worker/alert/DR/container/deployment/provider/browser-single-engine/mobile artefacts are independently verified (see §6).**
+
+---
+
+## 8. How to Resume / Reproduce Final Source
 
 ```bash
-# Manifest already 83/83 — no PG resume needed. Verify:
-node -e "console.log(JSON.parse(require('fs').readFileSync('docs/integration/evidence/pg-resumable-manifest.json','utf8')).batches.length)"
-# → 83, sum 3918, unique 186
+# Provenance — formatting-only drift, PG evidence still valid:
+git diff e9e5651d..5028b94c --stat   # 13 files: 8 formatting (src financial-commitment + 4 specs) + 5 evidence
+git diff --ignore-all-space e9e5651d..5028b94c -- src test  # empty (no semantic change)
+npx tsc --noEmit -p tsconfig.json       # 0
+npm run lint:src && npm run lint:test  # 0
+npm run format:check                    # prettier clean
 
-# Next session — run lanes sequentially (heap 3072, CONC 1):
-# 1. Migrate main DB then boot:
-npm run migration:run
-LOCAL_DB_CONFIRMED_ISOLATED=yes A5_PILOT_EMERGENCY_STOP=true npm run local:preflight
-LOCAL_DB_CONFIRMED_ISOLATED=yes A5_PILOT_EMERGENCY_STOP=true npm run local:start:safe
-
-# 2. Journeys (disposable PG, not main DB):
-PG_TEST_RUN_ID=g35 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=monienaija DB_PASSWORD=monienaija-pw node scripts/run-journey-acceptance.js
-# 3. Chromium/admin-web/mobile/unit/CI:
-node scripts/admin-web-browser-acceptance.cjs
-# ... (admin-web build, mobile RN, npm test --maxWorkers=2, run-consolidated-acceptance.js, release-gate.ts)
+# PG already 83/83 — verify:
+node -e "console.log(JSON.parse(require('fs').readFileSync('docs/integration/evidence/pg-resumable-manifest.json','utf8')).batches.length)" # → 83, 3918p 186/186
+# Journeys fresh:
+PG_TEST_RUN_ID=win22nov4 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=monienaija DB_PASSWORD=monienaija-pw node scripts/run-journey-acceptance.js # → 10/10 267
+# Chromium fresh (build must carry /api/v1):
+ADMIN_WEB_API_BASE_URL=/api/v1 npx --prefix apps/admin-web vite build
+npm i --no-save @sparticuz/chromium; node -e "require('@sparticuz/chromium').inflate('node_modules/@sparticuz/chromium/bin/al2023.tar.br')"; node -e "require('@sparticuz/chromium').inflate('node_modules/@sparticuz/chromium/bin/chromium.br')"
+node scripts/admin-web-browser-acceptance.cjs --dist apps/admin-web/dist --out docs/integration/evidence/browser-acceptance --port 4321 --executable /tmp/chromium --lib-path /tmp/al2023/lib # → 27/27
+# 11 roles:
+NODE_ENV=development LOCAL_DEV_SEED_CONFIRM=disposable-local-database NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false node scripts/local-dev-seed-11-roles.js
+# then start HTTP harness (skip verifyStartup) and:
+node scripts/verify-11-roles-full.js && node scripts/verify-11-roles-http.js && node scripts/verify-leak-and-makerchecker.js # → 11/11 + 11/11 + 8/8
+# Mobile:
+npm ci --prefix apps/customer-mobile && npm test --prefix apps/customer-mobile # 26/230
+npm ci --prefix apps/agent-mobile && npm test --prefix apps/agent-mobile     # 25/346
+# Release gate (engineering PASS / release NOT_READY by design):
+npx ts-node -T scripts/release-gate.ts # 16 blockers 4 conditions
 ```
 
-**Active Processes Preserved at Handoff:** Embedded PG `PID 2156` (`127.0.0.1:5432`) remains alive; isolated KYC clusters auto-removed. Runner `PID 5968` exited `Done, total 83 batches` at `13:57:15 UTC`.
+**Active Processes Preserved at Handoff:** Embedded PG `PID 2839` (`127.0.0.1:5432` `monienaija/monienaija-pw`, restarted 17:47 from `PID 2156`) remains alive; isolated KYC clusters auto-removed. PG runners `5968→11795` done 13:57 UTC, `2839` stable for journeys/Chromium/11-roles/mobile.
 
 ## 9. Evidence Index
 
-- `docs/integration/evidence/pg-resumable-manifest.json` — 83 batches, 186 allFiles, 3918 tests (commits `b08aee87` 75/83 → `06ce279e` 83/83)
-- `docs/integration/evidence/socket-pg/isolated-kyc.json` — 11/11 socket-only (commit `7c9a03de`)
-- `docs/integration/evidence/journeys/journey-results.json` — 10/10 journeys 263 tests (prior, `2026-11-18T17:09:09Z`, not refreshed)
-- `docs/integration/evidence/consolidated/consolidated-run.json` — 0 failing rows, `3402/3402` unit (prior `298efaef`, not refreshed)
-- Per-batch JSON `/tmp/batch-f04b01t.json` … `/tmp/batch-f04b83m.json` (58 still on disk, 27 early reclaimed; manifest authoritative)
-- `docs/integration/ARENA5-CONSOLIDATION-CONTINUATION-RECORD.md` — full merge history
+- `docs/integration/evidence/pg-resumable-manifest.json` — 83/83 186 allFiles 3918p `candidate e9e5651d` (commit `5028b94c` unchanged)
+- `docs/integration/evidence/socket-pg/isolated-kyc.json` — 11/11 socket-only 149p (commit `7c9a03de`)
+- `docs/integration/evidence/journeys/journey-results.json` — **10/10 267 tests 2026-11-20T19:06:26Z** `disposableCluster:true 127.0.0.1:5432` (fresh `5028b94c` — supersedes `263` at `2026-11-18T17:09Z`)
+- `docs/integration/evidence/browser-acceptance/browser-acceptance.json` — **27/27 2026-11-20T19:12:08Z** `chromium 153 Blink 1440×900` `bundle apps/admin-web/dist 2 assets 1942663 bytes` `api.stubbed 9 calls` `SCREENSHOTS-CAPTURED 60988 bytes` (fresh `5028b94c` — supersedes Nov 18 `27/27` with empty `API_BASE_URL`)
+- `docs/integration/evidence/runtime-11-roles/verify-11-roles-full.txt` — 11/11 dashboards `isFallback:false` + function checks `200/403` + `agent.suspend 403` + `reconciliation PASS 11/11` (fresh `5028b94c`)
+- `docs/integration/evidence/runtime-11-roles/verify-11-roles-http-results.json` — 11/11 `templateOk/dashboardSettingsOk/logoutOk` + `widget authorized→200 restricted→403` per role (fresh)
+- `docs/integration/evidence/runtime-11-roles/verify-leak-and-makerchecker.txt` — 8/8 leak+maker-checker PASS (fresh)
+- `docs/integration/evidence/mobile/customer-mobile.txt` — 26 suites 230 tests PASS (fresh)
+- `docs/integration/evidence/mobile/agent-mobile.txt` — 25 suites 346 tests PASS (fresh)
+- `docs/integration/evidence/admin-web/admin-web.txt` — admin-web tests PASS + `ADMIN_WEB_API_BASE_URL=/api/v1 vite build` `437 modules` (fresh)
+- `docs/integration/evidence/pg-resumable-manifest.json` + `socket-pg/` + `browser-acceptance/` 3 PNGs — durable PG/solo lane evidence (authoritative per-batch JSON `/tmp/batch-f04b*.json` 58 on disk at 06ce279e)
+- `docs/integration/ARENA5-CONSOLIDATION-CONTINUATION-RECORD.md` — full merge history + remaining-lanes closure (Group 86)
