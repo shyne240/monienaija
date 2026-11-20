@@ -7,6 +7,7 @@ import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
+import { CommercialApprovalInbox } from '../../components/CommercialApprovalInbox';
 import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC<{
@@ -316,6 +317,11 @@ const ApprovalsWorkspace: React.FC<{
           <p className="approvals-redesign__intro">
             Review eligible requests and use the dedicated checker panel for funding decisions.
           </p>
+          <CommercialApprovalInbox
+            currentPrincipalId={principal?.principalId}
+            canApprove={canApprove}
+            canWrite={canWrite}
+          />
           <PendingFundingApprovalsQueue
             canReviewFunding={canReviewFunding}
             canAccessGlobalInbox={canAccessGlobalFundingInbox}

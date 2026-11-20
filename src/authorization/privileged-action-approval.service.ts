@@ -12,6 +12,7 @@ import { AuthorizationService } from './authorization.service';
 import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
 import { isProtectedAuthorityAction } from './protected-authority.actions';
 import { ProtectedAuthorityService } from './protected-authority.service';
+import { NotificationDispatcherService } from '../notification/notification-dispatcher.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from './privileged-action-approval.enums';
@@ -19,6 +20,8 @@ import type {
   ConsumePrivilegedActionCommand,
   DecidePrivilegedActionCommand,
   EmergencyAccessCommand,
+  ListPrivilegedApprovalsQuery,
+  ListPrivilegedApprovalsResult,
   PrivilegedActionApprovalView,
   PrivilegedActionDecision,
   RequestPrivilegedActionCommand,
@@ -42,6 +45,7 @@ export class PrivilegedActionApprovalService {
     private readonly auditService: AuditService,
     private readonly authorizationService: AuthorizationService,
     @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcherService,
   ) {}
 
   /**
@@ -56,6 +60,94 @@ export class PrivilegedActionApprovalService {
   async getApproval(approvalId: string): Promise<PrivilegedActionApprovalView | null> {
     const approval = await this.findApproval(approvalId);
     return approval ? this.toView(approval) : null;
+  }
+
+  async listApprovals(
+    query: ListPrivilegedApprovalsQuery,
+  ): Promise<ListPrivilegedApprovalsResult> {
+    const { principal } = query;
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
+      return { items: [], total: 0 };
+    }
+    const qb = this.approvalRepository
+      .createQueryBuilder('approval')
+      .orderBy('approval.requestedAt', 'DESC');
+
+    if (query.status) {
+      qb.andWhere('approval.status = :status', { status: query.status });
+    }
+    if (query.actionType?.trim()) {
+      qb.andWhere('approval.actionType = :actionType', {
+        actionType: query.actionType.trim(),
+      });
+    }
+    if (query.resourceType?.trim()) {
+      qb.andWhere('approval.resourceType = :resourceType', {
+        resourceType: query.resourceType.trim(),
+      });
+    }
+
+    const rows = await qb.getMany();
+    const institutionId = query.institutionId?.trim();
+    const filtered = rows.filter((approval) => {
+      if (!this.canPrincipalViewApproval(principal, approval)) {
+        return false;
+      }
+      if (institutionId) {
+        const policyInstitutionId =
+          typeof approval.policy?.institutionId === 'string'
+            ? approval.policy.institutionId
+            : undefined;
+        const details = approval.policy?.requestDetails as Record<string, unknown> | undefined;
+        const detailsInstitutionId =
+          typeof details?.institutionId === 'string' ? details.institutionId : undefined;
+        if (
+          approval.resourceId !== institutionId &&
+          policyInstitutionId !== institutionId &&
+          detailsInstitutionId !== institutionId
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+    const offset = Math.max(query.offset ?? 0, 0);
+    const paged = filtered.slice(offset, offset + limit).map((a) => this.toView(a));
+    return { items: paged, total: filtered.length };
+  }
+
+  private canPrincipalViewApproval(
+    principal: AuthorizationPrincipal,
+    approval: PrivilegedActionApproval,
+  ): boolean {
+    if (approval.requiredAssurance === 'MFA' && principal.assuranceLevel !== 'MFA') {
+      return false;
+    }
+    if (this.isAgentFundingAction(approval.actionType) && principal.roles.includes('SUPER_ADMIN')) {
+      return false;
+    }
+    if (!principal.scopes.includes(approval.approvalScope)) {
+      return false;
+    }
+    const registered = governedAction(approval.actionType);
+    if (registered) {
+      return registered.approvingRoles.some((role) => principal.roles.includes(role));
+    }
+    const policyRoles = Array.isArray(approval.policy?.approvingRoles)
+      ? (approval.policy.approvingRoles as string[])
+      : Array.isArray(approval.policy?.requiredRoles)
+        ? (approval.policy.requiredRoles as string[])
+        : null;
+    if (policyRoles && policyRoles.length > 0) {
+      return (
+        policyRoles.some((role) => principal.roles.includes(role)) ||
+        principal.roles.includes('FINANCE_CONTROLLER') ||
+        principal.roles.includes('SUPER_ADMIN')
+      );
+    }
+    return true;
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -548,6 +640,13 @@ export class PrivilegedActionApprovalService {
         reason: this.statusReason(approval.status),
       };
     }
+    if (command.expectedVersion !== undefined && approval.version !== command.expectedVersion) {
+      return {
+        approved: false,
+        approval: this.toView(approval),
+        reason: 'STALE_VERSION',
+      };
+    }
     if (approval.requesterPrincipalId === command.principal.principalId) {
       return {
         approved: false,
@@ -742,6 +841,7 @@ export class PrivilegedActionApprovalService {
       actionFingerprint: approval.actionFingerprint,
       requesterPrincipalId: approval.requesterPrincipalId,
       approvedBy: approval.approvedBy,
+      reason: approval.reason,
       approvalScope: approval.approvalScope,
       requiredAssurance: approval.requiredAssurance,
       policy: approval.policy,
