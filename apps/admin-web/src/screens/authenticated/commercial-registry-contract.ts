@@ -131,6 +131,9 @@ const DETAIL_FIELDS: Record<string, readonly string[]> = {
   ],
   '/internal/fee-rules': [
     ...FINANCIAL,
+    'customerClassCode',
+    'agentClassId',
+    'institutionId',
     'flatFeeMinor',
     'percentageBps',
     'minimumFeeMinor',

@@ -54,7 +54,7 @@ export const CommercialApprovalInbox: React.FC<CommercialApprovalInboxProps> = (
       if (institutionFilter.trim()) params.set('institutionId', institutionFilter.trim());
       const qs = params.toString();
       const res = await ApiClient.get<{ items: PrivilegedApprovalItem[]; total: number }>(
-        `/api/v1/internal/a2/workforce/approvals${qs ? `?${qs}` : ''}`,
+        `/internal/a2/workforce/approvals${qs ? `?${qs}` : ''}`,
       );
       setItems(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -74,7 +74,7 @@ export const CommercialApprovalInbox: React.FC<CommercialApprovalInboxProps> = (
     setBusyId(item.id);
     setError(null);
     try {
-      await ApiClient.post(`/api/v1/internal/a2/workforce/approvals/${item.id}/${decision}`, {
+      await ApiClient.post(`/internal/a2/workforce/approvals/${item.id}/${decision}`, {
         comment: commentById[item.id]?.trim() || undefined,
         expectedVersion: item.version,
       });

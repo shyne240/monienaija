@@ -23,7 +23,9 @@ function makePrincipal(overrides: Partial<AuthorizationPrincipal> = {}): Authori
   };
 }
 
-function makeApprovalRow(overrides: Partial<PrivilegedActionApproval> = {}): PrivilegedActionApproval {
+function makeApprovalRow(
+  overrides: Partial<PrivilegedActionApproval> = {},
+): PrivilegedActionApproval {
   const now = new Date();
   return {
     id: '22222222-2222-4222-8222-222222222222',
@@ -109,19 +111,21 @@ function buildService(rows: PrivilegedActionApproval[]) {
   });
 
   const dataSource = {
-    transaction: jest.fn(async (cb: (manager: ReturnType<typeof makeManager>) => Promise<unknown>) => {
-      const prev = lockPromise;
-      let release!: () => void;
-      lockPromise = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      await prev;
-      try {
-        return await cb(makeManager());
-      } finally {
-        release();
-      }
-    }),
+    transaction: jest.fn(
+      async (cb: (manager: ReturnType<typeof makeManager>) => Promise<unknown>) => {
+        const prev = lockPromise;
+        let release!: () => void;
+        lockPromise = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await prev;
+        try {
+          return await cb(makeManager());
+        } finally {
+          release();
+        }
+      },
+    ),
   };
 
   const approvalRepository = {

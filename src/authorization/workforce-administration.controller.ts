@@ -146,10 +146,7 @@ export class A2WorkforceAdministrationController {
       correlationId: r.requestContext?.correlationId ?? 'unknown',
     });
   }
-  @Get('approvals') async listApprovals(
-    @Query() q: ListPrivilegedApprovalsDto,
-    @Req() r: R,
-  ) {
+  @Get('approvals') async listApprovals(@Query() q: ListPrivilegedApprovalsDto, @Req() r: R) {
     const principal = this.principal(r);
     if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       throw new ForbiddenException('Workforce principal required');

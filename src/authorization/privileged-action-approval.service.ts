@@ -9,7 +9,11 @@ import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
 import { AuthorizationService } from './authorization.service';
-import { AGENT_FUNDING_ACTIONS, GOVERNED_ACTIONS, governedAction } from './governed-action.registry';
+import {
+  AGENT_FUNDING_ACTIONS,
+  GOVERNED_ACTIONS,
+  governedAction,
+} from './governed-action.registry';
 import { isProtectedAuthorityAction } from './protected-authority.actions';
 import { ProtectedAuthorityService } from './protected-authority.service';
 import { NotificationDispatcherService } from '../notification/notification-dispatcher.service';
@@ -62,9 +66,7 @@ export class PrivilegedActionApprovalService {
     return approval ? this.toView(approval) : null;
   }
 
-  async listApprovals(
-    query: ListPrivilegedApprovalsQuery,
-  ): Promise<ListPrivilegedApprovalsResult> {
+  async listApprovals(query: ListPrivilegedApprovalsQuery): Promise<ListPrivilegedApprovalsResult> {
     const { principal } = query;
     if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       return { items: [], total: 0 };

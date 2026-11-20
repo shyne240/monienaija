@@ -75,6 +75,7 @@ test('fee registry shows real backend fields, pages independently and searches o
   );
   render(<CommercialRulesScreen initialTab="fees" />);
   expect(await screen.findAllByText('fee-one')).toBeTruthy();
+  expect(screen.getByText(/Highest priority wins first, then the most matching target dimensions/)).toBeTruthy();
   expect(screen.getByText('21 total records · Page 1 of 2')).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Rule ID' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Active' })).toBeTruthy();
@@ -515,7 +516,7 @@ test('reward configuration exposes documented targeting and tier fields, not raw
   render(<CommercialRulesScreen initialTab="rewards" />);
   expect(await screen.findByText('Campaign: CAMPAIGN_X')).toBeTruthy();
   expect(screen.getByRole('cell', { name: 'Scheduled' })).toBeTruthy();
-  expect(screen.getByText(/Highest priority wins first, then the most matching target dimensions/)).toBeTruthy();
+  expect(screen.getByText(/Equal highest priorities are ambiguous/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   const dialog = screen.getByRole('dialog', { name: 'Rewards record details' });
   expect(dialog.textContent).toContain('900719925474099301');

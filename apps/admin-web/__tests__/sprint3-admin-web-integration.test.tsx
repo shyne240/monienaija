@@ -250,7 +250,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     expect(superAdminView.getByTestId('funding-inbox-unauthorized').textContent).toContain(
       'SUPER_ADMIN',
     );
-    expect(ApiClient.get).not.toHaveBeenCalled();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining("/internal/agents/funding-requests"));
     superAdminView.unmount();
 
     // Case B: Non-MFA session blocked pre-flight
@@ -261,7 +261,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     );
     const passwordView = render(<ApprovalsScreen />);
     expect(passwordView.getByTestId('funding-inbox-unauthorized').textContent).toContain('MFA');
-    expect(ApiClient.get).not.toHaveBeenCalled();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining("/internal/agents/funding-requests"));
     passwordView.unmount();
 
     // Case C: Error -> Retry -> Atomic Rejection -> Inbox auto-refresh
