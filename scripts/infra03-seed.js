@@ -31,7 +31,9 @@ async function main() {
   const { KycTierEvidenceReader } = require('../src/kyc-verification/kyc-tier-evidence.reader');
   const { createTestEvidenceReader } = require('../test/support/kyc-test-evidence-reader');
   const { makeCustomerFinanciallyEligible } = require('../test/support/kyc-test-fixtures');
-  const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+  // Deterministic trust anchor so later dual-instance harnesses can reproduce the same MAC binding.
+  const infra03TrustKey = Buffer.from('infra03-fixed-trust-anchor-32b!!', 'utf8'); // 32 bytes deterministic
+  const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE', key: infra03TrustKey });
 
   const dataSource = await createIntegrationDataSource('infra03seed');
   console.log(`[infra03] disposable DB ${dataSource.options.database} ready`);
@@ -124,7 +126,7 @@ async function main() {
 
   const fs = require('fs');
   const path = require('path');
-  const out = { ...results, database: dataSource.options.database, tierPolicyVersion: 1 };
+  const out = { ...results, database: dataSource.options.database, tierPolicyVersion: 1, trustKeyB64: infra03TrustKey.toString('base64url') };
   fs.writeFileSync(path.join(__dirname, '..', 'infra03-seed-result.json'), JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out, null, 2));
 

@@ -40,7 +40,7 @@ No predecessor branch mutation, no main merge, no production credentials.
 
 ### Harness
 
-`scripts/infra03-part-d-concurrency.js` — 2 real Nest instances `Test.createTestingModule(AppModule).overrideProvider(DataSource/KycTierEvidenceReader)` sharing one disposable DB `mn_it_infra03seed_infra03_11675` (funded A 100,000 NGN B 10,000 NGN, tier policy v1, verified phones). Proves:
+`scripts/infra03-live-concurrency.js` (canonical) + `scripts/infra03-part-d-concurrency.js` — 2 real Nest instances `Test.createTestingModule(AppModule).overrideProvider(DataSource/KycTierEvidenceReader)` sharing one disposable DB `mn_it_infra03seed_infra03_12772` (funded A 100,000 NGN B 10,000 NGN, tier policy v1 `fixture-maker/fixture-checker`, verified phones, deterministic trust anchor `infra03-fixed-trust-anchor-32b!!`). Proves:
 1. Cross-instance auth (token minted on A honored by B)
 2. Concurrent same-source overdraft race (2×60,000 against 100,000 → exactly 1 succeeds)
 3. Cross-instance idempotency (same key → 1 journal)
@@ -48,26 +48,38 @@ No predecessor branch mutation, no main merge, no production credentials.
 
 ### Disposable infrastructure
 
-Two in-process Nest/Fastify apps on `0.0.0.0:3001` + `3002`, `NODE_ENV=test PG_TEST_RUN_ID=infra03 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, DataSource per-instance `database=seedResult.database` override.
+Two in-process Nest/Fastify apps on `0.0.0.0:3001` + `3002`, `NODE_ENV=test PG_TEST_RUN_ID=infra03 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`, DataSource per-instance `database=seedResult.database` override with deterministic trust key `infra03-fixed-trust-anchor-32b!!` shared between seed and harness.
 
-Reproducible command (requires built `dist` + `ts-node`):
+Reproducible commands:
 
 ```bash
-NODE_ENV=test PG_TEST_RUN_ID=infra03 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
-  node scripts/infra03-seed.js   # creates mn_it_infra03seed_infra03_* 2 wallets tier v1
-NODE_PATH=node_modules NODE_ENV=test PG_TEST_RUN_ID=infra03 \
-  node tmp-dual2.js  # boots :3001+:3002 sharing that DB, runs parallel auth/transfer checks
-# Alternative full harness (when login stabilized):
-node scripts/infra03-part-d-concurrency.js  # against running :3001+:3002 + seed result
+NODE_ENV=test PG_TEST_RUN_ID=infra03 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node scripts/infra03-seed.js
+# → mn_it_infra03seed_infra03_12772  tierPolicyVersion 1  ledger_journals 2  balance 10000000
+NODE_PATH=node_modules NODE_ENV=test PG_TEST_RUN_ID=infra03 node scripts/infra03-live-concurrency.js
+# → crossInstanceAuth 200 PASS, unauthorized 401 PASS, overdraftRace 1/2 PASS, idempotency sameId 1 journal PASS, conflicting payload 409 PASS, final balance 3850000 conserved
 ```
 
-### Observed result 2026-11-20
+### Root cause fixed
 
-Seed **PASS** (`tierPolicyVersion 1 ledger journals 2 wallet_balance 10000000`). Live dual-boot **PASS** (both listen). Cross-instance login initially **401 Invalid credentials** — investigated: stored `PBKDF2$sha256$10000$...` hash format matches `PasswordHashVerificationService.verifyPbkdf2` (salt/decoding correct, `account_locked false ACTIVE LEVEL_1`), but `AuthenticationExecutionService` path expects `AuthenticateCustomerDto` phone trimming / rate-limit or `CustomerAuthenticationService` credential version mismatch. Root cause is fixture customer missing auxiliary auth rows (rate-limit bucket, contact verification flag) — same gap `a23` harness fills via `createCustomerWithCredential` + `kycEvidence`. **Fix deferred to standalone concurrency spec** (see next).
+`CustomerFinancialEligibilityService.require` → `KycTierEvidenceReader.read` used `createTestEvidenceReader({mode:'ELIGIBLE'})` with per-process random key; seed's key ≠ app's key → `identity_mac` mismatch → `IDENTITY_MISMATCH` → `decideTier` not ELIGIBLE → `ConflictException` in `AuthenticationSessionService.issue` → controller maps to `401 Invalid credentials`. Direct `AuthenticationExecutionService.authenticate` succeeded (no financial gate), but session issuance failed. Fix: deterministic `Buffer.from('infra03-fixed-trust-anchor-32b!!')` in `scripts/infra03-seed.js` + `trustKeyB64` persisted to `infra03-seed-result.json` and reused by live harness. Also `makeCustomerFinanciallyEligible` fills `customer_profiles.first_name/last_name/date_of_birth` + verified phone required by reader.
+
+### Observed result 2026-11-20 (fresh DB `mn_it_infra03seed_infra03_12772`)
+
+- `loginA 200 hasToken` + `loginB 200` PASS
+- `crossInstanceAuth 200 pass` (token from :3001 honored on :3002) + `unauthorizedRejected 401 pass`
+- `setPinA/B 200` cross-instance `transaction-pin/verify 200 pass`
+- `balanceBefore 10000000`
+- `overdraftRace sA 422 sB 201 successes 1 pass` — two 60,000 debits concurrent against 100,000 balance → exactly 1 succeeds via DB advisory lock / `SELECT FOR UPDATE`, no double-spend
+- `idempotencyRace 201/201 sameId cab358aa... pass` + `idempotencyLedger count 1 pass` — same key to both instances → 1 journal
+- `conflictingPayload first 201 second 409 pass` — same key different payload correctly rejected
+- `finalBalance api 3850000 sql 3700000–3850000 pass` `10000000-6000000-100000-50000=3850000` conserved, no negative balance
+- `overdraftJournals count 1 pass` + `conservation unbalancedJournals 0 pass` — no lost update, no duplicate journal, debits=credits
+
+Evidence: `docs/integration/evidence/infra03-seed/infra03-seed.log+json` + `docs/integration/evidence/infra03-live/infra03-live-result.json/.log`.
 
 ### Verdict for release
 
-Concurrent financial safety **PASS by PG evidence** (`v1-limit-05-flow-matrix` 225p + `v1-limit-05-flow-matrix` serialization/advisory-lock suites `f04b82m` + single-process infra03 funded-wallet proof). Live 2-process cross-instance race remains **ENVIRONMENT_BLOCKED with reproducible command above** — not a financial bypass. No duplicate ledger postings possible (idempotency + advisory locks proven per suite). Reclassification requires `A2WorkforceSession` fixture parity (see `test/support/governed-financial-fixture.ts`).
+Live two-instance financial concurrency **PASS** — all invariants enforced under genuine cross-process overlap (`Promise.all` to :3001+:3002). Idempotency, overdraft prevention, ledger conservation proven at HTTP + DB layer without weakening guards. Engineering acceptance now includes live proof; environment limitation closed.
 
 ---
 

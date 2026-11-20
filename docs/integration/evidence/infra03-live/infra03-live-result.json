@@ -1,0 +1,115 @@
+{
+  "database": "mn_it_infra03seed_infra03_12950",
+  "steps": [
+    {
+      "k": "loginA",
+      "v": {
+        "status": 200,
+        "hasToken": true
+      }
+    },
+    {
+      "k": "loginB",
+      "v": {
+        "status": 200
+      }
+    },
+    {
+      "k": "crossInstanceAuth",
+      "v": {
+        "status": 200,
+        "pass": true
+      }
+    },
+    {
+      "k": "unauthorizedRejected",
+      "v": {
+        "status": 401,
+        "pass": true
+      }
+    },
+    {
+      "k": "setPinA",
+      "v": 200
+    },
+    {
+      "k": "setPinB",
+      "v": 200
+    },
+    {
+      "k": "crossInstancePinVerify",
+      "v": {
+        "status": 200,
+        "pass": true
+      }
+    },
+    {
+      "k": "balanceBefore",
+      "v": {
+        "bal": "10000000"
+      }
+    },
+    {
+      "k": "overdraftRace",
+      "v": {
+        "sA": 422,
+        "sB": 201,
+        "successes": 1,
+        "pass": true
+      }
+    },
+    {
+      "k": "idempotencyRace",
+      "v": {
+        "statusA": 201,
+        "statusB": 201,
+        "sameId": true,
+        "idA": "63443bed-75cc-47d9-93de-e0ad4728cb6b",
+        "idB": "63443bed-75cc-47d9-93de-e0ad4728cb6b"
+      }
+    },
+    {
+      "k": "idempotencyLedger",
+      "v": {
+        "count": 1,
+        "pass": true
+      }
+    },
+    {
+      "k": "conflictingPayload",
+      "v": {
+        "first": 201,
+        "second": 409,
+        "pass": true
+      }
+    },
+    {
+      "k": "finalBalance",
+      "v": {
+        "api": "3850000"
+      }
+    },
+    {
+      "k": "sqlBalance",
+      "v": {
+        "bal": "3850000",
+        "pass": true
+      }
+    },
+    {
+      "k": "overdraftJournals",
+      "v": {
+        "count": 1,
+        "pass": true
+      }
+    },
+    {
+      "k": "conservation",
+      "v": {
+        "unbalancedJournals": 0,
+        "pass": true
+      }
+    }
+  ],
+  "verdict": "PASS"
+}

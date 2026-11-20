@@ -1,22 +1,23 @@
 {
   "A": {
-    "customerId": "0de497be-d0a8-41ad-b09a-5a0698db279e",
-    "reference": "infra03-cust-a-49a1f5ca",
+    "customerId": "6da83271-9c26-45c8-b788-9884990d1d8c",
+    "reference": "infra03-cust-a-f7f6019d",
     "password": "infra03-pass-A",
-    "phone": "8439852995",
-    "walletId": "2769f778-d44b-4dab-9875-d0d0e42bbd80",
-    "ledgerAccountId": "87cca13f-c131-4321-b540-baf0f405215d",
+    "phone": "8445976333",
+    "walletId": "3531540d-a44b-40db-b7e7-5f96f9da1b37",
+    "ledgerAccountId": "c63a4a32-015e-4916-84c8-ff99e0ccdbd6",
     "fundedMinor": "10000000"
   },
   "B": {
-    "customerId": "4b66eeea-2a77-448d-9176-3d12b9207736",
-    "reference": "infra03-cust-b-11e100c9",
+    "customerId": "1488d551-daaa-4447-910b-1f0deef0fe61",
+    "reference": "infra03-cust-b-68469286",
     "password": "infra03-pass-B",
-    "phone": "8751411263",
-    "walletId": "0eb6644e-27ab-4a9c-988d-1cab5a99aa1f",
-    "ledgerAccountId": "6dcaee4e-ca04-48c5-9313-5d7680f6c501",
+    "phone": "8440330284",
+    "walletId": "1d93d13e-6bcc-4b6e-8c76-2ea3d61d4e6e",
+    "ledgerAccountId": "2b6217d8-9eba-491d-b3f6-56afc9517592",
     "fundedMinor": "1000000"
   },
-  "database": "mn_it_infra03seed_infra03_11675",
-  "tierPolicyVersion": 1
+  "database": "mn_it_infra03seed_infra03_12950",
+  "tierPolicyVersion": 1,
+  "trustKeyB64": "aW5mcmEwMy1maXhlZC10cnVzdC1hbmNob3ItMzJiISE"
 }
