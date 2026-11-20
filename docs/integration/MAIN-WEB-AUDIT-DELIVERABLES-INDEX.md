@@ -8,7 +8,7 @@
 
 ---
 
-## Deliverables (7) — location + status
+## Deliverables (7 + P2–P5 overlay) — location + status
 
 | # | Deliverable | File | Status |
 |---|---|---|---|
@@ -17,8 +17,9 @@
 | 3 | Arena ownership boundaries (single primary owner per route, 1–5 owned/prohibited files, shared file protocol, institution overlap) | `docs/integration/MAIN-WEB-ARENA-OWNERSHIP-AND-INTEGRATION-RULES.md` (§1–§2) | Done — reconciled |
 | 4 | Integration rules (baseline, design/API/permission/navigation conventions, order, handoff, regression) | `docs/integration/MAIN-WEB-ARENA-OWNERSHIP-AND-INTEGRATION-RULES.md` (§4–§6) | Done |
 | 5 | 4 copy-ready implementation prompts (scope/routes/owned dirs/backend reqs/acceptance; baselines corrected, no conflicting shared-file assignments) | `docs/integration/arena-prompts/ARENA-{1,2,3,4}-*.md` | Done — corrected |
-| 6 | Master page-by-page functionality matrix (33 routes × status/missing/Arena/deps/priority/acceptance; source of truth) | `docs/integration/MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md` | Done — reconciled, source of truth |
+| 6 | Master page-by-page functionality matrix (33 routes × status/missing/Arena/deps/priority/acceptance; source of truth) | `docs/integration/MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md` | Done — reconciled, source of truth (priority overlay in new doc §1) |
 | 7 | This index + reconciled totals + branch/regression instructions | This file | Done |
+| 8 | **Priority overlay P2–P5** — commercial (fees/commissions/limits) audit, claiming flows, automatic-POS resolution, 10-item acceptance gates, approval decisions | `docs/integration/MAIN-WEB-PRIORITY-PLAN-P2-P5.md` | **Done — new (§1–§8)** |
 
 ---
 
@@ -91,7 +92,14 @@ gh pr create --base arena/5-main-web-integration --title "Arena <N>: <scope> —
 2. Read `MAIN-WEB-NAVIGATION-AUDIT.md` for the per-screen classification.
 3. Read `MAIN-WEB-BACKEND-SERVICE-MAPPING.md` for endpoint→page proof.
 4. Read `MAIN-WEB-ARENA-OWNERSHIP-AND-INTEGRATION-RULES.md` for ownership + integration rules.
-5. Read `MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md` for the single-table work planner.
-6. Open the `arena-prompts/ARENA-<N>-*.md` relevant to your Arena — it is paste-ready into your session.
+5. Read `MAIN-WEB-MASTER-FUNCTIONALITY-MATRIX.md` for the single-table work planner (33 routes).
+6. Read `MAIN-WEB-PRIORITY-PLAN-P2-P5.md` for commercial/claiming/POS priority overlay and acceptance gates (§1–§8).
+7. Open the `arena-prompts/ARENA-<N>-*.md` relevant to your Arena — it is paste-ready into your session.
 
 Questions → file an issue against `arena/5-main-web-audit` for Arena 5 triage.
+
+---
+
+## Priority overlay (P1–P5) at a glance
+
+P1 Customer/agent management — Arenas 1/2 continue, no rebuild. P2 Commercial (fees/commissions/limits, KYC≠CoS, CoS never overrides KYC) — Arena 3 configures catalogue/rules, Arenas 1/2 integrate auto-assignment on onboarding. P3 Account claiming (2 flows, duplicate-safe) — Arena 1 verifies existing `MobileAccountClaimService` contracts. P4 Automatic POS — supported outlets/terminals CRUD is Arena 2 (existing contracts); auto-provisioning is explicitly blocked pending product approval. P5 Ten acceptance gates (tier assignment, fees from approved rules, limits enforced including concurrency, no self-approval, etc.). Decisions requiring your approval are in `MAIN-WEB-PRIORITY-PLAN-P2-P5.md §7`.
