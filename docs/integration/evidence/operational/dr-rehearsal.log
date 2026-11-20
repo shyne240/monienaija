@@ -1,0 +1,6 @@
+DR rehearsal disposable PG template clone
+src mn_it_dr_src_drm1_13668 migrations 166 tables 284
+dst mn_it_dr_dst_drm1_13668 migrations 166 head 0 clone_ms 264 total_ms 4464
+Tables 284, RTO observed 0.26s clone + 4.2s full init+migrate+seed; RPO point-in-time via WAL-G/pg_basebackup still unmeasured at production volume.
+PG_TEST_RUN_ID=drm1 NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node tmp-dr.js
+No prod data, no pg_dump (embedded pg lacks binary) — restore via template clone is the disposable equivalent; production RPO/RTO requires provisioned volume.

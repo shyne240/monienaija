@@ -1,0 +1,5 @@
+2026-11-20T20:24:32Z synthetic webhook deliver true
+channel webhook true via src/operations/alert-webhook.channel.ts HMAC verified
+received 1 on 127.0.0.1:8765/hooks/alerts {"id":"syn-1","ruleId":"worker.stale"}
+ALERT_WEBHOOK_URL=http://127.0.0.1:8765/hooks/alerts ALERT_WEBHOOK_SECRET=test-secret-32b-1234567890abcdef1234
+No production channel; local delivery proven, paging provider still external.

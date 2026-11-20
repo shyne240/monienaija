@@ -1,0 +1,1 @@
+PASS test/outbox.service.spec.ts 2/2 transactional event key, immutable payload
