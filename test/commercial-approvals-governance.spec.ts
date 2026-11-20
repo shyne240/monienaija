@@ -305,4 +305,49 @@ describe('Commercial Approvals & Governance', () => {
     expect(losers).toHaveLength(1);
     expect(losers[0]?.reason).toBe('APPROVED');
   });
+
+  it('enforces LIMIT_RULE_CREATE and LIMIT_RULE_UPDATE with LIMIT_RULE resourceType and limit.modify function code', async () => {
+    const createDef = governedAction('LIMIT_RULE_CREATE');
+    const updateDef = governedAction('LIMIT_RULE_UPDATE');
+    for (const def of [createDef, updateDef]) {
+      expect(def).toBeDefined();
+      expect(def?.resourceType).toBe('LIMIT_RULE');
+      expect(def?.initiatingRoles).toEqual(['FINANCE_PREPARER']);
+      expect(def?.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
+      expect(def?.initiatingFunctionCodes).toEqual(['limit.modify']);
+      expect(def?.approvingFunctionCodes).toEqual(['limit.modify']);
+      expect(def?.approvalScope).toBe('limit.modify');
+      expect(def?.minimumAssurance).toBe('MFA');
+    }
+
+    const limitRow = makeApprovalRow({
+      id: '55555555-5555-4555-8555-555555555555',
+      actionType: 'LIMIT_RULE_UPDATE',
+      resourceType: 'LIMIT_RULE',
+      resourceId: 'limit-rule-1',
+    });
+    const { service } = buildService([limitRow]);
+
+    // Missing limit.modify function code -> rejected
+    const missingFn = await service.approve({
+      approvalId: limitRow.id,
+      principal: makePrincipal({
+        principalId: 'controller-1',
+        scopes: ['privileged:approve'],
+      }),
+    });
+    expect(missingFn.approved).toBe(false);
+    expect(missingFn.reason).toBe('FUNCTION_MISSING');
+
+    // Independent FINANCE_CONTROLLER with limit.modify + privileged:approve + MFA -> approved
+    const valid = await service.approve({
+      approvalId: limitRow.id,
+      principal: makePrincipal({
+        principalId: 'controller-1',
+        scopes: ['privileged:approve', 'limit.modify'],
+      }),
+    });
+    expect(valid.approved).toBe(true);
+    expect(valid.reason).toBe('APPROVED');
+  });
 });

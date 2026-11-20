@@ -308,8 +308,8 @@ export const CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION: GovernedActionDefinit
 };
 
 export const LIMIT_RULE_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
-  LIMIT_RULE_CREATE: crossFunctionalRule('LIMIT_RULE_CREATE', 'limit_rule.manage'),
-  LIMIT_RULE_UPDATE: crossFunctionalRule('LIMIT_RULE_UPDATE', 'limit_rule.manage'),
+  LIMIT_RULE_CREATE: rule('LIMIT_RULE_CREATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
+  LIMIT_RULE_UPDATE: rule('LIMIT_RULE_UPDATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
 };
 
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
