@@ -1,0 +1,30 @@
+[infra03] disposable DB mn_it_infra03seed_infra03_11675 ready
+[infra03] synthetic tier policy v1 seeded (fixture-maker/fixture-checker)
+[infra03] customer A 0de497be-d0a8-41ad-b09a-5a0698db279e eligible
+[infra03] customer A wallet 2769f778-d44b-4dab-9875-d0d0e42bbd80 funded 10000000
+[infra03] customer B 4b66eeea-2a77-448d-9176-3d12b9207736 eligible
+[infra03] customer B wallet 0eb6644e-27ab-4a9c-988d-1cab5a99aa1f funded 1000000
+[infra03] ledger journals for funding: 2 (expected 2)
+{
+  "A": {
+    "customerId": "0de497be-d0a8-41ad-b09a-5a0698db279e",
+    "reference": "infra03-cust-a-49a1f5ca",
+    "password": "infra03-pass-A",
+    "phone": "8439852995",
+    "walletId": "2769f778-d44b-4dab-9875-d0d0e42bbd80",
+    "ledgerAccountId": "87cca13f-c131-4321-b540-baf0f405215d",
+    "fundedMinor": "10000000"
+  },
+  "B": {
+    "customerId": "4b66eeea-2a77-448d-9176-3d12b9207736",
+    "reference": "infra03-cust-b-11e100c9",
+    "password": "infra03-pass-B",
+    "phone": "8751411263",
+    "walletId": "0eb6644e-27ab-4a9c-988d-1cab5a99aa1f",
+    "ledgerAccountId": "6dcaee4e-ca04-48c5-9313-5d7680f6c501",
+    "fundedMinor": "1000000"
+  },
+  "database": "mn_it_infra03seed_infra03_11675",
+  "tierPolicyVersion": 1
+}
+[infra03] SEED PASS — disposable DB mn_it_infra03seed_infra03_11675 retained for concurrency harness
