@@ -85,9 +85,26 @@ jobs:
       - name: Prepare isolated PostgreSQL test configuration
         run: node scripts/prepare-pg-test-env.js --create-if-missing
       - name: Run the real-PostgreSQL integration suites
+        id: pg-suites
         env:
+          PG_TEST_SUMMARY_PATH: ${{ runner.temp }}/pg-summary.json
           NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
         run: npm run test:pg
+
+      # Jest annotations cover individual assertions, but not a suite that cannot start,
+      # a child killed by a signal, or a failure in global teardown. Keep the gate mandatory.
+      - name: Identify failed PostgreSQL batches
+        if: failure() && steps.pg-suites.outcome == 'failure'
+        env:
+          PG_TEST_SUMMARY_PATH: ${{ runner.temp }}/pg-summary.json
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = process.env.PG_TEST_SUMMARY_PATH;
+          if (!fs.existsSync(path)) throw new Error('PostgreSQL runner exited before writing its summary');
+          const s = JSON.parse(fs.readFileSync(path, 'utf8'));
+          console.log(`::error::PostgreSQL: ${s.suitesFailed} failed, ${s.filesWithoutResult.length} missing of ${s.filesDiscovered}; ${s.memoryFailures} memory failures, ${s.timeouts} timeouts, ${s.unexplainedCrashes} crashes. Failed batch files: ${s.failingFiles.join(', ')}`);
+          NODE
 
   # The repository ships a production Dockerfile with a multi-stage build, a non-root user and a healthcheck,
   # and nothing ever built it. A Dockerfile that no pipeline compiles can rot silently — a dependency bump, a
