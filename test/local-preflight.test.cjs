@@ -70,6 +70,8 @@ test('environment generator refuses implicit creation and all overwrites, includ
     assert.equal(fs.existsSync(path.join(dir, '.env')), false);
     assert.equal(exec('--create-if-missing').status, 0);
     const target = path.join(dir, '.env');
+    const generated = require('dotenv').parse(fs.readFileSync(target));
+    assert.deepEqual(JSON.parse(generated.HTTP_CORS_ORIGINS_JSON), ['https://admin.example.test']);
     fs.writeFileSync(target, 'DO-NOT-OVERWRITE\n');
     assert.notEqual(exec('--force').status, 0);
     assert.notEqual(exec('--create-if-missing').status, 0);
