@@ -9,9 +9,10 @@ import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
 import { AuthorizationService } from './authorization.service';
-import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import { AGENT_FUNDING_ACTIONS, GOVERNED_ACTIONS, governedAction } from './governed-action.registry';
 import { isProtectedAuthorityAction } from './protected-authority.actions';
 import { ProtectedAuthorityService } from './protected-authority.service';
+import { NotificationDispatcherService } from '../notification/notification-dispatcher.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from './privileged-action-approval.enums';
@@ -19,6 +20,8 @@ import type {
   ConsumePrivilegedActionCommand,
   DecidePrivilegedActionCommand,
   EmergencyAccessCommand,
+  ListPrivilegedApprovalsQuery,
+  ListPrivilegedApprovalsResult,
   PrivilegedActionApprovalView,
   PrivilegedActionDecision,
   RequestPrivilegedActionCommand,
@@ -42,6 +45,7 @@ export class PrivilegedActionApprovalService {
     private readonly auditService: AuditService,
     private readonly authorizationService: AuthorizationService,
     @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcherService,
   ) {}
 
   /**
@@ -56,6 +60,105 @@ export class PrivilegedActionApprovalService {
   async getApproval(approvalId: string): Promise<PrivilegedActionApprovalView | null> {
     const approval = await this.findApproval(approvalId);
     return approval ? this.toView(approval) : null;
+  }
+
+  async listApprovals(
+    query: ListPrivilegedApprovalsQuery,
+  ): Promise<ListPrivilegedApprovalsResult> {
+    const { principal } = query;
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
+      return { items: [], total: 0 };
+    }
+    if (!principal.scopes.length) {
+      return { items: [], total: 0 };
+    }
+
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+    const offset = Math.max(query.offset ?? 0, 0);
+
+    const qb = this.approvalRepository
+      .createQueryBuilder('approval')
+      .orderBy('approval.requestedAt', 'DESC')
+      .andWhere('approval.approvalScope IN (:...scopes)', { scopes: principal.scopes });
+
+    if (principal.assuranceLevel !== 'MFA') {
+      qb.andWhere('approval.requiredAssurance != :mfaAssurance', { mfaAssurance: 'MFA' });
+    }
+
+    if (principal.roles.includes('SUPER_ADMIN')) {
+      const agentFundingActions = Object.values(AGENT_FUNDING_ACTIONS).map((a) => a.action);
+      if (agentFundingActions.length > 0) {
+        qb.andWhere('approval.actionType NOT IN (:...agentFundingActions)', {
+          agentFundingActions,
+        });
+      }
+    }
+
+    const forbiddenRegisteredActions = Object.values(GOVERNED_ACTIONS)
+      .filter((def) => !def.approvingRoles.some((role) => principal.roles.includes(role)))
+      .map((def) => def.action);
+    if (forbiddenRegisteredActions.length > 0) {
+      qb.andWhere('approval.actionType NOT IN (:...forbiddenRegisteredActions)', {
+        forbiddenRegisteredActions,
+      });
+    }
+
+    const registeredActions = Object.keys(GOVERNED_ACTIONS);
+    const hasFallbackRole =
+      principal.roles.includes('FINANCE_CONTROLLER') || principal.roles.includes('SUPER_ADMIN');
+    if (!hasFallbackRole) {
+      const principalRoles = principal.roles.length > 0 ? principal.roles : ['__NONE__'];
+      const approvingRolesArr =
+        "CASE WHEN jsonb_typeof(approval.policy -> 'approvingRoles') = 'array' THEN approval.policy -> 'approvingRoles' ELSE '[]'::jsonb END";
+      const requiredRolesArr =
+        "CASE WHEN jsonb_typeof(approval.policy -> 'requiredRoles') = 'array' THEN approval.policy -> 'requiredRoles' ELSE '[]'::jsonb END";
+      qb.andWhere(
+        `(
+          approval.actionType IN (:...registeredActions)
+          OR (
+            jsonb_array_length(${approvingRolesArr}) > 0
+            AND (${approvingRolesArr}) ?| :principalRoles
+          )
+          OR (
+            jsonb_array_length(${approvingRolesArr}) = 0
+            AND jsonb_array_length(${requiredRolesArr}) > 0
+            AND (${requiredRolesArr}) ?| :principalRoles
+          )
+          OR (
+            jsonb_array_length(${approvingRolesArr}) = 0
+            AND jsonb_array_length(${requiredRolesArr}) = 0
+          )
+        )`,
+        { registeredActions, principalRoles },
+      );
+    }
+
+    if (query.status) {
+      qb.andWhere('approval.status = :status', { status: query.status });
+    }
+    if (query.actionType?.trim()) {
+      qb.andWhere('approval.actionType = :actionType', {
+        actionType: query.actionType.trim(),
+      });
+    }
+    if (query.resourceType?.trim()) {
+      qb.andWhere('approval.resourceType = :resourceType', {
+        resourceType: query.resourceType.trim(),
+      });
+    }
+    if (query.institutionId?.trim()) {
+      const institutionId = query.institutionId.trim();
+      qb.andWhere(
+        "(approval.resourceId = :institutionId OR approval.policy ->> 'institutionId' = :institutionId OR approval.policy -> 'requestDetails' ->> 'institutionId' = :institutionId)",
+        { institutionId },
+      );
+    }
+
+    const [rows, total] = await qb.skip(offset).take(limit).getManyAndCount();
+    return {
+      items: rows.map((a) => this.toView(a)),
+      total,
+    };
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -548,6 +651,13 @@ export class PrivilegedActionApprovalService {
         reason: this.statusReason(approval.status),
       };
     }
+    if (command.expectedVersion !== undefined && approval.version !== command.expectedVersion) {
+      return {
+        approved: false,
+        approval: this.toView(approval),
+        reason: 'STALE_VERSION',
+      };
+    }
     if (approval.requesterPrincipalId === command.principal.principalId) {
       return {
         approved: false,
@@ -742,6 +852,7 @@ export class PrivilegedActionApprovalService {
       actionFingerprint: approval.actionFingerprint,
       requesterPrincipalId: approval.requesterPrincipalId,
       approvedBy: approval.approvedBy,
+      reason: approval.reason,
       approvalScope: approval.approvalScope,
       requiredAssurance: approval.requiredAssurance,
       policy: approval.policy,

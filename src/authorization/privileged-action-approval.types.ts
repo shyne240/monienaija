@@ -27,7 +27,23 @@ export interface DecidePrivilegedActionCommand {
   principal: AuthorizationPrincipal;
   approvalId: string;
   comment?: string;
+  expectedVersion?: number;
   now?: Date;
+}
+
+export interface ListPrivilegedApprovalsQuery {
+  principal: AuthorizationPrincipal;
+  status?: PrivilegedActionApprovalStatus;
+  actionType?: string;
+  resourceType?: string;
+  institutionId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPrivilegedApprovalsResult {
+  items: PrivilegedActionApprovalView[];
+  total: number;
 }
 
 export interface ConsumePrivilegedActionCommand {
@@ -57,6 +73,7 @@ export interface PrivilegedActionApprovalView {
   actionFingerprint: string;
   requesterPrincipalId: string;
   approvedBy: string | null;
+  reason?: string;
   approvalScope: string;
   requiredAssurance: string;
   policy: Readonly<Record<string, unknown>>;
@@ -88,6 +105,7 @@ export interface PrivilegedActionDecision {
     | 'SUPER_ADMIN_NOT_ALLOWED'
     | 'MFA_REQUIRED'
     | 'APPROVAL_SCOPE_MISSING'
+    | 'STALE_VERSION'
     | 'ACTION_MISMATCH'
     | 'RESOURCE_MISMATCH'
     | 'FINGERPRINT_MISMATCH'
