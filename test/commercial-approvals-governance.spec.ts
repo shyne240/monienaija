@@ -490,4 +490,42 @@ describe('Commercial Approvals & Governance', () => {
     });
     expect(controllerList.total).toBe(3);
   });
+
+  it('handles non-array, null, object, string, and empty-array role policies safely', async () => {
+    const nullPolicy = makeApprovalRow({
+      id: '77777777-7777-4777-8777-777777777771',
+      actionType: 'CUSTOM_NULL_ROLE',
+      policy: { approvingRoles: null, requiredRoles: null },
+    });
+    const objectPolicy = makeApprovalRow({
+      id: '77777777-7777-4777-8777-777777777772',
+      actionType: 'CUSTOM_OBJ_ROLE',
+      policy: { approvingRoles: { role: 'ADMIN' }, requiredRoles: {} },
+    });
+    const stringPolicy = makeApprovalRow({
+      id: '77777777-7777-4777-8777-777777777773',
+      actionType: 'CUSTOM_STR_ROLE',
+      policy: { approvingRoles: 'RISK_REVIEWER', requiredRoles: 'OTHER' },
+    });
+    const emptyArrPolicy = makeApprovalRow({
+      id: '77777777-7777-4777-8777-777777777774',
+      actionType: 'CUSTOM_EMPTY_ARR_ROLE',
+      policy: { approvingRoles: [], requiredRoles: ['COMPLIANCE_OFFICER'] },
+    });
+    const { service } = buildService([nullPolicy, objectPolicy, stringPolicy, emptyArrPolicy]);
+
+    const reviewerList = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['RISK_REVIEWER'],
+        scopes: ['privileged:approve'],
+      }),
+    });
+    // null, object, string normalize to empty array (open); emptyArrPolicy falls back to requiredRoles=['COMPLIANCE_OFFICER'] (excluded)
+    expect(reviewerList.total).toBe(3);
+    expect(reviewerList.items.map((i) => i.id)).toEqual([
+      nullPolicy.id,
+      objectPolicy.id,
+      stringPolicy.id,
+    ]);
+  });
 });

@@ -108,32 +108,25 @@ export class PrivilegedActionApprovalService {
       principal.roles.includes('FINANCE_CONTROLLER') || principal.roles.includes('SUPER_ADMIN');
     if (!hasFallbackRole) {
       const principalRoles = principal.roles.length > 0 ? principal.roles : ['__NONE__'];
+      const approvingRolesArr =
+        "CASE WHEN jsonb_typeof(approval.policy -> 'approvingRoles') = 'array' THEN approval.policy -> 'approvingRoles' ELSE '[]'::jsonb END";
+      const requiredRolesArr =
+        "CASE WHEN jsonb_typeof(approval.policy -> 'requiredRoles') = 'array' THEN approval.policy -> 'requiredRoles' ELSE '[]'::jsonb END";
       qb.andWhere(
         `(
           approval.actionType IN (:...registeredActions)
           OR (
-            jsonb_typeof(approval.policy -> 'approvingRoles') = 'array'
-            AND jsonb_array_length(approval.policy -> 'approvingRoles') > 0
-            AND approval.policy -> 'approvingRoles' ?| :principalRoles
+            jsonb_array_length(${approvingRolesArr}) > 0
+            AND (${approvingRolesArr}) ?| :principalRoles
           )
           OR (
-            (
-              jsonb_typeof(approval.policy -> 'approvingRoles') IS DISTINCT FROM 'array'
-              OR jsonb_array_length(approval.policy -> 'approvingRoles') = 0
-            )
-            AND jsonb_typeof(approval.policy -> 'requiredRoles') = 'array'
-            AND jsonb_array_length(approval.policy -> 'requiredRoles') > 0
-            AND approval.policy -> 'requiredRoles' ?| :principalRoles
+            jsonb_array_length(${approvingRolesArr}) = 0
+            AND jsonb_array_length(${requiredRolesArr}) > 0
+            AND (${requiredRolesArr}) ?| :principalRoles
           )
           OR (
-            (
-              jsonb_typeof(approval.policy -> 'approvingRoles') IS DISTINCT FROM 'array'
-              OR jsonb_array_length(approval.policy -> 'approvingRoles') = 0
-            )
-            AND (
-              jsonb_typeof(approval.policy -> 'requiredRoles') IS DISTINCT FROM 'array'
-              OR jsonb_array_length(approval.policy -> 'requiredRoles') = 0
-            )
+            jsonb_array_length(${approvingRolesArr}) = 0
+            AND jsonb_array_length(${requiredRolesArr}) = 0
           )
         )`,
         { registeredActions, principalRoles },
