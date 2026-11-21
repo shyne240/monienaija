@@ -92,7 +92,9 @@ function positiveInteger(name, fallback, maximum) {
   return value;
 }
 const BATCH_SIZE = positiveInteger('PG_TEST_BATCH_SIZE', 1, 100);
-const MAX_OLD_SPACE_MB = positiveInteger('PG_TEST_MAX_OLD_SPACE_MB', 1536, 16384);
+// At 1536 MiB the fresh ts-jest children for recovery and workforce bootstrap abort
+// in V8 GC before reporting tests. Match the verified single-worker bounded profile.
+const MAX_OLD_SPACE_MB = positiveInteger('PG_TEST_MAX_OLD_SPACE_MB', 2560, 16384);
 const CONCURRENCY = positiveInteger('PG_TEST_CONCURRENCY', 1, 16);
 
 /**

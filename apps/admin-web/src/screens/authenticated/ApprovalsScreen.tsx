@@ -7,6 +7,7 @@ import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
+import { CommercialApprovalInbox } from '../../components/CommercialApprovalInbox';
 import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC<{
@@ -285,9 +286,7 @@ const ApprovalsWorkspace: React.FC<{
         <span style={styles.gapTitle}>Approval Discovery Scope</span>
         <p style={styles.gapText}>
           Agent funding and defunding requests use the Global Funding Inbox when your session meets
-          its access rules (<code>GET /internal/agents/funding-requests</code>). Generic non-funding
-          workforce overrides require a known Approval ID because generic{' '}
-          <code>GET /internal/a2/workforce/approvals</code> listing is not exposed.
+          its access rules (<code>GET /internal/agents/funding-requests</code>). Commercial approval visibility is filtered by checker authorization.
         </p>
       </div>
       <div style={styles.fundingNote}>
@@ -304,6 +303,12 @@ const ApprovalsWorkspace: React.FC<{
         <strong>Provider Configuration</strong> so the approved proposal is applied.
       </div>
 
+      <CommercialApprovalInbox
+            key={principal?.principalId}
+            currentPrincipalId={principal?.principalId}
+            canApprove={canApprove && principal?.assuranceLevel === 'MFA'}
+            canWrite={canWrite}
+          />
       {canReviewFunding && (
         <section
           id="funding-checker-workspace"
@@ -316,6 +321,7 @@ const ApprovalsWorkspace: React.FC<{
           <p className="approvals-redesign__intro">
             Review eligible requests and use the dedicated checker panel for funding decisions.
           </p>
+
           <PendingFundingApprovalsQueue
             canReviewFunding={canReviewFunding}
             canAccessGlobalInbox={canAccessGlobalFundingInbox}

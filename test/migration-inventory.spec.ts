@@ -153,12 +153,18 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 166 migration identities', () => {
+  it('contains exactly 167 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
-    // Arena 2C, and two by Arena 5 (agent financial authorization + external-ops). Any additional or missing
+    // Arena 2C, and two by Arena 5 (agent financial authorization + external-ops), and the additive fee-targeting
+    // migration contributed by PR #4. Any additional or missing
     // file fails this assertion.
-    expect(migrations.length).toBe(166);
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600506',
+      name: 'FeeRuleTargeting1785753600506',
+      file: '1785753600506-FeeRuleTargeting.ts',
+    });
+    expect(migrations.length).toBe(167);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

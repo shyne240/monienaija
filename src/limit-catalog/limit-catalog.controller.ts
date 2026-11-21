@@ -14,6 +14,7 @@ import {
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { LimitRuleGovernanceService } from './limit-rule-governance.service';
 
 import { CreateLimitProfileDto } from './dto/create-limit-profile.dto';
 import { UpdateLimitProfileDto } from './dto/update-limit-profile.dto';
@@ -31,6 +32,7 @@ export class LimitCatalogController {
   constructor(
     private readonly service: LimitCatalogService,
     private readonly auth: AuthorizationService,
+    private readonly ruleGovernance: LimitRuleGovernanceService,
   ) {}
 
   // ── Profiles ──
@@ -137,24 +139,31 @@ export class LimitCatalogController {
     else this.requireWorkforce(req);
     if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
       throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
-    const actor = this.actorOf(req);
-    return this.service.createRule(
-      {
-        limitProfileCode: code.trim().toUpperCase(),
-        product: dto.product,
-        direction: dto.direction ?? null,
-        channel: dto.channel ?? null,
-        currency: dto.currency,
-        dimension: dto.dimension,
-        limitValueMinor: dto.limitValueMinor ?? null,
-        limitValueCount: dto.limitValueCount ?? null,
-        effectiveFrom: dto.effectiveFrom ?? null,
-        effectiveTo: dto.effectiveTo ?? null,
-        isActive: dto.isActive,
-        priority: dto.priority,
-        createdBy: actor,
-      },
-      actor,
+    if (!req.authorizationPrincipal) throw new UnauthorizedException('Authentication required');
+    return this.ruleGovernance.requestCreate(
+      req.authorizationPrincipal,
+      code.trim().toUpperCase(),
+      dto,
+    );
+  }
+
+  @Post('limit-profiles/:code/rules/changes/:approvalId/execute-create')
+  async executeCreateRule(
+    @Param('code') code: string,
+    @Param('approvalId') approvalId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateLimitRuleDto,
+  ) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.modify');
+    else this.requireWorkforce(req);
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!req.authorizationPrincipal) throw new UnauthorizedException('Authentication required');
+    return this.ruleGovernance.executeCreate(
+      req.authorizationPrincipal,
+      approvalId,
+      code.trim().toUpperCase(),
+      dto,
     );
   }
 
@@ -233,25 +242,27 @@ export class LimitCatalogController {
     else this.requireWorkforce(req);
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
       throw new BadRequestException('id must be UUID');
-    const actor = this.actorOf(req);
-    return this.service.updateRule(
+    if (!req.authorizationPrincipal) throw new UnauthorizedException('Authentication required');
+    return this.ruleGovernance.requestUpdate(req.authorizationPrincipal, id.trim(), dto);
+  }
+
+  @Post('limit-rules/:id/changes/:approvalId/execute-update')
+  async executeUpdateRule(
+    @Param('id') id: string,
+    @Param('approvalId') approvalId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateLimitRuleDto,
+  ) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.modify');
+    else this.requireWorkforce(req);
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
+    if (!req.authorizationPrincipal) throw new UnauthorizedException('Authentication required');
+    return this.ruleGovernance.executeUpdate(
+      req.authorizationPrincipal,
+      approvalId,
       id.trim(),
-      {
-        product: dto.product,
-        direction: dto.direction ?? undefined,
-        channel: dto.channel === null ? null : (dto.channel ?? undefined),
-        currency: dto.currency,
-        dimension: dto.dimension,
-        limitValueMinor: dto.limitValueMinor ?? undefined,
-        limitValueCount: dto.limitValueCount ?? undefined,
-        effectiveFrom: dto.effectiveFrom ?? undefined,
-        effectiveTo: dto.effectiveTo ?? undefined,
-        isActive: dto.isActive,
-        priority: dto.priority,
-        updatedBy: actor,
-        version: dto.version,
-      },
-      actor,
+      dto,
     );
   }
 

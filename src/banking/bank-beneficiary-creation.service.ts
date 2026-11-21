@@ -7,13 +7,8 @@ import {
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
-import { Customer } from '../customer/customer.entity';
 import { BankingDirectoryService } from './banking-directory.service';
 import { BankingAccountEnquiryService } from './banking-account-enquiry.service';
-import {
-  CustomerBeneficiaryStatus,
-  CustomerBeneficiaryType,
-} from '../customer-beneficiary/customer-beneficiary.enums';
 
 /**
  * G10/G11 — bank-account beneficiary creation for customer and agent self-service.

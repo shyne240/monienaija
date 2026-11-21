@@ -1,15 +1,14 @@
+import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
+import { LedgerService } from '../src/ledger/ledger.service';
+import { WITHDRAWAL_EXECUTION_AUTHORITY } from '../src/financial-commitment/withdrawal-execution-authority';
+import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
-import {
-  createIntegrationDataSource,
-  destroyIntegrationDataSource,
-  seedTransferParticipant,
-} from './support/pg-harness';
-import { CustomerService } from '../src/customer/customer.service';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { AgentClassService } from '../src/agent/agent-class.service';
@@ -34,15 +33,12 @@ function hashPin(pin: string): string {
 describe('Banking mobile journeys (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
-  let customerService: CustomerService;
-  let sessionService: AuthenticationSessionService;
   let custPinService: CustomerTransactionPinService;
   let agentClassService: AgentClassService;
   let agentAppService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
   let walletService: WalletService;
-  let institutionId: string;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('bankJourneys');
@@ -51,15 +47,9 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue({ read: () => Promise.resolve(null) })
-      .overrideProvider(
-        require('../src/kyc-verification/customer-financial-eligibility.service')
-          .CustomerFinancialEligibilityService,
-      )
+      .overrideProvider(CustomerFinancialEligibilityService)
       .useValue({ require: () => Promise.resolve() })
-      .overrideProvider(
-        require('../src/financial-commitment/withdrawal-execution-authority')
-          .WITHDRAWAL_EXECUTION_AUTHORITY,
-      )
+      .overrideProvider(WITHDRAWAL_EXECUTION_AUTHORITY)
       .useValue({
         authorize: () =>
           Promise.resolve({
@@ -78,15 +68,12 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
-    customerService = app.get(CustomerService);
-    sessionService = app.get(AuthenticationSessionService);
     custPinService = app.get(CustomerTransactionPinService);
     agentClassService = app.get(AgentClassService);
     agentAppService = app.get(AgentApplicationService);
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
     walletService = app.get(WalletService);
-    institutionId = '00000000-0000-0000-0000-000000000001';
     await dataSource.query(
       `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'BANKA','Bank A','BA',true,'ACTIVE') ON CONFLICT DO NOTHING`,
       [randomUUID()],
@@ -100,10 +87,9 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
   afterAll(async () => {
     try {
       if (app) await app.close();
-    } catch {}
-    try {
+    } finally {
       if (dataSource) await destroyIntegrationDataSource(dataSource);
-    } catch {}
+    }
   });
 
   async function createCustomer(pin: string) {
@@ -123,10 +109,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       [randomUUID(), customerId, hashPin('password-123')],
     );
     const authentication = await app
-      .get(
-        require('../src/customer-authentication/authentication-execution.service')
-          .AuthenticationExecutionService,
-      )
+      .get(AuthenticationExecutionService)
       .authenticate({ customerId, password: 'password-123', actor: customerId });
     const session = await app
       .get(AuthenticationSessionService)
@@ -144,7 +127,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
     const assetId = assetRows[0]!.id;
-    await app.get(require('../src/ledger/ledger.service').LedgerService).postJournal({
+    await app.get(LedgerService).postJournal({
       idempotencyKey: `fund-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
@@ -217,7 +200,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     const assetRows: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
-    await app.get(require('../src/ledger/ledger.service').LedgerService).postJournal({
+    await app.get(LedgerService).postJournal({
       idempotencyKey: `fund-a-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
@@ -246,11 +229,11 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     );
     const agentToken = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(agentToken, 'utf8').digest('hex');
-    const [cred] = await dataSource.query(
+    const [cred] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_credentials(agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
       [agent.id, hashPin('login-password')],
     );
-    const [sess] = await dataSource.query(
+    const [sess] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_sessions(agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp()) RETURNING id`,
       [agent.id, cred.id, tokenHash],
     );
@@ -289,9 +272,13 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       .get('/api/v1/customers/me/banking/banks')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(Array.isArray((res.body as { items: Array<{ bankCode: string }> }).items)).toBe(true);
     // BANKA present
-    expect(res.body.items.some((b: { bankCode: string }) => b.bankCode === 'BANKA')).toBe(true);
+    expect(
+      (res.body as { items: Array<{ bankCode: string }> }).items.some(
+        (b: { bankCode: string }) => b.bankCode === 'BANKA',
+      ),
+    ).toBe(true);
   });
 
   it('customer: account-enquiry via directory API', async () => {
@@ -333,7 +320,11 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
         pin: '1234',
       });
     expect([200, 201].includes(res.status)).toBe(true);
-    expect(res.body.commitmentId || res.body.externalOperationId || res.body.state).toBeTruthy();
+    expect(
+      (res.body as { commitmentId: unknown }).commitmentId ||
+        (res.body as { externalOperationId: unknown }).externalOperationId ||
+        (res.body as { state: unknown }).state,
+    ).toBeTruthy();
   });
 
   it('customer: bank-transfer-preview returns authoritative pricing', async () => {
@@ -359,8 +350,8 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${token}`);
     expect([200, 201].includes(res.status) || res.status === 400 || res.status === 404).toBe(true);
     if (res.status === 200) {
-      expect(res.body.principalMinor).toBeDefined();
-      expect(res.body.totalDebitMinor).toBeDefined();
+      expect((res.body as { principalMinor: unknown }).principalMinor).toBeDefined();
+      expect((res.body as { totalDebitMinor: unknown }).totalDebitMinor).toBeDefined();
     }
   });
 
@@ -393,11 +384,11 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       });
     if (
       (initiated.status === 200 || initiated.status === 201) &&
-      initiated.body.operationReference
+      (initiated.body as { operationReference: string }).operationReference
     ) {
       const statusRes = await request(app.getHttpServer())
         .get(
-          `/api/v1/customers/me/banking/transfers/${encodeURIComponent(initiated.body.operationReference)}`,
+          `/api/v1/customers/me/banking/transfers/${encodeURIComponent((initiated.body as { operationReference: string }).operationReference)}`,
         )
         .set('Authorization', `Bearer ${token}`);
       expect([200, 404].includes(statusRes.status)).toBe(true);
@@ -414,7 +405,7 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${agentToken}`);
     expect([200, 401].includes(res.status)).toBe(true);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(Array.isArray((res.body as { items: Array<{ bankCode: string }> }).items)).toBe(true);
   });
 
   it('agent: bank-transfers HTTP initiates commitment', async () => {
@@ -432,8 +423,8 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
         pin: '1234',
       });
     expect([200, 201].includes(res.status)).toBe(true);
-    expect(res.body.commitmentId).toBeDefined();
-    expect(res.body.operationReference).toBeDefined();
+    expect((res.body as { commitmentId: unknown }).commitmentId).toBeDefined();
+    expect((res.body as { operationReference: string }).operationReference).toBeDefined();
   });
 
   it('agent: bank-transfer preview', async () => {
@@ -446,8 +437,8 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${agentToken}`);
     expect([200].includes(res.status) || res.status === 400 || res.status === 404).toBe(true);
     if (res.status === 200) {
-      expect(res.body.principalMinor).toBeDefined();
-      expect(res.body.totalDebitMinor).toBeDefined();
+      expect((res.body as { principalMinor: unknown }).principalMinor).toBeDefined();
+      expect((res.body as { totalDebitMinor: unknown }).totalDebitMinor).toBeDefined();
     }
   });
 
@@ -522,7 +513,11 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
       });
     if (first.status === 200 || first.status === 201) {
       expect([200, 201].includes(second.status)).toBe(true);
-      expect(second.body.commitmentId ?? second.body.id ?? second.body.commitment?.id).toBeTruthy();
+      expect(
+        (second.body as { commitmentId: unknown }).commitmentId ??
+          (second.body as { id: unknown }).id ??
+          (second.body as { commitment: { id?: string } }).commitment?.id,
+      ).toBeTruthy();
     }
   });
 });

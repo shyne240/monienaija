@@ -33,6 +33,9 @@ interface FeeRuleCreateBody {
   reason?: string;
   productCode?: string;
   currency?: string;
+  customerClassCode?: string | null;
+  agentClassId?: string | null;
+  institutionId?: string | null;
   flatFeeMinor?: string | number | null;
   percentageBps?: number | null;
   minimumFeeMinor?: string | number | null;
@@ -244,6 +247,9 @@ export class FeeRuleRegistryController {
     return {
       productCode: body.productCode ?? '',
       currency: body.currency,
+      customerClassCode: body.customerClassCode,
+      agentClassId: body.agentClassId,
+      institutionId: body.institutionId,
       flatFeeMinor: body.flatFeeMinor,
       percentageBps: body.percentageBps,
       minimumFeeMinor: body.minimumFeeMinor,

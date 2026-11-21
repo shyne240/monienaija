@@ -518,7 +518,6 @@ describe('Mission 15A Agent management (real Nest and isolated PostgreSQL)', () 
       const outlet = await createOutlet();
       const terminal = kind === 'terminal' ? await createTerminal(outlet.id) : undefined;
       const id = terminal?.id ?? outlet.id;
-      const audit = f.moduleRef.get(AuditService);
       const original = AuditService.prototype.record.bind(AuditService.prototype);
       const action = kind === 'outlet' ? 'AGENT_OUTLET_UPDATED' : 'AGENT_TERMINAL_UPDATED';
       const spy = jest
@@ -568,7 +567,6 @@ describe('Mission 15A Agent management (real Nest and isolated PostgreSQL)', () 
       const id = terminal?.id ?? outlet.id;
       const outletService = f.moduleRef.get(OutletService);
       const terminalService = f.moduleRef.get(TerminalService);
-      const audit = f.moduleRef.get(AuditService);
       const original = AuditService.prototype.record.bind(AuditService.prototype);
       let reached!: () => void;
       let release!: () => void;

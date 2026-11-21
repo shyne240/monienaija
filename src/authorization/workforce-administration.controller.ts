@@ -3,9 +3,11 @@ import {
   Controller,
   Delete,
   ForbiddenException,
+  Get,
   Inject,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
@@ -15,6 +17,7 @@ import { AssignWorkforceRoleDto } from './dto/assign-workforce-role.dto';
 import { ConsumeWorkforceBootstrapDto } from './dto/consume-workforce-bootstrap.dto';
 import { DecidePrivilegedApprovalDto } from './dto/decide-privileged-approval.dto';
 import { EstablishWorkforceSessionDto } from './dto/establish-workforce-session.dto';
+import { ListPrivilegedApprovalsDto } from './dto/list-privileged-approvals.dto';
 import { RequestPrivilegedApprovalDto } from './dto/request-privileged-approval.dto';
 import { RevokeWorkforceRoleDto } from './dto/revoke-workforce-role.dto';
 import { RevokeWorkforceSessionDto } from './dto/revoke-workforce-session.dto';
@@ -143,6 +146,21 @@ export class A2WorkforceAdministrationController {
       correlationId: r.requestContext?.correlationId ?? 'unknown',
     });
   }
+  @Get('approvals') async listApprovals(@Query() q: ListPrivilegedApprovalsDto, @Req() r: R) {
+    const principal = this.principal(r);
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
+      throw new ForbiddenException('Workforce principal required');
+    }
+    return this.approvals.listApprovals({
+      principal,
+      status: q.status,
+      actionType: q.actionType,
+      resourceType: q.resourceType,
+      institutionId: q.institutionId,
+      limit: q.limit,
+      offset: q.offset,
+    });
+  }
   @Post('approvals/request') async requestApproval(
     @Body() b: RequestPrivilegedApprovalDto,
     @Req() r: R,
@@ -203,7 +221,12 @@ export class A2WorkforceAdministrationController {
       r.requestContext?.correlationId ?? 'unknown',
     );
     // Never spread client input after authenticated identity or route-bound identifiers.
-    return this.approvals.approve({ approvalId, principal, comment: b.comment });
+    return this.approvals.approve({
+      approvalId,
+      principal,
+      comment: b.comment,
+      expectedVersion: b.expectedVersion,
+    });
   }
   /**
    * Maker-checker rejection surface (same decide() machinery as approve, with the established
@@ -251,6 +274,7 @@ export class A2WorkforceAdministrationController {
       approvalId,
       principal,
       comment: b.comment ?? b.reason,
+      expectedVersion: b.expectedVersion,
     });
   }
   private principal(r: R) {

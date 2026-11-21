@@ -35,6 +35,8 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         ...Object.keys(COMMERCIAL_RULE_ACTIONS),
         ...Object.values(AGENT_FUNDING_ACTIONS).map((definition) => definition.action),
         ...Object.keys(NOTIFICATION_CHANGE_ACTIONS),
+        'LIMIT_RULE_CREATE',
+        'LIMIT_RULE_UPDATE',
         'LEDGER_JOURNAL_REVERSAL',
         'WALLET_OWNERSHIP_RESOLUTION',
         // ARENA 4 Phase 1 institutional foundation.
@@ -45,7 +47,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
       ].sort(),
     );
-    // Decision 2 explicitly keeps agent.assign_limit ungoverned and limit.modify out of this P0.
+    // Governance uses explicit rule actions, not a generic LIMIT_MODIFY action.
     expect(isGovernedAction('AGENT_ASSIGN_LIMIT')).toBe(false);
     expect(isGovernedAction('LIMIT_MODIFY')).toBe(false);
     expect(isGovernedAction('AGENT_FUND')).toBe(true);

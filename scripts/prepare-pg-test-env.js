@@ -86,6 +86,8 @@ function main() {
     'A2_WORKFORCE_RATE_LIMITS_JSON',
   ];
   const overrides = readKeysFromTemplate(BOOTSTRAP_TEMPLATE, workforceKeys);
+  // Explicit synthetic origin for AppModule tests; an empty JSON array is invalid.
+  overrides.set("HTTP_CORS_ORIGINS_JSON", '["https://admin.example.test"]');
   for (const key of workforceKeys) {
     if (!overrides.has(key)) {
       console.error(`Bootstrap template does not define ${key}; aborting.`);

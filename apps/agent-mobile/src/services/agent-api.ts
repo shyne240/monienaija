@@ -103,6 +103,7 @@ export async function getAgentFinancialPosition(): Promise<AgentFinancialPositio
 
 /** Canonical backend service identifiers (agents/me/capabilities). */
 export type AgentCanonicalService =
+  | 'EXTERNAL_BANK_TRANSFER'
   | 'WALLET_TRANSFER'
   | 'CASH_IN'
   | 'CASH_OUT'

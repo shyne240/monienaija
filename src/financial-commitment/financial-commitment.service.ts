@@ -207,7 +207,7 @@ export class FinancialCommitmentService {
       kind: 'CUSTOMER',
       id: principal.customerId,
       sessionId: principal.sessionId,
-      pinAuditId: pin.auditId!,
+      pinAuditId: pin.auditId,
       agentClassId: null,
       walletId,
       amountMinor,

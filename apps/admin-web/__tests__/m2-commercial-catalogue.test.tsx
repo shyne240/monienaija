@@ -75,6 +75,7 @@ test('fee registry shows real backend fields, pages independently and searches o
   );
   render(<CommercialRulesScreen initialTab="fees" />);
   expect(await screen.findAllByText('fee-one')).toBeTruthy();
+  expect(screen.getByText(/Highest priority wins first, then the most matching target dimensions/)).toBeTruthy();
   expect(screen.getByText('21 total records · Page 1 of 2')).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Rule ID' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Active' })).toBeTruthy();
@@ -300,7 +301,7 @@ test('record details open in a read-only drawer and Escape restores focus withou
         currency: 'NGN',
         flatFeeMinor: '100',
         isActive: true,
-        description: 'Returned detail',
+        minimumFeeMinor: '97',
       },
     ]),
   );
@@ -309,9 +310,216 @@ test('record details open in a read-only drawer and Escape restores focus withou
   trigger.focus();
   fireEvent.click(trigger);
   const dialog = screen.getByRole('dialog', { name: 'Fees record details' });
-  expect(dialog.textContent).toContain('Returned detail');
+  expect(dialog.textContent).toContain('97');
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('dialog', { name: 'Fees record details' })).toBeNull();
   expect(document.activeElement).toBe(trigger);
   expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('catalogue filters reset pagination, persist to later pages and clear without a mutation', async () => {
+  session(['fee_rule.view']);
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+    const params = new URLSearchParams(url.split('?')[1]);
+    return Promise.resolve(
+      page(
+        [{ id: params.has('isActive') ? 'filtered-fee' : 'any-fee' }],
+        Number(params.get('page')),
+        21,
+      ),
+    );
+  });
+  render(<CommercialRulesScreen initialTab="fees" />);
+  await screen.findByText('any-fee');
+  fireEvent.click(screen.getByRole('button', { name: 'Next Fees page' }));
+  await screen.findByText('21 total records · Page 2 of 2');
+  fireEvent.change(screen.getByLabelText('Fees product code'), { target: { value: 'TRANSFER' } });
+  fireEvent.change(screen.getByLabelText('Fees currency'), { target: { value: 'NGN' } });
+  fireEvent.change(screen.getByLabelText('Fees active flag'), { target: { value: 'false' } });
+  expect(ApiClient.get).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Fees filters' }));
+  await screen.findByText('filtered-fee');
+  expect(ApiClient.get).toHaveBeenLastCalledWith(
+    '/internal/fee-rules?page=1&limit=20&productCode=TRANSFER&currency=NGN&isActive=false',
+  );
+  expect(
+    screen.getByText('Applied: Product code: TRANSFER · Currency: NGN · Active flag: No'),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Next Fees page' }));
+  await screen.findByText('21 total records · Page 2 of 2');
+  expect(ApiClient.get).toHaveBeenLastCalledWith(
+    '/internal/fee-rules?page=2&limit=20&productCode=TRANSFER&currency=NGN&isActive=false',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Fees filters' }));
+  await screen.findByText('any-fee');
+  expect(ApiClient.get).toHaveBeenLastCalledWith('/internal/fee-rules?page=1&limit=20');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test.each([
+  [
+    'products',
+    'product.view',
+    'Products',
+    'configuration status',
+    'NOT_CONFIGURED',
+    'products',
+    'configurationStatus',
+  ],
+  [
+    'commissions',
+    'commission_rule.view',
+    'Commissions',
+    'recipient type',
+    'AGGREGATOR',
+    'commission-rules',
+    'recipientType',
+  ],
+  [
+    'rewards',
+    'reward_rule.view',
+    'Rewards',
+    'beneficiary type',
+    'CUSTOMER',
+    'reward-rules',
+    'beneficiaryType',
+  ],
+  ['limits', 'limit.view', 'Limit profiles', 'profile kind', 'AGENT', 'limit-profiles', 'kind'],
+  ['limits', 'limit.view', 'Limit rules', 'dimension', 'DAILY_COUNT', 'limit-rules', 'dimension'],
+  [
+    'assignments',
+    'limit.view',
+    'Limit assignments',
+    'subject type',
+    'AGENT_CLASS',
+    'limit-assignments',
+    'subjectType',
+  ],
+] as const)(
+  '%s uses the baseline filter for %s / %s',
+  async (tab, scope, title, label, value, route, param) => {
+    session([scope]);
+    (ApiClient.get as jest.Mock).mockResolvedValue(page([]));
+    render(<CommercialRulesScreen initialTab={tab} />);
+    await screen.findByRole('button', { name: `Refresh ${title}` });
+    fireEvent.change(screen.getByLabelText(`${title} ${label}`), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: `Apply ${title} filters` }));
+    await screen.findByText('No records match the applied catalogue filters.');
+    expect(ApiClient.get).toHaveBeenLastCalledWith(
+      `/internal/${route}?page=1&limit=20&${param}=${value}`,
+    );
+  },
+);
+
+const assignment = {
+  id: 'd9f831b1-3166-4e9c-b812-955fc6b0818e',
+  limitProfileCode: 'AGENT_STANDARD',
+  subjectType: 'AGENT_CLASS',
+  subjectId: 'd9f831b1-3166-4e9c-b812-955fc6b0818f',
+  segmentCode: null,
+  precedence: 10,
+  version: 1,
+  isActive: false,
+  effectiveFrom: '2026-11-20T12:00:00.000Z',
+  effectiveTo: null,
+  unexpected: { confidential: 'Do not show' },
+};
+
+test('assignments show subject, profile, precedence and UTC window without implying activation', async () => {
+  const now = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(assignment.effectiveFrom));
+  try {
+    session(['limit.view']);
+    (ApiClient.get as jest.Mock).mockResolvedValue(
+      page([
+        assignment,
+        {
+          ...assignment,
+          id: 'd9f831b1-3166-4e9c-b812-955fc6b08190',
+          subjectType: 'GLOBAL',
+          subjectId: null,
+          effectiveFrom: '2026-01-01T00:00:00Z',
+          effectiveTo: assignment.effectiveFrom,
+          isActive: true,
+        },
+      ]),
+    );
+    render(<CommercialRulesScreen initialTab="assignments" />);
+    expect(await screen.findByText(assignment.subjectId)).toBeTruthy();
+    expect(screen.getAllByRole('cell', { name: 'AGENT_STANDARD' })).toHaveLength(2);
+    expect(screen.getByText(/latest effective start, then the latest creation time/)).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'In window' })).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'Ended' })).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'Open-ended' })).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'No' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Limit assignments effective window on this page'), {
+      target: { value: 'In window' },
+    });
+    expect(screen.queryByRole('cell', { name: 'GLOBAL' })).toBeNull();
+    expect(
+      screen.getByText('2 total records · Page 1 of 1 · 1 matching on this page'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    const detail = screen.getByRole('dialog', { name: 'Limit assignments record details' });
+    expect(detail.textContent).toContain(assignment.effectiveFrom);
+    expect(detail.textContent).not.toContain('Do not show');
+    expect(ApiClient.get).toHaveBeenCalledTimes(1);
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  } finally {
+    now.mockRestore();
+  }
+});
+
+test('assignment read requires limit.view, ignores late responses on scope loss and distinguishes API denial', async () => {
+  session(['limit.modify']);
+  const late = deferred<unknown>();
+  (ApiClient.get as jest.Mock).mockReturnValue(late.promise);
+  render(<CommercialRulesScreen initialTab="assignments" />);
+  expect(screen.getByRole('alert').textContent).toContain('limit.view');
+  expect(ApiClient.get).not.toHaveBeenCalled();
+  act(() => session(['limit.view']));
+  expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments?page=1&limit=20');
+  act(() => session(['limit.modify'], 'new-session'));
+  await act(async () => {
+    late.resolve(page([assignment]));
+    await late.promise;
+  });
+  expect(screen.queryByText(assignment.subjectId)).toBeNull();
+  (ApiClient.get as jest.Mock).mockRejectedValue(
+    Object.assign(new Error('Forbidden'), { status: 403 }),
+  );
+  act(() => session(['limit.view'], 'new-session'));
+  expect(await screen.findByText(/Access denied by the API for limit assignments/)).toBeTruthy();
+  expect(screen.queryByText(/No limit assignments were returned/)).toBeNull();
+});
+
+test('reward configuration exposes documented targeting and tier fields, not raw extras or a derived winner', async () => {
+  session(['reward_rule.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(
+    page([
+      {
+        id: 'reward-one',
+        productCode: 'TRANSFER',
+        currency: 'NGN',
+        beneficiaryType: 'CUSTOMER',
+        calculationBasis: 'FEE',
+        calculationModel: 'TIERED',
+        priority: 5,
+        campaignCode: 'CAMPAIGN_X',
+        effectiveFrom: '2090-01-01T00:00:00Z',
+        effectiveTo: null,
+        isActive: true,
+        tiers: [{ upToMinor: '900719925474099301', bps: 25, unrelated: 'hidden tier value' }],
+        unrelated: 'hidden row value',
+      },
+    ]),
+  );
+  render(<CommercialRulesScreen initialTab="rewards" />);
+  expect(await screen.findByText('Campaign: CAMPAIGN_X')).toBeTruthy();
+  expect(screen.getByRole('cell', { name: 'Scheduled' })).toBeTruthy();
+  expect(screen.getByText(/Equal highest priorities are ambiguous/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+  const dialog = screen.getByRole('dialog', { name: 'Rewards record details' });
+  expect(dialog.textContent).toContain('900719925474099301');
+  expect(dialog.textContent).not.toContain('hidden tier value');
+  expect(dialog.textContent).not.toContain('hidden row value');
 });

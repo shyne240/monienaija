@@ -8,17 +8,30 @@ import {
   StructuredKeyValueList,
   DataRecord,
 } from '../../components/StructuredData';
+import {
+  AMOUNT_DIMENSIONS,
+  COUNT_DIMENSIONS,
+  FILTERS,
+  PROFILE_CODE,
+  registryRows,
+  RULE_ID,
+  targetingScope,
+  WINDOW_STATES,
+  windowState,
+} from './commercial-registry-contract';
 import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import './operational-surfaces.css';
 import './commercial-catalogue.css';
 
-type Tab = 'fees' | 'commissions' | 'rewards' | 'products' | 'limits';
+type Tab = 'fees' | 'commissions' | 'rewards' | 'products' | 'limits' | 'assignments';
+type CommercialTab = Exclude<Tab, 'limits' | 'assignments'>;
 const TAB_FUNCTIONS: Record<Tab, string> = {
   fees: 'fee_rule.view',
   commissions: 'commission_rule.view',
   rewards: 'reward_rule.view',
   products: 'product.view',
   limits: 'limit.view',
+  assignments: 'limit.view',
 };
 const TAB_LABELS: Record<Tab, string> = {
   fees: 'Fees',
@@ -26,48 +39,73 @@ const TAB_LABELS: Record<Tab, string> = {
   rewards: 'Rewards',
   products: 'Products',
   limits: 'Limits',
+  assignments: 'Assignments',
 };
-const TAB_ORDER: Tab[] = ['fees', 'commissions', 'rewards', 'products', 'limits'];
-const TAB_DESCRIPTION: Record<Tab, string> = {
+const TAB_ORDER: Tab[] = ['fees', 'commissions', 'rewards', 'products', 'limits', 'assignments'];
+const TAB_DESCRIPTION: Record<CommercialTab, string> = {
   fees: 'Review configured fee rules, their currency, rate and effective dates.',
   commissions: 'Review configured commission rules and who may receive them.',
   rewards: 'Review configured reward rules and their beneficiary and calculation model.',
   products: 'Review product configuration, status and scope across the catalogue.',
-  limits:
-    'Review limit profiles and rules independently. Assignment and usage are separate workflows.',
 };
-const COLUMNS: Record<Exclude<Tab, 'limits'>, StructuredColumn[]> = {
+const PRECEDENCE: Partial<Record<CommercialTab, string>> = {
+  fees: 'For matching product and currency, an unset customer class, agent class or institution target is a wildcard. Highest priority wins first, then the most matching target dimensions. A tie on both is ambiguous; no rule is selected.',
+  commissions:
+    'Within a matching product, currency and recipient type, the highest applicable priority wins. Equal highest priorities are ambiguous. A narrower target does not automatically win.',
+  rewards:
+    'Within a matching product, currency and beneficiary type, the highest applicable priority wins. Equal highest priorities are ambiguous. A narrower target does not automatically win.',
+};
+const WINDOW_COLUMNS: StructuredColumn[] = [
+  { key: 'effectiveFrom', label: 'From (UTC, inclusive)' },
+  {
+    key: 'effectiveTo',
+    label: 'Until (UTC, exclusive)',
+    render: (value) => (value === null ? 'Open-ended' : typeof value === 'string' ? value : '—'),
+  },
+  { key: 'windowStatus', label: 'Effective window' },
+];
+const PRIORITY_COLUMN = { key: 'priority', label: 'Priority' };
+const COLUMNS: Record<CommercialTab, StructuredColumn[]> = {
   fees: [
     { key: 'id', label: 'Rule ID' },
     { key: 'productCode', label: 'Product' },
     { key: 'currency', label: 'Currency' },
+    { key: 'customerClassCode', label: 'Customer class' },
+    { key: 'agentClassId', label: 'Agent class ID' },
+    { key: 'institutionId', label: 'Institution ID' },
     { key: 'flatFeeMinor', label: 'Flat fee (minor)' },
     { key: 'percentageBps', label: 'Rate (bps)' },
     { key: 'vatBps', label: 'VAT (bps)' },
     { key: 'isActive', label: 'Active' },
-    { key: 'effectiveFrom', label: 'Effective from' },
+    PRIORITY_COLUMN,
+    ...WINDOW_COLUMNS,
     { key: 'version', label: 'Version' },
   ],
   commissions: [
     { key: 'id', label: 'Rule ID' },
     { key: 'productCode', label: 'Product' },
     { key: 'recipientType', label: 'Recipient' },
+    { key: 'targetingScope', label: 'Targeting scope' },
     { key: 'currency', label: 'Currency' },
     { key: 'calculationModel', label: 'Model' },
     { key: 'calculationBasis', label: 'Basis' },
     { key: 'isActive', label: 'Active' },
-    { key: 'effectiveFrom', label: 'Effective from' },
+    PRIORITY_COLUMN,
+    ...WINDOW_COLUMNS,
     { key: 'version', label: 'Version' },
   ],
   rewards: [
     { key: 'id', label: 'Rule ID' },
     { key: 'productCode', label: 'Product' },
     { key: 'beneficiaryType', label: 'Beneficiary' },
+    { key: 'targetingScope', label: 'Targeting scope' },
     { key: 'rewardType', label: 'Reward type' },
     { key: 'currency', label: 'Currency' },
     { key: 'calculationModel', label: 'Model' },
+    { key: 'calculationBasis', label: 'Basis' },
     { key: 'isActive', label: 'Active' },
-    { key: 'effectiveFrom', label: 'Effective from' },
+    PRIORITY_COLUMN,
+    ...WINDOW_COLUMNS,
     { key: 'version', label: 'Version' },
   ],
   products: [
@@ -82,7 +120,7 @@ const COLUMNS: Record<Exclude<Tab, 'limits'>, StructuredColumn[]> = {
     { key: 'version', label: 'Version' },
   ],
 };
-const ENDPOINTS: Record<Exclude<Tab, 'limits'>, string> = {
+const ENDPOINTS: Record<CommercialTab, string> = {
   fees: '/internal/fee-rules',
   commissions: '/internal/commission-rules',
   rewards: '/internal/reward-rules',
@@ -101,14 +139,34 @@ const LIMIT_RULE_COLUMNS: StructuredColumn[] = [
   { key: 'id', label: 'Rule ID' },
   { key: 'limitProfileCode', label: 'Profile' },
   { key: 'product', label: 'Product' },
-  { key: 'direction', label: 'Direction' },
-  { key: 'channel', label: 'Channel' },
+  {
+    key: 'direction',
+    label: 'Direction',
+    render: (value) => (value === null ? 'Any direction' : String(value)),
+  },
+  {
+    key: 'channel',
+    label: 'Channel',
+    render: (value) => (value === null ? 'Any channel' : String(value)),
+  },
   { key: 'currency', label: 'Currency' },
   { key: 'dimension', label: 'Dimension' },
   { key: 'limitValueMinor', label: 'Limit (minor)' },
   { key: 'limitValueCount', label: 'Count limit' },
   { key: 'isActive', label: 'Active' },
-  { key: 'priority', label: 'Priority' },
+  PRIORITY_COLUMN,
+  ...WINDOW_COLUMNS,
+];
+const ASSIGNMENT_COLUMNS: StructuredColumn[] = [
+  { key: 'id', label: 'Assignment ID' },
+  { key: 'limitProfileCode', label: 'Profile' },
+  { key: 'subjectType', label: 'Subject type' },
+  { key: 'subjectId', label: 'Subject UUID' },
+  { key: 'segmentCode', label: 'Segment code' },
+  { key: 'precedence', label: 'Precedence (higher first)' },
+  { key: 'isActive', label: 'Active' },
+  ...WINDOW_COLUMNS,
+  { key: 'version', label: 'Version' },
 ];
 
 interface Page {
@@ -119,18 +177,6 @@ interface Page {
   hasNextPage: boolean;
 }
 const PAGE_SIZE = 20;
-const PROFILE_CODE = /^[A-Z0-9_]{3,80}$/;
-const RULE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const AMOUNT_DIMENSIONS = [
-  'MIN_AMOUNT_PER_TX',
-  'MAX_AMOUNT_PER_TX',
-  'DAILY_AMOUNT',
-  'WEEKLY_AMOUNT',
-  'MONTHLY_AMOUNT',
-  'YEARLY_AMOUNT',
-  'WALLET_BALANCE_MAX',
-];
-const COUNT_DIMENSIONS = ['DAILY_COUNT', 'WEEKLY_COUNT', 'MONTHLY_COUNT', 'YEARLY_COUNT'];
 const optionalText = (value: unknown) =>
   value === undefined || value === null || typeof value === 'string';
 const optionalDate = (value: unknown) =>
@@ -143,7 +189,7 @@ const text = (value: unknown): value is string => typeof value === 'string' && !
 // masquerade as configuration. Keep only documented safe projection fields in Details.
 function limitRows(rows: DataRecord[], endpoint: string): DataRecord[] | null {
   const profiles = endpoint === '/internal/limit-profiles';
-  if (!profiles && endpoint !== '/internal/limit-rules') return rows;
+  if (!profiles && endpoint !== '/internal/limit-rules') return registryRows(rows, endpoint);
   const seen = new Set<string>();
   const projected: DataRecord[] = [];
   for (const row of rows) {
@@ -293,7 +339,14 @@ const RegistrySection: React.FC<{
   endpoint: string;
   columns: StructuredColumn[];
   description: string;
-}> = ({ title, endpoint, columns, description }) => {
+  precedence?: string;
+}> = ({ title, endpoint, columns, description, precedence }) => {
+  const filters = FILTERS[endpoint];
+  const hasWindow = columns.includes(WINDOW_COLUMNS[2]);
+  const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
+  const [filterQuery, setFilterQuery] = useState('');
+  const [windowFilter, setWindowFilter] = useState('');
+  const [loadedAt, setLoadedAt] = useState(0);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Page | null>(null);
   const [query, setQuery] = useState('');
@@ -308,13 +361,25 @@ const RegistrySection: React.FC<{
     setData(null);
     setSelected(null);
     try {
-      const result = await ApiClient.get(`${endpoint}?page=${page}&limit=${PAGE_SIZE}`);
+      const result = await ApiClient.get(
+        `${endpoint}?page=${page}&limit=${PAGE_SIZE}${filterQuery ? `&${filterQuery}` : ''}`,
+      );
       const parsed = parsePage(result, page, endpoint);
       if (!parsed) throw new Error(`${title} returned an invalid page.`);
-      if (id === requestId.current) setData(parsed);
-    } catch (err: any) {
-      if (id === requestId.current)
-        setError(err?.message || `Could not load ${title.toLowerCase()}.`);
+      if (id === requestId.current) {
+        setLoadedAt(Date.now());
+        setData(parsed);
+      }
+    } catch (err) {
+      if (id === requestId.current) {
+        setError(
+          err && typeof err === 'object' && 'status' in err && err.status === 403
+            ? `Access denied by the API for ${title.toLowerCase()}.`
+            : err instanceof Error
+              ? err.message
+              : `Could not load ${title.toLowerCase()}.`,
+        );
+      }
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -324,27 +389,61 @@ const RegistrySection: React.FC<{
     return () => {
       requestId.current += 1;
     };
-  }, [endpoint, page]);
+  }, [endpoint, page, filterQuery]);
+  const applyFilters = (values: Record<string, string>) => {
+    const params = new URLSearchParams();
+    for (const { key } of filters) {
+      const value = values[key]?.trim();
+      if (value) params.set(key, value);
+    }
+    const next = params.toString();
+    if (next === filterQuery && page === 1) return;
+    requestId.current += 1;
+    setSelected(null);
+    setData(null);
+    setLoading(true);
+    setPage(1);
+    setFilterQuery(next);
+  };
   const search = query.trim().toLocaleLowerCase();
   const rows =
-    data?.rows.filter(
-      (row) =>
-        !search ||
-        columns.some((column) => {
-          const value = row[column.key];
-          if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
-            return false;
-          const variants = [String(value)];
-          if (typeof value === 'boolean') variants.push(value ? 'Yes' : 'No');
-          if (typeof value === 'number' && Number.isFinite(value))
-            variants.push(value.toLocaleString());
-          if (typeof value === 'string' && /(?:At|Date|Timestamp)$/i.test(column.key)) {
-            const date = new Date(value);
-            if (!Number.isNaN(date.getTime())) variants.push(date.toLocaleString());
-          }
-          return variants.some((item) => item.toLocaleLowerCase().includes(search));
-        }),
-    ) ?? [];
+    data?.rows
+      .map((row) => {
+        const scope =
+          endpoint === ENDPOINTS.commissions
+            ? 'commission'
+            : endpoint === ENDPOINTS.rewards
+              ? 'reward'
+              : null;
+        return {
+          ...row,
+          ...(hasWindow && { windowStatus: windowState(row, loadedAt) }),
+          ...(scope && { targetingScope: targetingScope(row, scope) }),
+        } as DataRecord;
+      })
+      .filter((row) => !windowFilter || row.windowStatus === windowFilter)
+      .filter(
+        (row) =>
+          !search ||
+          columns.some((column) => {
+            const value = row[column.key];
+            if (
+              typeof value !== 'string' &&
+              typeof value !== 'number' &&
+              typeof value !== 'boolean'
+            )
+              return false;
+            const variants = [String(value)];
+            if (typeof value === 'boolean') variants.push(value ? 'Yes' : 'No');
+            if (typeof value === 'number' && Number.isFinite(value))
+              variants.push(value.toLocaleString());
+            if (typeof value === 'string' && /(?:At|Date|Timestamp)$/i.test(column.key)) {
+              const date = new Date(value);
+              if (!Number.isNaN(date.getTime())) variants.push(date.toLocaleString());
+            }
+            return variants.some((item) => item.toLocaleLowerCase().includes(search));
+          }),
+      ) ?? [];
   const headingId = `registry-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
     <section className="commercial-registry" aria-labelledby={headingId}>
@@ -353,6 +452,11 @@ const RegistrySection: React.FC<{
           <p className="commercial-kicker">READ-ONLY REGISTRY</p>
           <h2 id={headingId}>{title}</h2>
           <p>{description}</p>
+          {precedence && (
+            <p className="commercial-precedence">
+              <strong>Precedence:</strong> {precedence}
+            </p>
+          )}
         </div>
         <Button
           size="sm"
@@ -363,6 +467,85 @@ const RegistrySection: React.FC<{
           {loading ? 'Loading…' : 'Refresh'}
         </Button>
       </div>
+      <form
+        className="commercial-filters"
+        aria-label={`${title} catalogue filters`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          applyFilters(draftFilters);
+        }}
+      >
+        <p>Catalogue filters apply across all pages. Apply to update the results.</p>
+        <div className="commercial-filter-fields">
+          {filters.map(({ key, label, options, pattern }) => {
+            const props = {
+              'aria-label': `${title} ${label.toLowerCase()}`,
+              value: draftFilters[key] ?? '',
+              onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+                const value = event.target.value;
+                setDraftFilters((previous) => ({ ...previous, [key]: value }));
+              },
+            };
+            return (
+              <label className="commercial-filter-field" key={key}>
+                {label}
+                {options ? (
+                  <select {...props}>
+                    <option value="">All</option>
+                    {options.map((option) => (
+                      <option key={option} value={option}>
+                        {option === 'true' ? 'Yes' : option === 'false' ? 'No' : option}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    {...props}
+                    pattern={pattern}
+                    placeholder="Exact match"
+                    title={
+                      label === 'Subject UUID'
+                        ? 'Enter a UUID'
+                        : label === 'Currency'
+                          ? 'Enter a three-letter currency code'
+                          : 'Enter a 3–80 character code (letters, numbers or underscores)'
+                    }
+                  />
+                )}
+              </label>
+            );
+          })}
+          <div className="commercial-filter-actions">
+            <Button type="submit" size="sm" aria-label={`Apply ${title} filters`}>
+              Apply filters
+            </Button>
+            <Button
+              size="sm"
+              aria-label={`Clear ${title} filters`}
+              onClick={() => {
+                setDraftFilters({});
+                applyFilters({});
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        </div>
+        {filterQuery && (
+          <p className="commercial-applied">
+            Applied:{' '}
+            {filters
+              .map(({ key, label }) => {
+                const value = new URLSearchParams(filterQuery).get(key);
+                return value === null
+                  ? null
+                  : `${label}: ${value === 'true' ? 'Yes' : value === 'false' ? 'No' : value}`;
+              })
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        )}
+      </form>
       <div className="commercial-registry__toolbar">
         <label className="commercial-search">
           Search this page{' '}
@@ -377,6 +560,24 @@ const RegistrySection: React.FC<{
             placeholder="Search visible columns"
           />
         </label>
+        {hasWindow && (
+          <label className="commercial-filter-field">
+            Effective window on this page
+            <select
+              aria-label={`${title} effective window on this page`}
+              value={windowFilter}
+              onChange={(event) => {
+                setWindowFilter(event.target.value);
+                setSelected(null);
+              }}
+            >
+              <option value="">All windows</option>
+              {WINDOW_STATES.map((state) => (
+                <option key={state}>{state}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <p>Search applies only to the current page and visible columns.</p>
       </div>
       {error && (
@@ -384,6 +585,7 @@ const RegistrySection: React.FC<{
           {error} Use Refresh to try again.
         </div>
       )}
+      {endpoint === '/internal/fee-rules' && <FeeResolutionPreview />}
       {loading ? (
         <div className="commercial-state" role="status">
           Loading {title.toLowerCase()}…
@@ -395,16 +597,26 @@ const RegistrySection: React.FC<{
               {data.total === null
                 ? `${data.rows.length} record${data.rows.length === 1 ? '' : 's'} returned · Total and pagination unavailable`
                 : `${data.total} total records · Page ${data.page} of ${Math.max(1, data.totalPages ?? 0)}`}
-              {search && ` · ${rows.length} matching on this page`}
+              {(search || windowFilter) && ` · ${rows.length} matching on this page`}
             </div>
+            {hasWindow && (
+              <p className="commercial-window-note">
+                Windows evaluated at load time: <time>{new Date(loadedAt).toISOString()}</time>. An
+                in-window row may still be inactive or out of scope.
+              </p>
+            )}
             <StructuredRecordTable
               rows={rows}
               columns={columns}
               onViewDetails={setSelected}
               emptyMessage={
-                search
-                  ? 'No records match this search on the current page.'
-                  : `No ${title.toLowerCase()} were returned by the API.`
+                windowFilter
+                  ? 'No records match the page search and effective-window filters.'
+                  : search
+                    ? 'No records match this search on the current page.'
+                    : filterQuery
+                      ? 'No records match the applied catalogue filters.'
+                      : `No ${title.toLowerCase()} were returned by the API.`
               }
             />
             {data.total !== null && (
@@ -449,12 +661,112 @@ const RegistrySection: React.FC<{
             </Button>
           </header>
           <div className="commercial-detail__body">
-            <p>Values returned by the registry for this record.</p>
+            <p>
+              Registry values for this record. Where shown, targeting scope and effective window
+              summarize the returned fields.
+            </p>
             <StructuredKeyValueList data={selected} />
           </div>
         </WorkspaceDrawer>
       )}
     </section>
+  );
+};
+
+const FeeResolutionPreview: React.FC = () => {
+  const [productCode, setProductCode] = useState('WALLET_TRANSFER');
+  const [customerClassCode, setCustomerClassCode] = useState('');
+  const [agentClassId, setAgentClassId] = useState('');
+  const [institutionId, setInstitutionId] = useState('');
+  const [at, setAt] = useState('');
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const resolve = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = new URLSearchParams({ productCode: productCode.trim(), currency: 'NGN' });
+    if (customerClassCode.trim()) query.set('customerClassCode', customerClassCode.trim());
+    if (agentClassId.trim()) query.set('agentClassId', agentClassId.trim());
+    if (institutionId.trim()) query.set('institutionId', institutionId.trim());
+    if (at) query.set('at', new Date(at).toISOString());
+    setBusy(true);
+    setError('');
+    setResult(null);
+    try {
+      const value = await ApiClient.get(`/internal/fee-rules/resolve?${query.toString()}`);
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !['RESOLVED', 'NOT_CONFIGURED', 'AMBIGUOUS'].includes(String((value as any).status))
+      )
+        throw new Error('Fee resolver returned an invalid response.');
+      setResult(value as Record<string, unknown>);
+    } catch (err: any) {
+      setError(err?.message || 'Could not resolve fee configuration.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="commercial-fee-preview"
+      onSubmit={resolve}
+      aria-label="Effective fee configuration preview"
+    >
+      <h3>Effective fee preview · NGN</h3>
+      <p>
+        Read-only evaluation. Priority wins first; tied priority is resolved by target specificity.
+        Equal top matches fail closed as AMBIGUOUS.
+      </p>
+      <div className="commercial-fee-preview__fields">
+        <label>
+          Product code
+          <input value={productCode} onChange={(e) => setProductCode(e.target.value)} required />
+        </label>
+        <label>
+          Customer class code
+          <input
+            value={customerClassCode}
+            onChange={(e) => setCustomerClassCode(e.target.value)}
+            placeholder="Optional"
+          />
+        </label>
+        <label>
+          Agent class ID
+          <input
+            value={agentClassId}
+            onChange={(e) => setAgentClassId(e.target.value)}
+            placeholder="Optional UUID"
+          />
+        </label>
+        <label>
+          Institution ID
+          <input
+            value={institutionId}
+            onChange={(e) => setInstitutionId(e.target.value)}
+            placeholder="Optional UUID"
+          />
+        </label>
+        <label>
+          Evaluate at
+          <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+        </label>
+      </div>
+      <Button size="sm" type="submit" disabled={busy || !productCode.trim()}>
+        {busy ? 'Resolving…' : 'Preview effective fee'}
+      </Button>
+      {error && (
+        <p role="alert" className="commercial-state--error">
+          {error}
+        </p>
+      )}
+      {result && (
+        <div role="status" className="commercial-fee-preview__result">
+          <strong>{String(result.status)}</strong>
+          <StructuredKeyValueList data={result as DataRecord} />
+        </div>
+      )}
+    </form>
   );
 };
 
@@ -464,6 +776,7 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = (props) => 
     principal?.principalId,
     principal?.sessionId,
     principal?.type,
+    principal?.audience,
     principal?.roles,
     principal?.scopes,
     principal?.assuranceLevel,
@@ -498,15 +811,15 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
   return (
     <div className="mn-operational commercial-workspace">
       <PageHeader
-        eyebrow="Commercial administration"
+        eyebrow="Commercial Configuration Studio"
         title="Commercial Rule Registries"
-        description="Explore the fee, commission, reward, product and limit catalogues available to your role."
+        description="Explore the fee, commission, reward, product and limit configuration available to your workforce session."
       />
       <div className="commercial-boundary" role="note">
         <strong>Read-only workspace</strong>
         <span>
-          These registries show configuration, not transaction decisions. No rule, product or limit
-          changes can be made here.
+          These registries show configuration, not transaction decisions. Rules, products, profiles
+          and assignments cannot be changed here.
         </span>
       </div>
       <div className="commercial-tabs" role="tablist" aria-label="Commercial registries">
@@ -548,7 +861,7 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
         className="commercial-panel"
       >
         {tab === 'limits' ? (
-          <div className="commercial-sections">
+          <div key="limits" className="commercial-sections">
             <RegistrySection
               title="Limit profiles"
               endpoint="/internal/limit-profiles"
@@ -559,9 +872,19 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
               title="Limit rules"
               endpoint="/internal/limit-rules"
               columns={LIMIT_RULE_COLUMNS}
-              description="Configured thresholds and dimensions. Rules are not current usage."
+              description="Configured thresholds by profile, product, direction, channel, currency and dimension. Rules are not current usage."
+              precedence="The baseline enforcement orders matching rules by highest priority, then oldest creation first, and evaluates all applicable thresholds. Priority does not make another matching threshold disappear."
             />
           </div>
+        ) : tab === 'assignments' ? (
+          <RegistrySection
+            key="assignments"
+            title="Limit assignments"
+            endpoint="/internal/limit-assignments"
+            columns={ASSIGNMENT_COLUMNS}
+            description="Inspect which profile is assigned to a global or targeted subject. Identifiers are shown as stored; this registry does not resolve a subject’s current limits."
+            precedence="Of matching active assignments in the effective window, the highest precedence wins, then the latest effective start, then the latest creation time. Subject type alone does not determine precedence."
+          />
         ) : (
           <RegistrySection
             key={tab}
@@ -569,6 +892,7 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
             endpoint={ENDPOINTS[tab]}
             columns={COLUMNS[tab]}
             description={TAB_DESCRIPTION[tab]}
+            precedence={PRECEDENCE[tab]}
           />
         )}
       </div>
