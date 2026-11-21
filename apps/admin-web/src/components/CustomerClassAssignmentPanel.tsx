@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiClient } from '../services/api-client';
 
 interface ClassOption {
@@ -32,48 +32,43 @@ export const CustomerClassAssignmentPanel: React.FC<{ customerId: string; canMan
   const [reason, setReason] = useState('');
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
   const [error, setError] = useState('');
-  const load = useCallback(async () => {
-    const base = `/internal/customers/${encodeURIComponent(customerId)}/class`;
-    const [c, e, h] = await Promise.all([
-      ApiClient.get<ClassOption[]>('/internal/customer-classes'),
-      ApiClient.get<Effective | null>(base),
-      ApiClient.get<Assignment[]>(`${base}/history`),
-    ]);
-    setClasses(c);
-    setEffective(e);
-    setHistory(h);
-    setState('ready');
-  }, [customerId]);
+  const generation = useRef(0);
+  const load = useCallback(
+    async (request: number) => {
+      const base = `/internal/customers/${encodeURIComponent(customerId)}/class`;
+      const [c, e, h] = await Promise.all([
+        ApiClient.get<ClassOption[]>('/internal/customer-classes'),
+        ApiClient.get<Effective | null>(base),
+        ApiClient.get<Assignment[]>(`${base}/history`),
+      ]);
+      if (request !== generation.current) return;
+      setClasses(c);
+      setEffective(e);
+      setHistory(h);
+      setState('ready');
+    },
+    [customerId],
+  );
   useEffect(() => {
-    let mounted = true;
+    const request = ++generation.current;
     setState('loading');
-    const base = `/internal/customers/${encodeURIComponent(customerId)}/class`;
-    Promise.all([
-      ApiClient.get<ClassOption[]>('/internal/customer-classes'),
-      ApiClient.get<Effective | null>(base),
-      ApiClient.get<Assignment[]>(`${base}/history`),
-    ])
-      .then(([c, e, h]) => {
-        if (mounted) {
-          setClasses(c);
-          setEffective(e);
-          setHistory(h);
-          setState('ready');
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setError('Class information is unavailable.');
-          setState('error');
-        }
-      });
+    setTarget('');
+    setReason('');
+    setError('');
+    load(request).catch(() => {
+      if (request === generation.current) {
+        setError('Class information is unavailable.');
+        setState('error');
+      }
+    });
     return () => {
-      mounted = false;
+      generation.current += 1;
     };
-  }, [customerId]);
+  }, [load, canManage]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage || state !== 'ready' || !target || reason.trim().length < 3) return;
+    const request = generation.current;
     setState('saving');
     setError('');
     try {
@@ -83,10 +78,12 @@ export const CustomerClassAssignmentPanel: React.FC<{ customerId: string; canMan
         reason: reason.trim(),
         ...(current ? { expectedVersion: current.assignmentVersion } : {}),
       });
+      if (request !== generation.current) return;
       setReason('');
       setTarget('');
-      await load();
+      await load(request);
     } catch {
+      if (request !== generation.current) return;
       setError('Update could not be confirmed. Reload class information before retrying.');
       setState('error');
     }
@@ -104,9 +101,12 @@ export const CustomerClassAssignmentPanel: React.FC<{ customerId: string; canMan
             type="button"
             onClick={() => {
               setState('loading');
-              load().catch(() => {
-                setState('error');
-                setError('Class information is unavailable.');
+              const request = generation.current;
+              load(request).catch(() => {
+                if (request === generation.current) {
+                  setState('error');
+                  setError('Class information is unavailable.');
+                }
               });
             }}
           >

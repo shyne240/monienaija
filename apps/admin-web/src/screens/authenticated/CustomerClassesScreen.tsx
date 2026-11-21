@@ -147,6 +147,13 @@ export const CustomerClassesScreen: React.FC = () => {
                   </button>
                 </span>
               )}
+              {canManage && (
+                <CustomerClassNameEditor
+                  item={item}
+                  busy={busy}
+                  onSave={(name) => update(item, { name })}
+                />
+              )}
             </li>
           ))}
         </ul>
@@ -179,5 +186,36 @@ export const CustomerClassesScreen: React.FC = () => {
         </form>
       )}
     </section>
+  );
+};
+
+const CustomerClassNameEditor: React.FC<{
+  item: CustomerClass;
+  busy: boolean;
+  onSave: (name: string) => Promise<void>;
+}> = ({ item, busy, onSave }) => {
+  const [name, setName] = useState(item.name);
+  useEffect(() => setName(item.name), [item.id, item.name]);
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave(name.trim());
+      }}
+    >
+      <label>
+        Edit name for {item.code}
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={160}
+          required
+          disabled={busy}
+        />
+      </label>
+      <button type="submit" disabled={busy || !name.trim() || name.trim() === item.name}>
+        Save name
+      </button>
+    </form>
   );
 };

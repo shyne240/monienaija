@@ -76,6 +76,9 @@ export class CustomerClassService {
     const isDefault = command.isDefault ?? false;
 
     return this.dataSource.transaction(async (manager) => {
+      // Serialize catalogue governance before row locks; concurrent default changes otherwise
+      // lock their target and previous default in opposite orders.
+      await this.lockCatalogue(manager);
       await this.assertCodeAvailable(manager, code, reference);
       if (isDefault) await this.clearOtherDefaults(manager, actor);
       const id = randomUUID();
@@ -122,7 +125,7 @@ export class CustomerClassService {
   async getByCode(code: string): Promise<CustomerClass> {
     const normalized = this.normalizeCode(code);
     const rows = await this.dataSource.query<CustomerClass[]>(
-      `SELECT * FROM customer_classes WHERE code = $1`,
+      `SELECT * FROM customer_classes WHERE code = $1 AND deleted_at IS NULL`,
       [normalized],
     );
     const row = rows[0];
@@ -144,6 +147,7 @@ export class CustomerClassService {
     this.assertUuid(id);
     const actor = this.normalizeActor(command.actor);
     return this.dataSource.transaction(async (manager) => {
+      await this.lockCatalogue(manager);
       const rows = await manager.query<CustomerClass[]>(
         `SELECT * FROM customer_classes WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
         [id],
@@ -206,13 +210,34 @@ export class CustomerClassService {
     });
   }
 
-  private async clearOtherDefaults(manager: EntityManager, actor: string): Promise<void> {
+  private async lockCatalogue(manager: EntityManager): Promise<void> {
     await manager.query(
-      `UPDATE customer_classes
-          SET is_default = FALSE, updated_by = $1, version = version + 1, updated_at = NOW()
-        WHERE is_default = TRUE AND deleted_at IS NULL`,
-      [actor],
+      `SELECT pg_advisory_xact_lock(hashtextextended('customer-class-catalogue-v1', 0))`,
     );
+  }
+
+  private async clearOtherDefaults(manager: EntityManager, actor: string): Promise<void> {
+    const previousRows = await manager.query<CustomerClass[]>(
+      `SELECT * FROM customer_classes WHERE is_default = TRUE AND deleted_at IS NULL FOR UPDATE`,
+    );
+    for (const row of previousRows) {
+      const previous = this.fromRaw(row);
+      await manager.query(
+        `UPDATE customer_classes
+            SET is_default = FALSE, updated_by = $2, version = version + 1, updated_at = NOW()
+          WHERE id = $1`,
+        [previous.id, actor],
+      );
+      const saved = await this.getByIdInManager(manager, previous.id);
+      await this.auditService.record(manager, {
+        entityType: 'CUSTOMER_CLASS',
+        entityId: previous.id,
+        action: 'UPDATED',
+        actor,
+        previousValues: this.values(previous),
+        newValues: this.values(saved),
+      });
+    }
   }
 
   private async assertCodeAvailable(

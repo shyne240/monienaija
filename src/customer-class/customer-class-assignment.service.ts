@@ -204,6 +204,20 @@ export class CustomerClassAssignmentService {
     customerId: string,
     actor: string,
   ): Promise<EffectiveCustomerClass | null> {
+    // Match the lock order used by manual assignment (customer before class). This also
+    // serializes repeated hooks against a concurrent manual switch on the same customer.
+    const normalizedId = this.normalizeUuid(customerId, 'customerId');
+    const customer = await this.lockCustomer(manager, normalizedId);
+    if (!customer) throw new NotFoundException('Customer not found');
+    if (customer.isSynthetic) {
+      throw new ConflictException('Synthetic customers cannot carry a customer class');
+    }
+    if (customer.status === 'CLOSED') {
+      throw new ConflictException('Closed customers cannot be assigned a class');
+    }
+    const existing = await this.lockLiveAssignment(manager, normalizedId);
+    if (existing) return this.toView(existing);
+
     const rows = await manager.query<CustomerClass[]>(
       `SELECT * FROM customer_classes WHERE is_default = TRUE AND deleted_at IS NULL FOR UPDATE`,
     );
