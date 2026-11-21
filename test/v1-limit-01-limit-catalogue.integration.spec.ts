@@ -99,8 +99,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
     );
-    await app.init();
-    await (app.getHttpAdapter().getInstance() as any).ready();
+    // Keep one suite-owned loopback listener for the concurrent update requests.
+    await app.listen(0, '127.0.0.1');
   });
 
   afterAll(async () => {
