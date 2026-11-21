@@ -73,8 +73,8 @@ class FakeManager {
     return this.references;
   }
 
-  async query(_sql: string, _params: unknown[]): Promise<Array<{ owner_class: string }>> {
-    return [{ owner_class: 'CUSTOMER' }];
+  query(): Promise<Array<{ owner_class: string }>> {
+    return Promise.resolve([{ owner_class: 'CUSTOMER' }]);
   }
 }
 

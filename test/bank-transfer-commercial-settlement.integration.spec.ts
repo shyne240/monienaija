@@ -1,3 +1,4 @@
+import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -86,10 +87,7 @@ describe('Bank transfer commercial + settlement (real PostgreSQL)', () => {
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue({ read: () => Promise.resolve(null) })
-      .overrideProvider(
-        require('../src/kyc-verification/customer-financial-eligibility.service')
-          .CustomerFinancialEligibilityService,
-      )
+      .overrideProvider(CustomerFinancialEligibilityService)
       .useValue({ require: () => Promise.resolve() })
       .overrideProvider(WITHDRAWAL_EXECUTION_AUTHORITY)
       .useValue({
@@ -117,7 +115,8 @@ describe('Bank transfer commercial + settlement (real PostgreSQL)', () => {
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
     assetId =
-      rows[0]?.id ?? (await dataSource.query(`SELECT id FROM ledger_accounts LIMIT 1`))[0].id;
+      rows[0]?.id ??
+      (await dataSource.query<[{ id: string }]>(`SELECT id FROM ledger_accounts LIMIT 1`))[0].id;
     const verifier: ExternalOperationStatusVerifier = {
       verify: ({ operation, correlationId }) =>
         Promise.resolve({
@@ -160,10 +159,9 @@ describe('Bank transfer commercial + settlement (real PostgreSQL)', () => {
   afterAll(async () => {
     try {
       if (app) await app.close();
-    } catch {}
-    try {
+    } finally {
       if (dataSource) await destroyIntegrationDataSource(dataSource);
-    } catch {}
+    }
   });
   beforeEach(() => {
     verificationState = 'VERIFIED_SETTLED';
@@ -314,11 +312,11 @@ describe('Bank transfer commercial + settlement (real PostgreSQL)', () => {
     );
     const agentToken = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(agentToken, 'utf8').digest('hex');
-    const [cred] = await dataSource.query(
+    const [cred] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_credentials(agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
       [agent.id, hashPin('login-password')],
     );
-    const [sess] = await dataSource.query(
+    const [sess] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_sessions(agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp()) RETURNING id`,
       [agent.id, cred.id, tokenHash],
     );

@@ -12,10 +12,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes, createHash } from 'node:crypto';
 
-import { AppModule } from '../src/app.module';
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
-import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
-import { BankingVirtualAccountService } from '../src/banking/banking-virtual-account.service';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentClassService } from '../src/agent/agent-class.service';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
@@ -29,11 +26,6 @@ import {
   LedgerEntryDirection,
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
-import { CustomerBeneficiaryService } from '../src/customer-beneficiary/customer-beneficiary.service';
-import {
-  CustomerBeneficiaryType,
-  CustomerBeneficiaryStatus,
-} from '../src/customer-beneficiary/customer-beneficiary.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import { WITHDRAWAL_EXECUTION_AUTHORITY } from '../src/financial-commitment/withdrawal-execution-authority';
@@ -43,7 +35,6 @@ import { ExternalOperationService } from '../src/partner/external-operation.serv
 import {
   ExternalOperationReferenceSource,
   ExternalOperationReferenceType,
-  ExternalOperationResourceType,
 } from '../src/partner/external-operation.enums';
 import { ExternalOperationLifecycleState } from '../src/partner/external-operation-lifecycle.enums';
 import { ExternalSettlement } from '../src/partner/external-settlement.entity';
@@ -73,7 +64,6 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   let fixture: GovernedFinancialFixture;
   let institutionId: string;
   let ledger: LedgerService;
-  let agentFunding: LedgerService extends never ? never : never;
   let withdrawalAuthority: 'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE' = 'AUTHORIZED';
   let verificationState: 'VERIFIED_SETTLED' | 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
     'VERIFIED_SETTLED';
@@ -83,14 +73,13 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
   let walletService: WalletService;
-  let beneficiaryService: CustomerBeneficiaryService;
   const requestContext = {
     requestId: 'agent-bank-test',
     correlationId: 'agent-bank-test',
     traceId: 'agent-bank-test',
   };
   let settlement: ExternalSettlementService;
-  let agentSessions = new Map<string, string>();
+  const agentSessions = new Map<string, string>();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('agentBankCommit');
@@ -126,7 +115,6 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
     walletService = app.get(WalletService);
-    beneficiaryService = app.get(CustomerBeneficiaryService);
 
     const verifier: ExternalOperationStatusVerifier = {
       verify: ({ operation, correlationId }) =>
@@ -162,7 +150,7 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     fixture = new GovernedFinancialFixture({ app, dataSource, label: 'agentBankCommit' });
     institutionId = await fixture.institution();
 
-    const sys = await ledger.createAccount({
+    await ledger.createAccount({
       code: `SYS-FLOAT-AGB-${randomUUID().slice(0, 6)}`,
       name: 'System Float',
       accountType: LedgerAccountType.ASSET,
@@ -181,10 +169,9 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   afterAll(async () => {
     try {
       if (app) await app.close();
-    } catch {}
-    try {
+    } finally {
       if (dataSource) await destroyIntegrationDataSource(dataSource);
-    } catch {}
+    }
   });
 
   beforeEach(() => {
@@ -198,7 +185,7 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       code: `AGB-${randomUUID().slice(0, 6).toUpperCase()}`,
       name: 'AGB Class',
       isActive: true,
-      applicableServices: services as unknown,
+      applicableServices: services,
       actor: 'test-actor',
     });
     const appEntity = await agentAppService.create({
@@ -256,11 +243,11 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       ],
     });
     // Agent auth session
-    const [credential] = await dataSource.query(
+    const [credential] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
       [agent.id, hashPin('login-password')],
     );
-    const [session] = await dataSource.query(
+    const [session] = await dataSource.query<[{ id: string }]>(
       `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
       [agent.id, credential.id, randomBytes(32).toString('hex')],
     );
@@ -317,7 +304,7 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   }
 
   it('authorizes agent-self with operating wallet, class-of-service and PIN', async () => {
-    const { agent, wallet } = await createActiveAgentWithPin(
+    const { agent } = await createActiveAgentWithPin(
       [AgentService.EXTERNAL_BANK_TRANSFER, AgentService.CASH_OUT],
       '1234',
     );
@@ -369,10 +356,7 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
   });
 
   it('rejects stale agent session (expired)', async () => {
-    const { agent, wallet } = await createActiveAgentWithPin(
-      [AgentService.EXTERNAL_BANK_TRANSFER],
-      '1234',
-    );
+    const { agent } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
     const benId = await createAgentBeneficiary(agent.id);
     await configureAgentLimit(agent.id);
     // Expire session
@@ -584,7 +568,7 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
 
   it('prevents direct DB bypass of financial authorization', async () => {
     const { agent } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
-    const benId = await createAgentBeneficiary(agent.id);
+    await createAgentBeneficiary(agent.id);
     // Try to insert financial_authorization without valid PIN audit / session
     await expect(
       dataSource.query(

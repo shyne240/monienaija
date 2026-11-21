@@ -10,7 +10,7 @@ import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LimitAssignmentService } from '../src/limit-catalog/limit-assignment.service';
-import { AuditService } from '../src/operations/audit.service';
+import type { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';

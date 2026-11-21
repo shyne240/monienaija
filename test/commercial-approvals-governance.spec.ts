@@ -73,10 +73,10 @@ function buildService(rows: PrivilegedActionApproval[]) {
 
   const makeManager = () => ({
     getRepository: jest.fn(() => ({
-      save: jest.fn(async (entity: PrivilegedActionApproval) => {
+      save: jest.fn((entity: PrivilegedActionApproval) => {
         const next = { ...entity, version: (entity.version ?? 1) + 1 };
         store.set(entity.id, next);
-        return { ...next };
+        return Promise.resolve({ ...next });
       }),
       createQueryBuilder: jest.fn(() => {
         let targetId: string | undefined;
@@ -90,22 +90,22 @@ function buildService(rows: PrivilegedActionApproval[]) {
             return qb;
           }),
           setLock: jest.fn().mockReturnThis(),
-          getOne: jest.fn(async () => {
+          getOne: jest.fn(() => {
             const row = targetId ? store.get(targetId) : undefined;
-            return row ? { ...row } : null;
+            return Promise.resolve(row ? { ...row } : null);
           }),
         };
         return qb;
       }),
     })),
-    findOne: jest.fn(async (_entity: unknown, opts: { where: { id: string } }) => {
+    findOne: jest.fn((_entity: unknown, opts: { where: { id: string } }) => {
       const row = store.get(opts.where.id);
-      return row ? { ...row } : null;
+      return Promise.resolve(row ? { ...row } : null);
     }),
-    save: jest.fn(async (_entity: unknown, entity: PrivilegedActionApproval) => {
+    save: jest.fn((_entity: unknown, entity: PrivilegedActionApproval) => {
       const next = { ...entity, version: (entity.version ?? 1) + 1 };
       store.set(entity.id, next);
-      return { ...next };
+      return Promise.resolve({ ...next });
     }),
     create: jest.fn((_entity: unknown, data: Partial<PrivilegedActionApproval>) => ({ ...data })),
   });
@@ -129,9 +129,9 @@ function buildService(rows: PrivilegedActionApproval[]) {
   };
 
   const approvalRepository = {
-    findOne: jest.fn(async (opts: { where: { id: string } }) => {
+    findOne: jest.fn((opts: { where: { id: string } }) => {
       const row = store.get(opts.where.id);
-      return row ? { ...row } : null;
+      return Promise.resolve(row ? { ...row } : null);
     }),
     createQueryBuilder: jest.fn(() => {
       const filters: Record<string, unknown> = {};
@@ -181,12 +181,14 @@ function buildService(rows: PrivilegedActionApproval[]) {
         });
       const qb: {
         orderBy: jest.Mock;
+        addOrderBy: jest.Mock;
         andWhere: jest.Mock;
         skip: jest.Mock;
         take: jest.Mock;
         getManyAndCount: jest.Mock;
       } = {
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         andWhere: jest.fn((clause: string, params: Record<string, unknown>) => {
           Object.assign(filters, params);
           void clause;
@@ -200,9 +202,9 @@ function buildService(rows: PrivilegedActionApproval[]) {
           takeN = n;
           return qb;
         }),
-        getManyAndCount: jest.fn(async () => {
+        getManyAndCount: jest.fn(() => {
           const all = applyFilters();
-          return [all.slice(skipN, skipN + takeN), all.length];
+          return Promise.resolve([all.slice(skipN, skipN + takeN), all.length]);
         }),
       };
       return qb;
@@ -211,16 +213,16 @@ function buildService(rows: PrivilegedActionApproval[]) {
 
   const securityEventRepository = {
     create: jest.fn((d: unknown) => d),
-    save: jest.fn(async (d: unknown) => ({ id: 'sec-1', ...(d as object) })),
+    save: jest.fn((d: unknown) => Promise.resolve({ id: 'sec-1', ...(d as object) })),
   };
 
   const auditService = {
-    record: jest.fn(async () => undefined),
+    record: jest.fn().mockResolvedValue(undefined),
   };
 
   const authorizationService = {
-    authorize: jest.fn(async () => ({ allowed: true })),
-    hasFunctions: jest.fn(async () => true),
+    authorize: jest.fn().mockResolvedValue({ allowed: true }),
+    hasFunctions: jest.fn().mockResolvedValue(true),
   };
 
   const service = new PrivilegedActionApprovalService(

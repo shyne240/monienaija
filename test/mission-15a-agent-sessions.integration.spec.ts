@@ -249,7 +249,6 @@ describe('Mission 15A — Agent session lifecycle and administrative revocation 
   it('rolls back the lifecycle transition and session changes if the revocation audit fails', async () => {
     const agent = await f.agent();
     const session = await f.login(agent);
-    const audit = f.moduleRef.get(AuditService);
     const original = AuditService.prototype.record.bind(AuditService.prototype);
     const spy = jest
       .spyOn(AuditService.prototype, 'record')

@@ -81,6 +81,7 @@ export class PrivilegedActionApprovalService {
     const qb = this.approvalRepository
       .createQueryBuilder('approval')
       .orderBy('approval.requestedAt', 'DESC')
+      .addOrderBy('approval.id', 'ASC')
       .andWhere('approval.approvalScope IN (:...scopes)', { scopes: principal.scopes });
 
     if (principal.assuranceLevel !== 'MFA') {

@@ -861,7 +861,6 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
   });
   it('profile and rule writes audit atomically and no-op updates consume versions', async () => {
     const service = app.get(LimitCatalogService);
-    const audit = app.get(AuditService);
     const actor = 'synthetic-operator';
     const profileInput = {
       code: 'AUDITED_PROFILE',
