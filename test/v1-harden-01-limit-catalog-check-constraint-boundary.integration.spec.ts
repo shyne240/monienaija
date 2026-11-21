@@ -31,6 +31,7 @@ import { DataSource } from 'typeorm';
 import request = require('supertest');
 import { randomUUID } from 'node:crypto';
 
+import { governedLimitWrite, limitSession } from './support/governed-limit-http';
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
@@ -62,6 +63,8 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
+      const ruleSession = limitSession(token, audience);
+      if (ruleSession) return ruleSession;
       if (!token || !token.startsWith('workforce-'))
         throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
@@ -126,86 +129,102 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
 
   it('creating a rule with an invalid direction enum value never reaches the DB CHECK constraint — rejected with 400, never 500', async () => {
     await createProfile('CHK_DIR');
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CHK_DIR/rules')
-      .set(OPERATOR)
-      .send({
+    const res = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CHK_DIR/rules',
+      {
         product: 'WALLET_TRANSFER',
         direction: 'SIDEWAYS',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '1000',
-      });
+      },
+    );
     expect(res.status).toBe(400);
   });
 
   it('updating a rule with an invalid direction enum value is rejected with 400, never 500', async () => {
     await createProfile('CHK_DIR2');
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CHK_DIR2/rules')
-      .set(OPERATOR)
-      .send({
+    const created = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CHK_DIR2/rules',
+      {
         product: 'WALLET_TRANSFER',
         direction: 'OUTGOING',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '1000',
-      })
-      .expect(201);
-    const res = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${created.body.id}`)
-      .set(OPERATOR)
-      .send({ version: 1, direction: 'SIDEWAYS' });
+      },
+    );
+    expect(created.status).toBe(201);
+    const res = await governedLimitWrite(
+      app,
+      'patch',
+      `/api/v1/internal/limit-rules/${created.body.id}`,
+      { version: 1, direction: 'SIDEWAYS' },
+    );
     expect(res.status).toBe(400);
   });
 
   it('creating/updating a rule with an invalid dimension enum value is rejected with 400, never 500', async () => {
     await createProfile('CHK_DIM');
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CHK_DIM/rules')
-      .set(OPERATOR)
-      .send({
+    const res = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CHK_DIM/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'NOT_A_REAL_DIMENSION',
         limitValueMinor: '1000',
-      });
+      },
+    );
     expect(res.status).toBe(400);
 
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CHK_DIM/rules')
-      .set(OPERATOR)
-      .send({
+    const created = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CHK_DIM/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '1000',
-      })
-      .expect(201);
-    const upd = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${created.body.id}`)
-      .set(OPERATOR)
-      .send({ version: 1, dimension: 'NOT_A_REAL_DIMENSION' });
+      },
+    );
+    expect(created.status).toBe(201);
+    const upd = await governedLimitWrite(
+      app,
+      'patch',
+      `/api/v1/internal/limit-rules/${created.body.id}`,
+      { version: 1, dimension: 'NOT_A_REAL_DIMENSION' },
+    );
     expect(upd.status).toBe(400);
   });
 
   it('switching dimension type without the matching value field (amount<->count exclusivity) is rejected with 400, never 500', async () => {
     await createProfile('CHK_EXCL');
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CHK_EXCL/rules')
-      .set(OPERATOR)
-      .send({
+    const created = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CHK_EXCL/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '1000',
-      })
-      .expect(201);
+      },
+    );
+    expect(created.status).toBe(201);
     // Flip to a COUNT dimension but forget to clear limitValueMinor / set limitValueCount.
-    const res = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${created.body.id}`)
-      .set(OPERATOR)
-      .send({ version: 1, dimension: 'DAILY_COUNT' });
+    const res = await governedLimitWrite(
+      app,
+      'patch',
+      `/api/v1/internal/limit-rules/${created.body.id}`,
+      { version: 1, dimension: 'DAILY_COUNT' },
+    );
     expect(res.status).toBe(400);
   });
 

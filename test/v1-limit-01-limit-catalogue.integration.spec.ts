@@ -7,6 +7,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource, QueryFailedError } from 'typeorm';
 import * as request from 'supertest';
 
+import { governedLimitWrite, limitSession, prepareLimitWrite } from './support/governed-limit-http';
 import { AppModule } from '../src/app.module';
 import { LimitCatalogService } from '../src/limit-catalog/limit-catalog.service';
 import { limitProfileAuditEntityId } from '../src/limit-catalog/limit-audit-identity';
@@ -42,6 +43,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
   const mockWorkforceSessions = {
     validate: (token: string, audience: string) =>
       Promise.resolve().then(() => {
+        const ruleSession = limitSession(token, audience);
+        if (ruleSession) return ruleSession;
         if (!token || !token.startsWith('workforce-'))
           throw new UnauthorizedException('invalid workforce token');
         const requestedType = token.replace('workforce-', '').toUpperCase();
@@ -300,10 +303,11 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
   it('7. rule creation — profile relation, dimensions, product/direction/channel/currency, amount vs count exclusive, effective dating', async () => {
     await createProfile('RULE_PROFILE');
     // amount dimension needs minor
-    let r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    let r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         direction: 'OUTGOING',
         channel: 'CUSTOMER_APP',
@@ -313,7 +317,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
         effectiveFrom: '2026-01-01T00:00:00.000Z',
         isActive: true,
         priority: 1,
-      });
+      },
+    );
     expect(r.status).toBe(201);
     expect(r.body.dimension).toBe('MIN_AMOUNT_PER_TX');
     expect(r.body.limitValueMinor).toBe('5000');
@@ -326,92 +331,106 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     const ruleId = r.body.id;
 
     // cumulative daily amount
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '10000000',
         direction: 'BOTH',
         effectiveFrom: '2026-01-02T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
     expect(r.body.dimension).toBe('DAILY_AMOUNT');
 
     // count dimension
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'CASH_IN',
         currency: 'NGN',
         dimension: 'DAILY_COUNT',
         limitValueCount: 50,
         effectiveFrom: '2026-01-03T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
     expect(r.body.limitValueCount).toBe(50);
     expect(r.body.limitValueMinor).toBeNull();
 
     // wallet balance max
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'WALLET_BALANCE',
         currency: 'NGN',
         dimension: 'WALLET_BALANCE_MAX',
         limitValueMinor: '500000000',
         effectiveFrom: '2026-01-04T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
 
     // weekly/yearly coverage
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'CASH_OUT',
         currency: 'USD',
         dimension: 'WEEKLY_COUNT',
         limitValueCount: 10,
         effectiveFrom: '2026-02-01T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'CASH_OUT',
         currency: 'USD',
         dimension: 'MONTHLY_AMOUNT',
         limitValueMinor: '999999',
         effectiveFrom: '2026-02-02T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'CASH_TO_CASH',
         currency: 'NGN',
         dimension: 'YEARLY_COUNT',
         limitValueCount: 100,
         effectiveFrom: '2026-02-03T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
-    r = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    r = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'FUNDING',
         currency: 'NGN',
         dimension: 'YEARLY_AMOUNT',
         limitValueMinor: '123456789',
         effectiveFrom: '2026-02-04T00:00:00.000Z',
-      });
+      },
+    );
     expect(r.status).toBe(201);
 
     // relation list
@@ -429,24 +448,27 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(get.body.limitProfileCode).toBe('RULE_PROFILE');
 
     // effectiveTo validation
-    const badDates = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    const badDates = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100',
         effectiveFrom: '2026-03-02T00:00:00.000Z',
         effectiveTo: '2026-03-01T00:00:00.000Z',
-      });
+      },
+    );
     expect(badDates.status).toBe(400);
 
     // effectiveTo valid
-    const withTo = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    const withTo = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RULE_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'MAX_AMOUNT_PER_TX',
@@ -454,7 +476,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
         effectiveFrom: '2026-03-01T00:00:00.000Z',
         effectiveTo: '2026-04-01T00:00:00.000Z',
         isActive: false,
-      });
+      },
+    );
     expect(withTo.status).toBe(201);
     expect(withTo.body.isActive).toBe(false);
   });
@@ -462,79 +485,93 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
   it('8. invalid combos rejected — count≠amount, MIN fee confusion, window semantics, product/currency', async () => {
     await createProfile('INVALID_COMBO');
     // count dimension with minor should fail
-    let bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    let bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_COUNT',
         limitValueMinor: '100',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // amount dimension with count should fail
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueCount: 5,
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // amount without minor should fail
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'MIN_AMOUNT_PER_TX',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // count without count should fail
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'MONTHLY_COUNT',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // invalid currency
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NG',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // invalid product with spaces
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'bad product!',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // invalid dimension
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'FAKE_DIM',
         limitValueMinor: '100',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // invalid profile code
     bad = await request(app.getHttpServer())
@@ -543,16 +580,18 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       .send({ code: 'bad-lower', name: 'x', kind: 'CUSTOMER' });
     expect(bad.status).toBe(400);
     // invalid effective date
-    bad = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/INVALID_COMBO/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    bad = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/INVALID_COMBO/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100',
         effectiveFrom: 'not-a-date',
-      });
+      },
+    );
     expect(bad.status).toBe(400);
     // DB CHECK should also prevent direct SQL invalid insertion (amount + count both present)
     await expect(
@@ -564,16 +603,18 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
 
   it('9. rule versioning, concurrency, enabled/disabled, safe projection', async () => {
     await createProfile('CONC_PROFILE');
-    const cr = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/CONC_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    const cr = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/CONC_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100000',
         effectiveFrom: '2026-01-10T00:00:00.000Z',
-      });
+      },
+    );
     expect(cr.status).toBe(201);
     const id = cr.body.id;
     expect(cr.body.version).toBe(1);
@@ -581,34 +622,42 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(JSON.stringify(cr.body)).not.toContain('deletedAt');
     expect(JSON.stringify(cr.body)).not.toContain('deleted_at');
     // update with correct version increments to 2
-    const upd = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 1, limitValueMinor: '200000', isActive: false });
-    expect(upd.status).toBe(200);
+    const upd = await governedLimitWrite(app, 'patch', `/api/v1/internal/limit-rules/${id}`, {
+      version: 1,
+      limitValueMinor: '200000',
+      isActive: false,
+    });
+    expect(upd.status).toBe(201);
     expect(upd.body.version).toBe(2);
     expect(upd.body.isActive).toBe(false);
     expect(upd.body.limitValueMinor).toBe('200000');
     // stale version 409
-    const stale = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 1, limitValueMinor: '300000' });
+    const stale = await governedLimitWrite(app, 'patch', `/api/v1/internal/limit-rules/${id}`, {
+      version: 1,
+      limitValueMinor: '300000',
+    });
     expect(stale.status).toBe(409);
-    // concurrency also for amount->count switch invalid should 400 even with correct version
-    await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 2, dimension: 'DAILY_COUNT', limitValueCount: 10, limitValueMinor: null });
-    // this should succeed because DAILY_COUNT requires count and not minor — but we send minor null explicit; however our DTO treats undefined vs null differently; we send explicit null so service sets minor null, count 10 => should succeed? Actually DAILY_COUNT with count 10 and minor null is valid.
-    // Let's test invalid: try to set count dimension but keep minor 200000 => expect 400
-    const invalidSwitch = await request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 2, dimension: 'DAILY_COUNT', limitValueCount: 10 });
-    // after previous badSwitch might have updated version; we'll check later
-    // For now ensure at least version handling works
-    expect([200, 400, 409]).toContain(invalidSwitch.status);
+    // Reject a count dimension while the previous minor-unit value is still present.
+    const path = `/api/v1/internal/limit-rules/${id}`;
+    const invalidSwitch = await governedLimitWrite(app, 'patch', path, {
+      version: 2,
+      dimension: 'DAILY_COUNT',
+      limitValueCount: 10,
+    });
+    expect(invalidSwitch.status).toBe(400);
+    const switched = await governedLimitWrite(app, 'patch', path, {
+      version: 2,
+      dimension: 'DAILY_COUNT',
+      limitValueCount: 10,
+      limitValueMinor: null,
+    });
+    expect(switched.status).toBe(201);
+    expect(switched.body).toMatchObject({
+      version: 3,
+      dimension: 'DAILY_COUNT',
+      limitValueMinor: null,
+      limitValueCount: 10,
+    });
   });
 
   it('10. no ledger mutation — catalogue does not touch wallets/ledger', async () => {
@@ -624,24 +673,30 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     // create bunch of catalog entries
     await createProfile('LEDGER_CHECK_1');
     await createProfile('LEDGER_CHECK_2');
-    await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/LEDGER_CHECK_1/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    const amountRule = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/LEDGER_CHECK_1/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '50000',
-      });
-    await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/LEDGER_CHECK_2/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+      },
+    );
+    expect(amountRule.status).toBe(201);
+    const countRule = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/LEDGER_CHECK_2/rules',
+      {
         product: 'CASH_IN',
         currency: 'NGN',
         dimension: 'DAILY_COUNT',
         limitValueCount: 5,
-      });
+      },
+    );
+    expect(countRule.status).toBe(201);
     const afterWallets: Array<{ count: string }> = await dataSource.query(
       `SELECT COUNT(*)::text as count FROM wallet_accounts`,
     );
@@ -671,36 +726,27 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
 
   it('11. list filters, deterministic ordering, pagination for rules', async () => {
     await createProfile('FILTER_PROFILE');
-    await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/FILTER_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
-        product: 'WALLET_TRANSFER',
-        currency: 'NGN',
-        dimension: 'DAILY_AMOUNT',
-        limitValueMinor: '100',
-        effectiveFrom: '2026-01-01T00:00:00.000Z',
-      });
-    await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/FILTER_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
-        product: 'CASH_IN',
-        currency: 'NGN',
-        dimension: 'DAILY_COUNT',
-        limitValueCount: 1,
-        effectiveFrom: '2026-01-02T00:00:00.000Z',
-      });
-    await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/FILTER_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
-        product: 'WALLET_TRANSFER',
-        currency: 'NGN',
-        dimension: 'MIN_AMOUNT_PER_TX',
-        limitValueMinor: '500',
-        effectiveFrom: '2026-01-03T00:00:00.000Z',
-      });
+    await governedLimitWrite(app, 'post', '/api/v1/internal/limit-profiles/FILTER_PROFILE/rules', {
+      product: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      dimension: 'DAILY_AMOUNT',
+      limitValueMinor: '100',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
+    await governedLimitWrite(app, 'post', '/api/v1/internal/limit-profiles/FILTER_PROFILE/rules', {
+      product: 'CASH_IN',
+      currency: 'NGN',
+      dimension: 'DAILY_COUNT',
+      limitValueCount: 1,
+      effectiveFrom: '2026-01-02T00:00:00.000Z',
+    });
+    await governedLimitWrite(app, 'post', '/api/v1/internal/limit-profiles/FILTER_PROFILE/rules', {
+      product: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      dimension: 'MIN_AMOUNT_PER_TX',
+      limitValueMinor: '500',
+      effectiveFrom: '2026-01-03T00:00:00.000Z',
+    });
 
     const filtered = await request(app.getHttpServer())
       .get(
@@ -820,31 +866,33 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
 
   it('15. concurrent RULE updates from the same version: exactly one must be rejected, not both applied', async () => {
     await createProfile('RACE_RULE_PROFILE');
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/internal/limit-profiles/RACE_RULE_PROFILE/rules')
-      .set('Authorization', auth('OPERATOR'))
-      .send({
+    const created = await governedLimitWrite(
+      app,
+      'post',
+      '/api/v1/internal/limit-profiles/RACE_RULE_PROFILE/rules',
+      {
         product: 'WALLET_TRANSFER',
         currency: 'NGN',
         dimension: 'DAILY_AMOUNT',
         limitValueMinor: '100000',
         effectiveFrom: '2026-01-10T00:00:00.000Z',
-      });
+      },
+    );
     expect(created.status).toBe(201);
     const id = created.body.id;
     expect(created.body.version).toBe(1);
 
-    const r1 = request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 1, limitValueMinor: '200000' });
-    const r2 = request(app.getHttpServer())
-      .patch(`/api/v1/internal/limit-rules/${id}`)
-      .set('Authorization', auth('OPERATOR'))
-      .send({ version: 1, limitValueMinor: '300000' });
-    const [res1, res2] = await Promise.all([r1, r2]);
-    const succeeded = [res1, res2].filter((r) => r.status === 200);
-    const rejected = [res1, res2].filter((r) => r.status !== 200);
+    const r1 = await prepareLimitWrite(app, 'patch', `/api/v1/internal/limit-rules/${id}`, {
+      version: 1,
+      limitValueMinor: '200000',
+    });
+    const r2 = await prepareLimitWrite(app, 'patch', `/api/v1/internal/limit-rules/${id}`, {
+      version: 1,
+      limitValueMinor: '300000',
+    });
+    const [res1, res2] = await Promise.all([r1(), r2()]);
+    const succeeded = [res1, res2].filter((r) => r.status === 201);
+    const rejected = [res1, res2].filter((r) => r.status !== 201);
     expect(succeeded.length).toBe(1);
     expect(rejected.length).toBe(1);
     expect(rejected[0]!.status).toBe(409);

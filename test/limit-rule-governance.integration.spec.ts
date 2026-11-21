@@ -5,7 +5,6 @@ import { DataSource } from 'typeorm';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { AppModule } from '../src/app.module';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
-import { governedAction } from '../src/authorization/governed-action.registry';
 import { AuthorizationCatalogueRuntimeService } from '../src/authorization-catalogue/authorization-catalogue-runtime.service';
 import { AuthorizationCatalogueSeedService } from '../src/authorization-catalogue/authorization-catalogue-seed.service';
 import { AuthorizationRole } from '../src/authorization-catalogue/authorization-role.entity';
@@ -20,12 +19,7 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 
-const registered = Boolean(
-  governedAction('LIMIT_RULE_CREATE') && governedAction('LIMIT_RULE_UPDATE'),
-);
-const describeWhenReady = registered ? describe : describe.skip;
-
-describeWhenReady('Limit-rule maker/checker governance (real PostgreSQL)', () => {
+describe('Limit-rule maker/checker governance (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let moduleRef: any;
   let app: any;
