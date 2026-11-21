@@ -65,12 +65,18 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the agent financial authorization generalisation migration', () => {
+  it('ends at the customer class migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
-    // banking range, Arena 2C appended 0800-0802 after that, and Arena 5 appended 0803–0804 for the
-    // dual-lane (customer/agent) A6 financial authorization + external-ops. The head is pinned exactly —
+    // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
+    // dual-lane (customer/agent) A6 financial authorization + external-ops, and Arena 1 appended
+    // 0805 (customer classes)
+    // for the commercial customer-class model. The head is pinned exactly —
     // a head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
+    });
+    expect(migrations.at(-2)).toMatchObject({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
@@ -141,6 +147,7 @@ describe('migration inventory', () => {
       ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
       ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
       ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
+      ['1785753600805', 'CreateCustomerClasses1785753600805'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -153,12 +160,13 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 166 migration identities', () => {
+  it('contains exactly 167 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
-    // Arena 2C, and two by Arena 5 (agent financial authorization + external-ops). Any additional or missing
+    // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), and one by
+    // Arena 1 (customer classes). Any additional or missing
     // file fails this assertion.
-    expect(migrations.length).toBe(166);
+    expect(migrations.length).toBe(167);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

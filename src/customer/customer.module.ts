@@ -6,6 +6,7 @@ import { OperationsModule } from '../operations/operations.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
 import { Customer } from './customer.entity';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CustomerAddress } from './customer-address.entity';
 import { CustomerContactMethod } from './customer-contact-method.entity';
 import { CustomerController } from './customer.controller';
@@ -20,6 +21,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 @Module({
   imports: [
     OperationsModule,
+    CustomerClassModule,
     KycTierModule,
     forwardRef(() => CustomerAuthenticationModule),
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: CustomerController's PATCH :id lifecycle handler
