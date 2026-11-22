@@ -2,11 +2,13 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CommissionRuleResolverService } from '../commission/commission-rule-resolver.service';
 import type { CommissionResolution } from '../commission/commission-rule-resolver.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import type { FeeRuleResolution } from '../fee-rules/fee-rule-resolver.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { InstitutionKycLimitPolicyService } from '../limit-catalog/institution-kyc-limit-policy.service';
 import {
@@ -21,9 +23,13 @@ import type { RewardGrantDecision, RewardResolution } from '../reward/reward.typ
 import {
   PREVIEW_DISCLAIMER,
   type EffectiveConfigurationPreview,
+  type PreviewCustomerClassSection,
   type PreviewExplanation,
+  type PreviewFeeSection,
+  type PreviewKycRestriction,
   type PreviewLimitRule,
   type PreviewLimitSection,
+  type PreviewRestrictedSection,
 } from './effective-configuration-preview.types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,8 +51,50 @@ export interface EffectiveConfigurationPreviewQuery {
   at?: string;
 }
 
-const CUSTOMER_CLASS_NOTE =
-  'No customer-class resolution contract is published on this integration baseline, so class-scoped commercial policy cannot be previewed. No class identifier was inferred from KYC tier, segment code or an agent class.';
+/** Internal carrier: the published section plus the code the rest of the preview consumes. */
+interface CustomerClassOutcome {
+  section: PreviewCustomerClassSection | PreviewRestrictedSection;
+  /** Non-null only for a RESOLVED customer class; never inferred. */
+  classCode: string | null;
+}
+
+/**
+ * Which catalogue read function governs each preview section.
+ *
+ * WHY `limit.view` ALONE MUST NOT GOVERN THE WHOLE PREVIEW
+ *   Previously holding `limit.view` was enough to read fee, commission, reward, product,
+ *   customer-class and KYC evidence through this route — data each owning registry only exposes
+ *   behind `fee_rule.view`, `commission_rule.view`, `reward_rule.view`, `product.view`,
+ *   `institution.view`, `customer.view` and `kyc.view`. A preview that composes those resolvers
+ *   must not become a broader read path than the surfaces it summarizes. AGENT_NETWORK_MANAGER,
+ *   which holds `limit.view` and none of the others, is the concrete case this protects.
+ *
+ *   Every function below is an EXISTING catalogue function with existing grants; nothing new is
+ *   introduced. `limit.view` remains the route-level gate, so a caller with no limit visibility
+ *   cannot reach the route at all.
+ */
+const SECTION_FUNCTIONS = {
+  product: 'product.view',
+  institution: 'institution.view',
+  customerClass: 'customer.view',
+  kyc: 'kyc.view',
+  fee: 'fee_rule.view',
+  commission: 'commission_rule.view',
+  reward: 'reward_rule.view',
+} as const;
+
+/**
+ * Deliberately says nothing about the configuration itself — not whether rules exist, how many,
+ * at what priority, or for which target. Withholding values while revealing presence would still
+ * leak the commercial intelligence a missing read function exists to protect.
+ */
+function restricted(functionCode: string, section: string): PreviewRestrictedSection {
+  return {
+    status: 'RESTRICTED',
+    requiredFunction: functionCode,
+    note: `This section was not evaluated: reading effective ${section} configuration requires the ${functionCode} function, which this session does not hold. Nothing about this configuration was disclosed.`,
+  };
+}
 
 /**
  * Arena 3 Phase 3 — READ-ONLY effective-configuration preview.
@@ -84,9 +132,13 @@ export class EffectiveConfigurationPreviewService {
     private readonly feeCalculator: FeeRuleCalculatorService,
     private readonly commissionResolver: CommissionRuleResolverService,
     private readonly rewardResolver: RewardRuleResolverService,
+    private readonly customerClasses: CustomerClassResolverService,
   ) {}
 
-  async preview(input: EffectiveConfigurationPreviewQuery): Promise<EffectiveConfigurationPreview> {
+  async preview(
+    principal: AuthorizationPrincipal,
+    input: EffectiveConfigurationPreviewQuery,
+  ): Promise<EffectiveConfigurationPreview> {
     const productCode = this.requirePattern(input.productCode, PRODUCT, 'productCode');
     const currency = this.requirePattern(
       (input.currency ?? 'NGN').toUpperCase(),
@@ -110,18 +162,70 @@ export class EffectiveConfigurationPreviewService {
     const evaluatedAt = this.instant(input.at);
     const previewedAt = new Date();
 
-    // The product is the only hard prerequisite: everything else is reported per section.
-    const product = await this.products.getProduct(productCode);
+    // Which sections this caller may read. Evaluated BEFORE any section is composed, so a
+    // withheld section is never resolved at all — no query, no timing difference, no inference
+    // from how long the response took.
+    const held = this.functionsHeldBy(principal);
+    const may = (functionCode: string): boolean => held.has(functionCode);
 
-    const institution = await this.institution(institutionId);
     const explanation: PreviewExplanation[] = [];
 
+    // The product is the only hard prerequisite, and only for a caller entitled to see it.
+    // A caller without `product.view` must not be able to probe which product codes exist, so a
+    // non-existent product is reported as RESTRICTED rather than 404 for a withheld caller.
+    let product: EffectiveConfigurationPreview['product'] = null;
+    let productRestricted: PreviewRestrictedSection | null = null;
+    if (may(SECTION_FUNCTIONS.product)) {
+      product = this.toPreviewProduct(await this.products.getProduct(productCode));
+    } else {
+      productRestricted = restricted(SECTION_FUNCTIONS.product, 'product');
+      explanation.push(
+        withheld('PREVIEW_SECTION_RESTRICTED', 'product', SECTION_FUNCTIONS.product),
+      );
+    }
+
+    let institution: EffectiveConfigurationPreview['institution'] = null;
+    let institutionRestricted: PreviewRestrictedSection | null = null;
+    if (institutionId !== null) {
+      if (may(SECTION_FUNCTIONS.institution)) {
+        institution = await this.institution(institutionId);
+      } else {
+        institutionRestricted = restricted(SECTION_FUNCTIONS.institution, 'institution');
+        explanation.push(
+          withheld('PREVIEW_SECTION_RESTRICTED', 'institution', SECTION_FUNCTIONS.institution),
+        );
+      }
+    }
+
+    /*
+     * Advisory read. `READ ONLY` here is a DATABASE-LEVEL guarantee, not a convention: PostgreSQL
+     * rejects any INSERT/UPDATE/DELETE/TRUNCATE/DDL in this transaction with `read_only_sql_transaction`,
+     * so a future edit to any composed resolver cannot start writing from the preview. The mode is
+     * asserted back out through `guarantees.databaseTransactionReadOnly`.
+     */
     const result = await this.dataSource.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const readOnlyRows: Array<{ transaction_read_only: string }> = await manager.query(
+        'SHOW transaction_read_only',
+      );
+      const transactionReadOnly = readOnlyRows[0]?.transaction_read_only === 'on';
+
+      const customerClass = await this.customerClassSection({
+        manager,
+        mayRead: may(SECTION_FUNCTIONS.customerClass),
+        principalType,
+        principalId,
+        evaluatedAt,
+        explanation,
+      });
+
       const kyc = await this.kycRestriction({
         manager,
+        enabled: may(SECTION_FUNCTIONS.kyc),
         principalType,
         principalId,
         institutionId,
+        institutionVisible: institutionRestricted === null,
         productCode,
         currency,
         serviceClass,
@@ -134,7 +238,7 @@ export class EffectiveConfigurationPreviewService {
         principalType,
         principalId,
         agentClassId,
-        segmentCodes,
+        segmentCodes: this.withClassSegment(segmentCodes, customerClass),
         institutionId,
         productCode,
         currency,
@@ -149,15 +253,20 @@ export class EffectiveConfigurationPreviewService {
 
       const fee = await this.feeSection({
         manager,
+        enabled: may(SECTION_FUNCTIONS.fee),
         productCode,
         currency,
         amountMinor,
         evaluatedAt,
+        customerClassCode: customerClass.classCode,
+        agentClassId,
+        institutionId,
         explanation,
       });
 
       const commission = await this.commissionSection({
         manager,
+        enabled: may(SECTION_FUNCTIONS.commission),
         productCode,
         currency,
         amountMinor,
@@ -171,6 +280,7 @@ export class EffectiveConfigurationPreviewService {
 
       const reward = await this.rewardSection({
         manager,
+        enabled: may(SECTION_FUNCTIONS.reward),
         productCode,
         currency,
         amountMinor,
@@ -183,7 +293,7 @@ export class EffectiveConfigurationPreviewService {
         explanation,
       });
 
-      return { kyc, limits, fee, commission, reward };
+      return { customerClass, kyc, limits, fee, commission, reward, transactionReadOnly };
     });
 
     if (principalId === null)
@@ -215,19 +325,11 @@ export class EffectiveConfigurationPreviewService {
         serviceClass,
         evaluatedAt: evaluatedAt.toISOString(),
       },
-      product: {
-        code: product.code,
-        name: product.name,
-        domain: product.domain,
-        currency: product.currency,
-        productScope: product.productScope,
-        status: product.status,
-        enabled: product.enabled,
-        configurationStatus: product.configurationStatus,
-        version: product.version,
-      },
+      product,
+      productRestricted,
       institution,
-      customerClass: { status: 'NOT_APPLICABLE', note: CUSTOMER_CLASS_NOTE },
+      institutionRestricted,
+      customerClass: result.customerClass.section,
       kycRestriction: result.kyc.section,
       limits: result.limits,
       fee: result.fee.section,
@@ -244,7 +346,131 @@ export class EffectiveConfigurationPreviewService {
         blockerCount: ordered.filter((item) => item.severity === 'BLOCKER').length,
         warningCount: ordered.filter((item) => item.severity === 'WARNING').length,
       },
-      guarantees: { readonly: true, writesPerformed: [], financialMutations: [] },
+      guarantees: {
+        readonly: true,
+        writesPerformed: [],
+        financialMutations: [],
+        databaseTransactionReadOnly: result.transactionReadOnly,
+      },
+    };
+  }
+
+  /** Every catalogue function the principal actually holds. Scopes ARE the function grants. */
+  private functionsHeldBy(principal: AuthorizationPrincipal): Set<string> {
+    const scopes: unknown = principal.scopes;
+    const held: string[] = Array.isArray(scopes)
+      ? scopes.filter((scope): scope is string => typeof scope === 'string')
+      : [];
+    return new Set(held);
+  }
+
+  private toPreviewProduct(product: {
+    code: string;
+    name: string;
+    domain: string;
+    currency: string;
+    productScope: string;
+    status: string;
+    enabled: boolean;
+    configurationStatus: string;
+    version: number;
+  }): NonNullable<EffectiveConfigurationPreview['product']> {
+    return {
+      code: product.code,
+      name: product.name,
+      domain: product.domain,
+      currency: product.currency,
+      productScope: product.productScope,
+      status: product.status,
+      enabled: product.enabled,
+      configurationStatus: product.configurationStatus,
+      version: product.version,
+    };
+  }
+
+  /**
+   * The resolved class code joins the caller-supplied segment codes for limit SEGMENT targeting.
+   *
+   * This is the consumption pattern Arena 1's contract prescribes (`segmentCodes: [classCode]`).
+   * A resolved class is ADDITIVE: it can select a segment assignment the caller did not name, and
+   * it can never remove one. A caller-supplied `segmentCodes` value is still honoured because some
+   * segment assignments are not customer-class based.
+   */
+  private withClassSegment(supplied: string[], resolved: CustomerClassOutcome): string[] {
+    if (resolved.classCode === null) return supplied;
+    return [...new Set([...supplied, resolved.classCode])];
+  }
+
+  // ───────────────────────────────────────────────────────────────── customer class
+
+  /**
+   * Arena 1 customer-class resolution through the canonical `CustomerClassResolverService`.
+   *
+   * The previous implementation returned a hardcoded `NOT_APPLICABLE` because no class contract
+   * existed. It exists now, so the section resolves. Nothing is ever inferred: a customer with no
+   * usable class resolves to `MISSING` (an explicit "no class assigned" state), never to a class
+   * guessed from KYC tier, segment code or agent class.
+   */
+  private async customerClassSection(input: {
+    manager: EntityManager;
+    mayRead: boolean;
+    principalType: string;
+    principalId: string | null;
+    evaluatedAt: Date;
+    explanation: PreviewExplanation[];
+  }): Promise<CustomerClassOutcome> {
+    const withheldSection: PreviewRestrictedSection = restricted(
+      SECTION_FUNCTIONS.customerClass,
+      'customer-class',
+    );
+    if (!input.mayRead) {
+      input.explanation.push(
+        withheld('PREVIEW_SECTION_RESTRICTED', 'customer-class', SECTION_FUNCTIONS.customerClass),
+      );
+      return { section: withheldSection, classCode: null };
+    }
+    if (input.principalType !== 'CUSTOMER' || input.principalId === null) {
+      return {
+        section: {
+          status: 'NOT_APPLICABLE',
+          note: 'Customer class applies to customer principals. No customer principal was supplied, so no class resolution was attempted and no class was inferred.',
+          effective: null,
+        },
+        classCode: null,
+      };
+    }
+    const effective = await this.customerClasses.resolveInManager(
+      input.manager,
+      input.principalId,
+      input.evaluatedAt,
+    );
+    if (!effective) {
+      return {
+        section: {
+          status: 'MISSING',
+          note: 'This customer has no usable class of service at the evaluated instant (no live assignment, or the assigned class is disabled, deprecated or unconfigured). No class was inferred from KYC tier, segment code or agent class.',
+          effective: null,
+        },
+        classCode: null,
+      };
+    }
+    return {
+      section: {
+        status: 'RESOLVED',
+        note: null,
+        effective: {
+          classCode: effective.classCode,
+          assignmentId: effective.assignmentId,
+          classId: effective.classId,
+          className: effective.className,
+          assignmentVersion: effective.assignmentVersion,
+          classVersion: effective.classVersion,
+          source: effective.source,
+          effectiveFrom: effective.effectiveFrom.toISOString(),
+          effectiveTo: effective.effectiveTo === null ? null : effective.effectiveTo.toISOString(),
+        },
+      },
+      classCode: effective.classCode,
     };
   }
 
@@ -252,23 +478,50 @@ export class EffectiveConfigurationPreviewService {
 
   private async kycRestriction(input: {
     manager: EntityManager;
+    enabled: boolean;
     principalType: string;
     principalId: string | null;
     institutionId: string | null;
+    /** False when the caller may not read institution data; no institution policy is then loaded. */
+    institutionVisible: boolean;
     productCode: string;
     currency: string;
     serviceClass: string | null;
     evaluatedAt: Date;
     explanation: PreviewExplanation[];
   }): Promise<{
-    section: EffectiveConfigurationPreview['kycRestriction'];
+    section: PreviewKycRestriction;
     kycLevel: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null;
     tierProfileCode: string | null;
     tierPolicyVersion: number | null;
     tierEnforcementActivationEnabled: boolean;
   }> {
+    if (!input.enabled) {
+      input.explanation.push(
+        withheld('PREVIEW_SECTION_RESTRICTED', 'KYC eligibility', SECTION_FUNCTIONS.kyc),
+      );
+      return {
+        section: restricted(SECTION_FUNCTIONS.kyc, 'KYC eligibility'),
+        kycLevel: null,
+        tierProfileCode: null,
+        tierPolicyVersion: null,
+        tierEnforcementActivationEnabled: false,
+      };
+    }
+
     const activationEnabled = this.tierPolicies.enforcementEnabled;
-    const section: EffectiveConfigurationPreview['kycRestriction'] = {
+    const section: {
+      kycLevel: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null;
+      tierEnforcementActivationEnabled: boolean;
+      tierMapping: {
+        policyVersion: number;
+        disposition: string;
+        profileCode: string | null;
+        profileDigest: string | null;
+        serviceClass: string | null;
+      } | null;
+      note: string | null;
+    } = {
       kycLevel: null,
       tierEnforcementActivationEnabled: activationEnabled,
       tierMapping: null,
@@ -290,11 +543,16 @@ export class EffectiveConfigurationPreviewService {
       };
     }
 
-    // The trusted gate. A refusal is reported (the operation would be refused), not thrown: the
-    // preview's job is to explain, and an ineligible customer is a finding, not a failed request.
+    // The trusted gate — the SAME decision an admission makes, with the row lock suppressed.
+    // A lock is impossible here by construction: PostgreSQL rejects `SELECT … FOR SHARE` inside a
+    // `READ ONLY` transaction. `NONE` is therefore the only mode that is compatible with the
+    // database-level read-only guarantee, and it is safe because this result is never used to
+    // admit anything — the preview reports eligibility, it does not act on it.
+    // A refusal is reported (the operation would be refused), not thrown: the preview's job is to
+    // explain, and an ineligible customer is a finding, not a failed request.
     try {
       kycLevel = await this.customerEligibility.require(input.manager, input.principalId, {
-        lockMode: 'SHARE',
+        lockMode: 'NONE',
       });
       section.kycLevel = kycLevel;
     } catch (error) {
@@ -537,13 +795,50 @@ export class EffectiveConfigurationPreviewService {
 
   private async feeSection(input: {
     manager: EntityManager;
+    enabled: boolean;
     productCode: string;
     currency: string;
     amountMinor: string | null;
     evaluatedAt: Date;
+    /** Resolved Arena 1 class code, so class-targeted fee rules are not silently skipped. */
+    customerClassCode: string | null;
+    agentClassId: string | null;
+    institutionId: string | null;
     explanation: PreviewExplanation[];
-  }): Promise<{ section: EffectiveConfigurationPreview['fee']; feeMinor: string | null }> {
-    const section: EffectiveConfigurationPreview['fee'] = {
+  }): Promise<{ section: PreviewFeeSection; feeMinor: string | null }> {
+    if (!input.enabled) {
+      input.explanation.push(withheld('PREVIEW_SECTION_RESTRICTED', 'fee', SECTION_FUNCTIONS.fee));
+      return { section: restricted(SECTION_FUNCTIONS.fee, 'fee'), feeMinor: null };
+    }
+
+    const section: {
+      status: 'RESOLVED' | 'MISSING' | 'AMBIGUOUS' | 'NOT_APPLICABLE' | 'UNAVAILABLE';
+      note: string | null;
+      currency: string;
+      evaluatedAt: string;
+      rule: {
+        ruleId: string;
+        ruleVersion: number;
+        flatFeeMinor: string | null;
+        percentageBps: number | null;
+        minimumFeeMinor: string | null;
+        maximumFeeMinor: string | null;
+        vatBps: number | null;
+        priority: number;
+        effectiveFrom: string;
+        effectiveTo: string | null;
+      } | null;
+      ambiguousRuleIds: string[] | null;
+      ambiguousPriority: number | null;
+      computed: {
+        status: string;
+        feeMinor: string | null;
+        vatMinor: string | null;
+        totalMinor: string | null;
+        calculationModel: string | null;
+        postsJournalLegs: false;
+      } | null;
+    } = {
       status: 'MISSING',
       note: null,
       currency: input.currency,
@@ -556,10 +851,19 @@ export class EffectiveConfigurationPreviewService {
 
     let resolution: FeeRuleResolution;
     try {
+      /*
+       * Targeting is passed through verbatim. Previously these three arguments were omitted, so a
+       * class-, agent-class- or institution-targeted fee rule could never match and the preview
+       * would quietly report the UNTARGETED rule (or MISSING) for a caller who is in fact governed
+       * by a targeted one. The resolver's own specificity rule then applies unchanged.
+       */
       resolution = await this.feeResolver.resolveWithManager(input.manager, {
         productCode: input.productCode,
         currency: input.currency,
         at: input.evaluatedAt,
+        ...(input.customerClassCode !== null ? { customerClassCode: input.customerClassCode } : {}),
+        ...(input.agentClassId !== null ? { agentClassId: input.agentClassId } : {}),
+        ...(input.institutionId !== null ? { institutionId: input.institutionId } : {}),
       });
     } catch (error) {
       section.status = 'UNAVAILABLE';
@@ -640,6 +944,7 @@ export class EffectiveConfigurationPreviewService {
 
   private async commissionSection(input: {
     manager: EntityManager;
+    enabled: boolean;
     productCode: string;
     currency: string;
     amountMinor: string | null;
@@ -650,6 +955,12 @@ export class EffectiveConfigurationPreviewService {
     feeMinor: string | null;
     explanation: PreviewExplanation[];
   }): Promise<EffectiveConfigurationPreview['commission']> {
+    if (!input.enabled) {
+      input.explanation.push(
+        withheld('PREVIEW_SECTION_RESTRICTED', 'commission', SECTION_FUNCTIONS.commission),
+      );
+      return restricted(SECTION_FUNCTIONS.commission, 'commission');
+    }
     if (input.amountMinor === null) {
       return {
         status: 'NOT_APPLICABLE',
@@ -718,6 +1029,7 @@ export class EffectiveConfigurationPreviewService {
 
   private async rewardSection(input: {
     manager: EntityManager;
+    enabled: boolean;
     productCode: string;
     currency: string;
     amountMinor: string | null;
@@ -729,6 +1041,12 @@ export class EffectiveConfigurationPreviewService {
     feeMinor: string | null;
     explanation: PreviewExplanation[];
   }): Promise<EffectiveConfigurationPreview['reward']> {
+    if (!input.enabled) {
+      input.explanation.push(
+        withheld('PREVIEW_SECTION_RESTRICTED', 'reward', SECTION_FUNCTIONS.reward),
+      );
+      return restricted(SECTION_FUNCTIONS.reward, 'reward');
+    }
     if (input.amountMinor === null) {
       return {
         status: 'NOT_APPLICABLE',
@@ -864,6 +1182,16 @@ const info = (code: string, message: string): PreviewExplanation => ({
 const warning = (code: string, message: string): PreviewExplanation => ({
   code,
   message,
+  severity: 'WARNING',
+});
+
+/**
+ * A withheld section is reported as a WARNING, not a BLOCKER: it says nothing about whether the
+ * configuration would permit the operation, only that this caller may not see it.
+ */
+const withheld = (code: string, section: string, functionCode: string): PreviewExplanation => ({
+  code,
+  message: `The ${section} section was withheld: this session does not hold ${functionCode}. Nothing about it was disclosed.`,
   severity: 'WARNING',
 });
 

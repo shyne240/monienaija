@@ -29,12 +29,14 @@ interface AuthenticatedRequest {
  * Contract (asserted by test/v1-commercial-configuration-authoring.integration.spec.ts):
  *   - GET only. There is no POST/PATCH companion: a preview cannot submit a change.
  *   - Requires an authenticated workforce principal (OPERATOR/SERVICE/PRIVILEGED) with the
- *     `limit.view` function. Every resolver this composes is already readable by a `limit.view`
- *     holder through the catalogue/fee/commission/reward read routes, so this adds no disclosure
- *     and invents no new function code.
- *   - Returns 200 with explicit MISSING / AMBIGUOUS / NOT_APPLICABLE / UNAVAILABLE section
- *     statuses rather than turning absent configuration into an error. A BLOCKER explanation is
- *     evidence about configuration, not a failed request.
+ *     `limit.view` function. `limit.view` gates REACHING the route; it does not authorize every
+ *     section. Each section is additionally gated on the read function that already governs its
+ *     data (`fee_rule.view`, `commission_rule.view`, `reward_rule.view`, `product.view`,
+ *     `institution.view`, `customer.view`, `kyc.view`) and a section the caller may not read is
+ *     returned as an explicit `RESTRICTED` projection carrying no configuration content.
+ *   - Returns 200 with explicit MISSING / AMBIGUOUS / NOT_APPLICABLE / UNAVAILABLE / RESTRICTED
+ *     section statuses rather than turning absent configuration into an error. A BLOCKER
+ *     explanation is evidence about configuration, not a failed request.
  *   - Never writes: no admission, reservation, charge, accrual, credit or posting.
  */
 @Controller('internal')
@@ -60,7 +62,7 @@ export class EffectiveConfigurationPreviewController {
     @Query('serviceClass') serviceClass?: string,
     @Query('at') at?: string,
   ) {
-    await this.authorize(req);
+    const principal = await this.authorize(req);
     if (
       segmentCodes !== undefined &&
       typeof segmentCodes !== 'string' &&
@@ -81,10 +83,18 @@ export class EffectiveConfigurationPreviewController {
       serviceClass,
       at,
     };
-    return this.preview.preview(query);
+    return this.preview.preview(principal, query);
   }
 
-  private async authorize(req: AuthenticatedRequest): Promise<void> {
+  /**
+   * Route-level gate only. Returns the principal so the service can evaluate per-section
+   * functions against the SAME principal object the route guard authenticated.
+   *
+   * `limit.view` is the catalogue read function every operative limit surface already requires, so
+   * reaching the route invents no function code or role grant. It deliberately does not imply any
+   * other read function: the service withholds every section this principal cannot otherwise read.
+   */
+  private async authorize(req: AuthenticatedRequest): Promise<AuthorizationPrincipal> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     const allowed = ['OPERATOR', 'SERVICE', 'PRIVILEGED'];
@@ -92,12 +102,11 @@ export class EffectiveConfigurationPreviewController {
       throw new ForbiddenException(
         'Effective-configuration preview is workforce-only — OPERATOR/SERVICE/PRIVILEGED only',
       );
-    // `limit.view` is the catalogue read function every operative limit surface already requires;
-    // reusing it avoids inventing a function code or a role grant.
     await this.auth.requireFunction(principal, 'limit.view', 'commercial_configuration_preview', [
       'OPERATOR',
       'SERVICE',
       'PRIVILEGED',
     ]);
+    return principal;
   }
 }

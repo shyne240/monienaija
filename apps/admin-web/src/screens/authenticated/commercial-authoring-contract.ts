@@ -43,6 +43,11 @@ export interface AuthoringContract {
   modifyPathTemplate: string | null;
   /** Reason is fingerprint-bound on both phases; the backend requires 1–500 characters. */
   reasonRequired: true;
+  /**
+   * Create-time targeting dimensions the backend's create DTO accepts for this domain. Present
+   * only where the contract genuinely has them; absent means the resource carries no targeting.
+   */
+  targetingKeys?: readonly string[];
   /** Human note about what this resource can and cannot do today. */
   note: string;
 }
@@ -75,6 +80,12 @@ export const AUTHORING_CONTRACTS: Readonly<Record<AuthoringDomain, AuthoringCont
     createPathTemplate: '/internal/fee-rules',
     modifyPathTemplate: '/internal/fee-rules/{id}',
     reasonRequired: true,
+    /**
+     * Targeting is create-time only. The backend's fee-rule create contract accepts exactly these
+     * three targeting dimensions; `FeeRuleUpdateBody` accepts none of them, so an existing rule is
+     * superseded by a new targeted rule rather than retargeted in place.
+     */
+    targetingKeys: ['customerClassCode', 'agentClassId', 'institutionId'],
     note: 'Authoring stores a fee rule DEFINITION. No fee is charged, collected or posted by authoring or by preview.',
   },
   commissions: {
@@ -261,21 +272,102 @@ const effectiveFields: AuthoringFieldSpec[] = [
 
 export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSpec[]>> = {
   fees: [
-    { key: 'productCode', uppercase: true, label: 'Product code', type: 'text', required: true, pattern: '[A-Za-z0-9_.-]{2,80}' },
-    { key: 'currency', uppercase: true, label: 'Currency', type: 'text', required: true, pattern: '[A-Za-z]{3}', hint: 'Three-letter ISO code; V1 is NGN.' },
-    { key: 'flatFeeMinor', label: 'Flat fee (minor units)', type: 'text', pattern: '\\d{1,18}', hint: 'Integer minor units. Use 0 for an explicit zero-fee rule.' },
-    { key: 'percentageBps', label: 'Rate (basis points)', type: 'number', hint: '10000 bps = 100%.' },
-    { key: 'minimumFeeMinor', label: 'Minimum fee (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'maximumFeeMinor', label: 'Maximum fee (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'vatBps', label: 'VAT (basis points)', type: 'number', hint: 'Stored as configuration only. No VAT is posted while commercial accounting is disabled.' },
+    {
+      key: 'productCode',
+      uppercase: true,
+      label: 'Product code',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z0-9_.-]{2,80}',
+    },
+    {
+      key: 'currency',
+      uppercase: true,
+      label: 'Currency',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z]{3}',
+      hint: 'Three-letter ISO code; V1 is NGN.',
+    },
+    {
+      key: 'flatFeeMinor',
+      label: 'Flat fee (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+      hint: 'Integer minor units. Use 0 for an explicit zero-fee rule.',
+    },
+    {
+      key: 'percentageBps',
+      label: 'Rate (basis points)',
+      type: 'number',
+      hint: '10000 bps = 100%.',
+    },
+    {
+      key: 'minimumFeeMinor',
+      label: 'Minimum fee (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'maximumFeeMinor',
+      label: 'Maximum fee (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'vatBps',
+      label: 'VAT (basis points)',
+      type: 'number',
+      hint: 'Stored as configuration only. No VAT is posted while commercial accounting is disabled.',
+    },
+    {
+      key: 'customerClassCode',
+      uppercase: true,
+      label: 'Customer class code (targeting)',
+      type: 'text',
+      pattern: '[A-Za-z0-9_]{3,80}',
+      hint: 'Optional. Scopes the rule to one customer class, e.g. PREMIUM. Leave blank for an untargeted rule. Create-time only — a superseding rule is authored to change it.',
+    },
+    {
+      key: 'agentClassId',
+      label: 'Agent class UUID (targeting)',
+      type: 'text',
+      hint: 'Optional. Scopes the rule to one agent class. Create-time only.',
+    },
+    {
+      key: 'institutionId',
+      label: 'Institution UUID (targeting)',
+      type: 'text',
+      hint: 'Optional. Scopes the rule to one institution. Create-time only.',
+    },
     ...effectiveFields,
     { key: 'isActive', label: 'Active', type: 'boolean' },
     reasonField,
   ],
   commissions: [
-    { key: 'productCode', uppercase: true, label: 'Product code', type: 'text', required: true, pattern: '[A-Za-z0-9_.-]{2,80}' },
-    { key: 'currency', uppercase: true, label: 'Currency', type: 'text', required: true, pattern: '[A-Za-z]{3}' },
-    { key: 'recipientType', label: 'Recipient type', type: 'select', required: true, options: COMMISSION_RECIPIENTS },
+    {
+      key: 'productCode',
+      uppercase: true,
+      label: 'Product code',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z0-9_.-]{2,80}',
+    },
+    {
+      key: 'currency',
+      uppercase: true,
+      label: 'Currency',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z]{3}',
+    },
+    {
+      key: 'recipientType',
+      label: 'Recipient type',
+      type: 'select',
+      required: true,
+      options: COMMISSION_RECIPIENTS,
+    },
     {
       key: 'calculationModel',
       label: 'Calculation model',
@@ -284,12 +376,38 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
       options: COMMISSION_MODELS,
       hint: 'TIERED is not offered: tiered rules need explicit tier bands, and no approved tier editor exists yet.',
     },
-    { key: 'calculationBasis', label: 'Calculation basis', type: 'select', required: true, options: COMMISSION_BASES },
-    { key: 'flatCommissionMinor', label: 'Flat commission (minor units)', type: 'text', pattern: '\\d{1,18}' },
+    {
+      key: 'calculationBasis',
+      label: 'Calculation basis',
+      type: 'select',
+      required: true,
+      options: COMMISSION_BASES,
+    },
+    {
+      key: 'flatCommissionMinor',
+      label: 'Flat commission (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
     { key: 'percentageBps', label: 'Rate (basis points)', type: 'number' },
-    { key: 'minimumCommissionMinor', label: 'Minimum commission (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'maximumCommissionMinor', label: 'Maximum commission (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'agentClassId', label: 'Agent class UUID', type: 'text', hint: 'Targeting only. A missing target means the rule is not class-scoped.' },
+    {
+      key: 'minimumCommissionMinor',
+      label: 'Minimum commission (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'maximumCommissionMinor',
+      label: 'Maximum commission (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'agentClassId',
+      label: 'Agent class UUID',
+      type: 'text',
+      hint: 'Targeting only. A missing target means the rule is not class-scoped.',
+    },
     { key: 'agentId', label: 'Agent UUID', type: 'text' },
     { key: 'aggregatorId', label: 'Aggregator UUID', type: 'text' },
     ...effectiveFields,
@@ -297,10 +415,36 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
     reasonField,
   ],
   rewards: [
-    { key: 'productCode', uppercase: true, label: 'Product code', type: 'text', required: true, pattern: '[A-Za-z0-9_.-]{2,80}' },
-    { key: 'currency', uppercase: true, label: 'Currency', type: 'text', required: true, pattern: '[A-Za-z]{3}' },
-    { key: 'beneficiaryType', label: 'Beneficiary type', type: 'select', required: true, options: REWARD_BENEFICIARIES },
-    { key: 'rewardType', label: 'Reward type', type: 'select', required: true, options: REWARD_TYPES },
+    {
+      key: 'productCode',
+      uppercase: true,
+      label: 'Product code',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z0-9_.-]{2,80}',
+    },
+    {
+      key: 'currency',
+      uppercase: true,
+      label: 'Currency',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z]{3}',
+    },
+    {
+      key: 'beneficiaryType',
+      label: 'Beneficiary type',
+      type: 'select',
+      required: true,
+      options: REWARD_BENEFICIARIES,
+    },
+    {
+      key: 'rewardType',
+      label: 'Reward type',
+      type: 'select',
+      required: true,
+      options: REWARD_TYPES,
+    },
     {
       key: 'calculationModel',
       label: 'Calculation model',
@@ -309,12 +453,38 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
       options: REWARD_MODELS,
       hint: 'TIERED is not offered: tiered rules need explicit tier bands, and no approved tier editor exists yet.',
     },
-    { key: 'calculationBasis', label: 'Calculation basis', type: 'select', required: true, options: REWARD_BASES },
-    { key: 'flatRewardMinor', label: 'Flat reward (minor units)', type: 'text', pattern: '\\d{1,18}' },
+    {
+      key: 'calculationBasis',
+      label: 'Calculation basis',
+      type: 'select',
+      required: true,
+      options: REWARD_BASES,
+    },
+    {
+      key: 'flatRewardMinor',
+      label: 'Flat reward (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
     { key: 'percentageBps', label: 'Rate (basis points)', type: 'number' },
-    { key: 'minimumRewardMinor', label: 'Minimum reward (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'maximumRewardMinor', label: 'Maximum reward (minor units)', type: 'text', pattern: '\\d{1,18}' },
-    { key: 'customerKycLevel', label: 'Customer KYC level', type: 'select', options: REWARD_KYC_LEVELS },
+    {
+      key: 'minimumRewardMinor',
+      label: 'Minimum reward (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'maximumRewardMinor',
+      label: 'Maximum reward (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
+    {
+      key: 'customerKycLevel',
+      label: 'Customer KYC level',
+      type: 'select',
+      options: REWARD_KYC_LEVELS,
+    },
     { key: 'campaignCode', uppercase: true, label: 'Campaign code', type: 'text' },
     { key: 'customerId', label: 'Customer UUID', type: 'text' },
     { key: 'agentClassId', label: 'Agent class UUID', type: 'text' },
@@ -324,13 +494,58 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
     reasonField,
   ],
   limits: [
-    { key: 'limitProfileCode', uppercase: true, label: 'Limit profile code', type: 'text', required: true, pattern: '[A-Z0-9_]{3,80}', hint: 'The rule is created inside this EXISTING profile. Profiles are not created here.' },
-    { key: 'product', uppercase: true, label: 'Product', type: 'text', required: true, pattern: '[A-Z0-9_][A-Z0-9_.-]{1,79}' },
-    { key: 'currency', uppercase: true, label: 'Currency', type: 'text', required: true, pattern: '[A-Z]{3}' },
-    { key: 'dimension', label: 'Dimension', type: 'select', required: true, options: LIMIT_DIMENSIONS, hint: 'Amount dimensions use the minor-unit field; count dimensions use the count field.' },
-    { key: 'direction', label: 'Direction', type: 'select', options: LIMIT_DIRECTIONS, hint: 'BOTH applies to both directions.' },
-    { key: 'channel', label: 'Channel', type: 'text', hint: 'Empty matches any channel. A set channel never matches a channel-less operation.' },
-    { key: 'limitValueMinor', label: 'Amount limit (minor units)', type: 'text', pattern: '\\d{1,18}' },
+    {
+      key: 'limitProfileCode',
+      uppercase: true,
+      label: 'Limit profile code',
+      type: 'text',
+      required: true,
+      pattern: '[A-Z0-9_]{3,80}',
+      hint: 'The rule is created inside this EXISTING profile. Profiles are not created here.',
+    },
+    {
+      key: 'product',
+      uppercase: true,
+      label: 'Product',
+      type: 'text',
+      required: true,
+      pattern: '[A-Z0-9_][A-Z0-9_.-]{1,79}',
+    },
+    {
+      key: 'currency',
+      uppercase: true,
+      label: 'Currency',
+      type: 'text',
+      required: true,
+      pattern: '[A-Z]{3}',
+    },
+    {
+      key: 'dimension',
+      label: 'Dimension',
+      type: 'select',
+      required: true,
+      options: LIMIT_DIMENSIONS,
+      hint: 'Amount dimensions use the minor-unit field; count dimensions use the count field.',
+    },
+    {
+      key: 'direction',
+      label: 'Direction',
+      type: 'select',
+      options: LIMIT_DIRECTIONS,
+      hint: 'BOTH applies to both directions.',
+    },
+    {
+      key: 'channel',
+      label: 'Channel',
+      type: 'text',
+      hint: 'Empty matches any channel. A set channel never matches a channel-less operation.',
+    },
+    {
+      key: 'limitValueMinor',
+      label: 'Amount limit (minor units)',
+      type: 'text',
+      pattern: '\\d{1,18}',
+    },
     { key: 'limitValueCount', label: 'Count limit', type: 'number' },
     ...effectiveFields,
     { key: 'isActive', label: 'Active', type: 'boolean' },
@@ -346,7 +561,14 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
  * direction, channel, currency and dimension, so only the owning profile is treated as identity.
  */
 export const IMMUTABLE_ON_MODIFY: Readonly<Record<AuthoringDomain, readonly string[]>> = {
-  fees: ['productCode', 'currency', 'effectiveFrom'],
+  fees: [
+    'productCode',
+    'currency',
+    'customerClassCode',
+    'agentClassId',
+    'institutionId',
+    'effectiveFrom',
+  ],
   commissions: [
     'productCode',
     'currency',
@@ -449,7 +671,8 @@ const trimmed = (value: unknown): string | undefined => {
 const minor = (value: unknown): string | undefined => {
   const text = trimmed(value) ?? (typeof value === 'number' ? String(value) : undefined);
   if (text === undefined) return undefined;
-  if (!/^\d{1,18}$/.test(text)) throw new Error('Minor-unit amounts must be whole non-negative integers.');
+  if (!/^\d{1,18}$/.test(text))
+    throw new Error('Minor-unit amounts must be whole non-negative integers.');
   return text.replace(/^0+(?=\d)/, '');
 };
 const integer = (value: unknown, label: string, max = 10000): number | undefined => {
@@ -521,6 +744,11 @@ export function buildAuthoringPayload(
     put('minimumFeeMinor', minor(values.minimumFeeMinor));
     put('maximumFeeMinor', minor(values.maximumFeeMinor));
     put('vatBps', integer(values.vatBps, 'VAT (bps)'));
+    // Targeting: exactly the three dimensions the create contract accepts. Omitted when blank so
+    // an untargeted rule stays untargeted rather than carrying empty-string targets.
+    put('customerClassCode', trimmed(values.customerClassCode)?.toUpperCase());
+    put('agentClassId', trimmed(values.agentClassId));
+    put('institutionId', trimmed(values.institutionId));
   }
 
   if (domain === 'commissions') {
@@ -607,7 +835,8 @@ export function authoringPath(
   const template = contract.modifyPathTemplate;
   if (!template) throw new Error(`No modification contract exists for ${domain}.`);
   const id = typeof record?.id === 'string' ? record.id : null;
-  if (!id) throw new Error('This rule has no readable id, so a governed change cannot be bound to it.');
+  if (!id)
+    throw new Error('This rule has no readable id, so a governed change cannot be bound to it.');
   return template.replace('{id}', encodeURIComponent(id));
 }
 
@@ -678,13 +907,15 @@ export function explainChangeState(input: {
     return {
       state: 'APPLIED_PENDING_WINDOW',
       headline: 'Applied, scheduled',
-      detail: 'Written and approved, but its effective window has not started. It governs nothing yet.',
+      detail:
+        'Written and approved, but its effective window has not started. It governs nothing yet.',
     };
   if (to !== null && to <= now)
     return {
       state: 'ENDED',
       headline: 'Ended',
-      detail: 'Its effective window has passed. It no longer applies, and existing records are unaffected.',
+      detail:
+        'Its effective window has passed. It no longer applies, and existing records are unaffected.',
     };
   if (input.isActive === false)
     return {

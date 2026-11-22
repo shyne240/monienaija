@@ -167,6 +167,51 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+  /**
+   * Assign the customer to a seeded customer class. The migration backfills STANDARD, so a test
+   * that wants PREMIUM/BUSINESS must close the live assignment exactly as the governed switch does.
+   */
+  async function assignClass(
+    customerId: string,
+    classCode: string,
+    options: { readonly effectiveFrom?: Date; readonly effectiveTo?: Date | null } = {},
+  ): Promise<{ classId: string; assignmentId: string }> {
+    // `truncateAllTables` empties the migration-seeded classes, so restore the canonical seed for
+    // this code on demand — exactly as the suite restores the product catalogue seed.
+    const classes: Array<{ id: string }> = await dataSource.query(
+      'SELECT id FROM customer_classes WHERE code = $1 AND deleted_at IS NULL',
+      [classCode],
+    );
+    let classId = classes[0]?.id;
+    if (!classId) {
+      const inserted: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO customer_classes
+           (reference, code, name, kind, status, enabled, configuration_status, is_default, created_by)
+         VALUES ($1,$2,$3,'CUSTOMER','ACTIVE',TRUE,'CONFIGURED',FALSE,'test-harness')
+         RETURNING id`,
+        [`CUSTOMER-CLASS-${classCode}`, classCode, classCode[0] + classCode.slice(1).toLowerCase()],
+      );
+      classId = inserted[0]!.id;
+    }
+    await dataSource.query(
+      'UPDATE customer_class_assignments SET is_active = false, effective_to = NOW() WHERE customer_id = $1 AND is_active',
+      [customerId],
+    );
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customer_class_assignments
+         (customer_id, class_id, effective_from, effective_to, is_active, precedence, source, reason, created_by)
+       VALUES ($1,$2,$3,$4,true,0,'MANUAL','test assignment','test-harness')
+       RETURNING id`,
+      [
+        customerId,
+        classId,
+        options.effectiveFrom ?? new Date(Date.now() - 60_000),
+        options.effectiveTo ?? null,
+      ],
+    );
+    return { classId, assignmentId: rows[0]!.id };
+  }
+
   // ──────────────────────────────────────────────────────────────────── limit fixtures
 
   async function seedProfile(code: string, kind = 'CUSTOMER'): Promise<SeededProfile> {
@@ -741,6 +786,7 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
         readonly: true,
         writesPerformed: [],
         financialMutations: [],
+        databaseTransactionReadOnly: true,
       });
     });
   });
@@ -820,15 +866,310 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
       }
     });
 
-    it('reports customer class as NOT_APPLICABLE without inferring one', async () => {
+    it('resolves the canonical customer class instead of reporting an unavailable contract', async () => {
       const auditor = await provisionRole('FINANCE_AUDITOR');
       const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'PREMIUM');
+
       const preview = await request(app.getHttpServer())
         .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
         .set(auth(auditor.token));
+
+      expect(preview.status).toBe(200);
+      // The hardcoded NOT_APPLICABLE is gone: Arena 1's resolver answers.
+      expect(preview.body.customerClass.status).toBe('RESOLVED');
+      expect(preview.body.customerClass.effective).toMatchObject({
+        classCode: 'PREMIUM',
+        className: 'Premium',
+        source: 'MANUAL',
+      });
+      expect(preview.body.customerClass.effective.assignmentId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(typeof preview.body.customerClass.effective.assignmentVersion).toBe('number');
+      expect(typeof preview.body.customerClass.effective.classVersion).toBe('number');
+    });
+
+    it('reports an explicit MISSING class rather than inferring one from tier, segment or agent class', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      // Remove the assignment the class resolver would otherwise find.
+      await dataSource.query(
+        'UPDATE customer_class_assignments SET is_active = false WHERE customer_id = $1',
+        [customerId],
+      );
+
+      const preview = await request(app.getHttpServer())
+        .get(
+          `${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}` +
+            `&segmentCodes=PREMIUM&agentClassId=${randomUUID()}`,
+        )
+        .set(auth(auditor.token));
+
+      expect(preview.body.customerClass.status).toBe('MISSING');
+      expect(preview.body.customerClass.effective).toBeNull();
+      expect(preview.body.customerClass.note).toMatch(/No class was inferred from KYC tier/i);
+      // Even though the caller *asked* about segment PREMIUM, the class section never echoes it as
+      // a resolved class.
+      expect(preview.body.customerClass.effective).toBeNull();
+    });
+
+    it('reports an agent principal customer class as NOT_APPLICABLE, not as a guessed class', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const preview = await request(app.getHttpServer())
+        .get(
+          `${PREVIEW_PATH}?productCode=${PRODUCT}&principalType=AGENT&principalId=${randomUUID()}`,
+        )
+        .set(auth(auditor.token));
       expect(preview.body.customerClass.status).toBe('NOT_APPLICABLE');
-      expect(preview.body.customerClass.note).toMatch(/No customer-class resolution contract/i);
-      expect(preview.body.customerClass).not.toHaveProperty('code');
+      expect(preview.body.customerClass.effective).toBeNull();
+    });
+  });
+
+  // ════════════════════════ 4b. role-based information isolation (RESTRICTED sections)
+
+  describe('limit.view alone never exposes commercial configuration', () => {
+    /**
+     * AGENT_NETWORK_MANAGER holds `limit.view` and `institution.view` but none of
+     * fee_rule.view / commission_rule.view / reward_rule.view / kyc.view / customer.view.
+     * The preview must answer 200 and name what was withheld — it must never leak a value.
+     */
+    it('answers with explicit RESTRICTED states and leaks no withheld configuration', async () => {
+      const agentNetwork = await provisionRole('AGENT_NETWORK_MANAGER');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'PREMIUM');
+      await seedProfile('LP_A3_ISOLATION');
+      await dataSource.query(
+        `INSERT INTO limit_assignments (limit_profile_code, subject_type, subject_id, segment_code,
+           precedence, effective_from, is_active, created_by)
+         VALUES ('LP_A3_ISOLATION','CUSTOMER',$1,NULL,10,NOW()-interval '1 hour',true,'test')`,
+        [customerId],
+      );
+      // A live fee rule with a distinctive amount that must never appear in this response.
+      await dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, percentage_bps, effective_from, priority,
+           is_active, created_by)
+         VALUES ($1,$2,9876,NOW()-interval '1 hour',1,true,'test')`,
+        [PRODUCT, CURRENCY],
+      );
+
+      const preview = await request(app.getHttpServer())
+        .get(
+          `${PREVIEW_PATH}?productCode=${PRODUCT}&principalType=CUSTOMER&principalId=${customerId}`,
+        )
+        .set(auth(agentNetwork.token));
+
+      expect(preview.status).toBe(200);
+
+      const restrictedSections: Record<string, string> = {
+        fee: 'fee_rule.view',
+        commission: 'commission_rule.view',
+        reward: 'reward_rule.view',
+        kycRestriction: 'kyc.view',
+        customerClass: 'customer.view',
+      };
+      for (const bodyKey of Object.keys(restrictedSections)) {
+        const requiredFunction = restrictedSections[bodyKey]!;
+        const section: { status?: string; requiredFunction?: string } | undefined =
+          preview.body[bodyKey];
+        expect(section?.status).toBe('RESTRICTED');
+        expect(section?.requiredFunction).toBe(requiredFunction);
+        // A RESTRICTED section carries no configuration payload at all: exactly three keys.
+        expect(Object.keys(section ?? {}).sort()).toEqual(['note', 'requiredFunction', 'status']);
+      }
+
+      // Nothing withheld may be smuggled out through another field.
+      const serialized = JSON.stringify(preview.body);
+      expect(serialized).not.toContain('9876');
+      expect(serialized).not.toContain('PREMIUM');
+      expect(serialized).not.toContain('STANDARD');
+      // The limit section runs on limit.view, which this caller does hold.
+
+      // Sections the caller IS entitled to still resolve: the limit section runs on limit.view.
+      // The limit section still runs for this caller: the assignment resolves even though the
+      // profile carries no rule (correctly MISSING, never unlimited).
+      expect(preview.body.limits.assignmentProfileCode).toBe('LP_A3_ISOLATION');
+      expect(preview.body.limits.status).toBe('MISSING');
+    });
+
+    it('withholds the product section without probing whether the product exists', async () => {
+      // AGENT_NETWORK_MANAGER holds limit.view but NOT product.view — the only seeded role with
+      // that combination, so it is exactly the caller who could otherwise probe the catalogue.
+      const operations = await provisionRole('AGENT_NETWORK_MANAGER');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+
+      const known = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(operations.token));
+      const unknown = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=A3_UNREGISTERED_PRODUCT&principalId=${customerId}`)
+        .set(auth(operations.token));
+
+      // Identical answers: a withheld caller cannot use the preview as an existence oracle.
+      expect(known.status).toBe(200);
+      expect(unknown.status).toBe(200);
+      expect(known.body.product).toBeNull();
+      expect(unknown.body.product).toBeNull();
+      expect(known.body.productRestricted.status).toBe('RESTRICTED');
+      expect(unknown.body.productRestricted.status).toBe('RESTRICTED');
+      expect(known.body.productRestricted.requiredFunction).toBe('product.view');
+      expect(unknown.body.productRestricted.requiredFunction).toBe('product.view');
+    });
+
+    it('gives a fully entitled auditor the resolved sections a restricted caller cannot see', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'BUSINESS');
+
+      const preview = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(auditor.token));
+
+      expect(preview.status).toBe(200);
+      for (const section of ['fee', 'commission', 'reward', 'kycRestriction', 'customerClass']) {
+        expect(preview.body[section]).toBeDefined();
+        expect(preview.body[section].status).not.toBe('RESTRICTED');
+      }
+      expect(preview.body.product).not.toBeNull();
+      expect(preview.body.customerClass.effective.classCode).toBe('BUSINESS');
+    });
+  });
+
+  // ══════════════════════════════ 4c. database-enforced read-only guarantee
+
+  describe('the advisory transaction is READ ONLY at the database level', () => {
+    it('reports the database-confirmed read-only state rather than asserting it in code', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+
+      const preview = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(auditor.token));
+
+      expect(preview.status).toBe(200);
+      expect(preview.body.guarantees.databaseTransactionReadOnly).toBe(true);
+      expect(preview.body.guarantees.readonly).toBe(true);
+      expect(preview.body.guarantees.writesPerformed).toEqual([]);
+      expect(preview.body.guarantees.financialMutations).toEqual([]);
+    });
+
+    it('is enforced by PostgreSQL: a write attempted inside the preview transaction is refused', async () => {
+      // Proves the guarantee is a database property, not a convention. The service uses
+      // REPEATABLE READ + SET TRANSACTION READ ONLY, which is exactly what is reproduced here.
+      const customerId = randomUUID();
+      await expect(
+        dataSource.transaction('REPEATABLE READ', async (manager) => {
+          await manager.query('SET TRANSACTION READ ONLY');
+          const state: Array<{ transaction_read_only: string }> = await manager.query(
+            'SHOW transaction_read_only',
+          );
+          expect(state[0]!.transaction_read_only).toBe('on');
+          await manager.query(
+            `INSERT INTO limit_assignments (limit_profile_code, subject_type, subject_id,
+               precedence, effective_from, is_active, created_by)
+             VALUES ('LP_SHOULD_NOT_EXIST','CUSTOMER',$1,0,NOW(),true,'test')`,
+            [customerId],
+          );
+        }),
+      ).rejects.toThrow(/read-only transaction/i);
+
+      const rows: Array<{ count: string }> = await dataSource.query(
+        `SELECT COUNT(*)::text AS count FROM limit_assignments WHERE limit_profile_code = 'LP_SHOULD_NOT_EXIST'`,
+      );
+      expect(rows[0]!.count).toBe('0');
+    });
+
+    it('writes nothing at all: every commercial table is unchanged after a resolved preview', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'PREMIUM');
+
+      const snapshot = async () =>
+        Promise.all(
+          [
+            'fee_rules',
+            'commission_rules',
+            'reward_rules',
+            'limit_profiles',
+            'limit_rules',
+            'limit_assignments',
+            'customer_classes',
+            'customer_class_assignments',
+          ].map(async (table) => {
+            const rows: Array<{ count: string; digest: string | null }> = await dataSource.query(
+              `SELECT COUNT(*)::text AS count, md5(COALESCE(string_agg(t::text, '|' ORDER BY t::text), '')) AS digest FROM ${table} t`,
+            );
+            return `${table}:${rows[0]!.count}:${rows[0]!.digest}`;
+          }),
+        );
+
+      const before = await snapshot();
+      const preview = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(auditor.token));
+      expect(preview.status).toBe(200);
+      expect(preview.body.guarantees.databaseTransactionReadOnly).toBe(true);
+      expect(await snapshot()).toEqual(before);
+    });
+  });
+
+  // ═══════════════════════════ 4d. fee targeting reaches the resolver
+
+  describe('fee resolution receives the applicable targeting dimensions', () => {
+    it('selects a rule targeted at the resolved customer class and ignores an untargeted cheaper one', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'PREMIUM');
+
+      // Untargeted rule (applies to everyone) at 100 bps.
+      await dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, percentage_bps, effective_from, priority,
+           is_active, created_by)
+         VALUES ($1,$2,100,NOW()-interval '2 hours',1,true,'test')`,
+        [PRODUCT, CURRENCY],
+      );
+      // Class-targeted rule at 250 bps, higher priority.
+      await dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, customer_class_code, percentage_bps,
+           effective_from, priority, is_active, created_by)
+         VALUES ($1,$2,'PREMIUM',250,NOW()-interval '1 hour',5,true,'test')`,
+        [PRODUCT, CURRENCY],
+      );
+
+      const preview = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(auditor.token));
+
+      expect(preview.status).toBe(200);
+      expect(preview.body.fee.status).toBe('RESOLVED');
+      // The class-targeted rule wins: targeting is applied, not silently dropped.
+      expect(preview.body.fee.rule.percentageBps).toBe(250);
+      expect(preview.body.customerClass.effective.classCode).toBe('PREMIUM');
+    });
+
+    it('does not apply a rule targeted at a class the customer does not hold', async () => {
+      const auditor = await provisionRole('FINANCE_AUDITOR');
+      const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+      await assignClass(customerId, 'STANDARD');
+
+      await dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, percentage_bps, effective_from, priority,
+           is_active, created_by)
+         VALUES ($1,$2,100,NOW()-interval '2 hours',1,true,'test')`,
+        [PRODUCT, CURRENCY],
+      );
+      await dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, customer_class_code, percentage_bps,
+           effective_from, priority, is_active, created_by)
+         VALUES ($1,$2,'BUSINESS',999,NOW()-interval '1 hour',9,true,'test')`,
+        [PRODUCT, CURRENCY],
+      );
+
+      const preview = await request(app.getHttpServer())
+        .get(`${PREVIEW_PATH}?productCode=${PRODUCT}&principalId=${customerId}`)
+        .set(auth(auditor.token));
+
+      expect(preview.status).toBe(200);
+      expect(preview.body.fee.rule.percentageBps).toBe(100);
+      expect(JSON.stringify(preview.body)).not.toContain('999');
     });
   });
 

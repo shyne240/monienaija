@@ -9,8 +9,8 @@
  *    accrual or a credit. No money moves because a preview ran.
  *  - `BACKEND_RESOLVERS` — every status, window, priority and amount below comes from an existing
  *    service. The preview performs no precedence, threshold or eligibility arithmetic.
- *  - `NOT_APPLICABLE` — a resolver whose contract is absent from this baseline (currently the
- *    Arena 1 customer-class resolver) is reported, never approximated from tier/segment/class code.
+ *  - `NOT_APPLICABLE` — a section that does not apply to this request at all (for example a
+ *    KYC decision for a request that named no customer). Never an approximation.
  *  - `MISSING` — a definitive "no such configuration". It is never rendered as "unlimited".
  */
 
@@ -21,10 +21,17 @@ export type PreviewSectionStatus =
   | 'MISSING'
   /** Resolver refused a tied top rule set. Nothing was selected. */
   | 'AMBIGUOUS'
-  /** Resolver contract is not available on this baseline; no inference was attempted. */
+  /** The section does not apply to this request; no inference was attempted. */
   | 'NOT_APPLICABLE'
   /** The section could not be evaluated (invalid input, unavailable policy). */
-  | 'UNAVAILABLE';
+  | 'UNAVAILABLE'
+  /**
+   * The caller is authenticated and authorized for THIS route (`limit.view`) but not for the
+   * function that governs the section's data. The section is withheld — not evaluated, not
+   * partially disclosed — and `note` says only which capability is missing. Nothing about the
+   * underlying configuration (existence, count, priority, amount) is returned.
+   */
+  | 'RESTRICTED';
 
 export type PreviewSeverity = 'INFO' | 'WARNING' | 'BLOCKER';
 
@@ -58,12 +65,44 @@ export interface PreviewInstitution {
   status: string | null;
 }
 
-export interface PreviewCustomerClass {
-  status: PreviewSectionStatus;
+/**
+ * Section projection for a withheld section.
+ *
+ * Deliberately carries NO configuration fields: an unauthorized caller learns that the section
+ * exists and which capability would unlock it, and nothing else. Presence/absence of rules,
+ * amounts and priorities are exactly the information a missing read function must not reveal.
+ */
+export interface PreviewRestrictedSection {
+  status: 'RESTRICTED';
   note: string;
+  /** Catalogue function the caller lacks for this section. */
+  requiredFunction: string;
 }
 
-export interface PreviewKycRestriction {
+/** An effective customer-class resolution (Arena 1 `CustomerClassResolverService`). */
+export interface PreviewCustomerClassResolution {
+  /** Class code — the identifier every commercial rule targets. */
+  classCode: string;
+  assignmentId: string;
+  classId: string;
+  className: string;
+  /** Assignment row version, so a later switch is explainable. */
+  assignmentVersion: number;
+  /** Class catalogue row version. */
+  classVersion: number;
+  source: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+}
+
+export interface PreviewCustomerClassSection {
+  status: PreviewSectionStatus;
+  note: string | null;
+  /** Present only when status === 'RESOLVED'. */
+  effective: PreviewCustomerClassResolution | null;
+}
+
+interface PreviewKycRestrictionBody {
   /** Trusted financial-eligibility gate result, or null when no customer was supplied. */
   kycLevel: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null;
   /** `KYC_TIER_LIMIT_ENFORCEMENT_ENABLED` as deployed for THIS backend instance. */
@@ -79,6 +118,8 @@ export interface PreviewKycRestriction {
   /** Why a tier mapping is absent, straight from the policy service. */
   note: string | null;
 }
+
+export type PreviewKycRestriction = PreviewKycRestrictionBody | PreviewRestrictedSection;
 
 export interface PreviewLimitAssignment {
   assignmentId: string;
@@ -120,8 +161,8 @@ export interface PreviewLimitSection {
   tierEnforcementInactive: boolean;
 }
 
-export interface PreviewFeeSection {
-  status: PreviewSectionStatus;
+interface PreviewFeeSectionBody {
+  status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   currency: string;
   evaluatedAt: string;
@@ -152,6 +193,8 @@ export interface PreviewFeeSection {
   } | null;
 }
 
+export type PreviewFeeSection = PreviewFeeSectionBody | PreviewRestrictedSection;
+
 export interface PreviewCommissionAllocation {
   recipientType: string;
   recipientId: string | null;
@@ -172,13 +215,15 @@ export interface PreviewCommissionAllocation {
   };
 }
 
-export interface PreviewCommissionSection {
-  status: PreviewSectionStatus;
+interface PreviewCommissionSectionBody {
+  status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   allocations: PreviewCommissionAllocation[];
   /** Stated explicitly: nothing is accrued or settled here. */
   accrualPosted: false;
 }
+
+export type PreviewCommissionSection = PreviewCommissionSectionBody | PreviewRestrictedSection;
 
 export interface PreviewRewardGrant {
   beneficiaryType: string;
@@ -197,13 +242,15 @@ export interface PreviewRewardGrant {
   campaignCode: string | null;
 }
 
-export interface PreviewRewardSection {
-  status: PreviewSectionStatus;
+interface PreviewRewardSectionBody {
+  status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   grants: PreviewRewardGrant[];
   /** Reward financial execution stays unwired; the preview never credits a wallet. */
   creditPosted: false;
 }
+
+export type PreviewRewardSection = PreviewRewardSectionBody | PreviewRestrictedSection;
 
 export interface EffectiveConfigurationPreview {
   previewedAt: string;
@@ -224,9 +271,12 @@ export interface EffectiveConfigurationPreview {
     serviceClass: string | null;
     evaluatedAt: string;
   };
-  product: PreviewProduct | null;
-  institution: PreviewInstitution | null;
-  customerClass: PreviewCustomerClass;
+  /** `null` when withheld or not located; `productRestricted` carries the reason. */
+  product: PreviewProduct | PreviewRestrictedSection | null;
+  productRestricted: PreviewRestrictedSection | null;
+  institution: PreviewInstitution | PreviewRestrictedSection | null;
+  institutionRestricted: PreviewRestrictedSection | null;
+  customerClass: PreviewCustomerClassSection | PreviewRestrictedSection;
   kycRestriction: PreviewKycRestriction;
   limits: PreviewLimitSection;
   fee: PreviewFeeSection;
@@ -250,5 +300,11 @@ export interface EffectiveConfigurationPreview {
     readonly: true;
     writesPerformed: [];
     financialMutations: [];
+    /**
+     * Proves the advisory read ran inside a database-enforced READ ONLY transaction
+     * (`SET TRANSACTION READ ONLY`, then `SHOW transaction_read_only` asserted back). Reported as
+     * the observed value, never as a constant the code merely claims.
+     */
+    databaseTransactionReadOnly: boolean;
   };
 }

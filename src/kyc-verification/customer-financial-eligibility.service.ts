@@ -7,7 +7,19 @@ import { KycTierPolicyService } from './kyc-tier-policy.service';
 
 export interface FinancialEligibilityOptions {
   readonly requireActive?: boolean;
-  readonly lockMode?: 'UPDATE' | 'SHARE';
+  /**
+   * Row locking strength.
+   *
+   * `UPDATE` (default) — the admission lock every financial path takes.
+   * `SHARE`              — a read lock for callers that must not be disturbed by a concurrent
+   *                        restriction write (e.g. the commercial snapshot writers).
+   * `NONE`               — NO row lock. Reserved for genuinely read-only callers (Arena 3's
+   *                        effective-configuration preview), because PostgreSQL forbids
+   *                        `SELECT … FOR SHARE/UPDATE` inside a `READ ONLY` transaction. Such a
+   *                        caller must never make a financial decision from this result, and the
+   *                        preview never does: it reports eligibility, it does not admit anything.
+   */
+  readonly lockMode?: 'UPDATE' | 'SHARE' | 'NONE';
 }
 
 export const FROZEN_CUSTOMER_MESSAGE =
@@ -55,7 +67,12 @@ export class CustomerFinancialEligibilityService {
         ? { ...options, requireActive: requireActiveOrOptions }
         : { ...requireActiveOrOptions, ...options };
     const requireActive = resolvedOptions.requireActive ?? true;
-    const rowLock = resolvedOptions.lockMode === 'SHARE' ? 'FOR SHARE' : 'FOR UPDATE';
+    const rowLock =
+      resolvedOptions.lockMode === 'NONE'
+        ? ''
+        : resolvedOptions.lockMode === 'SHARE'
+          ? 'FOR SHARE'
+          : 'FOR UPDATE';
     const customers = await manager.query<
       Array<{
         status: string;
@@ -109,20 +126,25 @@ export class CustomerFinancialEligibilityService {
     );
     if (holds.length) throw new ConflictException('Customer is not eligible for financial access');
     const conflicts = await manager.query<Array<{ id: string }>>(
-      `SELECT id FROM kyc_identity_conflicts WHERE requester_customer_id=$1 OR claimed_customer_id=$1 FOR SHARE`,
+      `SELECT id FROM kyc_identity_conflicts WHERE requester_customer_id=$1 OR claimed_customer_id=$1 ${rowLock}`,
       [customerId],
     );
     if (conflicts.length)
       throw new ConflictException('Customer is not eligible for financial access');
     const phones = await manager.query<Array<{ id: string }>>(
-      `SELECT id FROM customer_contact_methods WHERE customer_id=$1 AND type='PHONE' AND is_primary=true AND verified_at IS NOT NULL AND deleted_at IS NULL FOR SHARE`,
+      `SELECT id FROM customer_contact_methods WHERE customer_id=$1 AND type='PHONE' AND is_primary=true AND verified_at IS NOT NULL AND deleted_at IS NULL ${rowLock}`,
       [customerId],
     );
     if (phones.length !== 1)
       throw new ConflictException('Customer is not eligible for financial access');
     let source;
     try {
-      source = await this.reader.read(manager, customerId);
+      // The trusted reader takes the same lock strength as this gate. Under the default
+      // UPDATE/SHARE strengths that is unchanged; a genuinely read-only caller (lockMode NONE)
+      // must not attempt `FOR SHARE` inside its READ ONLY transaction.
+      source = await this.reader.read(manager, customerId, {
+        ...(resolvedOptions.lockMode === 'NONE' ? { lockMode: 'NONE' as const } : {}),
+      });
     } catch (error) {
       if (isRetryableTransactionError(error)) throw error;
       throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');

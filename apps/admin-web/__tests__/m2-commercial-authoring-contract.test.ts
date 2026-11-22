@@ -231,7 +231,8 @@ describe('payloads match the backend maker bodies', () => {
   });
 
   test('the model enums mirror the backend and exclude TIERED from the form', () => {
-    for (const model of UNAUTHORED_COMMISSION_MODELS) expect(COMMISSION_MODELS).not.toContain(model);
+    for (const model of UNAUTHORED_COMMISSION_MODELS)
+      expect(COMMISSION_MODELS).not.toContain(model);
     for (const model of UNAUTHORED_REWARD_MODELS) expect(REWARD_MODELS).not.toContain(model);
     const field = AUTHORING_FIELDS.commissions.find((f) => f.key === 'calculationModel');
     expect(field?.options).toBe(COMMISSION_MODELS);
@@ -326,9 +327,9 @@ describe('modify payloads strip identity and bind the loaded version', () => {
 
 describe('authoring paths resolve from the contracts', () => {
   test('limit creation interpolates the profile code into the path', () => {
-    expect(
-      authoringPath('limits', 'create', null, { limitProfileCode: 'standard tier' }),
-    ).toBe('/internal/limit-profiles/STANDARD%20TIER/rules');
+    expect(authoringPath('limits', 'create', null, { limitProfileCode: 'standard tier' })).toBe(
+      '/internal/limit-profiles/STANDARD%20TIER/rules',
+    );
     expect(() => authoringPath('limits', 'create', null, {})).toThrow(/profile code is required/);
   });
 
@@ -467,5 +468,75 @@ describe('query construction omits blanks and upper-cases codes', () => {
     expect(historyActionFor('commissions', 'modify')).toBe('COMMISSION_RULE_MODIFY');
     expect(historyActionFor('rewards', 'create')).toBe('REWARD_RULE_CREATE');
     expect(historyActionFor('limits', 'modify')).toBe('LIMIT_RULE_UPDATE');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// Phase 2 completion — fee-rule targeting is offered where the backend contract supports it.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+describe('fee-rule targeting is authored, never silently dropped', () => {
+  /**
+   * The backend's `FeeRuleCreateBody` accepts exactly these three targeting dimensions. The
+   * operator must be able to express them; otherwise a targeted rule could only be authored
+   * through the API, and the Studio would be unable to explain why a rule did not apply.
+   */
+  const TARGETING = ['customerClassCode', 'agentClassId', 'institutionId'] as const;
+
+  test('the created fee rule carries every targeting dimension the operator supplied', () => {
+    const payload = buildAuthoringPayload('fees', {
+      productCode: 'transfer',
+      currency: 'ngn',
+      percentageBps: '250',
+      customerClassCode: 'premium',
+      agentClassId: '11111111-1111-4111-8111-111111111111',
+      institutionId: '22222222-2222-4222-8222-222222222222',
+      effectiveFrom: '2026-03-01T00:00:00.000Z',
+      reason: 'Targeted pricing for the Premium class of service',
+    });
+
+    expect(payload.customerClassCode).toBe('PREMIUM');
+    expect(payload.agentClassId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(payload.institutionId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(payload.percentageBps).toBe(250);
+  });
+
+  test('a blank target is omitted rather than sent as an empty string', () => {
+    const payload = buildAuthoringPayload('fees', {
+      productCode: 'transfer',
+      currency: 'NGN',
+      percentageBps: '100',
+      customerClassCode: '   ',
+      agentClassId: '',
+      institutionId: '',
+      effectiveFrom: '2026-03-01T00:00:00.000Z',
+      reason: 'Untargeted pricing for every customer class',
+    });
+
+    for (const key of TARGETING) expect(key in payload).toBe(false);
+  });
+
+  test('every targeting field is offered on the create form and declared immutable on modify', () => {
+    const shown = new Set(AUTHORING_FIELDS.fees.map((field) => field.key));
+    for (const key of TARGETING) expect(shown.has(key)).toBe(true);
+
+    // `FeeRuleUpdateBody` accepts none of them, so they must never appear in a modify payload.
+    for (const key of TARGETING) expect(IMMUTABLE_ON_MODIFY.fees).toContain(key);
+
+    const payload = buildModifyPayload(
+      'fees',
+      {
+        percentageBps: '300',
+        reason: 'Superseding rate for the same definition',
+      },
+      2,
+    );
+    for (const key of TARGETING) expect(key in payload).toBe(false);
+  });
+
+  test('the contract names exactly the targeting dimensions the Studio exposes', () => {
+    expect(AUTHORING_CONTRACTS.fees.targetingKeys).toEqual([...TARGETING]);
+    // Domains whose create DTO has no targeting claim none.
+    expect(AUTHORING_CONTRACTS.limits.targetingKeys).toBeUndefined();
   });
 });

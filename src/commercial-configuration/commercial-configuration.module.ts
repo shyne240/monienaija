@@ -6,6 +6,7 @@ import { PrivilegedActionApproval } from '../authorization/privileged-action-app
 import { PrivilegedActionApprovalReadService } from '../authorization/privileged-action-approval-read.service';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { CommissionModule } from '../commission/commission.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
@@ -37,6 +38,9 @@ import { EffectiveConfigurationPreviewService } from './effective-configuration-
     forwardRef(() => CommissionModule),
     forwardRef(() => RewardModule),
     forwardRef(() => ProductCatalogModule),
+    // Arena 1's canonical class resolver. Imported (not re-implemented) so the preview consumes
+    // the exact same class-resolution contract as the customer-class HTTP surface.
+    forwardRef(() => CustomerClassModule),
   ],
   controllers: [EffectiveConfigurationPreviewController, CommercialChangeHistoryController],
   providers: [

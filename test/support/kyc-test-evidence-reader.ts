@@ -3,6 +3,7 @@ import type { EntityManager } from 'typeorm';
 import type { TestingModuleBuilder } from '@nestjs/testing';
 import {
   KycTierEvidenceReader,
+  type TierEvidenceReadOptions,
   type TierEvidenceSnapshot,
 } from '../../src/kyc-verification/kyc-tier-evidence.reader';
 import type { TierEvidence } from '../../src/kyc-verification/kyc-tier-decision';
@@ -92,8 +93,14 @@ export function createTestEvidenceReader(
     override async read(
       manager: EntityManager,
       customerId: string,
+      options: TierEvidenceReadOptions = {},
     ): Promise<TierEvidenceSnapshot | null> {
       if (mode !== 'ELIGIBLE') return null;
+      // Mirror the production reader exactly: a caller inside a database-enforced READ ONLY
+      // transaction passes lockMode 'NONE', and PostgreSQL forbids `FOR SHARE` there. Every other
+      // caller keeps the original locking behaviour.
+      const writeLock = options.lockMode === 'NONE' ? '' : 'FOR SHARE';
+      const joinLock = options.lockMode === 'NONE' ? '' : 'FOR SHARE OF a, c';
 
       const profiles: Array<{
         first_name: string | null;
@@ -103,7 +110,7 @@ export function createTestEvidenceReader(
         `SELECT first_name, last_name, date_of_birth::text AS date_of_birth
            FROM customer_profiles
           WHERE customer_id = $1 AND is_active = true AND deleted_at IS NULL
-          FOR SHARE`,
+          ${writeLock}`,
         [customerId],
       );
       const phones: Array<{ normalized_value: string }> = await manager.query(
@@ -111,7 +118,7 @@ export function createTestEvidenceReader(
            FROM customer_contact_methods
           WHERE customer_id = $1 AND type = 'PHONE' AND is_primary = true
             AND verified_at IS NOT NULL AND deleted_at IS NULL
-          FOR SHARE`,
+          ${writeLock}`,
         [customerId],
       );
       const profile = profiles[0];
@@ -160,7 +167,7 @@ export function createTestEvidenceReader(
            LEFT JOIN kyc_identity_claims cl ON cl.attempt_id = a.id
           WHERE a.customer_id = $1
           ORDER BY a.created_at, a.id
-          FOR SHARE OF a, c`,
+          ${joinLock}`,
         [customerId],
       );
 
