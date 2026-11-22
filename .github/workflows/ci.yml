@@ -2,15 +2,47 @@ name: CI
 
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
   pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      admin_web: ${{ steps.classify.outputs.admin_web }}
+      agent_mobile: ${{ steps.classify.outputs.agent_mobile }}
+      customer_mobile: ${{ steps.classify.outputs.customer_mobile }}
+      full_regression: ${{ steps.classify.outputs.full_regression }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test conservative change classification
+        run: node --test test/ci-change-classification.test.cjs
+      - name: Classify changed paths
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          FULL_REGRESSION: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.event.before == '0000000000000000000000000000000000000000' }}
+        run: node scripts/classify-ci-changes.cjs --base "$BASE_SHA" --head "$HEAD_SHA" --full "$FULL_REGRESSION" --output "$GITHUB_OUTPUT"
+
   backend:
     name: Backend (lint, format, build, unit tests)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +73,8 @@ jobs:
   # This job must never be removed, made optional, or allowed to fail without failing the run.
   backend-postgres:
     name: Backend (real PostgreSQL integration)
+    needs: [changes, backend]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -114,6 +148,8 @@ jobs:
   # execute `docker compose`. Those are separate claims, and none of them is made here.
   backend-container-build:
     name: Backend (container image builds)
+    needs: [changes, backend]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +177,8 @@ jobs:
   # its own cluster in a temp directory and refuses to touch anything it did not create.
   backend-postgres-isolated:
     name: Backend (isolated PostgreSQL suites)
+    needs: [changes, backend]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -161,6 +199,8 @@ jobs:
 
   admin-web:
     name: Admin Web (types, tests, build)
+    needs: changes
+    if: needs.changes.outputs.admin_web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -182,6 +222,8 @@ jobs:
   # gate, whatever its coverage says.
   agent-mobile:
     name: Agent Mobile (types, tests)
+    needs: changes
+    if: needs.changes.outputs.agent_mobile == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -199,6 +241,8 @@ jobs:
 
   customer-mobile:
     name: Customer Mobile (types, tests)
+    needs: changes
+    if: needs.changes.outputs.customer_mobile == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -13,6 +13,7 @@ import { AggregatorModule } from './aggregator/aggregator.module';
 import { OutletModule } from './outlet/outlet.module';
 import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerClassModule } from './customer-class/customer-class.module';
 import { CustomerProofOfAddressModule } from './customer-proof-of-address/customer-proof-of-address.module';
 import { CustomerRegistrationModule } from './customer-registration/customer-registration.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
@@ -102,6 +103,7 @@ import { SupportAuthenticationModule } from './support-authentication/support-au
 import { LocalAdminAuthenticationModule } from './local-admin-authentication/local-admin-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ProtectedAuthorityModule } from './authorization/protected-authority.module';
+import { WorkforceVisibilityModule } from './workforce-visibility/workforce-visibility.module';
 
 @Module({
   imports: [
@@ -117,6 +119,7 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     ProtectedAuthorityModule,
+    WorkforceVisibilityModule,
     HealthModule,
     AgentModule,
     AggregatorModule,
@@ -124,6 +127,7 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
+    CustomerClassModule,
     CustomerProofOfAddressModule,
     CustomerRegistrationModule,
     CustomerAuthenticationModule,

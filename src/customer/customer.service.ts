@@ -13,6 +13,7 @@ import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } 
 
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
+import { CustomerClassAssignmentService } from '../customer-class/customer-class-assignment.service';
 import { AuditService } from '../operations/audit.service';
 import { consumePhoneVerificationToken } from '../customer-registration/phone-verification-token';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
@@ -79,6 +80,8 @@ export class CustomerService {
     private readonly financialEligibility: CustomerFinancialEligibilityService,
     @Optional()
     private readonly sessionService?: AuthenticationSessionService,
+    @Optional()
+    private readonly classAssignments?: CustomerClassAssignmentService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -116,6 +119,7 @@ export class CustomerService {
           undefined,
           this.auditCustomer(saved),
         );
+        await this.classAssignments?.assignDefaultOnRegistrationInManager(manager, saved.id, actor);
         return saved;
       });
       return customer;

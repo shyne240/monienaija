@@ -1,0 +1,85 @@
+/* ARENA 4 — administrative operations workspaces (read-only). */
+.a4-ops {
+  display: grid;
+  gap: 16px;
+}
+.a4-ops__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.a4-ops__card {
+  border: 1px solid #dfe5ee;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+.a4-ops__card h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a6b80;
+}
+.a4-ops__metric {
+  font-size: 26px;
+  font-weight: 650;
+  color: #0a3d25;
+}
+.a4-ops__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.a4-ops__notice {
+  border-left: 4px solid #0a3d25;
+  background: #f2f7f4;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #24402f;
+}
+.a4-ops__detail {
+  display: grid;
+  gap: 12px;
+  border-top: 2px solid #e6ebf2;
+  padding-top: 12px;
+}
+.a4-ops__detail h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.a4-ops__pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eef2f7;
+  color: #33475b;
+}
+.a4-ops__pill--warn {
+  background: #fff4e5;
+  color: #8a5300;
+}
+.a4-ops__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.a4-ops__table th,
+.a4-ops__table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf0f5;
+}
+.a4-ops__table th {
+  color: #5a6b80;
+  font-weight: 600;
+  background: #f8fafc;
+}
+.a4-ops__muted {
+  color: #64748b;
+  font-size: 12px;
+}

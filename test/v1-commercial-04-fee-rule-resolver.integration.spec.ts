@@ -668,6 +668,12 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
        VALUES ($1, 'FEE-TARGET-1', 'FEE_TARGET_1', 'Fee Target Test Institution', 'PSP', 'REGISTERED', 'test')`,
       [institutionId],
     );
+    await dataSource.query(
+      `INSERT INTO customer_classes
+        (id, reference, code, name, kind, status, enabled, configuration_status, is_default, created_by)
+       VALUES (gen_random_uuid(), 'CUSTOMER-CLASS-GOLD', 'GOLD', 'Gold', 'CUSTOMER', 'ACTIVE', TRUE, 'CONFIGURED', FALSE, 'test')
+       ON CONFLICT DO NOTHING`,
+    );
     await registry.createRule(baseRule({ effectiveFrom: T1, priority: 4 }), 'test');
     await registry.createRule(
       baseRule({ effectiveFrom: T1, priority: 4, customerClassCode: 'GOLD' }),

@@ -9,6 +9,7 @@ import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
+import { CustomerClassesScreen } from './CustomerClassesScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
@@ -27,6 +28,9 @@ import { NotificationManagementScreen } from './NotificationManagementScreen';
 import { CommercialRulesScreen } from './CommercialRulesScreen';
 import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
+import { NotificationOperationsScreen } from './NotificationOperationsScreen';
+import { WorkforceDirectoryScreen } from './WorkforceDirectoryScreen';
+import { AuditInspectionScreen } from './AuditInspectionScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
 import { InstitutionDirectoryScreen } from './InstitutionDirectoryScreen';
 import { InstitutionWorkspaceScreen } from './InstitutionWorkspaceScreen';
@@ -328,6 +332,11 @@ export const Layout: React.FC = () => {
       title: 'Customers & agents',
       items: [
         { key: 'customers' as View, label: 'Customers', visible: isVisible('customers') },
+        {
+          key: 'customerClasses' as View,
+          label: 'Customer classes',
+          visible: isVisible('customerClasses'),
+        },
         { key: 'agents' as View, label: 'Agents & network', visible: isVisible('agents') },
         { key: 'agentClasses' as View, label: 'Agent classes', visible: isVisible('agentClasses') },
         { key: 'support' as View, label: 'Support Inbox', visible: isVisible('support') },
@@ -453,6 +462,21 @@ export const Layout: React.FC = () => {
         },
         { key: 'systemHealth' as View, label: 'System health', visible: isVisible('systemHealth') },
         { key: 'auditEvents' as View, label: 'Audit events', visible: isVisible('auditEvents') },
+        {
+          key: 'notificationOperations' as View,
+          label: 'Notification operations',
+          visible: isVisible('notificationOperations'),
+        },
+        {
+          key: 'workforceDirectory' as View,
+          label: 'Workforce directory',
+          visible: isVisible('workforceDirectory'),
+        },
+        {
+          key: 'auditInspection' as View,
+          label: 'Audit inspection',
+          visible: isVisible('auditInspection'),
+        },
       ],
     },
   ];
@@ -606,6 +630,8 @@ export const Layout: React.FC = () => {
             onCustomerGuardChange={reportCustomerGuard}
           />
         );
+      case 'customerClasses':
+        return <CustomerClassesScreen />;
       case 'agents':
         return (
           <AgentNetworkScreen
@@ -751,6 +777,12 @@ export const Layout: React.FC = () => {
         );
       case 'auditEvents':
         return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+      case 'notificationOperations':
+        return <NotificationOperationsScreen />;
+      case 'workforceDirectory':
+        return <WorkforceDirectoryScreen />;
+      case 'auditInspection':
+        return <AuditInspectionScreen />;
       case 'institutions':
         return (
           <InstitutionDirectoryScreen

@@ -148,6 +148,18 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
       'Decision 4: distinct function from suspend/activate though the route may remain unified.',
   },
   {
+    functionCode: 'customer.manage_classes',
+    domain: 'CUSTOMER',
+    name: 'Manage customer classes',
+    description:
+      'Create and update Customer class-of-service configuration and assign or switch a customer class.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    notes:
+      'COMMERCIAL-IMPLEMENTATION-COORDINATION §3.1 — distinct from customer.create/suspend/activate/close. Class-of-service eligibility, not per-customer authorization. Seeded EXECUTE grants to SUPER_ADMIN and CUSTOMER_SERVICE (roles already holding customer.view; AGENT_NETWORK_MANAGER is excluded rather than widening it to customer.view).',
+  },
+  {
     functionCode: 'customer.terminate',
     domain: 'CUSTOMER',
     name: 'Terminate customer',
@@ -1540,6 +1552,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'customer.suspend', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.activate', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.close', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'customer.manage_classes', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.view_transactions', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.view_wallets', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.create_wallet', EXECUTE),
@@ -1793,6 +1806,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('CUSTOMER_SERVICE', 'customer.view_wallets', VIEW),
   nowAssign('CUSTOMER_SERVICE', 'customer.view_transactions', VIEW),
   nowAssign('CUSTOMER_SERVICE', 'customer.manage_support_case', EXECUTE),
+  nowAssign('CUSTOMER_SERVICE', 'customer.manage_classes', EXECUTE),
   // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01
   nowAssign('CUSTOMER_SERVICE', 'customer.view_address', VIEW),
   nowAssign('CUSTOMER_SERVICE', 'customer.view_contact_methods', VIEW),

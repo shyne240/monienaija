@@ -20,7 +20,7 @@ export class AgentApplicationAdminController {
   @Get()
   async list(@Req() req: AuthenticatedRequest) {
     await this.requirePrivileged(req);
-    return this.applicationService.list();
+    return this.applicationService.list(req.authorizationPrincipal?.scopes.includes('agent.view'));
   }
 
   @Get(':id')

@@ -153,11 +153,15 @@ describe('Group 29 — CI and deployment gates', () => {
       expect(JSON.stringify(report)).not.toMatch(/success|passed in|duration/i);
     });
 
-    it('declares no deploy job, which is a real gap rather than an oversight in this test', () => {
-      // Deployment is deliberately absent: no registry, no environment protection rules, no release approval
-      // process has been decided. Asserting the absence keeps it from being assumed present.
+    it('declares no deploy or release job or production deployment action', () => {
+      // The release event is retained for release-time regression; it is not a release job.
+      expect(workflowText).toMatch(/^[ ]{2}release:\n[ ]{4}types: \[published\]$/m);
       expect(extractJobBlock(workflowText, 'deploy')).toBeNull();
       expect(extractJobBlock(workflowText, 'release')).toBeNull();
+
+      // Deployment is deliberately absent: no production environment or deployment action is configured.
+      expect(workflowText).not.toContain('environment: production');
+      expect(workflowText).not.toMatch(/^\s+uses:.*(?:deploy|release).*@/im);
     });
 
     it('configures no registry push', () => {

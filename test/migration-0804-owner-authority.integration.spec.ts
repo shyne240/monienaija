@@ -80,12 +80,18 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('migration head is 0804', async () => {
+  it('migration 0804 is applied immediately beneath the 0805 customer-class head', async () => {
     const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(
-      `SELECT timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
+      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 2`,
     );
-    expect(String(rows[0]!.timestamp)).toMatch(/0804/);
-    expect(rows[0]!.name).toMatch(/0804/i);
+    expect(rows[0]).toEqual({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
+    });
+    expect(rows[1]).toEqual({
+      timestamp: '1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
+    });
   });
 
   it('historical customer financial_authorizations still readable', async () => {

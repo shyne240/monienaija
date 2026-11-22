@@ -13,6 +13,7 @@ import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes, createHash } from 'node:crypto';
 
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
+import { AgentTransactionHistoryService } from '../src/agent/agent-transaction-history.service';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentClassService } from '../src/agent/agent-class.service';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
@@ -328,6 +329,25 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
       [result.commitment.reservation_journal_id],
     );
     expect(journals.length).toBe(1);
+    const history = app.get(AgentTransactionHistoryService);
+    const first = await history.listUnified({
+      agentId: agent.id,
+      type: 'EXTERNAL_BANK_TRANSFER',
+      limit: '1',
+    });
+    expect(first).toMatchObject({
+      items: [
+        {
+          id: result.commitment.id,
+          type: 'EXTERNAL_BANK_TRANSFER',
+          amountMinor: '500',
+          direction: 'DEBIT',
+        },
+      ],
+      pagination: { page: 1, total: 1, totalPages: 1, hasNextPage: false },
+    });
+    const other = await history.listUnified({ agentId: agent.id, type: 'WALLET_TRANSFER' });
+    expect(other.items).toEqual([]);
   });
 
   it('rejects foreign agent attempting to use another agent beneficiary', async () => {

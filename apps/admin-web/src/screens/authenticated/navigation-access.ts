@@ -2,6 +2,7 @@ export type AdminView =
   | 'dashboard'
   | 'dashboardSettings'
   | 'customers'
+  | 'customerClasses'
   | 'agents'
   | 'agentClasses'
   | 'support'
@@ -30,6 +31,10 @@ export type AdminView =
   | 'notifications'
   | 'systemHealth'
   | 'auditEvents'
+  // ARENA 4 — administrative governance and operations (read-only).
+  | 'notificationOperations'
+  | 'workforceDirectory'
+  | 'auditInspection'
   // ARENA 4 — institutional administration console. The workspace is contextual: it is only
   // reachable with an institution id supplied by the directory.
   | 'institutions'
@@ -92,6 +97,8 @@ export function canAccessAdminView(
     case 'dashboardSettings':
       return has('workforce.dashboard.view');
     case 'customers':
+      return has('customer.view');
+    case 'customerClasses':
       return has('customer.view');
     case 'agents':
       return (
@@ -185,6 +192,15 @@ export function canAccessAdminView(
       );
     case 'auditEvents':
       return has('audit.search');
+    case 'notificationOperations':
+      // Read-only delivery operations reuse the function the delivery listing already requires.
+      return has('notification.view_deliveries');
+    case 'workforceDirectory':
+      // Read-only visibility over the same grant records `workforce.role.view` already exposes.
+      return has('workforce.role.view');
+    case 'auditInspection':
+      // Deeper operational inspection requires both catalogue audit capabilities.
+      return has('audit.view') && has('audit.search');
     case 'institutions':
       // The backend scopes the listing to institutions the principal is assigned to; this guard
       // only decides whether the screen may be opened at all.

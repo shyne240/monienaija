@@ -1023,6 +1023,32 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Customer class governance is distinct from generic customer inspection routes.
+    // auditDeniedWorkforceFunction ensures guard-level 403 denials record an audit event.
+    if (
+      /^\/api\/v1\/internal\/customer-classes(?:\/[^/]+)?$/.test(path) ||
+      /^\/api\/v1\/internal\/customers\/[^/]+\/class(?:\/history)?$/.test(path)
+    ) {
+      const read = lookedUpMethod === 'GET';
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-class',
+        auditDeniedWorkforceFunction: true,
+        policy: {
+          resourceType: 'customer-class',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: read
+            ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
+            : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [read ? 'customer.view' : 'customer.manage_classes'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (/^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)) {
       const functionCode = lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_classes';
       return {
@@ -1568,6 +1594,94 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: [...operationalPolicy.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // ---------------------------------------------------------------- ARENA 4 governance
+    // Notification Operations (delivery status, failure diagnostics, per-attempt retry history).
+    // Read-only by approved policy: no retry/replay route exists. Explicitly gated by the
+    // catalogue function the controller also checks, so a valid session of any kind cannot reach
+    // delivery diagnostics without it. SUPPORT keeps the same reach the delivery listing already
+    // had (documented audit-read-style exception); it is exempt from the function gate only, never
+    // from the principal-type allowlist.
+    // NOTE: `GET /internal/notifications/deliveries` (the pre-existing listing) is deliberately
+    // NOT listed here. It resolves through the generic internal branch and is authorized inside
+    // `AdminNotificationController` against the `internal-notifications` resource type; shadowing
+    // it here changed the resource type recorded on denial audit records, which is an existing
+    // observable contract (SPRINT-1 F-02 asserts it). This family covers only the routes Arena 4
+    // adds: the operations summary and the per-delivery detail.
+    if (
+      lookedUpMethod === 'GET' &&
+      (path === '/api/v1/internal/notifications/operations/summary' ||
+        /^\/api\/v1\/internal\/notifications\/deliveries\/[0-9a-f-]{36}$/i.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'internal-notification-operations',
+        auditDeniedWorkforceFunction: true,
+        rejectNonWorkforcePrincipalWith401: true,
+        policy: {
+          resourceType: 'internal-notification-operations',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['notification.view_deliveries'],
+          requiredFunctionsExemptPrincipalTypes: ['SUPPORT'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Workforce Administration visibility — read-only. `workforce.role.view` is an existing
+    // catalogue function (SUPER_ADMIN, FINANCE_CONTROLLER, FINANCE_AUDITOR, ADMINISTRATOR). No
+    // route in this surface can grant, revoke or elevate; the registry cannot widen that.
+    if (
+      lookedUpMethod === 'GET' &&
+      (path === '/api/v1/internal/workforce/directory' ||
+        /^\/api\/v1\/internal\/workforce\/directory\/[^/]{1,160}$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'internal-workforce-directory',
+        auditDeniedWorkforceFunction: true,
+        policy: {
+          resourceType: 'internal-workforce-directory',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: ['workforce.role.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Operational Audit inspection — additive deeper read. Requires BOTH audit.view (read an
+    // individual record) and audit.search (filter/search records), so it can never be broader
+    // than the capabilities the catalogue already grants. The legacy `/internal/audit` route keeps
+    // its documented SUPPORT exception above; this surface deliberately does not extend it.
+    if (
+      lookedUpMethod === 'GET' &&
+      (path === '/api/v1/internal/audit/inspection' ||
+        /^\/api\/v1\/internal\/audit\/inspection\/[0-9a-f-]{36}$/i.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'internal-audit-inspection',
+        auditDeniedWorkforceFunction: true,
+        policy: {
+          resourceType: 'internal-audit-inspection',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: ['audit.view', 'audit.search'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
