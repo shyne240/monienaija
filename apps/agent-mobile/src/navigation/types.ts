@@ -5,6 +5,7 @@ import type {
   AgentCashOutResult,
   SafeCashToCashResult,
   AgentCashToCashClaimResult,
+  AgentHistoryType,
   SupportTicketCategory,
 } from '../services/agent-api';
 
@@ -126,17 +127,13 @@ export type RootStackParamList = {
 
   BankWithdrawal: undefined;
 
-  // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)
+  // Unified history + history-derived receipt (V1-AGENT-MOBILE-06).
+  // The filter vocabulary is the shared AgentHistoryType (backend VALID_TYPES in
+  // src/agent/agent-transaction-history.service.ts), so extending the history
+  // surface (e.g. EXTERNAL_BANK_TRANSFER) only changes one type.
   TransactionReceipt: {
     itemId: string;
-    filter?:
-      | 'WALLET_TRANSFER'
-      | 'CASH_IN'
-      | 'CASH_OUT'
-      | 'CASH_TO_CASH'
-      | 'CASH_TO_CASH_CLAIM'
-      | 'AGENT_FUNDING'
-      | 'AGENT_DEFUNDING';
+    filter?: AgentHistoryType;
   };
 };
 

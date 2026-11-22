@@ -22,6 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
   CASH_TO_CASH: 'Cash→Cash sent',
   AGENT_FUNDING: 'Agent Funding',
   AGENT_DEFUNDING: 'Agent Defunding',
+  EXTERNAL_BANK_TRANSFER: 'Bank Transfer',
 };
 
 function counterpartyLabel(item: AgentHistoryItem): string | null {

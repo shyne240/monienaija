@@ -21,6 +21,7 @@ jest.mock('../src/services/agent-api', () => ({
   getAgentOutlets: jest.fn(),
   getAgentTerminals: jest.fn(),
   getAgentTransactionPinStatus: jest.fn(),
+  getAgentLimits: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
 }));
 
@@ -31,6 +32,7 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   getAgentOutlets: jest.Mock;
   getAgentTerminals: jest.Mock;
   getAgentTransactionPinStatus: jest.Mock;
+  getAgentLimits: jest.Mock;
 };
 
 const profileFixture = {
@@ -69,6 +71,49 @@ const pinStatusFixture = {
   exists: true,
   accountLocked: false,
   pinVersion: 1,
+};
+
+const limitsFixture = {
+  agentId: 'agent-uuid-9',
+  currency: 'NGN',
+  asOf: '2026-11-22T12:00:00.000Z',
+  products: [
+    {
+      product: 'CASH_TO_WALLET',
+      direction: 'OUTGOING' as const,
+      currency: 'NGN',
+      configured: true,
+      perTransactionMinMinor: '10000',
+      perTransactionMaxMinor: '500000',
+      walletBalanceMaxMinor: null,
+      windows: [
+        {
+          dimension: 'DAILY_AMOUNT',
+          period: 'DAILY' as const,
+          kind: 'AMOUNT' as const,
+          limitMinor: '1000000',
+          limitCount: null,
+          usedMinor: '250000',
+          usedCount: null,
+          reservedMinor: '50000',
+          reservedCount: null,
+          remainingMinor: '700000',
+          remainingCount: null,
+          windowResetsAt: '2026-11-23T00:00:00.000Z',
+        },
+      ],
+    },
+    {
+      product: 'EXTERNAL_BANK_TRANSFER',
+      direction: 'OUTGOING' as const,
+      currency: 'NGN',
+      configured: false,
+      perTransactionMinMinor: null,
+      perTransactionMaxMinor: null,
+      walletBalanceMaxMinor: null,
+      windows: [],
+    },
+  ],
 };
 
 const outletsFixture = [
@@ -158,6 +203,7 @@ describe('AccountScreen (real Agent information)', () => {
     mockApi.getAgentOutlets.mockResolvedValue(outletsFixture);
     mockApi.getAgentTerminals.mockResolvedValue(terminalsFixture);
     mockApi.getAgentTransactionPinStatus.mockResolvedValue(pinStatusFixture);
+    mockApi.getAgentLimits.mockResolvedValue(limitsFixture);
   });
 
   test('renders profile, class, receiving number, PIN status, support entry, outlets, terminals from backend data', async () => {
@@ -202,6 +248,38 @@ describe('AccountScreen (real Agent information)', () => {
     expect(getAllByText('Enabled')).toHaveLength(2);
     expect(getAllByText('Unavailable')).toHaveLength(1);
     expect(getByText('Requires upgraded class')).toBeTruthy();
+  });
+
+  test('limits card renders only server-configured buckets with server-provided values', async () => {
+    const { getByTestId, getByText, queryByTestId } = wrap(<AccountScreen />);
+    await waitFor(() => expect(getByTestId('limit-bucket-cash_to_wallet-outgoing')).toBeTruthy());
+    // The configured bucket renders its label and the server-provided remaining/limit values.
+    expect(getByText('Cash→Wallet — float spend')).toBeTruthy();
+    expect(getByTestId('limit-window-daily_amount')).toBeTruthy();
+    expect(getByText(/Max per transaction/)).toBeTruthy();
+    // Unconfigured buckets are never rendered as rows and never fabricate a limit.
+    expect(queryByTestId('limit-bucket-external_bank_transfer-outgoing')).toBeNull();
+  });
+
+  test('limits card states plainly when nothing is configured', async () => {
+    mockApi.getAgentLimits.mockResolvedValue({
+      ...limitsFixture,
+      products: [limitsFixture.products[1]],
+    });
+    const { getByTestId } = wrap(<AccountScreen />);
+    await waitFor(() => expect(getByTestId('account-limits-none')).toBeTruthy());
+  });
+
+  test('limits card exposes an error + retry state without blocking the rest of the screen', async () => {
+    mockApi.getAgentLimits.mockRejectedValue(new Error('boom'));
+    const { getByTestId } = wrap(<AccountScreen />);
+    await waitFor(() => expect(getByTestId('account-limits-error')).toBeTruthy());
+    expect(getByTestId('account-limits-retry')).toBeTruthy();
+    // The profile card still renders — one failing surface never blocks the rest.
+    expect(getByTestId('account-reference')).toBeTruthy();
+    mockApi.getAgentLimits.mockResolvedValue(limitsFixture);
+    fireEvent.press(getByTestId('account-limits-retry'));
+    await waitFor(() => expect(getByTestId('limit-bucket-cash_to_wallet-outgoing')).toBeTruthy());
   });
 
   test('empty outlets and terminals render explicit empty states', async () => {

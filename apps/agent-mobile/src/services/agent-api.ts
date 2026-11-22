@@ -101,6 +101,50 @@ export async function getAgentFinancialPosition(): Promise<AgentFinancialPositio
   return ApiClient.get<AgentFinancialPosition>('api/v1/agents/me/financial-position');
 }
 
+/**
+ * GET /agents/me/limits — agent-safe read-only projection of the authoritative
+ * limit-catalog configuration and current window usage (mirrors the customer
+ * V1-CUSTOMER-08 contract). Informational only: enforcement stays server-side
+ * inside each financial transaction. The backend never exposes internal policy
+ * identifiers (profile codes, assignment/rule ids, channels) through this view.
+ */
+export interface AgentLimitWindowView {
+  dimension: string;
+  period: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  kind: 'AMOUNT' | 'COUNT';
+  limitMinor: string | null;
+  limitCount: number | null;
+  usedMinor: string | null;
+  usedCount: number | null;
+  reservedMinor: string | null;
+  reservedCount: number | null;
+  remainingMinor: string | null;
+  remainingCount: number | null;
+  windowResetsAt: string;
+}
+
+export interface AgentLimitProductView {
+  product: string;
+  direction: 'INCOMING' | 'OUTGOING';
+  currency: string;
+  configured: boolean;
+  perTransactionMinMinor: string | null;
+  perTransactionMaxMinor: string | null;
+  walletBalanceMaxMinor: string | null;
+  windows: AgentLimitWindowView[];
+}
+
+export interface AgentLimitsView {
+  agentId: string;
+  currency: string;
+  asOf: string;
+  products: AgentLimitProductView[];
+}
+
+export async function getAgentLimits(): Promise<AgentLimitsView> {
+  return ApiClient.get<AgentLimitsView>('api/v1/agents/me/limits');
+}
+
 /** Canonical backend service identifiers (agents/me/capabilities). */
 export type AgentCanonicalService =
   | 'EXTERNAL_BANK_TRANSFER'
@@ -894,7 +938,8 @@ export type AgentHistoryType =
   | 'CASH_TO_CASH'
   | 'CASH_TO_CASH_CLAIM'
   | 'AGENT_FUNDING'
-  | 'AGENT_DEFUNDING';
+  | 'AGENT_DEFUNDING'
+  | 'EXTERNAL_BANK_TRANSFER';
 
 export type AgentHistoryDirection = 'DEBIT' | 'CREDIT' | 'UNKNOWN';
 

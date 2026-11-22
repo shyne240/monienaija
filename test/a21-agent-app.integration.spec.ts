@@ -150,6 +150,61 @@ describe('A21 Agent App Backend Foundation (real PostgreSQL)', () => {
     // Class was created with CASH_IN,CASH_OUT,CASH_TO_CASH, so permitted should contain those
     expect(res.body.permittedServices).toEqual(expect.arrayContaining(['CASH_IN']));
     expect(res.body.evaluations).toBeDefined();
+    // The projection must report the full canonical V1 vocabulary so fail-closed clients
+    // (Agent Mobile home gating) can surface or hide each journey from backend truth.
+    const evaluated = new Set(
+      (res.body.evaluations as Array<{ canonicalService: string }>).map((e) => e.canonicalService),
+    );
+    expect(evaluated.has('WALLET_TRANSFER')).toBe(true);
+    expect(evaluated.has('EXTERNAL_BANK_TRANSFER')).toBe(true);
+    // Fail-closed: the fixture class grants neither, so both must be denied, not omitted.
+    const bank = (
+      res.body.evaluations as Array<{ canonicalService: string; allowed: boolean }>
+    ).find((e) => e.canonicalService === 'EXTERNAL_BANK_TRANSFER');
+    expect(bank?.allowed).toBe(false);
+    expect(res.body.permittedServices).not.toContain('EXTERNAL_BANK_TRANSFER');
+  });
+
+  it('3b. GET /agents/me/capabilities permits EXTERNAL_BANK_TRANSFER when the class grants it', async () => {
+    // Same shape as createActiveAgent, but the class grants the ARENA 5 bank-transfer service.
+    const classRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits) VALUES ($1,$2,$3,true,$4,$5) RETURNING id`,
+      [
+        `cls-${randomUUID().slice(0, 8)}`,
+        `A21B-${randomUUID().slice(0, 6)}`,
+        'A21 Bank Class',
+        JSON.stringify(['CASH_IN', 'EXTERNAL_BANK_TRANSFER']),
+        JSON.stringify({}),
+      ],
+    );
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [`agent-${randomUUID()}`, classRows[0]!.id],
+    );
+    const agentId = agentRows[0]!.id;
+    const hash = encodePbkdf2('correct-password');
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'correct-password' })
+      .expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/capabilities')
+      .set('Authorization', `Bearer ${login.body.accessToken as string}`)
+      .expect(200);
+    expect(res.body.permittedServices).toContain('EXTERNAL_BANK_TRANSFER');
+    const bank = (
+      res.body.evaluations as Array<{ canonicalService: string; allowed: boolean }>
+    ).find((e) => e.canonicalService === 'EXTERNAL_BANK_TRANSFER');
+    expect(bank?.allowed).toBe(true);
+    // A service the class does not grant stays denied in the same projection.
+    const c2c = (
+      res.body.evaluations as Array<{ canonicalService: string; allowed: boolean }>
+    ).find((e) => e.canonicalService === 'CASH_TO_CASH');
+    expect(c2c?.allowed).toBe(false);
   });
 
   it('4. GET /agents/me/financial-position ledger-derived balance (no wallet -> 0)', async () => {

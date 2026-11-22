@@ -20,6 +20,7 @@ import { OutletService } from '../outlet/outlet.service';
 import { TerminalService } from '../outlet/terminal.service';
 import { WalletService } from '../wallet/wallet.service';
 import { AgentTransactionHistoryService } from './agent-transaction-history.service';
+import { AgentLimitViewService } from './agent-limit-view.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentService } from './agent-service.enum';
 
@@ -42,6 +43,7 @@ export class AgentAppController {
     private readonly walletService: WalletService,
     private readonly transactionHistoryService: AgentTransactionHistoryService,
     private readonly recipientResolution: RecipientResolutionService,
+    private readonly limitViewService: AgentLimitViewService,
   ) {}
 
   @Get('transfer-recipient')
@@ -108,6 +110,10 @@ export class AgentAppController {
       AgentService.CASH_TO_CASH,
       AgentService.AGENT_FUNDING,
       AgentService.AGENT_DEFUNDING,
+      // ARENA 5 agent-initiated external bank transfer (POST /agents/me/banking/bank-transfers)
+      // is capability-gated server-side; the projection must report it so fail-closed clients
+      // (Agent Mobile home gating) can surface the journey exactly when it is permitted.
+      AgentService.EXTERNAL_BANK_TRANSFER,
     ];
     const results = await Promise.all(
       services.map((svc) =>
@@ -153,6 +159,17 @@ export class AgentAppController {
       ledgerAccountId: ngnWallet.ledgerAccountId,
       status: ngnWallet.status,
     };
+  }
+
+  // Agent limits view (mirrors V1-CUSTOMER-08 customers/me/limits): read-only,
+  // SELF-only projection of the authoritative limit-catalog configuration and
+  // window usage that already governs this agent's float operations. Enforcement
+  // stays exclusively in LimitEnforcementService inside each financial transaction;
+  // this route never writes usage and never leaks internal policy identifiers.
+  @Get('limits')
+  async getMyLimits(@Req() req: AuthenticatedRequest) {
+    const principal = this.requireAgentPrincipal(req);
+    return this.limitViewService.getMyLimits(principal.agentId!);
   }
 
   @Get('receiving-number')

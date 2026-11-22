@@ -61,6 +61,7 @@ import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
 import { AgentTransactionHistoryService } from './agent-transaction-history.service';
+import { AgentLimitViewService } from './agent-limit-view.service';
 import { AgentDeskOtpController } from './agent-desk-otp.controller';
 import { AgentDeskOtpService } from './agent-desk-otp.service';
 import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
@@ -151,6 +152,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentApplicationService,
     AgentReceivingNumberService,
     AgentTransactionHistoryService, // V1-AGENT-HISTORY-01 — read-only unified history projection
+    AgentLimitViewService, // Agent limits view — read-only projection of the authoritative limit catalogue
     RecipientResolutionService,
     AgentServiceCapabilityService,
     AgentTransactionAuthorizationService,

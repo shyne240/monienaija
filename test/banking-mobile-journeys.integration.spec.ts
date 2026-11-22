@@ -408,6 +408,25 @@ describe('Banking mobile journeys (real PostgreSQL)', () => {
     expect(Array.isArray((res.body as { items: Array<{ bankCode: string }> }).items)).toBe(true);
   });
 
+  it('agent: capabilities projection exposes EXTERNAL_BANK_TRANSFER for the journey class', async () => {
+    // Agent Mobile gates the "Withdraw to bank" home action on this exact projection
+    // (canonicalService EXTERNAL_BANK_TRANSFER, fail-closed). Without it the whole
+    // agent bank-withdrawal journey is unreachable from the app even though the
+    // backend routes and class grant are live.
+    const { agentToken } = await createAgentWithPin('1234');
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/capabilities')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(200);
+    const body = res.body as {
+      permittedServices: string[];
+      evaluations: Array<{ canonicalService: string; allowed: boolean }>;
+    };
+    const bankService: string = AgentService.EXTERNAL_BANK_TRANSFER;
+    expect(body.permittedServices).toContain(bankService);
+    expect(body.evaluations.find((e) => e.canonicalService === bankService)?.allowed).toBe(true);
+  });
+
   it('agent: bank-transfers HTTP initiates commitment', async () => {
     const { agent, wallet, agentToken } = await createAgentWithPin('1234');
     const benId = await createAgentBeneficiary(agent.id);
