@@ -9,9 +9,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 import { Agent } from '../agent/agent.entity';
+import { AgentStatus } from '../agent/agent.enums';
+import { AggregatorAgentAssignment } from '../aggregator/aggregator-agent-relationship.entity';
+import { AggregatorAgentRelationshipStatus } from '../aggregator/aggregator.enums';
 import { AgentTransactionHistoryService } from '../agent/agent-transaction-history.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -37,25 +40,63 @@ export class AdminAgentController {
     @Query('page') pageRaw?: string,
     @Query('limit') limitRaw?: string,
     @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('agentClassId') agentClassId?: string,
+    @Query('aggregatorId') aggregatorId?: string,
+    @Query('sort') sort?: string,
   ) {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'agent.view');
-    const page = Math.max(1, Number.parseInt(pageRaw ?? '1', 10) || 1);
-    const rawLimit = Number.parseInt(limitRaw ?? '20', 10) || 20;
-    const limit = Math.min(100, Math.max(1, rawLimit));
-    const skip = (page - 1) * limit;
+    const page = this.directoryInteger(pageRaw, 1, 'page');
+    const limit = Math.min(100, this.directoryInteger(limitRaw, 20, 'limit'));
+    if (page > Math.floor(Number.MAX_SAFE_INTEGER / 100))
+      throw new BadRequestException('page is out of range');
+    if (status !== undefined && !Object.values(AgentStatus).includes(status as AgentStatus))
+      throw new BadRequestException('Invalid agent status');
+    if (agentClassId !== undefined) this.assertUuid(agentClassId, 'agentClassId');
+    if (aggregatorId !== undefined) this.assertUuid(aggregatorId, 'aggregatorId');
+    if (sort !== undefined && sort !== 'newest' && sort !== 'oldest')
+      throw new BadRequestException('Invalid agent sort');
+    if (search !== undefined && (typeof search !== 'string' || search.length > 160))
+      throw new BadRequestException('search must be at most 160 characters');
 
-    const where: Record<string, unknown> = {};
-    if (status) where['status'] = status;
-
-    const [data, total] = await this.repo.findAndCount({
-      where: Object.keys(where).length ? (where as never) : {},
-      order: { createdAt: 'DESC' } as never,
-      skip,
-      take: limit,
-    });
-
-    return { data, total, page, limit };
+    const direction = sort === 'oldest' ? 'ASC' : 'DESC';
+    const query = this.repo.createQueryBuilder('agent');
+    if (status) query.andWhere('agent.status = :status', { status });
+    if (agentClassId) query.andWhere('agent.agentClassId = :agentClassId', { agentClassId });
+    if (aggregatorId) {
+      // Directory membership uses the active aggregator assignment, never an outlet or
+      // an institutional affiliation. EXISTS keeps the Agent count independent of history rows.
+      const assignment = query
+        .subQuery()
+        .select('1')
+        .from(AggregatorAgentAssignment, 'assignment')
+        .where('assignment.agentId = agent.id')
+        .andWhere('assignment.aggregatorId = :aggregatorId')
+        .andWhere('assignment.status = :assignmentStatus');
+      query.andWhere(`EXISTS ${assignment.getQuery()}`, {
+        aggregatorId,
+        assignmentStatus: AggregatorAgentRelationshipStatus.ACTIVE,
+      });
+    }
+    const term = search?.trim();
+    if (term) {
+      query.andWhere(
+        new Brackets((match) => {
+          match.where("agent.reference ILIKE :reference ESCAPE '!'", {
+            reference: `%${term.replace(/[!%_]/g, '!$&')}%`,
+          });
+          if (this.isUuid(term)) match.orWhere('agent.id = :id', { id: term });
+        }),
+      );
+    }
+    const [rows, total] = await query
+      .orderBy('agent.createdAt', direction)
+      .addOrderBy('agent.id', direction)
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return { data: rows.map((agent) => this.toSafeAgent(agent)), total, page, limit };
   }
 
   @Get(':id')
@@ -151,7 +192,8 @@ export class AdminAgentController {
    * Query params (all optional; validated by the history service):
    *   page  — integer >= 1 (default 1)
    *   limit — integer 1..100 (default 20)
-   *   type  — CASH_IN | CASH_OUT | CASH_TO_CASH | CASH_TO_CASH_CLAIM | AGENT_FUNDING | AGENT_DEFUNDING
+   *   type  — CASH_IN | CASH_OUT | CASH_TO_CASH | CASH_TO_CASH_CLAIM | AGENT_FUNDING | AGENT_DEFUNDING |
+   *           WALLET_TRANSFER | EXTERNAL_BANK_TRANSFER
    * Response: { items: AgentUnifiedHistoryItem[], pagination: { page, limit, total, totalPages, hasNextPage } }
    */
   @Get(':id/transactions')
@@ -224,8 +266,28 @@ export class AdminAgentController {
     };
   }
 
+  private directoryInteger(value: string | undefined, fallback: number, field: string): number {
+    if (value === undefined) return fallback;
+    const parsed = Number(value);
+    if (
+      typeof value !== 'string' ||
+      !/^\d+$/.test(value) ||
+      !Number.isSafeInteger(parsed) ||
+      parsed < 1
+    )
+      throw new BadRequestException(`${field} must be a positive integer`);
+    return parsed;
+  }
+
+  private isUuid(value: unknown): value is string {
+    return (
+      typeof value === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    );
+  }
+
   private assertUuid(value: string, field: string): void {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    if (!this.isUuid(value)) {
       throw new BadRequestException(`${field} must be a UUID`);
     }
   }
