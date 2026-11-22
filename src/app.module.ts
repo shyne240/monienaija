@@ -90,6 +90,7 @@ import { CommissionModule } from './commission/commission.module';
 import { CommercialAccountingModule } from './commercial-accounting/commercial-accounting.module';
 import { RewardModule } from './reward/reward.module';
 import { FeeRulesModule } from './fee-rules/fee-rules.module';
+import { CommercialConfigurationModule } from './commercial-configuration/commercial-configuration.module';
 import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
 import { ProductCatalogModule } from './product-catalog/product-catalog.module';
 import { CustomerAppModule } from './customer-app/customer-app.module';
@@ -207,6 +208,7 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     FeeRulesModule,
     LimitCatalogModule,
     ProductCatalogModule,
+    CommercialConfigurationModule, // Arena 3: read-only preview + governed change history
     CustomerAppModule,
     CustomerCredentialRecoveryModule,
     CustomerFundingModule,
