@@ -65,12 +65,17 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the agent financial authorization generalisation migration', () => {
+  it('ends at the customer class migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
-    // banking range, Arena 2C appended 0800-0802 after that, and Arena 5 appended 0803–0804 for the
-    // dual-lane (customer/agent) A6 financial authorization + external-ops. The head is pinned exactly —
-    // a head-only allowance would let a skipped earlier identity pass.
+    // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
+    // dual-lane (customer/agent) A6 financial authorization + external-ops, and Arena 1 appended
+    // 0805 (customer classes). The head is pinned exactly — a head-only allowance would let a
+    // skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
+    });
+    expect(migrations.at(-2)).toMatchObject({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
@@ -131,16 +136,18 @@ describe('migration inventory', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
-  it('contains the appended identities 0800-0804 after the Arena 3D range in order', () => {
+  it('contains the appended identities 0800-0805 after the Arena 3D range in order', () => {
     // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
-    // agent verified-phone proof, typed beneficiary ownership) and Arena 5 appended 0803–0804
-    // (dual-lane financial authorization + external-operations generalisation). Each identity is published and is never renumbered.
+    // agent verified-phone proof, typed beneficiary ownership), Arena 5 appended 0803–0804
+    // (dual-lane financial authorization + external-operations generalisation), and Arena 1
+    // appended 0805 (customer classes). Each identity is published and is never renumbered.
     const appended = [
       ['1785753600800', 'BindWalletTransferQuotes1785753600800'],
       ['1785753600801', 'AgentVerifiedPhone1785753600801'],
       ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
       ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
       ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
+      ['1785753600805', 'CreateCustomerClasses1785753600805'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -153,18 +160,23 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 167 migration identities', () => {
+  it('contains exactly 168 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
-    // Arena 2C, and two by Arena 5 (agent financial authorization + external-ops), and the additive fee-targeting
-    // migration contributed by PR #4. Any additional or missing
-    // file fails this assertion.
+    // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
+    // fee-targeting migration contributed by PR #4 (0506), and the customer-class migration
+    // contributed by Arena 1 (0805). Any additional or missing file fails this assertion.
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
       file: '1785753600506-FeeRuleTargeting.ts',
     });
-    expect(migrations.length).toBe(167);
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
+      file: '1785753600805-CreateCustomerClasses.ts',
+    });
+    expect(migrations.length).toBe(168);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

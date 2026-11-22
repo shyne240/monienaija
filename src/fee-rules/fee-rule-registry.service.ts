@@ -9,6 +9,8 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { isUsableCustomerClass } from '../customer-class/customer-class-assignment.service';
+import { CUSTOMER_CLASS_CODE_PATTERN } from '../customer-class/customer-class.enums';
 
 import { FeeRuleDefinition } from './fee-rule.entity';
 
@@ -103,7 +105,6 @@ export class FeeRuleRegistryService {
     const customerClassCode = this.normalizeClassCode(input.customerClassCode);
     const agentClassId = this.normalizeTargetId(input.agentClassId, 'agentClassId');
     const institutionId = this.normalizeTargetId(input.institutionId, 'institutionId');
-    await this.assertTargetsExist(agentClassId, institutionId);
     const flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
     const percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
     const minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
@@ -131,29 +132,32 @@ export class FeeRuleRegistryService {
     const isActive =
       input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
 
-    const entity = this.repo.create({
-      productCode,
-      currency,
-      customerClassCode,
-      agentClassId,
-      institutionId,
-      flatFeeMinor,
-      percentageBps,
-      minimumFeeMinor,
-      maximumFeeMinor,
-      vatBps,
-      effectiveFrom,
-      effectiveTo,
-      priority,
-      isActive,
-      createdBy: actor,
-      updatedBy: actor,
-      version: 1,
-    } as never);
-
     let saved: FeeRuleDefinition;
     try {
-      saved = (await this.repo.save(entity as never)) as unknown as FeeRuleDefinition;
+      saved = await this.dataSource.transaction(async (manager) => {
+        await this.assertTargetsExist(manager, customerClassCode, agentClassId, institutionId);
+        const repository = manager.getRepository(FeeRuleDefinition);
+        const entity = repository.create({
+          productCode,
+          currency,
+          customerClassCode,
+          agentClassId,
+          institutionId,
+          flatFeeMinor,
+          percentageBps,
+          minimumFeeMinor,
+          maximumFeeMinor,
+          vatBps,
+          effectiveFrom,
+          effectiveTo,
+          priority,
+          isActive,
+          createdBy: actor,
+          updatedBy: actor,
+          version: 1,
+        } as never);
+        return (await repository.save(entity as never)) as unknown as FeeRuleDefinition;
+      });
     } catch (e) {
       if (this.isUniqueViolation(e)) {
         throw new ConflictException(
@@ -230,6 +234,9 @@ export class FeeRuleRegistryService {
       if (input.priority !== undefined) rule.priority = this.parsePriority(input.priority);
       if (input.isActive !== undefined)
         rule.isActive = this.parseBoolean(input.isActive, 'isActive');
+      if (input.isActive === true && rule.customerClassCode !== null) {
+        await this.assertCustomerClassTargetUsable(manager, rule.customerClassCode);
+      }
       rule.updatedBy = actor;
 
       try {
@@ -317,9 +324,14 @@ export class FeeRuleRegistryService {
 
   private normalizeClassCode(value: unknown): string | null {
     if (value === undefined || value === null || value === '') return null;
-    if (typeof value !== 'string' || !/^[A-Z0-9_]{1,80}$/i.test(value.trim()))
-      throw new BadRequestException('customerClassCode must be an alphanumeric class code');
-    return value.trim().toUpperCase();
+    if (typeof value !== 'string') {
+      throw new BadRequestException('customerClassCode must match ^[A-Z0-9_]{3,80}$');
+    }
+    const normalized = value.trim().toUpperCase();
+    if (!CUSTOMER_CLASS_CODE_PATTERN.test(normalized)) {
+      throw new BadRequestException('customerClassCode must match ^[A-Z0-9_]{3,80}$');
+    }
+    return normalized;
   }
 
   private normalizeTargetId(value: unknown, field: string): string | null {
@@ -330,22 +342,62 @@ export class FeeRuleRegistryService {
   }
 
   private async assertTargetsExist(
+    manager: EntityManager,
+    customerClassCode: string | null,
     agentClassId: string | null,
     institutionId: string | null,
   ): Promise<void> {
+    if (customerClassCode) {
+      await this.assertCustomerClassTargetUsable(manager, customerClassCode);
+    }
     if (agentClassId) {
-      const rows: unknown[] = await this.dataSource.query(
+      const rows: unknown[] = await manager.query(
         `SELECT id FROM agent_classes WHERE id = $1 AND deleted_at IS NULL`,
         [agentClassId],
       );
       if (!rows.length) throw new NotFoundException(`Agent class ${agentClassId} not found`);
     }
     if (institutionId) {
-      const rows: unknown[] = await this.dataSource.query(
+      const rows: unknown[] = await manager.query(
         `SELECT id FROM financial_institutions WHERE id = $1 AND deleted_at IS NULL`,
         [institutionId],
       );
       if (!rows.length) throw new NotFoundException(`Institution ${institutionId} not found`);
+    }
+  }
+
+  private async assertCustomerClassTargetUsable(
+    manager: EntityManager,
+    customerClassCode: string,
+  ): Promise<void> {
+    const rows: Array<{
+      id: string;
+      status: string;
+      enabled: boolean;
+      configuration_status: string;
+      deleted_at: Date | null;
+    }> = await manager.query(
+      `SELECT id, status, enabled, configuration_status, deleted_at
+         FROM customer_classes
+        WHERE code = $1 AND deleted_at IS NULL
+        FOR SHARE`,
+      [customerClassCode],
+    );
+    const target = rows[0];
+    if (!target) {
+      throw new NotFoundException(`Customer class ${customerClassCode} not found`);
+    }
+    if (
+      !isUsableCustomerClass({
+        enabled: Boolean(target.enabled),
+        status: target.status,
+        configurationStatus: target.configuration_status,
+        deletedAt: target.deleted_at,
+      })
+    ) {
+      throw new ConflictException(
+        `Customer class ${customerClassCode} is not available for fee rule targeting`,
+      );
     }
   }
 

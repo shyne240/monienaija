@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { CUSTOMER_CLASS_CODE_PATTERN } from '../customer-class/customer-class.enums';
+
 /**
  * V1-COMMERCIAL-04 — Fee Rule RESOLUTION foundation (read-only).
  *
@@ -200,9 +202,14 @@ export class FeeRuleResolverService {
 
   private normalizeOptionalCode(value: unknown, field: string): string | null {
     if (value === undefined || value === null || value === '') return null;
-    if (typeof value !== 'string' || !/^[A-Z0-9_]{1,80}$/i.test(value.trim()))
-      throw new BadRequestException(`${field} must be an alphanumeric code`);
-    return value.trim().toUpperCase();
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${field} must match ^[A-Z0-9_]{3,80}$`);
+    }
+    const normalized = value.trim().toUpperCase();
+    if (!CUSTOMER_CLASS_CODE_PATTERN.test(normalized)) {
+      throw new BadRequestException(`${field} must match ^[A-Z0-9_]{3,80}$`);
+    }
+    return normalized;
   }
 
   private normalizeOptionalUuid(value: unknown, field: string): string | null {
