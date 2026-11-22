@@ -1023,6 +1023,30 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Customer class governance is distinct from the generic customer inspection routes.
+    if (
+      /^\/api\/v1\/internal\/customer-classes(?:\/[^/]+)?$/.test(path) ||
+      /^\/api\/v1\/internal\/customers\/[^/]+\/class(?:\/history)?$/.test(path)
+    ) {
+      const read = lookedUpMethod === 'GET';
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-class',
+        policy: {
+          resourceType: 'customer-class',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: read
+            ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
+            : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [read ? 'customer.view' : 'customer.manage_classes'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (/^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)) {
       const functionCode = lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_classes';
       return {
