@@ -101,6 +101,7 @@ import { SupportAuthenticationModule } from './support-authentication/support-au
 import { LocalAdminAuthenticationModule } from './local-admin-authentication/local-admin-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ProtectedAuthorityModule } from './authorization/protected-authority.module';
+import { WorkforceVisibilityModule } from './workforce-visibility/workforce-visibility.module';
 
 @Module({
   imports: [
@@ -116,6 +117,7 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     ProtectedAuthorityModule,
+    WorkforceVisibilityModule,
     HealthModule,
     AgentModule,
     AggregatorModule,

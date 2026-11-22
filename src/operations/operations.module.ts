@@ -17,6 +17,7 @@ import { OperationsCentreService } from './operations-centre.service';
 import { OperationalMetricsService } from './operational-metrics.service';
 import { OutboxEvent } from './outbox-event.entity';
 import { OutboxService } from './outbox.service';
+import { AuditInspectionController } from './audit-inspection.controller';
 import { OperationsController } from './operations.controller';
 import { WorkerLeaseService } from './worker-lease.service';
 import { WorkerSupervisorService } from './worker-supervisor.service';
@@ -31,7 +32,7 @@ import { WorkerSupervisorService } from './worker-supervisor.service';
     ReconciliationModule,
     TypeOrmModule.forFeature([AuditEvent, IdempotencyRecord, OperationalMetric, OutboxEvent]),
   ],
-  controllers: [OperationsController],
+  controllers: [OperationsController, AuditInspectionController],
   providers: [
     AuditService,
     DiagnosticsService,

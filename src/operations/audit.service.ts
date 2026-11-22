@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import type { SelectQueryBuilder } from 'typeorm';
 
 import { redactRecord, sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import {
@@ -11,8 +12,14 @@ import {
 } from '../notification/provider-security';
 import { AuditEvent } from './audit-event.entity';
 import type { AuditEventCommand, AuditQuery, AuditView } from './operations.types';
-
-const ALLOW_NOTIFICATION_PROVIDER_AUDIT = Symbol('ALLOW_NOTIFICATION_PROVIDER_AUDIT');
+import {
+  AUDIT_INSPECTION_EXCLUDED_CATEGORIES,
+  type AuditInspectionDetail,
+  type AuditInspectionPage,
+  type AuditInspectionQuery,
+  type AuditInspectionRow,
+  type AuditOutcome,
+} from './audit-inspection.types';
 
 // Older authorization decisions used the generic `customer` resource type and stored the raw
 // request path. Fastify accepts percent-encoded static segments, so match either spelling when
@@ -58,9 +65,171 @@ export class AuditService {
 
   async list(
     query: AuditQuery = {},
-    options: { includeComplianceCaseRecords?: boolean; includePreferenceRecords?: boolean } = {},
+    options: {
+      includeComplianceCaseRecords?: boolean;
+      includePreferenceRecords?: boolean;
+      includeNotificationProviderRecords?: boolean;
+    } = {},
   ): Promise<AuditView[]> {
     const take = Math.min(Math.max(query.limit ?? 100, 1), 1000);
+    const builder = this.restrictedQuery(options);
+    if (query.entityType) {
+      builder.andWhere('audit.entity_type = :entityType', { entityType: query.entityType });
+    }
+    if (query.entityId) {
+      builder.andWhere('audit.entity_id = :entityId', { entityId: query.entityId });
+    }
+    if (query.correlationId) {
+      // Report 26 (N-02): the query side applies the SAME deterministic
+      // sanitization as the write side, so legitimate-id lookups are unchanged
+      // and credential-shaped lookups match the sanitized stored values.
+      const correlationFilter = sanitizeDiagnosticIdentifier(query.correlationId);
+      if (correlationFilter) {
+        builder.andWhere('audit.correlation_id = :correlationId', {
+          correlationId: correlationFilter,
+        });
+      }
+    }
+    const events = await builder.orderBy('audit.occurred_at', 'DESC').take(take).getMany();
+    return events.map((event) => this.toView(event));
+  }
+
+  /**
+   * ARENA 4 — authorized operational audit inspection.
+   *
+   * The SAME default category restrictions as `list()` are applied by `restrictedQuery()`; no
+   * caller of this method can opt in to customer-preference, compliance-case or provider-secret
+   * audit metadata. Only the reporting shape (server-side filtering, outcome, institution scope,
+   * pagination) is new.
+   */
+  async inspect(
+    input: AuditInspectionQuery,
+    options: { includeComplianceCaseRecords?: boolean; includePreferenceRecords?: boolean } = {},
+  ): Promise<AuditInspectionPage> {
+    const limit = Math.min(Math.max(Math.trunc(input.limit) || 25, 1), 100);
+    const page = Math.max(Math.trunc(input.page) || 1, 1);
+    const builder = this.restrictedQuery(options);
+    this.applyInspectionFilters(builder, input);
+    const total = await builder.clone().getCount();
+    const events = await builder
+      .orderBy('audit.occurred_at', 'DESC')
+      .addOrderBy('audit.id', 'DESC')
+      .offset((page - 1) * limit)
+      .take(limit)
+      .getMany();
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return {
+      data: events.map((event) => this.toInspectionRow(event)),
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage: page < totalPages,
+      accessMode: 'READ_ONLY',
+      excludedCategories: [...AUDIT_INSPECTION_EXCLUDED_CATEGORIES],
+    };
+  }
+
+  /**
+   * Single-record inspection with the approval history that governed the action. Returns null for
+   * a row excluded by the default category policy, so a caller cannot use detail lookup to bypass
+   * a list-level restriction.
+   */
+  async inspectOne(id: string): Promise<AuditInspectionDetail | null> {
+    const builder = this.restrictedQuery({});
+    builder.andWhere('audit.id = :id', { id });
+    const event = await builder.getOne();
+    if (!event) return null;
+
+    const approvalIds = Array.isArray(event.newValues?.['approvalIds'])
+      ? (event.newValues['approvalIds'] as unknown[])
+          .filter((value): value is string => typeof value === 'string')
+          .slice(0, 10)
+      : [];
+    const approvals = await this.repository.query<
+      Array<{
+        id: string;
+        action_type: string;
+        resource_type: string;
+        resource_id: string | null;
+        status: string;
+        requester_principal_id: string;
+        approved_by: string | null;
+        reason: string | null;
+        requested_at: Date;
+        expires_at: Date;
+        approved_at: Date | null;
+        rejected_at: Date | null;
+        consumed_at: Date | null;
+        is_emergency: boolean;
+      }>
+    >(
+      `SELECT id, action_type, resource_type, resource_id, status, requester_principal_id,
+              approved_by, reason, requested_at, expires_at, approved_at, rejected_at,
+              consumed_at, is_emergency
+         FROM privileged_action_approvals
+        WHERE id::text = $1
+           OR (resource_type = $2 AND resource_id = $3)
+           OR id::text = ANY($4::text[])
+        ORDER BY requested_at DESC
+        LIMIT 10`,
+      [event.entityId, event.entityType, event.entityId, approvalIds],
+    );
+
+    const related = event.correlationId
+      ? await this.restrictedQuery({})
+          .andWhere('audit.correlation_id = :correlationId', {
+            correlationId: event.correlationId,
+          })
+          .andWhere('audit.id <> :id', { id })
+          .orderBy('audit.occurred_at', 'DESC')
+          .take(20)
+          .getMany()
+      : [];
+
+    return {
+      event: {
+        ...this.toInspectionRow(event),
+        previousValues: sanitizeNotificationProviderAuditPayload(
+          event.entityType,
+          event.previousValues,
+        ),
+        newValues: sanitizeNotificationProviderAuditPayload(event.entityType, event.newValues),
+      },
+      approvalHistory: approvals.map((approval) => ({
+        id: approval.id,
+        actionType: approval.action_type,
+        resourceType: approval.resource_type,
+        resourceId: approval.resource_id,
+        status: approval.status,
+        requesterPrincipalId: approval.requester_principal_id,
+        approvedBy: approval.approved_by,
+        reason: approval.reason,
+        requestedAt: approval.requested_at,
+        expiresAt: approval.expires_at,
+        approvedAt: approval.approved_at,
+        rejectedAt: approval.rejected_at,
+        consumedAt: approval.consumed_at,
+        isEmergency: approval.is_emergency,
+      })),
+      relatedEvents: related.map((row) => this.toInspectionRow(row)),
+      accessMode: 'READ_ONLY',
+      // Stated explicitly: linkage is by id/resource/approvalIds, not a guarantee that every
+      // historically governed action recorded one of those references.
+      approvalHistoryComplete: approvals.length > 0 || approvalIds.length === 0,
+      excludedCategories: [...AUDIT_INSPECTION_EXCLUDED_CATEGORIES],
+    };
+  }
+
+  /**
+   * Every default restriction the generic audit surface enforces. Extracted verbatim so `list()`
+   * and `inspect()` can never diverge: a category hidden from one is hidden from the other.
+   */
+  private restrictedQuery(options: {
+    includeComplianceCaseRecords?: boolean;
+    includePreferenceRecords?: boolean;
+    includeNotificationProviderRecords?: boolean;
+  }): SelectQueryBuilder<AuditEvent> {
     const builder = this.repository.createQueryBuilder('audit');
     // Mission 25G: generic audit access (including SUPPORT and `audit.view`) is not an approved
     // grant to customer preference values or history. Hide preference business/history events
@@ -130,27 +299,7 @@ export class AuditService {
         { policyDecisionType: 'A4_POLICY_DECISION' },
       );
     }
-    if (query.entityType) {
-      builder.andWhere('audit.entity_type = :entityType', { entityType: query.entityType });
-    }
-    if (query.entityId) {
-      builder.andWhere('audit.entity_id = :entityId', { entityId: query.entityId });
-    }
-    if (query.correlationId) {
-      // Report 26 (N-02): the query side applies the SAME deterministic
-      // sanitization as the write side, so legitimate-id lookups are unchanged
-      // and credential-shaped lookups match the sanitized stored values.
-      const correlationFilter = sanitizeDiagnosticIdentifier(query.correlationId);
-      if (correlationFilter) {
-        builder.andWhere('audit.correlation_id = :correlationId', {
-          correlationId: correlationFilter,
-        });
-      }
-    }
-    const includeNotificationProviderRecords = Boolean(
-      (query as Record<symbol, unknown>)[ALLOW_NOTIFICATION_PROVIDER_AUDIT],
-    );
-    if (!includeNotificationProviderRecords) {
+    if (!options.includeNotificationProviderRecords) {
       // Restrict operational provider configuration & test-send audit metadata (key fingerprints,
       // sender configuration, base URLs, verification/test error codes, masked test destinations,
       // and maker-checker approval records/comments tied to NOTIFICATION_PROVIDER_CONFIG_PROPOSAL)
@@ -167,7 +316,7 @@ export class AuditService {
         `NOT (
           audit.entity_type = :providerApprovalEntityType
           AND (
-            audit.new_values ->> 'resourceType' = :providerProposalResourceType
+            COALESCE(audit.new_values ->> 'resourceType', '') = :providerProposalResourceType
             OR EXISTS (
               SELECT 1
                 FROM privileged_action_approvals paa
@@ -182,8 +331,63 @@ export class AuditService {
         },
       );
     }
-    const events = await builder.orderBy('audit.occurred_at', 'DESC').take(take).getMany();
-    return events.map((event) => ({
+    return builder;
+  }
+
+  private applyInspectionFilters(
+    builder: SelectQueryBuilder<AuditEvent>,
+    input: AuditInspectionQuery,
+  ): void {
+    if (input.actor) builder.andWhere('audit.actor = :actor', { actor: input.actor });
+    if (input.action) builder.andWhere('audit.action = :action', { action: input.action });
+    if (input.entityType) {
+      builder.andWhere('audit.entity_type = :entityType', { entityType: input.entityType });
+    }
+    if (input.entityId) {
+      builder.andWhere('audit.entity_id = :entityId', { entityId: input.entityId });
+    }
+    if (input.correlationId) {
+      const correlationFilter = sanitizeDiagnosticIdentifier(input.correlationId);
+      if (correlationFilter) {
+        builder.andWhere('audit.correlation_id = :correlationId', {
+          correlationId: correlationFilter,
+        });
+      }
+    }
+    if (input.institutionId) {
+      // audit_events has no dedicated institution column. Institution scope is derived from the
+      // audited payload only; rows that never recorded an institution id are not matched (they are
+      // shown as institutionId: null in projections, never assumed platform-wide).
+      builder.andWhere(
+        `COALESCE(
+          audit.new_values->>'institutionId',
+          audit.previous_values->>'institutionId',
+          audit.new_values->>'institution_id',
+          audit.previous_values->>'institution_id',
+          audit.new_values->>'financialInstitutionId'
+        ) = :institutionId`,
+        { institutionId: input.institutionId },
+      );
+    }
+    if (input.outcome === 'ALLOWED') {
+      builder.andWhere(
+        `audit.entity_type = 'AUTHORIZATION_DECISION' AND audit.new_values->>'allowed' = 'true'`,
+      );
+    } else if (input.outcome === 'DENIED') {
+      builder.andWhere(
+        `audit.entity_type = 'AUTHORIZATION_DECISION' AND audit.new_values->>'allowed' = 'false'`,
+      );
+    } else if (input.outcome === 'RECORDED') {
+      builder.andWhere(
+        `NOT (audit.entity_type = 'AUTHORIZATION_DECISION' AND audit.new_values->>'allowed' IN ('true','false'))`,
+      );
+    }
+    if (input.from) builder.andWhere('audit.occurred_at >= :from', { from: input.from });
+    if (input.to) builder.andWhere('audit.occurred_at <= :to', { to: input.to });
+  }
+
+  private toView(event: AuditEvent): AuditView {
+    return {
       id: event.id,
       entityType: event.entityType,
       entityId: event.entityId,
@@ -199,7 +403,35 @@ export class AuditService {
       ),
       newValues: sanitizeNotificationProviderAuditPayload(event.entityType, event.newValues),
       occurredAt: event.occurredAt,
-    }));
+    };
+  }
+
+  private toInspectionRow(event: AuditEvent): AuditInspectionRow {
+    const rawAllowed = event.newValues?.['allowed'];
+    const outcome: AuditOutcome =
+      event.entityType === 'AUTHORIZATION_DECISION' && typeof rawAllowed === 'boolean'
+        ? rawAllowed
+          ? 'ALLOWED'
+          : 'DENIED'
+        : 'RECORDED';
+    const institutionRaw =
+      event.newValues?.['institutionId'] ??
+      event.previousValues?.['institutionId'] ??
+      event.newValues?.['institution_id'] ??
+      event.previousValues?.['institution_id'] ??
+      event.newValues?.['financialInstitutionId'];
+    return {
+      id: event.id,
+      actor: event.actor,
+      action: event.action,
+      entityType: event.entityType,
+      entityId: event.entityId,
+      outcome,
+      institutionId: sanitizeDiagnosticIdentifier(institutionRaw) ?? null,
+      correlationId: sanitizeDiagnosticIdentifier(event.correlationId) ?? null,
+      requestId: event.requestId,
+      occurredAt: event.occurredAt,
+    };
   }
 
   /**
@@ -208,10 +440,7 @@ export class AuditService {
    * (such as compliance-case restrictions) remain enforced.
    */
   async listWithNotificationProviderOversight(query: AuditQuery = {}): Promise<AuditView[]> {
-    const scopedQuery = Object.assign({}, query, {
-      [ALLOW_NOTIFICATION_PROVIDER_AUDIT]: true,
-    });
-    return this.list(scopedQuery);
+    return this.list(query, { includeNotificationProviderRecords: true });
   }
 }
 

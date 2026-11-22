@@ -27,6 +27,9 @@ import { NotificationManagementScreen } from './NotificationManagementScreen';
 import { CommercialRulesScreen } from './CommercialRulesScreen';
 import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
+import { NotificationOperationsScreen } from './NotificationOperationsScreen';
+import { WorkforceDirectoryScreen } from './WorkforceDirectoryScreen';
+import { AuditInspectionScreen } from './AuditInspectionScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
 import { InstitutionDirectoryScreen } from './InstitutionDirectoryScreen';
 import { InstitutionWorkspaceScreen } from './InstitutionWorkspaceScreen';
@@ -453,6 +456,21 @@ export const Layout: React.FC = () => {
         },
         { key: 'systemHealth' as View, label: 'System health', visible: isVisible('systemHealth') },
         { key: 'auditEvents' as View, label: 'Audit events', visible: isVisible('auditEvents') },
+        {
+          key: 'notificationOperations' as View,
+          label: 'Notification operations',
+          visible: isVisible('notificationOperations'),
+        },
+        {
+          key: 'workforceDirectory' as View,
+          label: 'Workforce directory',
+          visible: isVisible('workforceDirectory'),
+        },
+        {
+          key: 'auditInspection' as View,
+          label: 'Audit inspection',
+          visible: isVisible('auditInspection'),
+        },
       ],
     },
   ];
@@ -751,6 +769,12 @@ export const Layout: React.FC = () => {
         );
       case 'auditEvents':
         return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+      case 'notificationOperations':
+        return <NotificationOperationsScreen />;
+      case 'workforceDirectory':
+        return <WorkforceDirectoryScreen />;
+      case 'auditInspection':
+        return <AuditInspectionScreen />;
       case 'institutions':
         return (
           <InstitutionDirectoryScreen

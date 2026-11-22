@@ -60,6 +60,11 @@ export class AdminNotificationController {
     @Query('channel') channelRaw?: string,
     @Query('eventType') eventTypeRaw?: string,
     @Query('recipientId') recipientIdRaw?: string,
+    // ARENA 4 — bounded search and time-window filters over the same read-only projection.
+    // No new columns are projected; these only narrow rows.
+    @Query('search') searchRaw?: string,
+    @Query('from') fromRaw?: string,
+    @Query('to') toRaw?: string,
   ) {
     await this.requireFunction(req, 'notification.view_deliveries');
 
@@ -74,6 +79,12 @@ export class AdminNotificationController {
     const channel = this.parseEnum(channelRaw, VALID_CHANNELS, 'channel');
     const eventType = this.parseString(eventTypeRaw, 'eventType', 180);
     const recipientId = this.parseUuid(recipientIdRaw, 'recipientId');
+    const search = this.parseString(searchRaw, 'search', 120);
+    const from = this.parseTimestamp(fromRaw, 'from');
+    const to = this.parseTimestamp(toRaw, 'to');
+    if (from && to && from.getTime() > to.getTime()) {
+      throw new BadRequestException('from must be before to');
+    }
 
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -98,6 +109,23 @@ export class AdminNotificationController {
     if (recipientId) {
       conditions.push(`recipient_id = $${idx++}`);
       params.push(recipientId);
+    }
+    if (search) {
+      // Escape LIKE metacharacters so a caller cannot turn the filter into a wildcard scan.
+      const escaped = search.replace(/[\\%_]/g, (character) => `\\${character}`);
+      conditions.push(
+        `(event_key ILIKE $${idx} ESCAPE '\\' OR event_type ILIKE $${idx} ESCAPE '\\' OR aggregate_id::text ILIKE $${idx} ESCAPE '\\')`,
+      );
+      params.push(`%${escaped}%`);
+      idx += 1;
+    }
+    if (from) {
+      conditions.push(`created_at >= $${idx++}`);
+      params.push(from);
+    }
+    if (to) {
+      conditions.push(`created_at <= $${idx++}`);
+      params.push(to);
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -285,6 +313,17 @@ export class AdminNotificationController {
     if (trimmed.length > maxLen)
       throw new BadRequestException(`${field} must be at most ${maxLen} characters`);
     return trimmed;
+  }
+
+  private parseTimestamp(raw: string | undefined, field: string): Date | undefined {
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    const value = new Date(trimmed);
+    if (Number.isNaN(value.getTime())) {
+      throw new BadRequestException(`${field} must be an ISO-8601 timestamp`);
+    }
+    return value;
   }
 
   private parseUuid(raw: string | undefined, field: string): string | undefined {
