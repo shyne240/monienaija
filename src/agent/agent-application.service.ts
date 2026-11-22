@@ -161,8 +161,25 @@ export class AgentApplicationService {
     }
   }
 
-  async list(): Promise<AgentApplication[]> {
-    return this.applicationRepository.find({ order: { createdAt: 'DESC' } });
+  async list(
+    includeAgentStatus = false,
+  ): Promise<Array<AgentApplication & { linkedAgentStatus?: AgentStatus | null }>> {
+    const applications = this.applicationRepository
+      .createQueryBuilder('application')
+      .orderBy('application.createdAt', 'DESC');
+    if (!includeAgentStatus) return applications.getMany();
+    const { entities, raw } = await applications
+      .leftJoin(Agent, 'agent', 'agent.id = application.agentId')
+      .addSelect('application.id', 'application_id')
+      .addSelect('agent.status', 'linked_agent_status')
+      .getRawAndEntities<{ application_id: string; linked_agent_status: AgentStatus | null }>();
+    const statusByApplication = new Map(
+      raw.map((row) => [row.application_id, row.linked_agent_status]),
+    );
+    return entities.map((application) => ({
+      ...application,
+      linkedAgentStatus: statusByApplication.get(application.id) ?? null,
+    }));
   }
 
   async updateDraft(id: string, command: UpdateDraftCommand): Promise<AgentApplication> {

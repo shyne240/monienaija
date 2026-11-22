@@ -335,6 +335,155 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     expect(res2.body.data.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('filters the full directory before paging, scopes active assignments, and preserves stable ties', async () => {
+    const token = workforceToken('PRIVILEGED');
+    const ids = [
+      await createActiveAgent(),
+      await createActiveAgent(),
+      await createActiveAgent(),
+    ].sort();
+    const [first, second, suspended] = ids;
+    const unique = `Directory%_${randomUUID()}`;
+    const classes: Array<{ agent_class_id: string }> = await dataSource.query(
+      'SELECT agent_class_id FROM agents WHERE id = $1',
+      [first],
+    );
+    const classId = classes[0]!.agent_class_id;
+    for (const [index, id] of ids.entries()) {
+      await dataSource.query(
+        `UPDATE agents SET reference = $2, agent_class_id = $3, created_at = '2026-01-01' WHERE id = $1`,
+        [id, `${unique}-${index}`, classId],
+      );
+    }
+    const wildcardDecoy = await createActiveAgent();
+    await dataSource.query('UPDATE agents SET reference = $2 WHERE id = $1', [
+      wildcardDecoy,
+      unique.replace('%_', 'AB'),
+    ]);
+    const aggregator = await aggregatorService.create({
+      reference: `agg-filter-${randomUUID()}`,
+      code: `DIR-${randomUUID().slice(0, 8)}`,
+      corporateName: 'Directory fixture aggregator',
+      actor: 'fixture',
+    });
+    await aggregatorService.activate(aggregator.id, 'fixture');
+    const base = '/api/v1/internal/agents';
+    const auth = `Bearer ${token}`;
+    for (const agentId of ids) {
+      await request(app.getHttpServer())
+        .post(`/api/v1/internal/aggregators/${aggregator.id}/agents`)
+        .set('Authorization', auth)
+        .send({ agentId })
+        .expect(201);
+    }
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/aggregators/${aggregator.id}/agents/${suspended}/suspend`)
+      .set('Authorization', auth)
+      .expect(200);
+
+    const filter = {
+      search: unique.toLowerCase(),
+      agentClassId: classId,
+      aggregatorId: aggregator.id,
+      status: 'ACTIVE',
+      sort: 'oldest',
+      limit: 1,
+    };
+    for (const [i, id] of [first, second].entries()) {
+      const res = await request(app.getHttpServer())
+        .get(base)
+        .query({ ...filter, page: i + 1 })
+        .set('Authorization', auth)
+        .expect(200);
+      expect(res.body).toMatchObject({ data: [{ id }], page: i + 1, limit: 1, total: 2 });
+    }
+    const literal = await request(app.getHttpServer())
+      .get(base)
+      .query({ search: unique })
+      .set('Authorization', auth)
+      .expect(200);
+    expect(literal.body.total).toBe(3);
+    const byId = await request(app.getHttpServer())
+      .get(base)
+      .query({ search: second })
+      .set('Authorization', auth)
+      .expect(200);
+    expect(byId.body).toMatchObject({ data: [{ id: second }], total: 1 });
+    const mismatched = await request(app.getHttpServer())
+      .get(base)
+      .query({ ...filter, status: 'PENDING' })
+      .set('Authorization', auth)
+      .expect(200);
+    expect(mismatched.body).toMatchObject({ data: [], total: 0 });
+    for (const query of [
+      { page: '2x' },
+      { agentClassId: 'invalid' },
+      { aggregatorId: 'invalid' },
+      { sort: 'random' },
+      { status: 'UNKNOWN' },
+    ]) {
+      await request(app.getHttpServer())
+        .get(base)
+        .query(query)
+        .set('Authorization', auth)
+        .expect(400);
+    }
+    await request(app.getHttpServer()).get(base).query(filter).expect(401);
+    const denied = `Bearer ${workforceToken('SUPPORT', 'SUPPORT')}`;
+    for (const path of [base, `${base}/${second}`]) {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', denied)
+        .expect(403);
+      expect(JSON.stringify(response.body)).not.toContain(unique);
+    }
+    const reader = `Bearer ${workforceToken('OPERATOR', 'FINANCE_AUDITOR')}`;
+    const detail = await request(app.getHttpServer())
+      .get(`${base}/${second}`)
+      .set('Authorization', reader)
+      .expect(200);
+    expect(detail.body).toEqual(byId.body.data[0]);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${second}/suspend`)
+      .set('Authorization', reader)
+      .send({ reason: 'view permission must not allow lifecycle writes' })
+      .expect(403);
+    const unchanged = await request(app.getHttpServer())
+      .get(`${base}/${second}`)
+      .set('Authorization', reader)
+      .expect(200);
+    expect(unchanged.body).toEqual(detail.body);
+  });
+
+  it('projects the linked Agent status independently of the application approval status', async () => {
+    const agentId = await createActiveAgent();
+    const auth = `Bearer ${workforceToken('PRIVILEGED')}`;
+    const applications = '/api/v1/internal/agents/applications';
+    const active = await request(app.getHttpServer())
+      .get(applications)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(active.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId, status: 'APPROVED', linkedAgentStatus: 'ACTIVE' }),
+      ]),
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', auth)
+      .send({ reason: 'fixture' })
+      .expect(200);
+    const suspended = await request(app.getHttpServer())
+      .get(applications)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(suspended.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId, status: 'APPROVED', linkedAgentStatus: 'SUSPENDED' }),
+      ]),
+    );
+  });
+
   it('7. Agent lifecycle via admin (workforce) still respects rules', async () => {
     const agentId = await createActiveAgent();
     const token = workforceToken('PRIVILEGED');
@@ -423,7 +572,40 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         serialNumber: 'SN-A22',
       })
       .expect(201);
-    expect(termRes.body.id).toBeDefined();
+    const terminalId = termRes.body.id as string;
+    expect(terminalId).toBeDefined();
+    const secondAgent = await createActiveAgent();
+    const otherOutlet = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${secondAgent}/outlets`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        reference: `other-${randomUUID()}`,
+        name: 'Other outlet',
+        displayName: 'Other',
+        addressLine: '2 Test',
+        city: 'Lagos',
+        state: 'Lagos',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/outlets/${outletId}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        outletId: otherOutlet.body.id as string,
+        reference: `mismatch-${randomUUID()}`,
+        label: 'Wrong parent',
+      })
+      .expect(401);
+    const assigned = await request(app.getHttpServer())
+      .get(`/api/v1/internal/outlets/${outletId}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(assigned.body).toEqual([expect.objectContaining({ id: terminalId, outletId, agentId })]);
+    const foreign = await request(app.getHttpServer())
+      .get(`/api/v1/internal/agents/${secondAgent}/terminals`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(foreign.body).toEqual([]);
   });
 
   it('10. Agent Network Manager funding remains pending until independent approval', async () => {

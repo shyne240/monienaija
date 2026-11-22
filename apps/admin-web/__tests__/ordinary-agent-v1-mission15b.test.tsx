@@ -715,6 +715,14 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
           pendingApplicationCount: 3,
         });
       }
+      if (path === `/internal/agents/${AGENT_ID}`) {
+        return Promise.resolve({
+          id: AGENT_ID,
+          reference: 'AGT-NAV-01',
+          status: 'ACTIVE',
+          agentClassId: CLASS_ID,
+        });
+      }
       if (path.startsWith('/internal/agents?')) {
         return Promise.resolve({
           data: [
