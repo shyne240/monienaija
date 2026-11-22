@@ -619,6 +619,10 @@ describe('CustomerRegistrationWizard', () => {
 
     expect(view.getByText('DRAFT', { exact: true })).toBeTruthy();
     expect(view.getByText(/No activation or ledger wallet creation was requested/)).toBeTruthy();
+    expect(view.getByText(/This draft is not a completed onboarding/).textContent).toContain(
+      'Saved documents and phone verification do not establish identity ownership',
+    );
+    expect(view.getByText(/The customer must set their own mobile credentials/)).toBeTruthy();
     expect(view.getByText(/NIN · ••••••0001/)).toBeTruthy();
     expect(view.getByText(/NIN · ••••••0002/)).toBeTruthy();
     expect(view.queryByText('00000000001')).toBeNull();

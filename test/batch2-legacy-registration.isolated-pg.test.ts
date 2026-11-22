@@ -904,6 +904,16 @@ test.each(['BVN', 'NIN'] as const)(
       expect((await send('onboarding-route', { sessionId: s.id }, auth)).json()).toEqual({
         next: 'RESUME_CLAIM',
       });
+      // A subsequent mismatch invalidates the old, unconsumed proof. Credential creation
+      // must not succeed until the current session establishes a fresh identity match.
+      expect(
+        (
+          await send('claim-match', { sessionId: s.id, kind, identifier: '99999999999' }, auth)
+        ).json(),
+      ).toEqual({ status: 'MISMATCH' });
+      expect((await send('onboarding-route', { sessionId: s.id }, auth)).json()).toEqual({
+        next: 'CLAIM',
+      });
       const body = {
         sessionId: s.id,
         passcode: '112233',
@@ -911,9 +921,24 @@ test.each(['BVN', 'NIN'] as const)(
         pin: '334455',
         pinConfirmation: '334455',
       };
+      expect((await send('claim-credentials', body, auth)).statusCode).toBe(401);
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'MATCH' });
       process.env.KYC_OWNERSHIP_KEY_BASE64 = Buffer.alloc(32, 8).toString('base64');
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({
+        status: 'PENDING',
+      });
       expect((await send('claim-credentials', body, auth)).statusCode).toBe(401);
       process.env.KYC_OWNERSHIP_KEY_BASE64 = key.toString('base64');
+      expect((await send('claim-credentials', body, auth)).statusCode).toBe(401);
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({
+        status: 'MATCH',
+      });
       await db.query('UPDATE kyc_consents SET withdrawn_at=clock_timestamp() WHERE id=$1', [
         consent,
       ]);

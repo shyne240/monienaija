@@ -122,6 +122,15 @@ export class MobileAccountClaimService {
       );
       if (existing[0]?.present) throw new KycFoundationError('CONFLICT');
       const result = async (status: 'MATCH' | 'MISMATCH' | 'PENDING' | 'LOCKED') => {
+        if (status !== 'MATCH') {
+          // A later failed or unavailable verification must not leave an earlier unconsumed
+          // match usable for credential setup. The session/customer locks serialize this with
+          // setup and another match; the outcome remains recorded in the audit event below.
+          await m.query(
+            'DELETE FROM mobile_account_claims WHERE session_id=$1 AND customer_id=$2 AND consumed_at IS NULL',
+            [sessionId, customerId],
+          );
+        }
         await this.audit.record(m, {
           entityType: 'CUSTOMER',
           entityId: customerId,

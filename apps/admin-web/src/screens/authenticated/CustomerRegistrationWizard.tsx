@@ -1581,8 +1581,9 @@ const CustomerRegistrationWorkspace = forwardRef<
       return (
         <div className="cm-wizard-form">
           <p className="cm-form-help">
-            Identity documents are optional and save independently. NIN and BVN do not use issue or
-            expiry dates; other document dates are optional.
+            Identity documents are optional and save independently. Saving a document does not
+            verify identity or establish eligibility for a mobile claim. NIN and BVN do not use
+            issue or expiry dates; other document dates are optional.
           </p>
           <div className="cm-identity-draft-list">
             {identityDocuments.map((document, index) => (
@@ -1876,6 +1877,12 @@ const CustomerRegistrationWorkspace = forwardRef<
             </p>
           </div>
         </div>
+        <p className="cm-summary-warning">
+          This draft is not a completed onboarding. Saved documents and phone verification do not
+          establish identity ownership. A mobile claim requires separate approved, customer-bound
+          identity evidence and consent; this wizard does not create that evidence. The customer
+          must set their own mobile credentials and transaction PIN.
+        </p>
         <dl className="cm-summary-grid">
           <div>
             <dt>Customer reference</dt>
