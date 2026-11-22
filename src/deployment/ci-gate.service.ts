@@ -204,7 +204,9 @@ export function extractJobBlock(workflowText: string, jobName: string): string |
   }
 
   const header = new RegExp(`^ {${jobIndent}}${escaped}:\\s*$`);
-  const start = lines.findIndex((line) => header.test(line));
+  // Workflow triggers (for example `on.release`) may use the same indentation as job names.
+  // Search only after the top-level jobs: key so an event cannot masquerade as a job.
+  const start = lines.findIndex((line, index) => index > jobsIndex && header.test(line));
   if (start === -1) return null;
 
   const collected: string[] = [];
