@@ -6,6 +6,8 @@ module.exports = {
   // than skipping when PostgreSQL is unreachable.
   testRegex: '.*\\.integration\\.spec\\.ts$',
   transform: { '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
+  // Keep the normal transcript and expose failing test names/stacks via check annotations.
+  reporters: process.env.GITHUB_ACTIONS === 'true' ? ['default', 'github-actions'] : ['default'],
   testEnvironment: 'node',
   testTimeout: 120000,
   maxWorkers: 1,

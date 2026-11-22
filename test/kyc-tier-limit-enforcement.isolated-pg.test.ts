@@ -367,6 +367,16 @@ beforeAll(async () => {
   await db.query(
     `CREATE TABLE kyc_identity_conflicts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),requester_customer_id uuid,claimed_customer_id uuid,kind varchar(16),status varchar(16) NOT NULL DEFAULT 'OPEN',created_at timestamptz NOT NULL DEFAULT clock_timestamp(),resolved_at timestamptz)`,
   );
+  // ARENA 5 §6: CustomerFinancialEligibilityService.require() admits active FROZEN/BLACKLISTED
+  // administrative restrictions inside the same transaction. This suite owns a hand-built
+  // schema, so the table migration 1785753600010 creates must exist here with the same column
+  // shape and the same (customer_id, type) uniqueness the real writer relies on.
+  await db.query(
+    `CREATE TABLE customer_restrictions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),customer_id uuid NOT NULL,type varchar(20) NOT NULL,is_active boolean NOT NULL DEFAULT true,reason varchar(500),version integer NOT NULL DEFAULT 1,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),deleted_at timestamptz,CONSTRAINT chk_customer_restrictions_type CHECK (type IN ('NONE','LIMITED','MANUAL_REVIEW','FROZEN','BLACKLISTED')),CONSTRAINT chk_customer_restrictions_version CHECK (version > 0))`,
+  );
+  await db.query(
+    `CREATE UNIQUE INDEX uq_customer_restrictions_customer_type ON customer_restrictions(customer_id,type) WHERE deleted_at IS NULL`,
+  );
 
   // Required by migration 1785753600110 (KycTierPolicy), which alters rather than creates it.
   await db.query(

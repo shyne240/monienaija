@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 import { ConflictException, ValidationPipe } from '@nestjs/common';
-import { AuditService } from '../src/operations/audit.service';
+import type { AuditService } from '../src/operations/audit.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';

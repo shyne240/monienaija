@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 describe('Migration 0804 owner authority (real PostgreSQL)', () => {
@@ -9,9 +9,7 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     dataSource = await createIntegrationDataSource('ownerAuthority0804');
   }, 60000);
   afterAll(async () => {
-    try {
-      if (dataSource) await destroyIntegrationDataSource(dataSource);
-    } catch {}
+    if (dataSource) await destroyIntegrationDataSource(dataSource);
   });
 
   it('external_operations trigger rejects orphan owner (no customer or agent)', async () => {

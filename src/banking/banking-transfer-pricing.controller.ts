@@ -1,3 +1,4 @@
+import type { QuotePaymentType } from '../quote/quote.enums';
 import {
   BadRequestException,
   Controller,
@@ -168,7 +169,7 @@ export class BankingTransferPricingController {
     }
 
     const calc = this.feeEngine.calculate(amountMinor, currency, {
-      paymentType: rule.payment_type as unknown as import('../quote/quote.enums').QuotePaymentType,
+      paymentType: rule.payment_type as unknown as QuotePaymentType,
       flatFeeMinor: rule.flat_fee_minor,
       percentageBps: rule.percentage_bps,
       minimumFeeMinor: rule.minimum_fee_minor ?? undefined,

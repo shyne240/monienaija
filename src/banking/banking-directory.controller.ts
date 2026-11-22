@@ -71,7 +71,7 @@ export class CustomerBankingDirectoryController {
       throw new BadRequestException('walletId must be a string');
     const result = await this.enquiry.enquireForCustomer(
       customerId,
-      walletId as string | undefined,
+      walletId,
       bankCode,
       accountNumber,
     );
@@ -114,12 +114,7 @@ export class AgentBankingDirectoryController {
       throw new BadRequestException('bankCode and accountNumber are required');
     if (walletId !== undefined && typeof walletId !== 'string')
       throw new BadRequestException('walletId must be a string');
-    const result = await this.enquiry.enquireForAgent(
-      agentId,
-      walletId as string | undefined,
-      bankCode,
-      accountNumber,
-    );
+    const result = await this.enquiry.enquireForAgent(agentId, walletId, bankCode, accountNumber);
     return {
       bankCode: result.providerBankCode,
       accountNumber: result.accountNumber,

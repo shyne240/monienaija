@@ -10,8 +10,33 @@ export interface FinancialEligibilityOptions {
   readonly lockMode?: 'UPDATE' | 'SHARE';
 }
 
+export const FROZEN_CUSTOMER_MESSAGE =
+  'Customer account is frozen — financial operations are blocked';
+export const BLACKLISTED_CUSTOMER_MESSAGE =
+  'Customer account is restricted — financial operations are blocked';
+
 /** Transactional gate for an identified customer. The trusted reader is intentionally
- * unavailable in production until provider provenance has been reviewed. */
+ * unavailable in production until provider provenance has been reviewed.
+ *
+ * ARENA 5 §6 — administrative restriction admission.
+ *
+ * `LIMITED` and `MANUAL_REVIEW` are deliberately NOT admission blockers here: they map to the
+ * `RESTRICTED` operating status and are governed by tier/purpose/limit policy, not by a hard
+ * freeze. Only `FROZEN` and `BLACKLISTED` stop money movement, exactly as
+ * `CustomerEligibilityService.operatingStatus()` already publishes.
+ *
+ * Concurrency contract (see docs/integration/ARENA5-FROZEN-RESTRICTION-ADMISSION-20261120.md):
+ * the restriction read below happens inside the caller's existing transaction and AFTER this
+ * method has taken the `customers` row lock (`FOR UPDATE` by default, `FOR SHARE` for read-only
+ * callers). A restriction row that does not exist yet cannot be locked, so absence of a row is
+ * not by itself a serialization point: `CustomerEligibilityService.createRestriction()` takes the
+ * SAME `customers` row lock (a real `UPDATE customers SET updated_at = NOW()`) before it inserts.
+ * The two writers therefore serialize against the one row that always exists:
+ *  - freeze commits first  → this read sees it (READ COMMITTED), or the lock acquisition aborts
+ *    with 40001 and the caller's existing bounded retry re-reads it (SERIALIZABLE/REPEATABLE READ);
+ *  - admission locks first → the freeze waits for this transaction to finish and is effective
+ *    only afterwards, so the transfer is serialized BEFORE the restriction, never after it.
+ */
 @Injectable()
 export class CustomerFinancialEligibilityService {
   constructor(
@@ -54,6 +79,18 @@ export class CustomerFinancialEligibilityService {
       !['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(customer.kyc_level)
     )
       throw new ConflictException('Customer is not eligible for financial access');
+    // ARENA 5 §6: active administrative restriction admission, evaluated inside this transaction
+    // after the customer row lock and before any policy/evidence I/O. Read-only: it never
+    // creates, mutates or shadows restriction state, and it keeps the caller's lock strength.
+    const restrictions = await manager.query<Array<{ type: string }>>(
+      `SELECT type FROM customer_restrictions
+       WHERE customer_id=$1 AND type IN ('BLACKLISTED','FROZEN') AND is_active=true AND deleted_at IS NULL
+       ORDER BY type ${rowLock}`,
+      [customerId],
+    );
+    if (restrictions.some((restriction) => restriction.type === 'BLACKLISTED'))
+      throw new ConflictException(BLACKLISTED_CUSTOMER_MESSAGE);
+    if (restrictions.length) throw new ConflictException(FROZEN_CUSTOMER_MESSAGE);
     const now = (await manager.query<Array<{ now: Date }>>('SELECT clock_timestamp() AS now'))[0]!
       .now;
     let policy;

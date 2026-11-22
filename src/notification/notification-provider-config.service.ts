@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
   HttpException,
   Inject,
   Injectable,
@@ -539,7 +540,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
     private readonly configService: ConfigService<Environment, true>,
     private readonly encryptionService: NotificationSecretEncryptionService,
     @Optional() private readonly dataSource?: DataSource,
-    @Optional() private readonly approvals?: PrivilegedActionApprovalService,
+    @Optional()
+    @Inject(forwardRef(() => PrivilegedActionApprovalService))
+    private readonly approvals?: PrivilegedActionApprovalService,
     @Optional() private readonly auditService?: AuditService,
     @Optional()
     @Inject(NOTIFICATION_PROVIDER_HTTP_FETCH_TOKEN)

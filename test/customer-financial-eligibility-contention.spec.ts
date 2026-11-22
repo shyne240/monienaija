@@ -26,6 +26,10 @@ describe.each(['policy', 'evidence'] as const)('Financial eligibility %s boundar
             is_synthetic: false,
           },
         ];
+      // ARENA 5 §6: restriction admission is read inside the same transaction; this boundary
+      // fixture has no restrictions, so the read answers empty and the authority failure under
+      // test is still the first thing that can abort the decision.
+      if (sql.includes('FROM customer_restrictions')) return [];
       if (sql.includes('clock_timestamp()')) return [{ now: new Date() }];
       if (sql.includes('FROM kyc_tier_manual_holds') || sql.includes('FROM kyc_identity_conflicts'))
         return [];

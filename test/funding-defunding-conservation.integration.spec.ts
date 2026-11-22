@@ -1,3 +1,4 @@
+import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -29,10 +30,7 @@ describe('Funding / defunding conservation (real PostgreSQL)', () => {
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue({ read: () => Promise.resolve(null) })
-      .overrideProvider(
-        require('../src/kyc-verification/customer-financial-eligibility.service')
-          .CustomerFinancialEligibilityService,
-      )
+      .overrideProvider(CustomerFinancialEligibilityService)
       .useValue({ require: () => Promise.resolve() })
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
       .useValue(new TestNotificationProvider())
@@ -50,15 +48,15 @@ describe('Funding / defunding conservation (real PostgreSQL)', () => {
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
     assetId =
-      rows[0]?.id ?? (await dataSource.query(`SELECT id FROM ledger_accounts LIMIT 1`))[0].id;
+      rows[0]?.id ??
+      (await dataSource.query<[{ id: string }]>(`SELECT id FROM ledger_accounts LIMIT 1`))[0].id;
   }, 120000);
   afterAll(async () => {
     try {
       if (app) await app.close();
-    } catch {}
-    try {
+    } finally {
       if (dataSource) await destroyIntegrationDataSource(dataSource);
-    } catch {}
+    }
   });
 
   async function customerWalletLedger(): Promise<string> {

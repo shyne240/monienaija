@@ -83,13 +83,7 @@ services:
     image: monienaija-backend:local
     profiles: ['ops']
     command:
-      [
-        'node',
-        'node_modules/typeorm/cli.js',
-        'migration:run',
-        '-d',
-        'dist/config/data-source.js',
-      ]
+      ['node', 'node_modules/typeorm/cli.js', 'migration:run', '-d', 'dist/config/data-source.js']
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: postgres

@@ -53,7 +53,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     try {
       const [bens, wallets] = await Promise.all([
         AgentBankWithdrawalApi.listBankBeneficiaries(),
-        (async () => { try { const r = await (await import('../../services/api-client')).ApiClient.get<{ id: string }[]>('/agents/me/wallets'); return r; } catch { return []; } })(),
+        (async () => { try { const r = await ApiClient.get<{ id: string }[]>('/agents/me/wallets'); return r; } catch { return []; } })(),
       ]);
       setBeneficiaries(bens);
       const first = Array.isArray(wallets) && wallets[0] ? (wallets[0] as unknown as { id: string }).id : undefined;

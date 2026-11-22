@@ -26,6 +26,8 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
+import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { PrivilegedActionApproval } from '../src/authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../src/authorization/privileged-action-approval.enums';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
@@ -89,6 +91,81 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
     // fee_rules → products FK: the catalogue truncate leaves products empty, so restore the
     // canonical product seed exactly like v1-commercial-03 does (seedIfEmpty, not reseed).
     await app.get(ProductCatalogSeedService).seedIfEmpty();
+  });
+
+  it('counts and pages only the checker-visible approvals for the requested institution in PostgreSQL', async () => {
+    const service = app.get(PrivilegedActionApprovalService);
+    const repo = dataSource.getRepository(PrivilegedActionApproval);
+    const institutionId = randomUUID();
+    const scope = 'privileged:approve';
+    const principal: AuthorizationPrincipal = {
+      type: 'OPERATOR',
+      principalId: 'reviewer',
+      sessionId: randomUUID(),
+      assuranceLevel: 'MFA',
+      customerAccess: 'NONE',
+      roles: ['RISK_REVIEWER'],
+      scopes: [scope],
+    };
+    async function seed(
+      actionType: string,
+      policy: Record<string, unknown>,
+      resourceId: string | null = null,
+      approvalScope = scope,
+    ) {
+      return repo.save(
+        repo.create({
+          actionType,
+          resourceType: 'RULE',
+          resourceId,
+          policy,
+          approvalScope,
+          reason: 'inbox integration fixture',
+          actionFingerprint: 'a'.repeat(64),
+          requesterPrincipalId: 'maker',
+          requestedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+      );
+    }
+    const first = await seed('CUSTOM_A', {
+      approvingRoles: { malformed: true },
+      requiredRoles: ['RISK_REVIEWER'],
+      institutionId,
+    });
+    const second = await seed('CUSTOM_B', {
+      approvingRoles: ['RISK_REVIEWER'],
+      requestDetails: { institutionId },
+    });
+    const registered = await seed('FEE_RULE_CREATE', {}, institutionId);
+    await seed(
+      'CUSTOM_DENIED',
+      { approvingRoles: 'invalid', requiredRoles: ['OTHER'] },
+      institutionId,
+    );
+    await seed('CUSTOM_DENIED_SCOPE', {}, institutionId, 'different-scope');
+    await seed('CUSTOM_OTHER_INSTITUTION', { institutionId: randomUUID() });
+    const query = { principal, institutionId, limit: 1 };
+    const pages = await Promise.all(
+      [0, 1, 2].map((offset) => service.listApprovals({ ...query, offset })),
+    );
+    expect(pages.map((p) => p.total)).toEqual([2, 2, 2]);
+    expect(pages.flatMap((p) => p.items.map((item) => item.id)).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
+    const controller = await service.listApprovals({
+      ...query,
+      limit: 100,
+      principal: { ...principal, roles: ['FINANCE_CONTROLLER'] },
+    });
+    expect(controller.items.map((row) => row.id)).toContain(registered.id);
+    expect(controller.total).toBe(4);
+    expect(
+      await service.listApprovals({
+        ...query,
+        principal: { ...principal, assuranceLevel: 'PASSWORD' },
+      }),
+    ).toEqual({ items: [], total: 0 });
   });
 
   // ---------------------------------------------------------------- session helpers

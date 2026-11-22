@@ -101,8 +101,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
     );
-    await app.init();
-    await app.getHttpAdapter().getInstance().ready();
+    // Concurrent governed fixture calls share this server. If Supertest starts it on
+    // demand, the first completed request can close it while another is connecting.
+    await app.listen(0, '127.0.0.1');
     deskOtp = createDeskOtpFixture(app, smsProvider);
     fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a16' });
     institutionId = await fixture.institution();

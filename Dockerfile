@@ -5,10 +5,10 @@
 #  * Three stages, so build tooling never reaches the runtime image. `npm ci` in the builder installs
 #    dev dependencies (the Nest compiler, TypeScript); the runtime stage installs only production
 #    dependencies. A container that ships tsc also ships an attack surface and ~200 MB nobody needs.
-#  * Node 22 is pinned to `22.22.3-alpine3.20`, matching the runtime this repository is developed and
+#  * Node 22 is pinned to `22.22.3-alpine3.23`, matching the runtime this repository is developed and
 #    accepted against, rather than floating `node:22-alpine`: a base image that silently advances can
 #    change a V8 behaviour under a financial service. For a real production deploy this tag should
-#    further be pinned by digest (`node:22.22.3-alpine3.20@sha256:…`), which is a one-line change made
+#    further be pinned by digest (`node:22.22.3-alpine3.23@sha256:…`), which is a one-line change made
 #    at release time for the specific registry the image is pulled from. This file does not embed a
 #    digest because a digest that was never pulled is a guess, and a wrong digest fails the build in a
 #    way that looks like a network problem.
@@ -23,7 +23,7 @@
 #    turn a database blip into a restart loop that cannot recover.
 
 # ---------------------------------------------------------------- builder
-FROM node:22.22.3-alpine3.20 AS builder
+FROM node:22.22.3-alpine3.23 AS builder
 WORKDIR /app
 
 # Install with the lockfile only, so the dependency layer is cached independently of source changes.
@@ -40,7 +40,7 @@ RUN npm run build
 RUN npm prune --omit=dev && npm cache clean --force
 
 # ---------------------------------------------------------------- runtime
-FROM node:22.22.3-alpine3.20 AS runtime
+FROM node:22.22.3-alpine3.23 AS runtime
 
 # tini is PID 1 so that SIGTERM is forwarded and zombie children are reaped. Node handles signals
 # poorly as PID 1, and a financial worker that ignores SIGTERM drops in-flight work on every deploy.

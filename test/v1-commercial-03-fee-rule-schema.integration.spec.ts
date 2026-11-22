@@ -231,8 +231,12 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     const fks: Array<{ conname: string; confrelid: string }> = await dataSource.query(
       `SELECT conname, confrelid::regclass::text AS confrelid FROM pg_constraint WHERE conrelid='fee_rules'::regclass AND contype='f'`,
     );
-    expect(fks).toHaveLength(1);
-    expect(fks[0]!.confrelid).toBe('products');
+    // 0506 preserves the product FK and adds two scoped-target FKs. Pin all three.
+    expect(fks.sort((a, b) => a.conname.localeCompare(b.conname))).toEqual([
+      { conname: 'fee_rules_product_code_fkey', confrelid: 'products' },
+      { conname: 'fk_fee_rules_agent_class', confrelid: 'agent_classes' },
+      { conname: 'fk_fee_rules_institution', confrelid: 'financial_institutions' },
+    ]);
 
     const indexes: Array<{ indexname: string }> = await dataSource.query(
       `SELECT indexname FROM pg_indexes WHERE tablename='fee_rules'`,

@@ -307,8 +307,14 @@ export const CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION: GovernedActionDefinit
   approvalScope: 'privileged:approve',
 };
 
+export const LIMIT_RULE_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
+  LIMIT_RULE_CREATE: rule('LIMIT_RULE_CREATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
+  LIMIT_RULE_UPDATE: rule('LIMIT_RULE_UPDATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
+};
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
+  ...LIMIT_RULE_ACTIONS,
   ...NOTIFICATION_CHANGE_ACTIONS,
   ...Object.fromEntries(Object.values(AGENT_FUNDING_ACTIONS).map((item) => [item.action, item])),
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
