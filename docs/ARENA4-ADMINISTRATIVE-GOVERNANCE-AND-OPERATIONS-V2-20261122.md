@@ -200,8 +200,11 @@ Environment: real PostgreSQL 16 on `127.0.0.1:5432`, `NODE_ENV=test`, workers di
 process per suite (`--runInBand`), disposable-cluster confirmation set. The repository's own runner
 (`npm run test:pg`) spawns one process per suite for exactly this reason: a single long-lived Jest
 process over the whole estate exhausts the 3.9 GB sandbox heap (observed `SIGABRT`, exit 134) part
-way through. The full 190-file matrix therefore remains the CI gate (`backend-postgres` job, which
-runs `npm run test:pg` on every PR), and the suite selection below is what was executed locally.
+way through. The full 190-file matrix is therefore the CI gate (`backend-postgres` job, which runs
+`npm run test:pg` on every PR) and it is **green** for this mission: CI run
+[45010830949](https://github.com/shyne240/monienaija/actions/runs/45010830949) on draft PR #11 passed
+all seven jobs, including `Backend (real PostgreSQL integration)` in 2h05m29s — the whole matrix, not
+only the suites below. The selection below was the fast local inner loop.
 
 All of the following passed against the final working tree, one process each:
 
