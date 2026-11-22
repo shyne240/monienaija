@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CashToCashOperationsScreen } from '../src/screens/authenticated/CashToCashOperationsScreen';
 import { ApiClient } from '../src/services/api-client';
 import { fetchCashToCashExpiryStatus } from '../src/services/ordinary-agent-admin-api';
@@ -155,23 +155,37 @@ test('journal inspection is invalidated if a refresh changes its journal referen
       { id: 'c', accountId: 'b', direction: 'CREDIT', amountMinor: '1000' },
     ],
   };
+  const refreshedList = deferred();
   let listReads = 0;
-  (ApiClient.get as jest.Mock).mockImplementation((url: string) =>
-    url.includes('/ledger/journals/')
-      ? Promise.resolve(journal)
-      : Promise.resolve({
-          data: [{ ...row, journalId: ++listReads === 1 ? 'synthetic-journal' : 'new-journal' }],
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+    if (url.includes('/ledger/journals/')) return Promise.resolve(journal);
+    listReads++;
+    return listReads === 1
+      ? Promise.resolve({
+          data: [{ ...row, journalId: 'synthetic-journal' }],
           total: 1,
           page: 1,
           limit: 20,
           totalPages: 1,
-        }),
-  );
+        })
+      : refreshedList.promise;
+  });
   render(<CashToCashOperationsScreen />);
   fireEvent.click(await screen.findByRole('button', { name: 'Inspect receipt' }));
   fireEvent.click(screen.getByRole('button', { name: 'Inspect initiation journal' }));
   expect(await screen.findByText('BALANCED')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect(listReads).toBe(2));
+  await act(async () => {
+    refreshedList.resolve({
+      data: [{ ...row, journalId: 'new-journal' }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+    await refreshedList.promise;
+  });
   expect(await screen.findByText('new-journal')).toBeTruthy();
   expect(screen.queryByText('BALANCED')).toBeNull();
 });
