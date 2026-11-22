@@ -76,4 +76,13 @@ describe('fee targeting resolver', () => {
     const result = await resolver.resolve({ productCode: 'WALLET_TRANSFER' });
     expect(result.status).toBe('NOT_CONFIGURED');
   });
+
+  it('rejects non-canonical customerClassCode values shorter than 3 chars or with invalid characters', async () => {
+    await expect(
+      resolver.resolve({ productCode: 'WALLET_TRANSFER', customerClassCode: 'AB' }),
+    ).rejects.toThrow('customerClassCode must match ^[A-Z0-9_]{3,80}$');
+    await expect(
+      resolver.resolve({ productCode: 'WALLET_TRANSFER', customerClassCode: 'BAD-CODE' }),
+    ).rejects.toThrow('customerClassCode must match ^[A-Z0-9_]{3,80}$');
+  });
 });

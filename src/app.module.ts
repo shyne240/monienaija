@@ -13,6 +13,7 @@ import { AggregatorModule } from './aggregator/aggregator.module';
 import { OutletModule } from './outlet/outlet.module';
 import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerClassModule } from './customer-class/customer-class.module';
 import { CustomerProofOfAddressModule } from './customer-proof-of-address/customer-proof-of-address.module';
 import { CustomerRegistrationModule } from './customer-registration/customer-registration.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
@@ -125,6 +126,7 @@ import { WorkforceVisibilityModule } from './workforce-visibility/workforce-visi
     AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
+    CustomerClassModule,
     CustomerProofOfAddressModule,
     CustomerRegistrationModule,
     CustomerAuthenticationModule,

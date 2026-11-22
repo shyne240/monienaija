@@ -9,6 +9,7 @@ import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
+import { CustomerClassesScreen } from './CustomerClassesScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
@@ -331,6 +332,11 @@ export const Layout: React.FC = () => {
       title: 'Customers & agents',
       items: [
         { key: 'customers' as View, label: 'Customers', visible: isVisible('customers') },
+        {
+          key: 'customerClasses' as View,
+          label: 'Customer classes',
+          visible: isVisible('customerClasses'),
+        },
         { key: 'agents' as View, label: 'Agents & network', visible: isVisible('agents') },
         { key: 'agentClasses' as View, label: 'Agent classes', visible: isVisible('agentClasses') },
         { key: 'support' as View, label: 'Support Inbox', visible: isVisible('support') },
@@ -624,6 +630,8 @@ export const Layout: React.FC = () => {
             onCustomerGuardChange={reportCustomerGuard}
           />
         );
+      case 'customerClasses':
+        return <CustomerClassesScreen />;
       case 'agents':
         return (
           <AgentNetworkScreen

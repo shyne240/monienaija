@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { CustomerPersonalInformationPanel } from './CustomerPersonalInformationPanel';
 import { CustomerProofOfAddressPanel } from './CustomerProofOfAddressPanel';
 import { CustomerTier3ReadinessPanel } from './CustomerTier3ReadinessPanel';
+import { CustomerClassAssignmentPanel } from '../../components/CustomerClassAssignmentPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
 export interface DirectoryCustomer {
@@ -874,6 +875,13 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                 </p>
               )}
             </article>
+
+            {hasFunction('customer.view') && (
+              <CustomerClassAssignmentPanel
+                customerId={customer.id}
+                canManage={hasFunction('customer.manage_classes') && !principal?.readOnlyPrincipal}
+              />
+            )}
 
             <CustomerTier3ReadinessPanel
               customerType={customer.type}

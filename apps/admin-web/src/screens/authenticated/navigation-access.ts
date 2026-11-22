@@ -2,6 +2,7 @@ export type AdminView =
   | 'dashboard'
   | 'dashboardSettings'
   | 'customers'
+  | 'customerClasses'
   | 'agents'
   | 'agentClasses'
   | 'support'
@@ -96,6 +97,8 @@ export function canAccessAdminView(
     case 'dashboardSettings':
       return has('workforce.dashboard.view');
     case 'customers':
+      return has('customer.view');
+    case 'customerClasses':
       return has('customer.view');
     case 'agents':
       return (
