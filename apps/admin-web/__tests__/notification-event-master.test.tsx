@@ -469,7 +469,12 @@ describe('H-04/H-06 — versioned event-master controls', () => {
       fireEvent.click(view.getByRole('button', { name: 'Close' }));
     }
     expect(ApiClient.post).not.toHaveBeenCalled();
-  });
+    // Long-running by design: 12 financial events × (open detail modal → await readiness →
+    // three control assertions → close), each a full React render cycle. On a contended CI
+    // runner this legitimately exceeds jest's 5 s default without any behavioural change
+    // (observed on 5bc03845: green in the push run, red in the racing pull_request run of the
+    // same commit). Every assertion still executes — only the wall-clock budget is raised.
+  }, 60_000);
 
   test('disables and re-enables only the EVENT target after independent approval and execution, preserving channels and other events', async () => {
     const server = installRegistryBackend();
