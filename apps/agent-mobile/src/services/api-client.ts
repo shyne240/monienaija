@@ -82,8 +82,40 @@ export const setBaseUrl = (url: string) => {
 
 export const getBaseUrl = () => currentBaseUrl;
 
+/**
+ * Normalizes agent API URLs against the NestJS `app.setGlobalPrefix('api/v1')`.
+ *
+ * Mirrors `resolveCustomerApiUrl` in `apps/customer-mobile/src/services/api-client.ts`:
+ * supports both bare-origin `DEFAULT_BASE_URL` / `EXPO_PUBLIC_API_URL` values
+ * (`http://10.0.2.2:3000`, `https://api.example.com`) and pre-prefixed base values
+ * (`https://api.example.com/api/v1`) without double-prefixing `/api/v1`.
+ *
+ * Why this exists: most agent services spell their endpoints with the explicit
+ * `api/v1/...` prefix, but the agent banking services ported from customer-mobile
+ * (`bank-withdrawal.ts`, `bank-directory.ts`, `bank-transfer-pricing.ts` and the
+ * inline BankWithdrawalScreen calls) pass bare `/agents/me/...` paths. Against a
+ * real backend every bare call 404s, breaking the whole external-bank-transfer
+ * journey. Normalizing here keeps both conventions working and never
+ * double-prefixes either one.
+ */
+export function resolveAgentApiUrl(baseUrl: string, endpoint: string): string {
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.replace(/^\/+/, '');
+  const baseHasV1Prefix = /\/api\/v1$/i.test(cleanBase);
+  const endpointHasV1Prefix = /^api\/v1(?:\/|$)/i.test(cleanEndpoint);
+
+  if (baseHasV1Prefix && endpointHasV1Prefix) {
+    const stripped = cleanEndpoint.replace(/^api\/v1\/?/i, '');
+    return stripped ? `${cleanBase}/${stripped}` : cleanBase;
+  }
+  if (baseHasV1Prefix || endpointHasV1Prefix) {
+    return `${cleanBase}/${cleanEndpoint}`;
+  }
+  return `${cleanBase}/api/v1/${cleanEndpoint}`;
+}
+
 export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
-  const url = `${currentBaseUrl}/${endpoint.replace(/^\//, '')}`;
+  const url = resolveAgentApiUrl(currentBaseUrl, endpoint);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',

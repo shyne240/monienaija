@@ -13,6 +13,7 @@ import { BankDirectoryApi } from '../../services/bank-directory';
 import { AgentBankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
 import { clearPendingAgentBankWithdrawalIntent, isStaleAgentIntent, loadPendingAgentBankWithdrawalIntent, matchesPendingAgentBankIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
 import { ApiClient } from '../../services/api-client';
+import { getAgentFinancialPosition } from '../../services/agent-api';
 import { formatMinor } from '../../utils/presentation';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -51,13 +52,22 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
   const load = useCallback(async () => {
     setError('');
     try {
-      const [bens, wallets] = await Promise.all([
+      // The operating wallet comes from the authoritative V1 read surface
+      // (GET /agents/me/financial-position, same source FundingAccountScreen uses).
+      // There is no /agents/me/wallets endpoint; the server re-validates wallet
+      // ownership for every banking call, so this id is only a locator hint.
+      const [bens, position] = await Promise.all([
         AgentBankWithdrawalApi.listBankBeneficiaries(),
-        (async () => { try { const r = await ApiClient.get<{ id: string }[]>('/agents/me/wallets'); return r; } catch { return []; } })(),
+        (async () => {
+          try {
+            return await getAgentFinancialPosition();
+          } catch {
+            return null;
+          }
+        })(),
       ]);
       setBeneficiaries(bens);
-      const first = Array.isArray(wallets) && wallets[0] ? (wallets[0] as unknown as { id: string }).id : undefined;
-      if (first) setWalletId(first);
+      if (position?.walletExists && position.walletId) setWalletId(position.walletId);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load.'); }
     finally { setIsLoading(false); }
   }, []);

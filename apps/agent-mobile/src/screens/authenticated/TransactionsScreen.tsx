@@ -35,6 +35,7 @@ const FILTERS: ReadonlyArray<{ label: string; type: AgentHistoryType | undefined
   { label: 'Wallet→Cash', type: 'CASH_OUT' },
   { label: 'Cash→Cash sent', type: 'CASH_TO_CASH' },
   { label: 'Cash→Cash claim', type: 'CASH_TO_CASH_CLAIM' },
+  { label: 'Bank transfer', type: 'EXTERNAL_BANK_TRANSFER' },
   { label: 'Funding', type: 'AGENT_FUNDING' },
   { label: 'Defunding', type: 'AGENT_DEFUNDING' },
 ];

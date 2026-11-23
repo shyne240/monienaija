@@ -7,11 +7,13 @@ import { ApiClient, ApiError } from './api-client';
  * or non-canonical service identifiers.
  */
 export type CanonicalAgentServiceCode =
+  | 'WALLET_TRANSFER'
   | 'CASH_IN'
   | 'CASH_OUT'
   | 'CASH_TO_CASH'
   | 'AGENT_FUNDING'
-  | 'AGENT_DEFUNDING';
+  | 'AGENT_DEFUNDING'
+  | 'EXTERNAL_BANK_TRANSFER';
 
 export interface CanonicalAgentServiceOption {
   code: CanonicalAgentServiceCode;
@@ -20,6 +22,11 @@ export interface CanonicalAgentServiceOption {
 }
 
 export const CANONICAL_AGENT_SERVICES: readonly CanonicalAgentServiceOption[] = [
+  {
+    code: 'WALLET_TRANSFER',
+    label: 'Wallet Transfer (Wallet → Wallet)',
+    description: 'Ordinary wallet-to-wallet transfer initiated by the Agent operating wallet.',
+  },
   {
     code: 'CASH_IN',
     label: 'Cash-In (Cash → Customer Wallet)',
@@ -45,15 +52,26 @@ export const CANONICAL_AGENT_SERVICES: readonly CanonicalAgentServiceOption[] = 
     label: 'Agent Float Defunding',
     description: 'Authorized maker-checker defunding from the Agent NGN float wallet.',
   },
+  {
+    code: 'EXTERNAL_BANK_TRANSFER',
+    label: 'External Bank Transfer (Wallet → Bank)',
+    description:
+      'Agent-initiated transfer from the operating wallet to a verified external bank beneficiary.',
+  },
 ] as const;
 
 const CANONICAL_SERVICE_SET = new Set<string>(
   CANONICAL_AGENT_SERVICES.map((service) => service.code),
 );
 
+// Mirrors `AGENT_SERVICE_ALIASES` in backend `src/agent/agent-service.enum.ts` so an older
+// class record using an alias the backend already normalizes is never flagged as unknown
+// (and therefore never silently discarded on save).
 const LEGACY_SERVICE_ALIASES: Readonly<Record<string, CanonicalAgentServiceCode>> = {
   CASH_TO_WALLET: 'CASH_IN',
   WALLET_TO_CASH: 'CASH_OUT',
+  BANK_TRANSFER: 'EXTERNAL_BANK_TRANSFER',
+  BANK_TRANSFER_OUT: 'EXTERNAL_BANK_TRANSFER',
 };
 
 export interface NormalizedApplicableServices {

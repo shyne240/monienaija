@@ -12,14 +12,17 @@ import { AgentContactCard } from './AgentContactCard';
 import {
   describeApiError,
   getAgentCapabilities,
+  getAgentLimits,
   getAgentOutlets,
   getAgentProfile,
   getAgentReceivingNumber,
   getAgentTerminals,
   getAgentTransactionPinStatus,
+  type AgentLimitProductView,
   type AgentOutlet,
   type AgentTerminal,
 } from '../../services/agent-api';
+import { formatNairaFromMinor } from '../../utils/format';
 import { useAuthStore } from '../../store/auth-store';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -69,6 +72,14 @@ export const AccountScreen: React.FC = () => {
     enabled: !!agentId,
     staleTime: 60_000,
   });
+  // GET /agents/me/limits — informational projection of the authoritative limit
+  // catalogue; enforcement stays server-side. Never computed on the client.
+  const limitsQuery = useQuery({
+    queryKey: ['agent-limits', agentId],
+    queryFn: getAgentLimits,
+    enabled: !!agentId,
+    staleTime: 30_000,
+  });
 
   const profile = profileQuery.data;
   const pinStatus = pinStatusQuery.data;
@@ -85,6 +96,7 @@ export const AccountScreen: React.FC = () => {
     pinStatusQuery.isRefetching ||
     receivingQuery.isRefetching ||
     capabilitiesQuery.isRefetching ||
+    limitsQuery.isRefetching ||
     outletsQuery.isRefetching ||
     terminalsQuery.isRefetching;
 
@@ -93,6 +105,7 @@ export const AccountScreen: React.FC = () => {
     void pinStatusQuery.refetch();
     void receivingQuery.refetch();
     void capabilitiesQuery.refetch();
+    void limitsQuery.refetch();
     void outletsQuery.refetch();
     void terminalsQuery.refetch();
   };
@@ -265,6 +278,34 @@ export const AccountScreen: React.FC = () => {
         ) : null}
       </Card>
 
+      {/* Transaction limits (GET /agents/me/limits) — backend-authoritative, informational */}
+      <Card style={styles.card} testID="account-limits-card">
+        <Text style={styles.sectionTitle}>Transaction Limits</Text>
+        {limitsQuery.isLoading ? (
+          <Text style={styles.muted} testID="account-limits-loading">
+            Loading limits...
+          </Text>
+        ) : limitsQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="account-limits-error">
+              {describeApiError(limitsQuery.error)}
+            </Text>
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => limitsQuery.refetch()}
+              testID="account-limits-retry"
+            />
+          </View>
+        ) : limitsQuery.data ? (
+          <LimitsSummary products={limitsQuery.data.products} />
+        ) : null}
+        <Text style={styles.helper}>
+          Limits are enforced by MonieNaija on every transaction. This view is informational and
+          refreshes with the server.
+        </Text>
+      </Card>
+
       {/* Outlets (read-only list; no management operations exist) */}
       <Card style={styles.card} testID="account-outlets-card">
         <Text style={styles.sectionTitle}>Outlets</Text>
@@ -361,6 +402,85 @@ const InfoRow: React.FC<InfoRowProps> = ({ label, value, selectable, testID }) =
     </Text>
   </View>
 );
+
+/**
+ * Renders the server-provided limit projection verbatim (minor units formatted, never
+ * recomputed). Only configured buckets are listed; the backend answers with the full
+ * agent product vocabulary, and an unconfigured bucket means no limit is assigned —
+ * which is stated once, not invented per row.
+ */
+const LIMIT_BUCKET_LABELS: Record<string, string> = {
+  'CASH_TO_WALLET|OUTGOING': 'Cash→Wallet — float spend',
+  'WALLET_TO_CASH|INCOMING': 'Wallet→Cash — float payout received',
+  'CASH_TO_CASH|OUTGOING': 'Cash→Cash sent',
+  'CASH_TO_CASH|INCOMING': 'Cash→Cash claim payout',
+  'WALLET_TRANSFER|OUTGOING': 'Wallet transfer out',
+  'WALLET_TRANSFER|INCOMING': 'Wallet transfer in',
+  'AGENT_FUNDING|INCOMING': 'Float funding',
+  'AGENT_DEFUNDING|OUTGOING': 'Float defunding',
+  'EXTERNAL_BANK_TRANSFER|OUTGOING': 'Bank transfer out',
+};
+
+const LimitsSummary: React.FC<{ products: AgentLimitProductView[] }> = ({ products }) => {
+  const configured = products.filter((p) => p.configured);
+  if (configured.length === 0) {
+    return (
+      <Text style={styles.muted} testID="account-limits-none">
+        No transaction limits are currently configured for your agent services.
+      </Text>
+    );
+  }
+  return (
+    <View>
+      {configured.map((product, idx) => {
+        const label =
+          LIMIT_BUCKET_LABELS[`${product.product}|${product.direction}`] ??
+          `${product.product} (${product.direction})`;
+        return (
+          <View
+            key={`${product.product}-${product.direction}`}
+            style={[styles.listRow, idx === configured.length - 1 && styles.listRowLast]}
+            testID={`limit-bucket-${product.product.toLowerCase()}-${product.direction.toLowerCase()}`}
+          >
+            <View style={styles.listRowText}>
+              <Text style={styles.listRowTitle}>{label}</Text>
+              {product.perTransactionMaxMinor !== null && (
+                <Text style={styles.listRowMeta}>
+                  Max per transaction {formatNairaFromMinor(product.perTransactionMaxMinor)}
+                  {product.perTransactionMinMinor !== null
+                    ? ` · min ${formatNairaFromMinor(product.perTransactionMinMinor)}`
+                    : ''}
+                </Text>
+              )}
+              {product.windows.map((window) => (
+                <Text
+                  key={window.dimension}
+                  style={styles.listRowMeta}
+                  testID={`limit-window-${window.dimension.toLowerCase()}`}
+                >
+                  {window.period.charAt(0) + window.period.slice(1).toLowerCase()}
+                  {window.kind === 'COUNT'
+                    ? `: ${window.remainingCount ?? 0} of ${window.limitCount ?? 0} transactions left`
+                    : `: ${formatNairaFromMinor(window.remainingMinor ?? '0')} left of ${formatNairaFromMinor(window.limitMinor ?? '0')}`}
+                  {window.usedMinor !== null && window.usedMinor !== '0'
+                    ? ` · used ${formatNairaFromMinor(window.usedMinor)}`
+                    : ''}
+                  {' · resets '}
+                  {new Date(window.windowResetsAt).toLocaleString('en-NG', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              ))}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
 
 const OutletRow: React.FC<{ outlet: AgentOutlet; last: boolean }> = ({ outlet, last }) => (
   <View style={[styles.listRow, last && styles.listRowLast]} testID={`outlet-${outlet.id}`}>
