@@ -90,3 +90,22 @@ describe('presentation helpers (ARENA 4 banking surfaces)', () => {
     expect(unknown.title).toBe('Tier requirements are not published yet');
   });
 });
+
+describe('KYC verification status presentation', () => {
+  it.each([
+    ['MATCH', 'Verified'],
+    ['DISPATCHING', 'Processing'],
+    ['UNKNOWN', 'Outcome unknown'],
+    ['REVIEW', 'Needs review'],
+    ['CONSENT_WITHDRAWN', 'Consent withdrawn'],
+  ])('labels %s as %s without implying a different outcome', (status, label) => {
+    expect(statusLabel(status)).toBe(label);
+  });
+
+  it('marks only an authoritative match as successful', () => {
+    expect(statusTone('MATCH')).toBe('SUCCESS');
+    for (const status of ['DISPATCHING', 'UNKNOWN', 'REVIEW', 'CONSENT_WITHDRAWN']) {
+      expect(statusTone(status)).toBe('PENDING');
+    }
+  });
+});

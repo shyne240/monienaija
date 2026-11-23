@@ -71,6 +71,16 @@ export function statusLabel(status: string | null | undefined): string {
     case 'CLAIMED':
     case 'ACTIVE':
       return 'Completed';
+    case 'MATCH':
+      return 'Verified';
+    case 'DISPATCHING':
+      return 'Processing';
+    case 'UNKNOWN':
+      return 'Outcome unknown';
+    case 'REVIEW':
+      return 'Needs review';
+    case 'CONSENT_WITHDRAWN':
+      return 'Consent withdrawn';
     case 'PENDING':
     case 'PROCESSING':
     case 'PENDING_RECOVERY':
@@ -97,7 +107,7 @@ export function statusLabel(status: string | null | undefined): string {
 
 export function statusTone(status: string | null | undefined): BadgeStatus {
   const value = (status ?? '').toUpperCase();
-  if (['COMPLETED', 'APPROVED', 'CLAIMED', 'ACTIVE'].includes(value)) return 'SUCCESS';
+  if (['COMPLETED', 'APPROVED', 'CLAIMED', 'ACTIVE', 'MATCH'].includes(value)) return 'SUCCESS';
   if (['FAILED', 'REJECTED', 'CANCELLED'].includes(value)) return 'FAILED';
   if (['EXPIRED', 'REVERSED'].includes(value)) return 'EXPIRED';
   if (value === 'SUSPENDED') return 'SUSPENDED';
