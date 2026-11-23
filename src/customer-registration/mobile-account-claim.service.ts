@@ -87,7 +87,7 @@ export class MobileAccountClaimService {
         AND c.actor_id=i.customer_id AND c.identity_revision=a.identity_revision
         AND c.provider=a.provider AND c.route_version=a.provider_route_version
       JOIN authentication_sessions owner_session ON owner_session.id=c.session_id AND owner_session.customer_id=i.customer_id AND owner_session.audience='customer-api'
-      WHERE i.customer_id=$1 AND i.kind=$2 AND i.status='VERIFIED' AND a.outcome='MATCH' AND a.provider='MONNIFY'
+      WHERE i.customer_id=$1 AND i.kind=$2 AND i.status='VERIFIED' AND a.outcome='MATCH' AND a.provider IN ('MONNIFY','PREMBLY')
       AND a.provider_route_version IS NOT NULL
       AND a.identity_revision=$4::bigint AND c.identity_revision=$4::bigint
       AND a.created_at>=c.granted_at AND a.completed_at>=a.created_at AND a.completed_at<=clock_timestamp() AND a.expires_at>clock_timestamp() AND c.session_id IS NOT NULL

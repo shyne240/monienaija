@@ -18,9 +18,15 @@ import {
   DojahVerificationProvider,
   dojahOptionsFromEnvironment,
 } from '../identity-verification/dojah-verification.provider';
+import { PremblyVerificationProvider } from '../identity-verification/prembly-verification.provider';
+import {
+  premblyHttpsTransport,
+  type PremblyTransport,
+} from '../identity-verification/prembly-transport';
 import {
   KycProviderGovernanceService,
   type KycProviderRuntimeReadiness,
+  type ProviderCode,
 } from './kyc-provider-governance.service';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
 import { KycTierPolicyController } from './kyc-tier-policy.controller';
@@ -34,14 +40,24 @@ import { KycCustomerVerificationService } from './kyc-customer-verification.serv
 import { customerKycConfigurationFromEnvironment } from './kyc-customer-verification.config';
 import { DojahKycProvider } from './dojah-kyc.provider';
 import { MonnifyKycProvider } from './monnify-kyc.provider';
+import { PremblyKycProvider } from './prembly-kyc.provider';
+import { PremblyCredentialController } from './prembly-credential.controller';
+import { PremblyCredentialGovernanceService } from './prembly-credential-governance.service';
+import { KycProviderSecretEncryptionService } from './kyc-provider-secret-encryption.service';
 import type { KycProvider } from './kyc.types';
 
 const KYC_PROVIDER_RUNTIME = 'KYC_PROVIDER_RUNTIME';
+const PREMBLY_TRANSPORT = 'PREMBLY_TRANSPORT';
+const PREMBLY_VERIFICATION_ADAPTER = 'PREMBLY_VERIFICATION_ADAPTER';
 type ProviderRuntime = {
   providers: readonly KycProvider[];
   readiness: KycProviderRuntimeReadiness;
 };
-function providerRuntimeFromConfig(config: ConfigService<Environment, true>): ProviderRuntime {
+function providerRuntimeFromConfig(
+  config: ConfigService<Environment, true>,
+  premblyCredentials: PremblyCredentialGovernanceService,
+  premblyAdapter: PremblyVerificationProvider,
+): ProviderRuntime {
   const monnifyOptions = monnifyOptionsFromEnvironment({
     MONNIFY_VERIFICATION_ENABLED: config.get('MONNIFY_VERIFICATION_ENABLED', { infer: true })
       ? 'true'
@@ -59,7 +75,7 @@ function providerRuntimeFromConfig(config: ConfigService<Environment, true>): Pr
   });
   const contractsReviewed = config.get('KYC_PROVIDER_CONTRACTS_REVIEWED', { infer: true });
   const liveCallsReleased = config.get('KYC_PROVIDER_LIVE_CALLS_ENABLED', { infer: true });
-  const readiness: KycProviderRuntimeReadiness = {
+  const readyValues: Record<ProviderCode, boolean> = {
     MONNIFY:
       contractsReviewed &&
       liveCallsReleased &&
@@ -78,12 +94,19 @@ function providerRuntimeFromConfig(config: ConfigService<Environment, true>): Pr
       dojahOptions.secretKey.length > 0 &&
       typeof dojahOptions.appId === 'string' &&
       dojahOptions.appId.length > 0,
+    PREMBLY: false,
     SYNTHETIC: config.get('NODE_ENV', { infer: true }) === 'test',
+  };
+  const readiness: KycProviderRuntimeReadiness = {
+    ...readyValues,
+    isReady: (provider) =>
+      provider === 'PREMBLY' ? premblyCredentials.isRuntimeReady() : readyValues[provider],
   };
   return {
     providers: [
       new MonnifyKycProvider(new MonnifyVerificationProvider(monnifyOptions)),
       new DojahKycProvider(new DojahVerificationProvider(dojahOptions)),
+      new PremblyKycProvider(premblyAdapter),
     ],
     readiness,
   };
@@ -96,9 +119,55 @@ function providerRuntimeFromConfig(config: ConfigService<Environment, true>): Pr
     forwardRef(() => OperationsModule),
     forwardRef(() => CustomerAuthenticationModule),
   ],
-  controllers: [KycTierPolicyController, KycTierReviewController],
+  controllers: [KycTierPolicyController, KycTierReviewController, PremblyCredentialController],
   providers: [
     CustomerFinancialEligibilityService,
+    { provide: PREMBLY_TRANSPORT, useValue: premblyHttpsTransport },
+    {
+      provide: KycProviderSecretEncryptionService,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new KycProviderSecretEncryptionService(config),
+    },
+    {
+      provide: PremblyCredentialGovernanceService,
+      inject: [
+        DataSource,
+        AuthorizationService,
+        ProtectedAuthorityService,
+        KycProviderSecretEncryptionService,
+        AuditService,
+        ConfigService,
+        PREMBLY_TRANSPORT,
+      ],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        protectedAuthority: ProtectedAuthorityService,
+        encryption: KycProviderSecretEncryptionService,
+        audit: AuditService,
+        config: ConfigService<Environment, true>,
+        transport: PremblyTransport,
+      ) =>
+        new PremblyCredentialGovernanceService(
+          db,
+          auth,
+          protectedAuthority,
+          encryption,
+          audit,
+          config,
+          transport,
+        ),
+    },
+    {
+      provide: PREMBLY_VERIFICATION_ADAPTER,
+      inject: [PremblyCredentialGovernanceService, PREMBLY_TRANSPORT],
+      useFactory: (credentials: PremblyCredentialGovernanceService, transport: PremblyTransport) =>
+        new PremblyVerificationProvider({
+          credentialResolver: { getApiKey: () => credentials.getRuntimeApiKey() },
+          transport,
+        }),
+    },
+
     {
       provide: KycTierPolicyService,
       inject: [DataSource, AuthorizationService, ProtectedAuthorityService],
@@ -111,8 +180,12 @@ function providerRuntimeFromConfig(config: ConfigService<Environment, true>): Pr
     { provide: KycTierEvidenceReader, useFactory: () => new KycTierEvidenceReader() },
     {
       provide: KYC_PROVIDER_RUNTIME,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Environment, true>) => providerRuntimeFromConfig(config),
+      inject: [ConfigService, PremblyCredentialGovernanceService, PREMBLY_VERIFICATION_ADAPTER],
+      useFactory: (
+        config: ConfigService<Environment, true>,
+        credentials: PremblyCredentialGovernanceService,
+        adapter: PremblyVerificationProvider,
+      ) => providerRuntimeFromConfig(config, credentials, adapter),
     },
     {
       provide: KycProviderGovernanceService,

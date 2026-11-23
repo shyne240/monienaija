@@ -737,7 +737,7 @@ test('existing non-synthetic customer permissions remain compatible', async () =
 });
 
 test.each(['BVN', 'NIN'] as const)(
-  'verified existing %s owner can claim without a provider call',
+  'verified existing %s owner accepts explicitly allowlisted KYC providers without a provider call',
   async (kind) => {
     const { createHmac } = await import('node:crypto');
     const { REGISTRATION_SYNTHETIC_PROVIDER } = await import(
@@ -841,9 +841,13 @@ test.each(['BVN', 'NIN'] as const)(
         (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
       ).toEqual({ status: 'PENDING' });
       await db.query(
-        "UPDATE kyc_verification_attempts SET expires_at=clock_timestamp()+interval '1 day' WHERE id=$1",
+        "UPDATE kyc_verification_attempts SET provider='PREMBLY',expires_at=clock_timestamp()+interval '1 day' WHERE id=$1",
         [attempt],
       );
+      await db.query("UPDATE kyc_consents SET provider='PREMBLY' WHERE id=$1", [consent]);
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'MATCH' });
       const ownership = (
         await db.query<Array<{ id: string }>>(
           'SELECT id FROM kyc_identity_claims WHERE attempt_id=$1',

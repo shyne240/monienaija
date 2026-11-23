@@ -160,23 +160,29 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 168 migration identities', () => {
+  it('contains exactly 169 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
     // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
-    // fee-targeting migration contributed by PR #4 (0506), and the customer-class migration
-    // contributed by Arena 1 (0805). Any additional or missing file fails this assertion.
+    // fee-targeting migration contributed by PR #4 (0506), the Prembly credential-governance
+    // migration (0507), and the customer-class migration contributed by Arena 1 (0805). Any
+    // additional or missing file fails this assertion.
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
       file: '1785753600506-FeeRuleTargeting.ts',
     });
     expect(migrations).toContainEqual({
+      timestamp: '1785753600507',
+      name: 'PremblyKycCredentialGovernance1785753600507',
+      file: '1785753600507-PremblyKycCredentialGovernance.ts',
+    });
+    expect(migrations).toContainEqual({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
       file: '1785753600805-CreateCustomerClasses.ts',
     });
-    expect(migrations.length).toBe(168);
+    expect(migrations.length).toBe(169);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

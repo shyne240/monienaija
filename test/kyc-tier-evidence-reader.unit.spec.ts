@@ -45,6 +45,7 @@ describe('KycTierEvidenceReader', () => {
     expect(statements[1]?.sql).toContain('a.identity_revision=$2::bigint');
     expect(statements[1]?.sql).toContain('c.provider=a.provider');
     expect(statements[1]?.sql).toContain('c.route_version=a.provider_route_version');
+    expect(statements[1]?.sql).toContain("a.provider IN ('MONNIFY','DOJAH','PREMBLY')");
     expect(statements[1]?.parameters).toEqual([customerId, '2']);
   });
 

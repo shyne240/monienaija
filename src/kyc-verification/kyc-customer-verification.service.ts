@@ -185,7 +185,7 @@ export class KycCustomerVerificationService {
   private async providerRoute(kind: 'BVN' | 'NIN') {
     const route = await this.governance.resolve(kind);
     if (
-      !['MONNIFY', 'DOJAH'].includes(route.provider) ||
+      !['MONNIFY', 'DOJAH', 'PREMBLY'].includes(route.provider) ||
       !this.providers.some((candidate) => candidate.code === route.provider)
     )
       throw new KycFoundationError('DISABLED');
@@ -252,13 +252,13 @@ export class KycCustomerVerificationService {
         id: string;
         kind: 'BVN' | 'NIN';
         notice_version: string;
-        provider: 'MONNIFY' | 'DOJAH';
+        provider: 'MONNIFY' | 'DOJAH' | 'PREMBLY';
         route_version: number;
         expires_at: Date;
       }>
     >(
       `SELECT id,kind,notice_version,provider,route_version,expires_at
-       FROM kyc_consents WHERE customer_id=$1 AND provider IN ('MONNIFY','DOJAH')
+       FROM kyc_consents WHERE customer_id=$1 AND provider IN ('MONNIFY','DOJAH','PREMBLY')
          AND route_version IS NOT NULL AND withdrawn_at IS NULL AND expires_at>clock_timestamp()
        ORDER BY granted_at DESC LIMIT 20`,
       [customerId],
@@ -322,7 +322,7 @@ export class KycCustomerVerificationService {
     kind: 'BVN' | 'NIN';
     noticeVersion: string;
     accepted: boolean;
-    expectedProvider: 'MONNIFY' | 'DOJAH';
+    expectedProvider: 'MONNIFY' | 'DOJAH' | 'PREMBLY';
     expectedRouteVersion: number;
   }): Promise<{
     id: string;
@@ -336,7 +336,7 @@ export class KycCustomerVerificationService {
       !['BVN', 'NIN'].includes(command.kind) ||
       command.accepted !== true ||
       command.noticeVersion !== this.configuration.consentNoticeVersion ||
-      !['MONNIFY', 'DOJAH'].includes(command.expectedProvider) ||
+      !['MONNIFY', 'DOJAH', 'PREMBLY'].includes(command.expectedProvider) ||
       !Number.isSafeInteger(command.expectedRouteVersion) ||
       command.expectedRouteVersion < 1
     )

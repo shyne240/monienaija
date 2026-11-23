@@ -164,7 +164,7 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
 
     it('preserves the intended coverage of the pre-existing sensitive-key list (bare-text forms)', () => {
       const out = redactSensitiveText(
-        'passwordHash=PH_SENTINEL temporaryPassword=TP_SENTINEL applicantAccessToken=AAT_SENTINEL tokenHash=TH_SENTINEL encryptedApiKey=EAK_SENTINEL proposedEncryptedApiKey=PEAK_SENTINEL cookie=CK_SENTINEL challengeHash=CH_SENTINEL providedHash=PRH_SENTINEL fingerprintHash=FPH_SENTINEL transferCode=TC_SENTINEL transferCodeHash=TCH_SENTINEL pin=PIN_SENTINEL safe=visible',
+        'passwordHash=PH_SENTINEL temporaryPassword=TP_SENTINEL applicantAccessToken=AAT_SENTINEL tokenHash=TH_SENTINEL encryptedApiKey=EAK_SENTINEL proposedEncryptedApiKey=PEAK_SENTINEL cookie=CK_SENTINEL challengeHash=CH_SENTINEL providedHash=PRH_SENTINEL fingerprintHash=FPH_SENTINEL transferCode=TC_SENTINEL transferCodeHash=TCH_SENTINEL pin=PIN_SENTINEL kycProviderEncryptionKeyringJson=KYC_KEYRING_SENTINEL safe=visible',
       );
       for (const sentinel of [
         'PH_SENTINEL',
@@ -180,6 +180,7 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
         'TC_SENTINEL',
         'TCH_SENTINEL',
         'PIN_SENTINEL',
+        'KYC_KEYRING_SENTINEL',
       ]) {
         expect(out).not.toContain(sentinel);
       }

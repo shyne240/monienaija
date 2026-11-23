@@ -74,7 +74,7 @@ class CustomerKycConsentDto extends CustomerKycKindDto {
   @IsUUID() requestId!: string;
   @Equals(true) accepted!: boolean;
   @IsString() @MaxLength(64) noticeVersion!: string;
-  @IsIn(['MONNIFY', 'DOJAH']) expectedProvider!: 'MONNIFY' | 'DOJAH';
+  @IsIn(['MONNIFY', 'DOJAH', 'PREMBLY']) expectedProvider!: 'MONNIFY' | 'DOJAH' | 'PREMBLY';
   @IsInt() @Min(1) expectedRouteVersion!: number;
 }
 class CustomerKycWithdrawDto {

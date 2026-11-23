@@ -9,7 +9,7 @@ export const KYC_PROVIDER_CAPABILITIES: readonly KycProviderCapability[] = [
   'ADDRESS_VERIFICATION',
   'ENHANCED_DUE_DILIGENCE',
 ];
-export type KycProviderCode = 'MONNIFY' | 'DOJAH' | 'SYNTHETIC';
+export type KycProviderCode = 'MONNIFY' | 'DOJAH' | 'PREMBLY' | 'SYNTHETIC';
 
 export interface KycProviderSetting {
   enabled: boolean;
@@ -61,6 +61,46 @@ export interface KycProviderHistory {
   checker_id: string;
   reason_code: string;
   applied_at: string;
+}
+
+export interface PremblyCredentialEnvironmentStatus {
+  configured: boolean;
+  version: number;
+  fingerprint: string | null;
+  keyVersion: string | null;
+  updatedAt: string | null;
+}
+
+export interface PremblyCredentialStatus {
+  provider: 'PREMBLY';
+  encryptionAvailable: boolean;
+  sandboxTestEnabled: boolean;
+  productionReleased: boolean;
+  sandbox: PremblyCredentialEnvironmentStatus;
+  production: PremblyCredentialEnvironmentStatus;
+}
+
+export interface PremblyCredentialProposal {
+  id: string;
+  expectedRouteVersion: number;
+  expectedCredentialVersion: number;
+  environment: 'sandbox' | 'production';
+  operation: 'SET' | 'CLEAR';
+  fingerprint: string | null;
+  makerId: string;
+  state: 'REQUESTED' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface PremblyConnectionTestResult {
+  source: 'ACTUAL_PREMBLY_SANDBOX';
+  environment: 'sandbox';
+  operation: 'BVN_BASIC_TEST_DATA';
+  outcome: 'CONNECTED' | 'AUTH_FAILED' | 'INDETERMINATE';
+  httpStatus: number | null;
+  responseCode: string | null;
+  testedAt: string;
 }
 
 export type TierEvidenceCode =
@@ -134,6 +174,38 @@ export const KycProviderGovernanceApi = {
   reject: (proposalId: string) =>
     ApiClient.post<{ version: number; state: 'REJECTED' }>(
       `/internal/kyc/providers/proposals/${encodeURIComponent(proposalId)}/reject`,
+    ),
+};
+
+export const PremblyCredentialApi = {
+  status: () =>
+    ApiClient.get<PremblyCredentialStatus>('/internal/kyc/providers/prembly/credentials'),
+  proposals: () =>
+    ApiClient.get<PremblyCredentialProposal[]>(
+      '/internal/kyc/providers/prembly/credential-proposals',
+    ),
+  propose: (input: {
+    requestId: string;
+    environment: 'sandbox' | 'production';
+    operation: 'SET' | 'CLEAR';
+    apiKey?: string;
+  }) =>
+    ApiClient.post<{ id: string; replay: boolean }>(
+      '/internal/kyc/providers/prembly/credential-proposals',
+      input,
+    ),
+  approve: (proposalId: string) =>
+    ApiClient.post<{ credentialVersion: number; state: 'APPROVED' }>(
+      `/internal/kyc/providers/prembly/credential-proposals/${encodeURIComponent(proposalId)}/approve`,
+    ),
+  reject: (proposalId: string) =>
+    ApiClient.post<{ credentialVersion: number; state: 'REJECTED' }>(
+      `/internal/kyc/providers/prembly/credential-proposals/${encodeURIComponent(proposalId)}/reject`,
+    ),
+  testSandboxConnection: () =>
+    ApiClient.post<PremblyConnectionTestResult>(
+      '/internal/kyc/providers/prembly/test-connection',
+      {},
     ),
 };
 

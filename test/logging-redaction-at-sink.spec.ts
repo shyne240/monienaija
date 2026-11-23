@@ -135,6 +135,9 @@ describe('Group 16 — log redaction at the sink', () => {
         dbPassword: 'd',
         aggregatorSecret: 'e',
         bankingApiKey: 'f',
+        kycProviderEncryptionKeyringJson: 'g',
+        notificationProviderEncryptionKeyringJson: 'h',
+        poaEncryptionKeyringJson: 'i',
       }) as Record<string, string>;
       for (const key of [
         'providerApiKey',
@@ -143,6 +146,9 @@ describe('Group 16 — log redaction at the sink', () => {
         'dbPassword',
         'aggregatorSecret',
         'bankingApiKey',
+        'kycProviderEncryptionKeyringJson',
+        'notificationProviderEncryptionKeyringJson',
+        'poaEncryptionKeyringJson',
       ]) {
         expect(redacted[key]).toBe('[REDACTED]');
       }
