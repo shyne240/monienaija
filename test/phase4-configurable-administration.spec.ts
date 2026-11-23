@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 
+import type { CommercialAccountingService } from '../src/commercial-accounting/commercial-accounting.service';
 import { CustomerClassService } from '../src/customer-class/customer-class.service';
 import type { CustomerClass } from '../src/customer-class/customer-class.entity';
 import type { CustomerClassResolverService } from '../src/customer-class/customer-class-resolver.service';
@@ -8,8 +9,13 @@ import {
   CustomerClassConfigurationStatus,
   CustomerClassStatus,
 } from '../src/customer-class/customer-class.enums';
+import type { FeeRuleCalculatorService } from '../src/fee-rules/fee-rule-calculator.service';
+import type { FeeRuleResolverService } from '../src/fee-rules/fee-rule-resolver.service';
 import { CustomerLimitViewService } from '../src/limit-catalog/customer-limit-view.service';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
+import type { LimitProfileResolverService } from '../src/limit-catalog/limit-profile-resolver.service';
+import type { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
+import type { AuditService } from '../src/operations/audit.service';
 import { TransferPricingService } from '../src/transfer/transfer-pricing.service';
 
 const CUSTOMER_UUID = '00000000-0000-4000-8000-000000000099';
@@ -39,14 +45,14 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
         createQueryBuilder: () => ({
           setLock: () => ({
             where: () => ({
-              getOne: async () => existing,
+              getOne: () => Promise.resolve(existing),
             }),
           }),
         }),
       }),
-      query: jest.fn().mockImplementation(async (sql: string) => {
+      query: jest.fn().mockImplementation((sql: string) => {
         if (sql.includes('FROM customer_classes'))
-          return [
+          return Promise.resolve([
             {
               id: '00000000-0000-4000-8000-000000000001',
               reference: 'CLASS-PREMIUM',
@@ -65,17 +71,18 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
               updated_at: new Date('2026-01-01T00:00:00.000Z'),
               deleted_at: null,
             },
-          ];
-        if (sql.includes('FROM fee_rules')) return [];
-        if (sql.includes('FROM limit_assignments')) return [{ id: 'assign-1' }];
-        return [];
+          ]);
+        if (sql.includes('FROM fee_rules')) return Promise.resolve([]);
+        if (sql.includes('FROM limit_assignments')) return Promise.resolve([{ id: 'assign-1' }]);
+        return Promise.resolve([]);
       }),
     };
     const dataSource = {
       transaction: (cb: (m: EntityManager) => Promise<unknown>) =>
         cb(manager as unknown as EntityManager),
     } as unknown as DataSource;
-    const service = new CustomerClassService(dataSource, { record: jest.fn() } as any);
+    const auditService = { record: jest.fn() } as unknown as AuditService;
+    const service = new CustomerClassService(dataSource, auditService);
 
     await expect(
       service.update('00000000-0000-4000-8000-000000000001', {
@@ -90,27 +97,25 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
   });
 
   it('CustomerLimitViewService resolves segmentCodes via CustomerClassResolverService when getMyLimits is called', async () => {
-    const resolver: Partial<CustomerClassResolverService> = {
-      resolveClassCodeInManager: jest.fn().mockResolvedValue('PREMIUM'),
-    };
+    const resolveClassCodeInManager = jest.fn().mockResolvedValue('PREMIUM');
+    const resolver = {
+      resolveClassCodeInManager,
+    } as unknown as CustomerClassResolverService;
+    const resolveProfile = jest.fn().mockResolvedValue(null);
     const profileResolver = {
-      resolve: jest.fn().mockResolvedValue(null),
-    };
+      resolve: resolveProfile,
+    } as unknown as LimitProfileResolverService;
     const manager = {} as unknown as EntityManager;
     const dataSource = {
       manager,
     } as unknown as DataSource;
 
-    const viewService = new CustomerLimitViewService(
-      dataSource,
-      profileResolver as any,
-      resolver as CustomerClassResolverService,
-    );
+    const viewService = new CustomerLimitViewService(dataSource, profileResolver, resolver);
     const now = new Date('2026-05-01T00:00:00.000Z');
     await viewService.getMyLimits(CUSTOMER_UUID, 'NGN', now);
 
-    expect(resolver.resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, now);
-    expect(profileResolver.resolve).toHaveBeenCalledWith(manager, {
+    expect(resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, now);
+    expect(resolveProfile).toHaveBeenCalledWith(manager, {
       principalType: 'CUSTOMER',
       principalId: CUSTOMER_UUID,
       segmentCodes: ['PREMIUM'],
@@ -119,24 +124,26 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
   });
 
   it('LimitEnforcementService resolves customer class segmentCodes via CustomerClassResolverService for CUSTOMER principals', async () => {
-    const resolver: Partial<CustomerClassResolverService> = {
-      resolveClassCodeInManager: jest.fn().mockResolvedValue('VIP'),
-    };
+    const resolveClassCodeInManager = jest.fn().mockResolvedValue('VIP');
+    const resolver = {
+      resolveClassCodeInManager,
+    } as unknown as CustomerClassResolverService;
+    const resolveProfile = jest.fn().mockResolvedValue(null);
     const profileResolver = {
-      resolve: jest.fn().mockResolvedValue(null),
-    };
-    const usageService = {};
+      resolve: resolveProfile,
+    } as unknown as LimitProfileResolverService;
+    const usageService = {} as unknown as LimitUsageService;
     const manager = {
       query: jest.fn().mockResolvedValue([]),
     };
     const enforcement = new LimitEnforcementService(
       {} as unknown as DataSource,
-      profileResolver as any,
-      usageService as any,
+      profileResolver,
+      usageService,
       undefined,
       undefined,
       undefined,
-      resolver as CustomerClassResolverService,
+      resolver,
     );
 
     const now = new Date('2026-05-01T00:00:00.000Z');
@@ -153,8 +160,8 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
     });
 
     expect(decision.allowed).toBe(true);
-    expect(resolver.resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, now);
-    expect(profileResolver.resolve).toHaveBeenCalledWith(
+    expect(resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, now);
+    expect(resolveProfile).toHaveBeenCalledWith(
       manager,
       expect.objectContaining({
         principalType: 'CUSTOMER',
@@ -166,35 +173,32 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
   });
 
   it('TransferPricingService forwards resolved customerClassCode to FeeRuleResolverService', async () => {
-    const resolver: Partial<CustomerClassResolverService> = {
-      resolveClassCodeInManager: jest.fn().mockResolvedValue('PREMIUM'),
-    };
+    const resolveClassCodeInManager = jest.fn().mockResolvedValue('PREMIUM');
+    const resolver = {
+      resolveClassCodeInManager,
+    } as unknown as CustomerClassResolverService;
+    const resolveWithManager = jest.fn().mockResolvedValue({
+      status: 'RESOLVED',
+      selectedRule: { id: 'fee-rule-premium', version: 1 },
+    });
     const feeResolver = {
-      resolveWithManager: jest.fn().mockResolvedValue({
-        status: 'RESOLVED',
-        selectedRule: { id: 'fee-rule-premium', version: 1 },
-      }),
-    };
+      resolveWithManager,
+    } as unknown as FeeRuleResolverService;
     const calculator = {
       compute: jest.fn().mockReturnValue({
         status: 'APPLIED',
         feeMinor: '250',
         vatMinor: '0',
       }),
-    };
+    } as unknown as FeeRuleCalculatorService;
     const accounting = {
       quoteFeeDebit: jest.fn().mockReturnValue({
         feeMinor: '250',
         vatMinor: '0',
         debitMinor: '250',
       }),
-    };
-    const pricing = new TransferPricingService(
-      feeResolver as any,
-      calculator as any,
-      accounting as any,
-      resolver as CustomerClassResolverService,
-    );
+    } as unknown as CommercialAccountingService;
+    const pricing = new TransferPricingService(feeResolver, calculator, accounting, resolver);
     const manager = {} as unknown as EntityManager;
     const at = new Date('2026-05-01T00:00:00.000Z');
 
@@ -205,8 +209,8 @@ describe('Phase 4 Configurable Administration — Customer Class & Runtime Polic
       at,
     });
 
-    expect(resolver.resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, at);
-    expect(feeResolver.resolveWithManager).toHaveBeenCalledWith(
+    expect(resolveClassCodeInManager).toHaveBeenCalledWith(manager, CUSTOMER_UUID, at);
+    expect(resolveWithManager).toHaveBeenCalledWith(
       manager,
       expect.objectContaining({
         productCode: 'WALLET_TRANSFER',

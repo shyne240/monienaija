@@ -80,15 +80,23 @@ export function resolveCommercialExecutionTarget(
         body: { ...details },
         requiredFunction: 'reward_rule.modify',
       };
-    case 'PRODUCT_MODIFY':
+    case 'PRODUCT_MODIFY': {
+      const { productCode: preservedCode, ...restDetails } = details;
+      const productBody =
+        item.resourceId === null &&
+        restDetails.code === '[REDACTED]' &&
+        typeof preservedCode === 'string'
+          ? { ...restDetails, code: preservedCode }
+          : { ...details };
       return {
         path:
           item.resourceId === null
             ? `/internal/products/changes/${encodeURIComponent(item.id)}/execute-create`
             : `/internal/products/changes/${encodeURIComponent(item.id)}/execute-modify`,
-        body: { ...details },
+        body: productBody,
         requiredFunction: 'product.modify',
       };
+    }
     case 'LIMIT_RULE_CREATE': {
       const profileCode =
         typeof details.limitProfileCode === 'string' ? details.limitProfileCode.trim() : '';
