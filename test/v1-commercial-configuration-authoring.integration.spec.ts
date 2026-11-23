@@ -943,11 +943,12 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
          VALUES ('LP_A3_ISOLATION','CUSTOMER',$1,NULL,10,NOW()-interval '1 hour',true,'test')`,
         [customerId],
       );
-      // A live fee rule with a distinctive amount that must never appear in this response.
-      await dataSource.query(
+      // A live fee rule that must never appear in this response.
+      const withheldFeeRule: Array<{ id: string }> = await dataSource.query(
         `INSERT INTO fee_rules (product_code, currency, percentage_bps, effective_from, priority,
            is_active, created_by)
-         VALUES ($1,$2,9876,NOW()-interval '1 hour',1,true,'test')`,
+         VALUES ($1,$2,9876,NOW()-interval '1 hour',1,true,'test')
+         RETURNING id`,
         [PRODUCT, CURRENCY],
       );
 
@@ -976,16 +977,18 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
         expect(Object.keys(section ?? {}).sort()).toEqual(['note', 'requiredFunction', 'status']);
       }
 
-      // Nothing withheld may be smuggled out through another field.
+      // Nothing withheld may be smuggled out through another field. Assertions target exact
+      // identifiers and class codes rather than bare digits: a substring scan for a short number
+      // is unsound because unrelated generated UUIDs can legitimately contain the same digits.
       const serialized = JSON.stringify(preview.body);
-      expect(serialized).not.toContain('9876');
+      expect(serialized).not.toContain(withheldFeeRule[0]!.id);
+      expect(serialized).not.toContain('percentageBps');
       expect(serialized).not.toContain('PREMIUM');
       expect(serialized).not.toContain('STANDARD');
-      // The limit section runs on limit.view, which this caller does hold.
 
       // Sections the caller IS entitled to still resolve: the limit section runs on limit.view.
-      // The limit section still runs for this caller: the assignment resolves even though the
-      // profile carries no rule (correctly MISSING, never unlimited).
+      // The assignment resolves even though the profile carries no rule (correctly MISSING, never
+      // unlimited).
       expect(preview.body.limits.assignmentProfileCode).toBe('LP_A3_ISOLATION');
       expect(preview.body.limits.status).toBe('MISSING');
     });
@@ -1156,10 +1159,11 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
          VALUES ($1,$2,100,NOW()-interval '2 hours',1,true,'test')`,
         [PRODUCT, CURRENCY],
       );
-      await dataSource.query(
+      const targeted: Array<{ id: string }> = await dataSource.query(
         `INSERT INTO fee_rules (product_code, currency, customer_class_code, percentage_bps,
            effective_from, priority, is_active, created_by)
-         VALUES ($1,$2,'BUSINESS',999,NOW()-interval '1 hour',9,true,'test')`,
+         VALUES ($1,$2,'BUSINESS',999,NOW()-interval '1 hour',9,true,'test')
+         RETURNING id`,
         [PRODUCT, CURRENCY],
       );
 
@@ -1168,8 +1172,15 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
         .set(auth(auditor.token));
 
       expect(preview.status).toBe(200);
+      // The untargeted rule applies; the BUSINESS-targeted rule must not be selected.
+      expect(preview.body.fee.status).toBe('RESOLVED');
       expect(preview.body.fee.rule.percentageBps).toBe(100);
-      expect(JSON.stringify(preview.body)).not.toContain('999');
+      expect(preview.body.fee.rule.ruleId).not.toBe(targeted[0]!.id);
+      expect(preview.body.customerClass.effective.classCode).toBe('STANDARD');
+      // Assert on the SELECTED RULE rather than scanning the serialized body: a substring scan is
+      // unsound because unrelated generated UUIDs can legitimately contain the same digits.
+      expect(JSON.stringify(preview.body.fee)).not.toContain('999');
+      expect(JSON.stringify(preview.body.fee)).not.toContain(targeted[0]!.id);
     });
   });
 
