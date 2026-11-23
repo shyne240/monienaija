@@ -426,3 +426,112 @@ it('retires a restricted onboarding token and prompts full sign-in once the cust
   expect(SecureStorage.remove).toHaveBeenCalledWith('synthetic_onboarding_token_v1');
   expect(useAuthStore.getState().isAuthenticated).toBe(false);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER-ONBOARDING-END-TO-END-01 — authoritative onboarding-state rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+const onboardingState = (
+  stage: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  stage,
+  nextAction: 'authoritative next action',
+  session: { status: 'VERIFIED', expiresAt: future },
+  customer: {
+    referenceMasked: 'mn-••••5678',
+    status: 'DRAFT',
+    kycLevel: 'LEVEL_1',
+    kycStatus: 'APPROVED',
+  },
+  claim: null,
+  credentials: { passcodeSet: false, pinSet: false },
+  requirements: [
+    { code: 'phone_verified', label: 'Phone verified', state: 'MET' },
+    { code: 'kyc_assessment', label: 'KYC assessment approved', state: 'OUTSTANDING' },
+  ],
+  outstanding: ['kyc_assessment'],
+  wallet: null,
+  evaluatedAt: future,
+  ...overrides,
+});
+
+const verifiedSessionStorage = async (key: string) =>
+  key === 'synthetic_registration_session_v1'
+    ? JSON.stringify({
+        id: 'session-id',
+        token: 'verified-token',
+        expiresAt: future,
+        phase: 'VERIFIED',
+      })
+    : null;
+
+test('renders the authoritative pending-review state with the shared requirement list', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-state')) return onboardingState('PENDING_REVIEW');
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(await v.findByText(/your identity is still under review/i)).toBeTruthy();
+  // The requirement labels are the backend's, not a locally invented checklist.
+  expect(v.getByText(/Phone verified/)).toBeTruthy();
+  expect(v.getByText(/KYC assessment approved/)).toBeTruthy();
+  expect(v.getByText(/Reference mn-••••5678/)).toBeTruthy();
+});
+
+test('renders the authoritative rejected state without offering a second registration', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-state')) return onboardingState('REJECTED');
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(await v.findByText(/could not be approved/i)).toBeTruthy();
+  expect(v.getByText(/Do not create a second registration/i)).toBeTruthy();
+  // Rejection is terminal here: there is no "continue" affordance to click.
+  expect(v.queryByText('Continue')).toBeNull();
+});
+
+test('routes an activated customer to financial sign-in, never back into onboarding', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-state'))
+      return onboardingState('ACTIVATED', {
+        customer: {
+          referenceMasked: 'mn-••••5678',
+          status: 'ACTIVE',
+          kycLevel: 'LEVEL_1',
+          kycStatus: 'APPROVED',
+        },
+        outstanding: [],
+        wallet: { provisioned: true, currency: 'NGN' },
+      });
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(await v.findByText(/Your account is activated/i)).toBeTruthy();
+  fireEvent.press(v.getByText('Go to sign in'));
+  expect(mockNavigate).toHaveBeenCalledWith('Login');
+});
+
+test('never fabricates a state when the projection is unavailable', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    // An older/partial backend: the state read answers something the client cannot trust.
+    if (path.endsWith('/onboarding-state')) return { unexpected: true };
+    if (path.endsWith('/onboarding-route')) return { next: 'LOGIN' };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  // The weaker route read still governs (LOGIN), and the customer is told the status could not be
+  // loaded rather than being shown a state the server never reported.
+  expect(await v.findByText('Enter your passcode')).toBeTruthy();
+  expect(
+    v.getByText(/could not load your registration status. Nothing was approved or rejected/i),
+  ).toBeTruthy();
+});

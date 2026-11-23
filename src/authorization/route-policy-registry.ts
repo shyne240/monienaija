@@ -71,6 +71,11 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration-sessions/synthetic-credentials',
   'POST /api/v1/customers/registration-sessions/synthetic-credentials/status',
   'POST /api/v1/customers/registration-sessions/onboarding-route',
+  // Mobile onboarding state: the authoritative NEW/CLAIM/RESUME_CLAIM/LOGIN/PENDING_REVIEW/
+  // REJECTED/ACTIVATED read for the phone-verified registration session. Scoped by that
+  // session's verified phone only (never a caller-supplied customer id) and returns no
+  // identifiers, credentials or provider data.
+  'POST /api/v1/customers/registration-sessions/onboarding-state',
   'POST /api/v1/customers/registration-sessions/claim-match',
   'POST /api/v1/customers/registration-sessions/claim-credentials',
   'POST /api/v1/customers/registration-sessions/onboarding-login',

@@ -31,6 +31,15 @@ describe('RoutePolicyRegistry', () => {
     expect(registry.isPublic('POST', '/api/v1/customers/registration/otp/verify')).toBe(true);
     expect(registry.isPublic('POST', '/api/v1/customers/registration')).toBe(true);
     expect(registry.isPublic('POST', '/api/v1/customers')).toBe(false);
+    // Mobile onboarding-state read: public because the phone-verified registration session is the
+    // credential, and it is scoped by that session alone.
+    expect(
+      registry.isPublic('POST', '/api/v1/customers/registration-sessions/onboarding-state'),
+    ).toBe(true);
+    // ... but it must not have widened the workforce review surface.
+    expect(
+      registry.isPublic('GET', `/api/v1/internal/customers/${CUSTOMER_ID}/registration-review`),
+    ).toBe(false);
     expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(true);
 
     // Operational routes are never public, including the API version metadata
@@ -156,6 +165,10 @@ describe('RoutePolicyRegistry', () => {
       ['GET', '/api/v1/customers/me'],
       ['GET', '/api/v1/customers/me/wallets'],
       ['POST', '/api/v1/customers/me/transfers'],
+      // CUSTOMER-ONBOARDING-END-TO-END-01: the customer-owned activation surface is SELF only, so
+      // a customer can only ever activate their own record and never name another id.
+      ['GET', '/api/v1/customers/me/activation'],
+      ['POST', '/api/v1/customers/me/activation'],
     ] as Array<[string, string]>) {
       const resolution = registry.resolve({ method, url });
       expect(resolution.public).toBe(false);

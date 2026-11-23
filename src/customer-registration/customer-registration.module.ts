@@ -3,6 +3,9 @@ import { CustomerFinancialEligibilityService } from '../kyc-verification/custome
 import { MobileAccountClaimService } from './mobile-account-claim.service';
 import { MobileOnboardingAuthController } from './mobile-onboarding-auth.controller';
 import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
+import { MobileOnboardingStateService } from './mobile-onboarding-state.service';
+import { CustomerActivationReadinessService } from '../customer-onboarding/customer-activation-readiness.service';
+import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
 import { KycSyntheticCredentialsController } from '../kyc-verification/kyc-synthetic-credentials.controller';
 import { KycSyntheticCredentialsService } from '../kyc-verification/kyc-synthetic-credentials.service';
 import { KycRegistrationCompletionController } from '../kyc-verification/kyc-registration-completion.controller';
@@ -63,6 +66,9 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
     NotificationModule,
     OperationsModule,
     forwardRef(() => WalletModule),
+    // The shared activation-readiness projection (admin review + customer activation + this
+    // mobile state read) is provided by CustomerWalletModule; importing it keeps ONE authority.
+    CustomerWalletModule,
   ],
   controllers: [
     CustomerRegistrationController,
@@ -119,6 +125,12 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
         eligibility: CustomerFinancialEligibilityService,
         sessions: AuthenticationSessionService,
       ) => new MobileOnboardingAuthService(db, audit, completion, eligibility, sessions),
+    },
+    {
+      provide: MobileOnboardingStateService,
+      inject: [DataSource, CustomerActivationReadinessService],
+      useFactory: (db: DataSource, readiness: CustomerActivationReadinessService) =>
+        new MobileOnboardingStateService(db, readiness),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {
