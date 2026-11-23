@@ -378,6 +378,8 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'InstitutionKycTierLimitGovernance1785753600504',
         'KycIdentityRevisionAndEvidenceRead1785753600505',
         'FeeRuleTargeting1785753600506',
+        // Prembly governance was added after the 0506 fee migration and before the banking range.
+        'PremblyKycCredentialGovernance1785753600507',
         // ARENA 3D banking chain. Contiguous and inside the reserved 0600-0699 range; the historical
         // upgrade must apply them after the KYC governance chain, which is what timestamp order does.
         'BankingProviderGovernance1785753600600',
