@@ -7,6 +7,7 @@ import {
   initialsOf,
   isTerminalStatus,
   kycPathwayCopy,
+  kycVerificationOutcomePresentation,
   statusLabel,
   statusTone,
   transactionTypeLabel,
@@ -98,14 +99,104 @@ describe('KYC verification status presentation', () => {
     ['UNKNOWN', 'Outcome unknown'],
     ['REVIEW', 'Needs review'],
     ['CONSENT_WITHDRAWN', 'Consent withdrawn'],
+    ['EXPIRED', 'Expired'],
   ])('labels %s as %s without implying a different outcome', (status, label) => {
     expect(statusLabel(status)).toBe(label);
   });
 
-  it('marks only an authoritative match as successful', () => {
+  it('marks only an authoritative match as successful in generic status tone', () => {
     expect(statusTone('MATCH')).toBe('SUCCESS');
     for (const status of ['DISPATCHING', 'UNKNOWN', 'REVIEW', 'CONSENT_WITHDRAWN']) {
       expect(statusTone(status)).toBe('PENDING');
+    }
+    expect(statusTone('EXPIRED')).toBe('EXPIRED');
+  });
+});
+
+describe('kycVerificationOutcomePresentation (dedicated KYC contract)', () => {
+  const ACTUAL_OUTCOMES = [
+    'DISPATCHING',
+    'MATCH',
+    'REVIEW',
+    'UNKNOWN',
+    'CONSENT_WITHDRAWN',
+    'EXPIRED',
+  ] as const;
+
+  it('covers every actual BVN/NIN verification attempt outcome from the backend contract', () => {
+    for (const outcome of ACTUAL_OUTCOMES) {
+      const presentation = kycVerificationOutcomePresentation(outcome);
+      expect(presentation.label).toBeTruthy();
+      expect(presentation.detail).toBeTruthy();
+      expect(typeof presentation.authoritativeVerified).toBe('boolean');
+      expect(typeof presentation.terminal).toBe('boolean');
+    }
+  });
+
+  it('presents only an authoritative MATCH as verified/success', () => {
+    const match = kycVerificationOutcomePresentation('MATCH');
+    expect(match.label).toBe('Verified');
+    expect(match.tone).toBe('SUCCESS');
+    expect(match.authoritativeVerified).toBe(true);
+    expect(match.terminal).toBe(true);
+
+    for (const outcome of ACTUAL_OUTCOMES.filter((status) => status !== 'MATCH')) {
+      const presentation = kycVerificationOutcomePresentation(outcome);
+      expect(presentation.authoritativeVerified).toBe(false);
+      expect(presentation.tone).not.toBe('SUCCESS');
+      expect(presentation.label.toLowerCase()).not.toContain('verified');
+    }
+  });
+
+  it('maps each actual outcome to accurate, non-misleading customer copy', () => {
+    expect(kycVerificationOutcomePresentation('DISPATCHING')).toMatchObject({
+      label: 'Processing',
+      tone: 'PENDING',
+      terminal: false,
+    });
+    expect(kycVerificationOutcomePresentation('REVIEW')).toMatchObject({
+      label: 'Needs review',
+      tone: 'PENDING',
+      authoritativeVerified: false,
+      terminal: true,
+    });
+    expect(kycVerificationOutcomePresentation('UNKNOWN')).toMatchObject({
+      label: 'Outcome unknown',
+      tone: 'PENDING',
+      authoritativeVerified: false,
+      terminal: false,
+    });
+    expect(kycVerificationOutcomePresentation('CONSENT_WITHDRAWN')).toMatchObject({
+      label: 'Consent withdrawn',
+      tone: 'PENDING',
+      authoritativeVerified: false,
+      terminal: true,
+    });
+    expect(kycVerificationOutcomePresentation('EXPIRED')).toMatchObject({
+      label: 'Expired',
+      tone: 'EXPIRED',
+      authoritativeVerified: false,
+      terminal: true,
+    });
+  });
+
+  it('fails closed for unknown, empty, and invented statuses', () => {
+    for (const status of [
+      undefined,
+      null,
+      '',
+      'AUTHORITATIVE_MISMATCH',
+      'PENDING_VERIFICATION',
+      'PROVIDER_UNAVAILABLE',
+      'SUPERSEDED',
+      'MANUAL_REVIEW',
+      'SUCCESS',
+      'APPROVED',
+    ]) {
+      const presentation = kycVerificationOutcomePresentation(status);
+      expect(presentation.authoritativeVerified).toBe(false);
+      expect(presentation.tone).not.toBe('SUCCESS');
+      expect(presentation.label.toLowerCase()).not.toContain('verified');
     }
   });
 });

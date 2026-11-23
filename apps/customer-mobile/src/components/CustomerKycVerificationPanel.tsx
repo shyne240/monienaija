@@ -11,7 +11,7 @@ import type {
   CustomerKycWorkflowClient,
   CustomerKycWorkflowStatus,
 } from '../services/customer-kyc-verification';
-import { statusLabel } from '../services/presentation';
+import { kycVerificationOutcomePresentation } from '../services/presentation';
 import { theme } from '../theme';
 
 interface Props {
@@ -261,31 +261,36 @@ export const CustomerKycVerificationPanel: React.FC<Props> = ({
         kind,
         identifier: submitted,
       });
+      const outcome = kycVerificationOutcomePresentation(response.status);
       if (response.status === 'DISPATCHING') {
+        setResult(outcome.detail);
+      } else if (response.status === 'MATCH') {
         setResult(
-          'Verification is still processing. Refresh or check the same request; do not start another one.',
-        );
-      } else if (response.status === 'UNKNOWN' || response.status === 'CONSENT_WITHDRAWN') {
-        setResult(
-          'The provider outcome is not confirmed. Do not submit again; the request needs safe review.',
+          `${outcome.detail} Your current tier and financial eligibility change only after the governed assessment is applied.`,
         );
         setIdentifier('');
         setVerificationRequestId(null);
         setSubmittedIdentifier(null);
         setConsent(null);
         setAvailability(null);
-      } else if (response.status === 'MATCH') {
-        setResult(
-          'The identity check completed. Your current tier and financial eligibility change only after the governed assessment is applied.',
-        );
+      } else if (response.status === 'UNKNOWN' || response.status === 'CONSENT_WITHDRAWN') {
+        setResult(outcome.detail);
+        setIdentifier('');
+        setVerificationRequestId(null);
+        setSubmittedIdentifier(null);
+        setConsent(null);
+        setAvailability(null);
+      } else if (response.status === 'EXPIRED') {
+        setResult(outcome.detail);
         setIdentifier('');
         setVerificationRequestId(null);
         setSubmittedIdentifier(null);
         setConsent(null);
         setAvailability(null);
       } else {
+        // REVIEW or any unrecognized outcome: fail closed, never present as verified.
         setResult(
-          'The identity check needs review. Your current tier and limits remain unchanged while it is reviewed.',
+          `${outcome.detail} Your current tier and limits remain unchanged while it is reviewed.`,
         );
         setIdentifier('');
         setVerificationRequestId(null);
@@ -354,14 +359,22 @@ export const CustomerKycVerificationPanel: React.FC<Props> = ({
               onPress={() => selectKind('NIN')}
             />
           </View>
-          {locked.latest ? (
-            <Text style={styles.note}>
-              Latest {kind} check: {statusLabel(locked.latest.status)}.
-              {locked.latest.completedAt
-                ? ` Completed ${new Date(locked.latest.completedAt).toLocaleString('en-NG')}.`
-                : ''}
-            </Text>
-          ) : null}
+          {locked.latest
+            ? (() => {
+                const outcome = kycVerificationOutcomePresentation(locked.latest.status);
+                return (
+                  <View>
+                    <Text style={styles.note}>
+                      Latest {kind} check: {outcome.label}.
+                      {locked.latest.completedAt
+                        ? ` Completed ${new Date(locked.latest.completedAt).toLocaleString('en-NG')}.`
+                        : ''}
+                    </Text>
+                    <Text style={styles.note}>{outcome.detail}</Text>
+                  </View>
+                );
+              })()
+            : null}
           {locked.reason && !uncertainRetryAvailable ? (
             <Text style={styles.alert}>{locked.reason}</Text>
           ) : null}

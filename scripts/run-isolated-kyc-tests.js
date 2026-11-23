@@ -159,6 +159,7 @@ async function main() {
   const child = spawn(
     process.execPath,
     [
+      `--max-old-space-size=${process.env.KYC_ISOLATED_MAX_OLD_SPACE_MB || '4096'}`,
       '-r',
       path.join(ROOT, 'test/support/mission-25c-network-guard.cjs'),
       JEST_BIN,
