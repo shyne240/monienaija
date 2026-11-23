@@ -10,7 +10,10 @@ import type {
 } from '../kyc-verification/kyc.types';
 
 export type PremblyErrorCode =
-  'CONFIGURATION' | 'INVALID_INPUT' | 'AUTH_FAILED' | 'OUTCOME_UNKNOWN';
+  | 'CONFIGURATION'
+  | 'INVALID_INPUT'
+  | 'AUTH_FAILED'
+  | 'OUTCOME_UNKNOWN';
 
 export class PremblyVerificationError extends Error {
   constructor(readonly code: PremblyErrorCode) {
