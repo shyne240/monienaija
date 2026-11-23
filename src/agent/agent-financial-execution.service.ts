@@ -30,6 +30,7 @@ import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import {
   annotateCommissionDecisionWithPosting,
   annotateFeeDecisionWithPosting,
@@ -82,6 +83,8 @@ export class AgentFinancialExecutionService {
     // or disabled → legacy evidence-only annotations for manual-construction unit tests).
     @Optional()
     private readonly commercialAccountingService?: CommercialAccountingService,
+    @Optional()
+    private readonly customerClassResolver?: CustomerClassResolverService,
   ) {}
 
   /**
@@ -586,11 +589,23 @@ export class AgentFinancialExecutionService {
     const isCashIn = productCode === 'CASH_TO_WALLET';
     const decisionAt = new Date();
     const amountMinor = limitInput.amountMinor;
+    const customerClassCode =
+      principalType === 'CUSTOMER' && this.customerClassResolver
+        ? await this.customerClassResolver.resolveClassCodeInManager(
+            manager,
+            limitInput.principalId.trim(),
+            decisionAt,
+          )
+        : null;
+    const principalAgentClassId =
+      principalType === 'AGENT' ? (limitInput.agentClassId ?? null) : null;
 
     const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
       productCode,
       currency: ctx.currency,
       at: decisionAt,
+      ...(customerClassCode ? { customerClassCode } : {}),
+      ...(principalAgentClassId ? { agentClassId: principalAgentClassId } : {}),
     });
 
     // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);

@@ -29,6 +29,7 @@ import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import {
   commissionNone,
   feeNotConfigured,
@@ -105,6 +106,7 @@ export class AgentCashToCashClaimService {
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
     @Optional() private readonly claimFinancialContext?: CashToCashClaimFinancialContext,
+    @Optional() private readonly customerClassResolver?: CustomerClassResolverService,
   ) {}
 
   /** Authenticated command, never a public UUID lookup. All transfer-specific failures
@@ -1355,11 +1357,19 @@ export class AgentCashToCashClaimService {
 
     const productCode = 'CASH_TO_CASH';
     const decisionAt = new Date();
+    const customerClassCode = this.customerClassResolver
+      ? await this.customerClassResolver.resolveClassCodeInManager(
+          manager,
+          ctx.customerId,
+          decisionAt,
+        )
+      : null;
 
     const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
       productCode,
       currency: ctx.currency,
       at: decisionAt,
+      ...(customerClassCode ? { customerClassCode } : {}),
     });
 
     // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);

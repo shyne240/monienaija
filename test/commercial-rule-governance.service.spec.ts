@@ -168,6 +168,10 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       governedChangeFingerprint('FEE_RULE_CREATE', 'FEE_RULE', null, createPayload),
     );
     expect(approvalRepository.records.size).toBe(1);
+    const stored = [...approvalRepository.records.values()][0]!;
+    expect(stored.policy).toMatchObject({
+      requestDetails: createPayload,
+    });
   });
 
   it('refuses unauthorized initiation and persists nothing', async () => {

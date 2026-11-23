@@ -59,3 +59,66 @@ test('manager changes a name with optimistic version evidence', async () => {
     }),
   );
 });
+
+test('inspects class limits and assigns a segment limit profile to a customer class', async () => {
+  principal([
+    'customer.view',
+    'customer.manage_classes',
+    'limit.view',
+    'limit.modify',
+    'fee_rule.view',
+  ]);
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path === '/internal/customer-classes') return Promise.resolve([record]);
+    if (path === '/internal/limit-assignments/segment/STANDARD')
+      return Promise.resolve([
+        {
+          id: 'assign-1',
+          limitProfileCode: 'CUSTOMER_STANDARD',
+          subjectType: 'SEGMENT',
+          segmentCode: 'STANDARD',
+          precedence: 5,
+          isActive: true,
+        },
+      ]);
+    if (path.startsWith('/internal/fee-rules'))
+      return Promise.resolve({
+        data: [
+          {
+            id: 'fee-std',
+            productCode: 'WALLET_TRANSFER',
+            currency: 'NGN',
+            customerClassCode: 'STANDARD',
+            isActive: true,
+            priority: 10,
+          },
+        ],
+      });
+    return Promise.resolve([]);
+  });
+  (ApiClient.post as jest.Mock).mockResolvedValue({});
+
+  render(<CustomerClassesScreen />);
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Inspect limits & policy for STANDARD' }),
+  );
+  expect(await screen.findByText('CUSTOMER_STANDARD')).toBeTruthy();
+  expect(await screen.findByText('WALLET_TRANSFER')).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Limit profile for STANDARD'), {
+    target: { value: 'customer_vip' },
+  });
+  fireEvent.change(screen.getByLabelText('Precedence for STANDARD'), {
+    target: { value: '15' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Assign class limit profile' }));
+
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith('/internal/limit-assignments', {
+      subjectType: 'SEGMENT',
+      segmentCode: 'STANDARD',
+      limitProfileCode: 'CUSTOMER_VIP',
+      precedence: 15,
+    }),
+  );
+});

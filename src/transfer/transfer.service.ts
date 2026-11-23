@@ -43,6 +43,7 @@ import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.servi
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import {
   annotateCommissionDecisionWithPosting,
   annotateFeeDecisionWithPosting,
@@ -149,6 +150,7 @@ export class TransferService {
     @Optional() private readonly transferQuoteService?: TransferQuoteService,
     @Optional() private readonly transferPricingService?: TransferPricingService,
     @Optional() private readonly transferPinAuthorizationService?: TransferPinAuthorizationService,
+    @Optional() private readonly customerClassResolver?: CustomerClassResolverService,
   ) {}
 
   /** Verifies PIN for this quote before entering the shared financial transaction. */
@@ -502,6 +504,9 @@ export class TransferService {
       confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
         amountMinor: command.amountMinor,
         currency: command.currency,
+        customerId: participants[0].type === 'CUSTOMER' ? participants[0].id : null,
+        agentClassId: participants[0].agentClassId,
+        institutionId: sourceWallet.institutionId ?? null,
       });
       if (
         confirmedPricing.pricingHash !== confirmedQuote.pricingHash ||
@@ -942,10 +947,25 @@ export class TransferService {
     if (ctx.feeDecision) {
       feeDecision = { ...ctx.feeDecision };
     } else {
+      const customerClassCode =
+        ctx.sourceParticipant.type === 'CUSTOMER' && this.customerClassResolver
+          ? await this.customerClassResolver.resolveClassCodeInManager(
+              manager,
+              ctx.sourceParticipant.id,
+              decisionAt,
+            )
+          : null;
       const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
         productCode,
         currency: ctx.command.currency,
         at: decisionAt,
+        ...(customerClassCode ? { customerClassCode } : {}),
+        ...(ctx.sourceParticipant.agentClassId
+          ? { agentClassId: ctx.sourceParticipant.agentClassId }
+          : {}),
+        ...(ctx.sourceParticipant.wallet?.institutionId
+          ? { institutionId: ctx.sourceParticipant.wallet.institutionId }
+          : {}),
       });
 
       // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);

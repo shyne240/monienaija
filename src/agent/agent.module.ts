@@ -35,6 +35,7 @@ import { AgentAuthenticationModule } from '../agent-authentication/agent-authent
 import { LedgerModule } from '../ledger/ledger.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { CustomerModule } from '../customer/customer.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AgentCashOutService } from './agent-cash-out.service';
 import { AgentCashOutController } from './agent-cash-out.controller';
@@ -90,6 +91,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     forwardRef(() => InstitutionModule),
     OperationsModule,
     CustomerBeneficiaryModule,
+    CustomerClassModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AgentLifecycleController now calls
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
     AuthorizationModule,

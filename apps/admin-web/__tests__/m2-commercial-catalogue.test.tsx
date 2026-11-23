@@ -75,7 +75,9 @@ test('fee registry shows real backend fields, pages independently and searches o
   );
   render(<CommercialRulesScreen initialTab="fees" />);
   expect(await screen.findAllByText('fee-one')).toBeTruthy();
-  expect(screen.getByText(/Highest priority wins first, then the most matching target dimensions/)).toBeTruthy();
+  expect(
+    screen.getByText(/Highest priority wins first, then the most matching target dimensions/),
+  ).toBeTruthy();
   expect(screen.getByText('21 total records · Page 1 of 2')).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Rule ID' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Active' })).toBeTruthy();
@@ -522,4 +524,42 @@ test('reward configuration exposes documented targeting and tier fields, not raw
   expect(dialog.textContent).toContain('900719925474099301');
   expect(dialog.textContent).not.toContain('hidden tier value');
   expect(dialog.textContent).not.toContain('hidden row value');
+});
+
+test('limit.modify allows creating a new limit profile from the Limit profiles registry', async () => {
+  session(['limit.view', 'limit.modify']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(page([]));
+  (ApiClient.post as jest.Mock).mockResolvedValue({
+    code: 'CUSTOMER_VIP',
+    name: 'Customer VIP',
+    kind: 'CUSTOMER',
+    status: 'ACTIVE',
+    enabled: true,
+    configurationStatus: 'CONFIGURED',
+    version: 1,
+  });
+
+  render(<CommercialRulesScreen initialTab="limits" />);
+  const createBtn = await screen.findByRole('button', { name: 'Create limit profile' });
+  fireEvent.click(createBtn);
+
+  fireEvent.change(screen.getByLabelText('Limit profile code'), {
+    target: { value: 'customer_vip' },
+  });
+  fireEvent.change(screen.getByLabelText('Limit profile name'), {
+    target: { value: 'Customer VIP' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Create profile' }));
+
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith('/internal/limit-profiles', {
+      code: 'CUSTOMER_VIP',
+      name: 'Customer VIP',
+      description: null,
+      kind: 'CUSTOMER',
+      status: 'ACTIVE',
+      enabled: true,
+      configurationStatus: 'CONFIGURED',
+    }),
+  );
 });

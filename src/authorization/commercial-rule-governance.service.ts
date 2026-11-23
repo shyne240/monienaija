@@ -140,6 +140,7 @@ export class CommercialRuleGovernanceService {
       resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
       actionFingerprint,
       reason: command.reason,
+      requestDetails: { ...command.payload },
       approvalScope: definition.approvalScope,
       expiresInSeconds: command.expiresInSeconds,
       now: command.now,

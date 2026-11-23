@@ -8,6 +8,7 @@ import { AuthorizationService } from '../authorization/authorization.service';
 import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import type { Environment } from '../config/environment';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { InstitutionModule } from '../institution/institution.module';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -46,6 +47,7 @@ import { LimitRuleGovernanceService } from './limit-rule-governance.service';
     ProtectedAuthorityModule,
     forwardRef(() => KycTierModule),
     forwardRef(() => InstitutionModule),
+    forwardRef(() => CustomerClassModule),
   ],
   controllers: [
     LimitCatalogController,
