@@ -19,6 +19,7 @@ const providerConfiguration: KycProviderConfiguration = {
   providers: {
     MONNIFY: { enabled: true, capabilities: ['BVN'] },
     DOJAH: { enabled: false, capabilities: [] },
+    PREMBLY: { enabled: false, capabilities: [] },
     SYNTHETIC: { enabled: false, capabilities: [] },
   },
   routes: {
@@ -55,6 +56,17 @@ const providerWorkspace = {
         { code: 'NIN', candidate: true, confirmed: false, ready: false },
         { code: 'ADDRESS_VERIFICATION', candidate: true, confirmed: false, ready: false },
         { code: 'ENHANCED_DUE_DILIGENCE', candidate: true, confirmed: false, ready: false },
+      ],
+    },
+    {
+      code: 'PREMBLY',
+      candidateCapabilities: ['BVN', 'NIN'],
+      confirmedCapabilities: [],
+      testOnly: false,
+      ready: false,
+      capabilities: [
+        { code: 'BVN', candidate: true, confirmed: false, ready: false },
+        { code: 'NIN', candidate: true, confirmed: false, ready: false },
       ],
     },
     {
@@ -97,6 +109,28 @@ function mockGovernanceReads() {
     if (path === '/internal/kyc/providers') return Promise.resolve(providerWorkspace);
     if (path === '/internal/kyc/providers/proposals') return Promise.resolve([]);
     if (path === '/internal/kyc/providers/history') return Promise.resolve([]);
+    if (path === '/internal/kyc/providers/prembly/credentials')
+      return Promise.resolve({
+        provider: 'PREMBLY',
+        encryptionAvailable: false,
+        sandboxTestEnabled: false,
+        productionReleased: false,
+        sandbox: {
+          configured: false,
+          version: 0,
+          fingerprint: null,
+          keyVersion: null,
+          updatedAt: null,
+        },
+        production: {
+          configured: false,
+          version: 0,
+          fingerprint: null,
+          keyVersion: null,
+          updatedAt: null,
+        },
+      });
+    if (path === '/internal/kyc/providers/prembly/credential-proposals') return Promise.resolve([]);
     if (path === '/internal/kyc/tier-policies') return Promise.resolve([]);
     if (path === '/internal/kyc/tier-policies/proposals') return Promise.resolve([]);
     throw new Error(`Unexpected KYC governance API path: ${path}`);
@@ -120,11 +154,13 @@ test('provider workspace uses the backend governance endpoints and presents read
   render(<KycProviderManagementScreen />);
 
   expect(await screen.findByRole('heading', { name: 'KYC provider management' })).toBeTruthy();
-  expect(screen.getAllByText('Not dispatch-ready')).toHaveLength(2);
+  expect(screen.getAllByText('Not dispatch-ready')).toHaveLength(3);
   expect(screen.getByRole('heading', { name: 'Dojah' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Prembly' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Prembly credentials' })).toBeTruthy();
   expect(screen.getByText('Test only')).toBeTruthy();
   expect(
-    screen.getByText(/A proposal cannot satisfy the separate contract-review, credential, adapter/),
+    screen.getByText(/A routing proposal cannot satisfy contract-review, credential, adapter/),
   ).toBeTruthy();
   expect(screen.getByText(/BVN full-record Basic\/Advance access is not assumed/)).toBeTruthy();
   expect(
@@ -140,6 +176,10 @@ test('provider workspace uses the backend governance endpoints and presents read
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/kyc/providers');
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/kyc/providers/proposals');
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/kyc/providers/history');
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/kyc/providers/prembly/credentials');
+    expect(ApiClient.get).toHaveBeenCalledWith(
+      '/internal/kyc/providers/prembly/credential-proposals',
+    );
   });
   expect(ApiClient.post).not.toHaveBeenCalled();
 });

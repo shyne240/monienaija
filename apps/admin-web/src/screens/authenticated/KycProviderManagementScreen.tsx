@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Field, PageHeader, StatusBadge } from '../../design-system/primitives';
+import { PremblyCredentialSettings } from '../../components/PremblyCredentialSettings';
 import { useAuthStore, type WorkforcePrincipal } from '../../store/auth-store';
 import {
   createKycRequestId,
   KycProviderGovernanceApi,
+  PremblyCredentialApi,
   KYC_PROVIDER_CAPABILITIES,
   type KycProviderCapability,
   type KycProviderCode,
@@ -11,6 +13,9 @@ import {
   type KycProviderHistory,
   type KycProviderProposal,
   type KycProviderWorkspace,
+  type PremblyConnectionTestResult,
+  type PremblyCredentialProposal,
+  type PremblyCredentialStatus,
 } from '../../services/kyc-governance-api';
 import './kyc-governance.css';
 
@@ -29,6 +34,10 @@ function copyConfiguration(value: KycProviderConfiguration): KycProviderConfigur
         enabled: value.providers.DOJAH.enabled,
         capabilities: [...value.providers.DOJAH.capabilities],
       },
+      PREMBLY: {
+        enabled: value.providers.PREMBLY.enabled,
+        capabilities: [...value.providers.PREMBLY.capabilities],
+      },
       SYNTHETIC: {
         enabled: value.providers.SYNTHETIC.enabled,
         capabilities: [...value.providers.SYNTHETIC.capabilities],
@@ -40,9 +49,13 @@ function copyConfiguration(value: KycProviderConfiguration): KycProviderConfigur
   };
 }
 
-const CANDIDATE_CAPABILITIES: Record<'MONNIFY' | 'DOJAH', readonly KycProviderCapability[]> = {
+const CANDIDATE_CAPABILITIES: Record<
+  'MONNIFY' | 'DOJAH' | 'PREMBLY',
+  readonly KycProviderCapability[]
+> = {
   MONNIFY: ['BVN', 'NIN'],
   DOJAH: ['BVN', 'NIN', 'ADDRESS_VERIFICATION', 'ENHANCED_DUE_DILIGENCE'],
+  PREMBLY: ['BVN', 'NIN'],
 };
 const CAPABILITY_LABELS: Record<KycProviderCapability, string> = {
   BVN: 'BVN identity-number check',
@@ -55,6 +68,7 @@ const ROUTE_OPTIONS: readonly { value: KycProviderCode | ''; label: string }[] =
   { value: '', label: 'Not routed' },
   { value: 'MONNIFY', label: 'Monnify (candidate, not dispatch-ready)' },
   { value: 'DOJAH', label: 'Dojah (candidate, not dispatch-ready)' },
+  { value: 'PREMBLY', label: 'Prembly (candidate, not dispatch-ready)' },
   { value: 'SYNTHETIC', label: 'Synthetic (test-only)' },
 ];
 const CANDIDATE_PROVIDERS = [
@@ -69,6 +83,12 @@ const CANDIDATE_PROVIDERS = [
     name: 'Dojah',
     readiness:
       'Documented BVN Validate and Advanced NIN are candidates only. Address verification and enhanced due diligence are requested operation families, not confirmed Dojah products or contracts; account entitlement and production controls remain unverified.',
+  },
+  {
+    code: 'PREMBLY',
+    name: 'Prembly',
+    readiness:
+      'BVN Basic and NIN Basic endpoints are documented. Sandbox and production API keys are separate, application-encrypted and checker-approved; production remains unavailable until explicit deployment release gates are set.',
   },
 ] as const;
 
@@ -101,6 +121,8 @@ const KycProviderManagementWorkspace: React.FC<
     'ROUTING_CHANGE',
   );
   const [retryPending, setRetryPending] = useState(false);
+  const [credentialGuard, setCredentialGuard] = useState(false);
+  const [credentialBusy, setCredentialBusy] = useState(false);
   const draftRef = useRef<KycProviderConfiguration | null>(null);
   const baselineRef = useRef<KycProviderConfiguration | null>(null);
   const pendingProposal = useRef<{
@@ -178,9 +200,14 @@ const KycProviderManagementWorkspace: React.FC<
     };
   }, [refresh]);
 
+  const reportCredentialGuard = useCallback((guarded: boolean, isBusy: boolean) => {
+    setCredentialGuard(guarded);
+    setCredentialBusy(isBusy);
+  }, []);
+
   useEffect(() => {
-    onGuardChange?.(dirty || busy || retryPending, busy);
-  }, [dirty, busy, retryPending, onGuardChange]);
+    onGuardChange?.(dirty || busy || retryPending || credentialGuard, busy || credentialBusy);
+  }, [dirty, busy, retryPending, credentialGuard, credentialBusy, onGuardChange]);
 
   const updateProvider = (
     code: KycProviderCode,
@@ -333,12 +360,13 @@ const KycProviderManagementWorkspace: React.FC<
             {notice}
           </Alert>
         )}
-        <Alert tone="warning" title="No credentials or live checks here">
-          This workspace never accepts, displays, stores, or submits provider secrets. A proposal
-          cannot satisfy the separate contract-review, credential, adapter, capability and live-call
-          release gates. Address verification and enhanced due diligence also have no active
-          evidence or tier-transition workflow here. Synthetic verification is test-only and is
-          never customer evidence.
+        <Alert tone="warning" title="Routing approval is not provider readiness">
+          The routing editor never accepts or exposes provider secrets. Prembly credentials are
+          managed separately below with encrypted, write-only, maker/checker governance. A routing
+          proposal cannot satisfy contract-review, credential, adapter, capability or live-call
+          release gates. Address verification and enhanced due diligence have no active evidence or
+          tier-transition workflow here. Synthetic verification is test-only and is never customer
+          evidence.
         </Alert>
       </div>
       {!workspace || !draft ? (
@@ -383,7 +411,9 @@ const KycProviderManagementWorkspace: React.FC<
                         ? 'Synthetic fixture'
                         : item.code === 'DOJAH'
                           ? 'Dojah'
-                          : 'Monnify'}
+                          : item.code === 'PREMBLY'
+                            ? 'Prembly'
+                            : 'Monnify'}
                     </h3>
                     <StatusBadge tone={item.ready ? 'success' : 'warning'}>
                       {item.ready
@@ -412,7 +442,9 @@ const KycProviderManagementWorkspace: React.FC<
                       ? 'Public documentation is not entitlement evidence. Account access, endpoint selection, and negotiated terms still require confirmation.'
                       : item.code === 'DOJAH'
                         ? 'Public documentation is not endpoint entitlement or account approval. BVN full-record Basic/Advance access is not assumed; the documented BVN Validate and Advanced NIN products still require account confirmation.'
-                        : 'Synthetic responses are not identity evidence and cannot establish a customer tier.'}
+                        : item.code === 'PREMBLY'
+                          ? 'Prembly Basic verification returns provider identity fields used only for server-side matching. Sandbox test keys never satisfy the production key, release, contract-review, or live-call gates.'
+                          : 'Synthetic responses are not identity evidence and cannot establish a customer tier.'}
                   </p>
                 </article>
               ))}
@@ -717,6 +749,7 @@ const KycProviderManagementWorkspace: React.FC<
           </section>
         </>
       )}
+      <PremblyCredentialSettings principal={principal} onGuardChange={reportCredentialGuard} />
     </main>
   );
 };

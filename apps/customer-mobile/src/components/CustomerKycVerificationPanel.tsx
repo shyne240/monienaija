@@ -29,6 +29,13 @@ async function newRequestId(): Promise<string> {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function providerLabel(provider: CustomerKycAvailability['provider']): string {
+  if (provider === 'PREMBLY') return 'Prembly';
+  if (provider === 'DOJAH') return 'Dojah';
+  if (provider === 'MONNIFY') return 'Monnify';
+  return 'Unavailable';
+}
+
 function workflowLock(workflow: CustomerKycWorkflowStatus | null, kind: CustomerKycKind) {
   const latest = workflow?.history.find((item) => item.kind === kind);
   if (!latest) return { latest: null, reason: null as string | null };
@@ -386,6 +393,9 @@ export const CustomerKycVerificationPanel: React.FC<Props> = ({
           ) : null}
           {availability?.status === 'AVAILABLE' && (!locked.reason || uncertainRetryAvailable) ? (
             <>
+              <Text style={styles.note}>
+                Verification provider: {providerLabel(availability.provider)}.
+              </Text>
               {availability.consentNotice ? (
                 <View style={styles.notice}>
                   <Text style={styles.noticeTitle}>

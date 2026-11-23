@@ -1,7 +1,7 @@
 import { ApiClient } from './api-client';
 
 export type CustomerKycKind = 'BVN' | 'NIN';
-export type CustomerKycProvider = 'MONNIFY' | 'DOJAH';
+export type CustomerKycProvider = 'MONNIFY' | 'DOJAH' | 'PREMBLY';
 export type CustomerKycCandidateStatus =
   | 'NOT_CONFIGURED'
   | 'PENDING'
@@ -60,7 +60,7 @@ export interface CustomerKycConsentInput {
   kind: CustomerKycKind;
   accepted: true;
   noticeVersion: string;
-  expectedProvider: 'MONNIFY' | 'DOJAH';
+  expectedProvider: CustomerKycProvider;
   expectedRouteVersion: number;
 }
 

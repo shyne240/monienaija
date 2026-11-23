@@ -201,6 +201,16 @@ export const environmentSchema = z
     ),
     KYC_PROVIDER_CONTRACTS_REVIEWED: booleanFromEnvironment.default(false),
     KYC_PROVIDER_LIVE_CALLS_ENABLED: booleanFromEnvironment.default(false),
+    // Prembly uses separate, application-encrypted sandbox and production keys. These release
+    // switches are independent of route approval and default closed.
+    PREMBLY_SANDBOX_CALLS_ENABLED: booleanFromEnvironment.default(false),
+    PREMBLY_PRODUCTION_RELEASE_ENABLED: booleanFromEnvironment.default(false),
+    KYC_PROVIDER_ENCRYPTION_KEYRING_JSON: optionalEnvironmentJson,
+    KYC_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .default('v1'),
     MONNIFY_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
     MONNIFY_API_KEY: optionalEnvironmentSecret,
     MONNIFY_SECRET_KEY: optionalEnvironmentSecret,
@@ -435,6 +445,64 @@ export const environmentSchema = z
           message: 'ROBASE_API_KEY must be a Robase live key (robe_ prefix, see docs.robase.dev)',
         });
       }
+    }
+
+    // Validate the independent Prembly credential keyring. It is deliberately separate from
+    // notification-provider encryption; release switches fail configuration validation if enabled
+    // without a usable key, while the default disabled posture remains bootable.
+    let hasValidKycProviderEncryptionKey = false;
+    if (config.KYC_PROVIDER_ENCRYPTION_KEYRING_JSON) {
+      try {
+        const parsed: unknown = JSON.parse(config.KYC_PROVIDER_ENCRYPTION_KEYRING_JSON);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+          throw new Error('KYC_PROVIDER_ENCRYPTION_KEYRING_JSON must be a JSON object');
+        const entries = Object.entries(parsed as Record<string, unknown>);
+        if (entries.length === 0)
+          throw new Error('KYC_PROVIDER_ENCRYPTION_KEYRING_JSON must contain a key version');
+        for (const [version, encoded] of entries) {
+          const normalized = typeof encoded === 'string' ? encoded.trim() : '';
+          const decoded = Buffer.from(normalized, 'base64');
+          if (
+            !/^[A-Za-z0-9._-]{1,64}$/.test(version) ||
+            typeof encoded !== 'string' ||
+            decoded.length !== 32 ||
+            decoded.toString('base64') !== normalized
+          )
+            throw new Error(
+              'Every KYC provider encryption key must be a versioned 32-byte base64 value',
+            );
+        }
+        if (!(parsed as Record<string, unknown>)[config.KYC_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION])
+          throw new Error(
+            'KYC_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION is missing from the KYC keyring',
+          );
+        hasValidKycProviderEncryptionKey = true;
+      } catch (error) {
+        context.addIssue({
+          code: 'custom',
+          path: ['KYC_PROVIDER_ENCRYPTION_KEYRING_JSON'],
+          message:
+            error instanceof Error ? error.message : 'Invalid KYC provider encryption keyring',
+        });
+      }
+    }
+    if (
+      (config.PREMBLY_SANDBOX_CALLS_ENABLED || config.PREMBLY_PRODUCTION_RELEASE_ENABLED) &&
+      !hasValidKycProviderEncryptionKey
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KYC_PROVIDER_ENCRYPTION_KEYRING_JSON'],
+        message:
+          'KYC_PROVIDER_ENCRYPTION_KEYRING_JSON is required when Prembly sandbox calls or production release is enabled',
+      });
+    }
+    if (config.PREMBLY_PRODUCTION_RELEASE_ENABLED && config.NODE_ENV !== 'production') {
+      context.addIssue({
+        code: 'custom',
+        path: ['PREMBLY_PRODUCTION_RELEASE_ENABLED'],
+        message: 'Prembly production release requires NODE_ENV=production',
+      });
     }
 
     // Validate optional server-side AES-256-GCM keyring/key for governed provider secrets.

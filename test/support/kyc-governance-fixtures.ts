@@ -71,6 +71,7 @@ export const ISOLATED_SYNTHETIC_KYC_CONFIGURATION = {
   providers: {
     MONNIFY: { enabled: false, capabilities: [] },
     DOJAH: { enabled: false, capabilities: [] },
+    PREMBLY: { enabled: false, capabilities: [] },
     SYNTHETIC: { enabled: true, capabilities: ['BVN', 'NIN'] },
   },
   routes: {

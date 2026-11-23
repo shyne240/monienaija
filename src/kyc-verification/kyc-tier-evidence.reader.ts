@@ -71,7 +71,7 @@ export class KycTierEvidenceReader {
         JOIN kyc_identity_claims ic ON ic.attempt_id=a.id AND ic.customer_id=a.customer_id
           AND ic.kind=a.kind
         WHERE a.customer_id=$1 AND a.identity_revision=$2::bigint
-          AND a.provider IN ('MONNIFY','DOJAH')
+          AND a.provider IN ('MONNIFY','DOJAH','PREMBLY')
           AND a.provider_route_version IS NOT NULL
           AND c.session_id IS NOT NULL AND c.withdrawn_at IS NULL
           AND c.expires_at>clock_timestamp()

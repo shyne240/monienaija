@@ -863,7 +863,8 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     functionCode: 'kyc.provider.propose',
     domain: 'COMPLIANCE',
     name: 'Propose KYC provider configuration',
-    description: 'Propose KYC provider routing under independent approval.',
+    description:
+      'Propose KYC provider routing and encrypted Prembly credential changes under independent approval.',
     sensitivity: PRIVILEGED,
     v1Status: IMPLEMENTED,
     assignable: true,
@@ -874,7 +875,8 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     functionCode: 'kyc.provider.approve',
     domain: 'COMPLIANCE',
     name: 'Approve KYC provider configuration',
-    description: 'Independently approve KYC provider routing.',
+    description:
+      'Independently approve KYC provider routing and encrypted Prembly credential changes.',
     sensitivity: PRIVILEGED,
     v1Status: IMPLEMENTED,
     assignable: true,

@@ -5,18 +5,24 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { KycProviderGovernanceController } from '../src/kyc-verification/kyc-provider-governance.controller';
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import { KycGovernanceProtectedAuthority1785753600300 } from '../src/migrations/1785753600300-KycGovernanceProtectedAuthority';
+import { PremblyKycCredentialGovernance1785753600507 } from '../src/migrations/1785753600507-PremblyKycCredentialGovernance';
 import {
   KycProviderGovernanceService,
   validateProviderConfiguration,
 } from '../src/kyc-verification/kyc-provider-governance.service';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import { ProtectedAuthorityService } from '../src/authorization/protected-authority.service';
+import { PremblyCredentialGovernanceService } from '../src/kyc-verification/prembly-credential-governance.service';
+import { KycProviderSecretEncryptionService } from '../src/kyc-verification/kyc-provider-secret-encryption.service';
+import type { PremblyTransport } from '../src/identity-verification/prembly-transport';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
+import { canonical } from '../src/authorization/workforce-crypto';
 import { createKycAuthorityConnections } from './support/kyc-isolated-authority';
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
 // developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
@@ -93,6 +99,7 @@ beforeAll(async () => {
   )`);
   const authorityRunner = db.createQueryRunner();
   await new KycGovernanceProtectedAuthority1785753600300().up(authorityRunner);
+  await new PremblyKycCredentialGovernance1785753600507().up(authorityRunner);
   await authorityRunner.release();
   svc = new KycProviderGovernanceService(
     db,
@@ -500,6 +507,7 @@ test('Dojah address and enhanced-due-diligence routing require capability-specif
     {
       MONNIFY: false,
       DOJAH: true,
+      PREMBLY: false,
       SYNTHETIC: false,
       capabilities: {
         DOJAH: {
@@ -527,4 +535,209 @@ test('Dojah address and enhanced-due-diligence routing require capability-specif
       }),
     ]),
   );
+});
+
+test('PREMBLY BVN/NIN routing stays disabled until runtime credential and release readiness pass', async () => {
+  const current = await svc.view(maker);
+  const candidate = {
+    providers: {
+      MONNIFY: { enabled: false, capabilities: [] },
+      DOJAH: { enabled: false, capabilities: [] },
+      PREMBLY: { enabled: true, capabilities: ['BVN', 'NIN'] },
+      SYNTHETIC: { enabled: false, capabilities: [] },
+    },
+    routes: {
+      BVN: { primary: 'PREMBLY', fallback: null },
+      NIN: { primary: 'PREMBLY', fallback: null },
+      ADDRESS_VERIFICATION: { primary: null, fallback: null },
+      ENHANCED_DUE_DILIGENCE: { primary: null, fallback: null },
+    },
+  };
+  const proposal = await svc.propose(maker, {
+    requestId: randomUUID(),
+    expectedVersion: current.version,
+    configuration: candidate,
+    reason: 'ROUTING_CHANGE',
+  });
+  await svc.decide(checker, proposal.id, true);
+  await expect(svc.resolve('BVN')).rejects.toMatchObject({ code: 'DISABLED' });
+
+  const release = { enabled: false };
+  const readiness = new KycProviderGovernanceService(
+    db,
+    new AuthorizationService(db, { record: jest.fn().mockResolvedValue(undefined) } as never),
+    undefined,
+    {
+      MONNIFY: false,
+      DOJAH: false,
+      PREMBLY: false,
+      SYNTHETIC: false,
+      isReady: (provider) => provider === 'PREMBLY' && release.enabled,
+    },
+  );
+  await expect(readiness.resolve('BVN')).rejects.toMatchObject({ code: 'DISABLED' });
+  release.enabled = true;
+  await expect(readiness.resolve('BVN')).resolves.toEqual({
+    provider: 'PREMBLY',
+    version: current.version + 1,
+  });
+  const prembly = (await readiness.view(maker)).catalogue.find((item) => item.code === 'PREMBLY');
+  expect(prembly?.ready).toBe(true);
+  expect(prembly?.confirmedCapabilities).toEqual([]);
+});
+
+test('Prembly credential proposals are encrypted, maker/checker-bound, masked, and environment-isolated', async () => {
+  const syntheticKey = 'synthetic-prem-bly-api-key-01';
+  const sandboxKey = 'synthetic-prem-bly-sandbox-key-02';
+  const flags: Record<string, unknown> = {
+    NODE_ENV: 'development',
+    KYC_PROVIDER_CONTRACTS_REVIEWED: false,
+    KYC_PROVIDER_LIVE_CALLS_ENABLED: false,
+    KYC_CUSTOMER_VERIFICATION_ENABLED: false,
+    PREMBLY_SANDBOX_CALLS_ENABLED: false,
+    PREMBLY_PRODUCTION_RELEASE_ENABLED: false,
+    KYC_PROVIDER_ENCRYPTION_KEYRING_JSON: JSON.stringify({
+      v1: Buffer.alloc(32, 21).toString('base64'),
+    }),
+    KYC_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+  };
+  const configService = {
+    get: (key: string) => flags[key],
+  } as unknown as ConfigService;
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const authorization = new AuthorizationService(db, audit as never);
+  const encryption = new KycProviderSecretEncryptionService(configService);
+  const transport = jest
+    .fn<ReturnType<PremblyTransport>, Parameters<PremblyTransport>>()
+    .mockResolvedValue({ status: 500, body: null });
+  const credentials = new PremblyCredentialGovernanceService(
+    db,
+    authorization,
+    new ProtectedAuthorityService(db),
+    encryption,
+    audit as never,
+    configService as never,
+    transport,
+  );
+
+  await expect(credentials.isRuntimeReady()).resolves.toBe(false);
+  const requestId = randomUUID();
+  const proposal = await credentials.propose(maker, {
+    requestId,
+    environment: 'sandbox',
+    operation: 'SET',
+    apiKey: syntheticKey,
+  });
+  expect(proposal.replay).toBe(false);
+  await expect(
+    credentials.propose(maker, {
+      requestId,
+      environment: 'sandbox',
+      operation: 'SET',
+      apiKey: syntheticKey,
+    }),
+  ).resolves.toEqual({ id: proposal.id, replay: true });
+
+  const stored = await db.query<Array<{ credential_change: { envelope: string } }>>(
+    `SELECT credential_change FROM kyc_provider_change_proposals WHERE id=$1`,
+    [proposal.id],
+  );
+  expect(stored[0]?.credential_change.envelope).toMatch(/^MNKPS1:v1:/);
+  expect(stored[0]?.credential_change.envelope).not.toContain(syntheticKey);
+  const proposalProjection = await credentials.proposals(maker);
+  expect(JSON.stringify(proposalProjection)).not.toContain('MNKPS1:');
+  expect(JSON.stringify(proposalProjection)).not.toContain(syntheticKey);
+  const decisionRows = await db.query<
+    Array<{
+      expected_version: number;
+      route_version: number;
+      expected_credential_version: number;
+      credential_version: number;
+      maker_id: string;
+      state: string;
+      live: boolean;
+      configuration_matches: boolean;
+      request_id: string;
+      configuration: unknown;
+      credential_change: unknown;
+      fingerprint: string;
+    }>
+  >(
+    `SELECT p.expected_version,c.version AS route_version,
+        p.expected_credential_version,pc.version AS credential_version,p.maker_id,p.state,
+        p.expires_at>clock_timestamp() AS live,p.configuration=c.configuration AS configuration_matches,
+        p.request_id,p.configuration,p.credential_change,p.fingerprint
+      FROM kyc_provider_change_proposals p
+      JOIN kyc_provider_configuration c ON c.singleton=true
+      JOIN kyc_provider_credentials pc ON pc.provider='PREMBLY' AND pc.environment='sandbox'
+      WHERE p.id=$1`,
+    [proposal.id],
+  );
+  const decisionRow = decisionRows[0]!;
+  const expectedFingerprint = createHash('sha256')
+    .update(
+      canonical({
+        requestId: decisionRow.request_id,
+        expectedVersion: decisionRow.expected_version,
+        expectedCredentialVersion: decisionRow.expected_credential_version,
+        configuration: decisionRow.configuration,
+        change: decisionRow.credential_change,
+        maker: decisionRow.maker_id,
+      }),
+    )
+    .digest('hex');
+  expect({
+    routeVersion: decisionRow.expected_version === decisionRow.route_version,
+    credentialVersion: decisionRow.expected_credential_version === decisionRow.credential_version,
+    makerChecker: decisionRow.maker_id !== checker.principalId,
+    stateAndExpiry: decisionRow.state === 'REQUESTED' && decisionRow.live,
+    configuration: decisionRow.configuration_matches,
+    fingerprint: decisionRow.fingerprint.trim() === expectedFingerprint,
+  }).toEqual({
+    routeVersion: true,
+    credentialVersion: true,
+    makerChecker: true,
+    stateAndExpiry: true,
+    configuration: true,
+    fingerprint: true,
+  });
+  await expect(credentials.decide(maker, proposal.id, true)).rejects.toMatchObject({
+    code: 'BLOCKED',
+  });
+  await expect(credentials.decide(checker, proposal.id, true)).resolves.toEqual({
+    credentialVersion: 1,
+    state: 'APPROVED',
+  });
+
+  const maskedStatus = await credentials.status(maker);
+  expect(maskedStatus.sandbox).toMatchObject({
+    configured: true,
+    version: 1,
+    fingerprint: '****y-01',
+  });
+  expect(JSON.stringify(maskedStatus)).not.toContain('MNKPS1:');
+  expect(JSON.stringify(maskedStatus)).not.toContain(syntheticKey);
+  await expect(credentials.isRuntimeReady()).resolves.toBe(false);
+
+  flags.KYC_PROVIDER_CONTRACTS_REVIEWED = true;
+  flags.KYC_PROVIDER_LIVE_CALLS_ENABLED = true;
+  flags.KYC_CUSTOMER_VERIFICATION_ENABLED = true;
+  flags.PREMBLY_SANDBOX_CALLS_ENABLED = true;
+  await expect(credentials.getRuntimeApiKey()).resolves.toBe(syntheticKey);
+  await expect(credentials.isRuntimeReady()).resolves.toBe(true);
+
+  flags.NODE_ENV = 'production';
+  flags.PREMBLY_PRODUCTION_RELEASE_ENABLED = true;
+  await expect(credentials.getRuntimeApiKey()).resolves.toBeNull();
+  const productionProposal = await credentials.propose(maker, {
+    requestId: randomUUID(),
+    environment: 'production',
+    operation: 'SET',
+    apiKey: sandboxKey,
+  });
+  await credentials.decide(checker, productionProposal.id, true);
+  await expect(credentials.getRuntimeApiKey()).resolves.toBe(sandboxKey);
+  flags.NODE_ENV = 'development';
+  await expect(credentials.getRuntimeApiKey()).resolves.toBe(syntheticKey);
+  expect(transport).not.toHaveBeenCalled();
 });
