@@ -159,9 +159,28 @@ export class PrivilegedActionApprovalService {
 
     const [rows, total] = await qb.skip(offset).take(limit).getManyAndCount();
     return {
-      items: rows.map((a) => this.toView(a)),
+      items: rows.map((a) => this.toAuthorizedListView(a, principal)),
       total,
     };
+  }
+
+  private toAuthorizedListView(
+    approval: PrivilegedActionApproval,
+    principal: AuthorizationPrincipal,
+  ): PrivilegedActionApprovalView {
+    const view = this.toView(approval);
+    const def = governedAction(approval.actionType);
+    if (
+      def &&
+      def.approvingFunctionCodes.length > 0 &&
+      !principal.scopes.includes('privileged:execute') &&
+      !def.approvingFunctionCodes.every((fn) => principal.scopes.includes(fn))
+    ) {
+      const { requestDetails: _omitted, ...restPolicy } = view.policy ?? {};
+      void _omitted;
+      return { ...view, policy: restPolicy };
+    }
+    return view;
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -858,7 +877,7 @@ export class PrivilegedActionApprovalService {
       reason: approval.reason,
       approvalScope: approval.approvalScope,
       requiredAssurance: approval.requiredAssurance,
-      policy: approval.policy,
+      policy: redactRecord(approval.policy ?? {}),
       status: approval.status,
       isEmergency: approval.isEmergency,
       requestedAt: approval.requestedAt,

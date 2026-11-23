@@ -9,6 +9,7 @@ import type { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
 import type { Environment } from '../config/environment';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { InstitutionKycLimitPolicyService } from './institution-kyc-limit-policy.service';
 import { LimitFailureCode, dimensionToFailureCode } from './limit-error.codes';
@@ -99,6 +100,8 @@ export interface EnforceResult {
   customerKycTier?: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
 }
 
+const PRINCIPAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** How a single admission treats missing limit/tier configuration. */
 export type TierEnforcementMode = 'ENFORCED' | 'LEGACY_UNENFORCED';
 
@@ -111,6 +114,7 @@ export class LimitEnforcementService {
     @Optional() private readonly tierLimitPolicies?: InstitutionKycLimitPolicyService,
     @Optional() private readonly customerEligibility?: CustomerFinancialEligibilityService,
     @Optional() config?: ConfigService<Environment, true>,
+    @Optional() private readonly customerClassResolver?: CustomerClassResolverService,
   ) {
     this.profile = config?.get('NODE_ENV', { infer: true }) ?? process.env.NODE_ENV;
   }
@@ -212,11 +216,23 @@ export class LimitEnforcementService {
     // Preserve existing assignment-based product/agent profiles in addition to the approved
     // tier profile. All applicable rules are conjunctive; the policy profile never silently
     // replaces an existing product or agent control.
+    const resolvedClassCode =
+      principalType === 'CUSTOMER' &&
+      this.customerClassResolver &&
+      PRINCIPAL_UUID_PATTERN.test(principalId)
+        ? await this.customerClassResolver.resolveClassCodeInManager(manager, principalId, now)
+        : null;
+    const segmentCodes = [
+      ...new Set([
+        ...(input.segmentCodes ?? []),
+        ...(resolvedClassCode ? [resolvedClassCode] : []),
+      ]),
+    ];
     const resolved = await this.profileResolver.resolve(manager, {
       principalType,
       principalId,
       agentClassId: input.agentClassId ?? null,
-      segmentCodes: input.segmentCodes ?? [],
+      segmentCodes,
       now,
     });
     const profileCodes = [

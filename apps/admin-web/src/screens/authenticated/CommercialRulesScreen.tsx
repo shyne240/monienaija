@@ -20,7 +20,11 @@ import {
   windowState,
 } from './commercial-registry-contract';
 import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
-import { AUTHORING_CONTRACTS, authoringActions, type AuthoringDomain } from './commercial-authoring-contract';
+import {
+  AUTHORING_CONTRACTS,
+  authoringActions,
+  type AuthoringDomain,
+} from './commercial-authoring-contract';
 import { CommercialAuthoringDrawer } from './CommercialAuthoringDrawer';
 import { CommercialPreviewPanel } from './CommercialPreviewPanel';
 import './operational-surfaces.css';
@@ -373,7 +377,15 @@ const RegistrySection: React.FC<{
     mode: 'create' | 'modify';
     record: DataRecord | null;
   } | null>(null);
+  const [profileEditor, setProfileEditor] = useState<{
+    mode: 'create' | 'modify';
+    record: DataRecord | null;
+  } | null>(null);
   const principal = useAuthStore((state) => state.principal);
+  const canModifyLimitProfiles =
+    endpoint === '/internal/limit-profiles' &&
+    Boolean(principal?.scopes.includes('limit.modify')) &&
+    principal?.readOnlyPrincipal !== true;
   const requestId = useRef(0);
   const load = async () => {
     const id = ++requestId.current;
@@ -509,6 +521,15 @@ const RegistrySection: React.FC<{
                 </>
               );
             })()}
+          {canModifyLimitProfiles && (
+            <Button
+              size="sm"
+              aria-label="Create limit profile"
+              onClick={() => setProfileEditor({ mode: 'create', record: null })}
+            >
+              New limit profile
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => void load()}
@@ -737,6 +758,16 @@ const RegistrySection: React.FC<{
               </Button>
             </footer>
           )}
+          {canModifyLimitProfiles && (
+            <footer className="commercial-detail__footer">
+              <Button
+                size="sm"
+                onClick={() => setProfileEditor({ mode: 'modify', record: selected })}
+              >
+                Edit limit profile
+              </Button>
+            </footer>
+          )}
         </WorkspaceDrawer>
       )}
       {authoring && authoringDomain && (
@@ -751,7 +782,194 @@ const RegistrySection: React.FC<{
           }}
         />
       )}
+      {profileEditor && canModifyLimitProfiles && (
+        <LimitProfileEditorDrawer
+          mode={profileEditor.mode}
+          record={profileEditor.record}
+          onClose={() => setProfileEditor(null)}
+          onSaved={() => {
+            setProfileEditor(null);
+            setSelected(null);
+            void load();
+          }}
+        />
+      )}
     </section>
+  );
+};
+
+const LimitProfileEditorDrawer: React.FC<{
+  mode: 'create' | 'modify';
+  record: DataRecord | null;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ mode, record, onClose, onSaved }) => {
+  const [code, setCode] = useState(typeof record?.code === 'string' ? record.code : '');
+  const [name, setName] = useState(typeof record?.name === 'string' ? record.name : '');
+  const [description, setDescription] = useState(
+    typeof record?.description === 'string' ? record.description : '',
+  );
+  const [kind, setKind] = useState(typeof record?.kind === 'string' ? record.kind : 'CUSTOMER');
+  const [status, setStatus] = useState(
+    typeof record?.status === 'string' ? record.status : 'ACTIVE',
+  );
+  const [enabled, setEnabled] = useState(
+    typeof record?.enabled === 'boolean' ? record.enabled : true,
+  );
+  const [configurationStatus, setConfigurationStatus] = useState(
+    typeof record?.configurationStatus === 'string' ? record.configurationStatus : 'CONFIGURED',
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      if (mode === 'create') {
+        await ApiClient.post('/internal/limit-profiles', {
+          code: code.trim().toUpperCase(),
+          name: name.trim(),
+          description: description.trim() || null,
+          kind,
+          status,
+          enabled,
+          configurationStatus,
+        });
+      } else {
+        const targetCode = String(record?.code ?? '')
+          .trim()
+          .toUpperCase();
+        await ApiClient.patch(`/internal/limit-profiles/${encodeURIComponent(targetCode)}`, {
+          name: name.trim(),
+          description: description.trim() || null,
+          kind,
+          status,
+          enabled,
+          configurationStatus,
+          version: Number(record?.version ?? 1),
+        });
+      }
+      onSaved();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not save limit profile.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <WorkspaceDrawer
+      label={mode === 'create' ? 'Create limit profile' : 'Edit limit profile'}
+      className="commercial-detail"
+      onDismiss={onClose}
+    >
+      <header className="commercial-detail__header">
+        <div>
+          <p className="commercial-kicker">LIMIT CATALOGUE</p>
+          <h2>{mode === 'create' ? 'New limit profile' : `Edit ${String(record?.code ?? '')}`}</h2>
+        </div>
+        <Button size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </header>
+      <form onSubmit={submit} className="commercial-detail__body">
+        {err && (
+          <div className="commercial-state commercial-state--error" role="alert">
+            {err}
+          </div>
+        )}
+        <label className="commercial-filter-field">
+          Profile code
+          <input
+            aria-label="Limit profile code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            disabled={mode === 'modify' || busy}
+            pattern="[A-Za-z0-9_]{3,80}"
+            required
+          />
+        </label>
+        <label className="commercial-filter-field">
+          Profile name
+          <input
+            aria-label="Limit profile name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+            required
+          />
+        </label>
+        <label className="commercial-filter-field">
+          Description
+          <input
+            aria-label="Limit profile description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <label className="commercial-filter-field">
+          Profile kind
+          <select
+            aria-label="Limit profile kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+            disabled={busy}
+          >
+            <option value="CUSTOMER">CUSTOMER</option>
+            <option value="AGENT">AGENT</option>
+            <option value="SYSTEM">SYSTEM</option>
+            <option value="UNIVERSAL">UNIVERSAL</option>
+          </select>
+        </label>
+        <label className="commercial-filter-field">
+          Profile status
+          <select
+            aria-label="Limit profile status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            disabled={busy}
+          >
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="DISABLED">DISABLED</option>
+            <option value="DEPRECATED">DEPRECATED</option>
+          </select>
+        </label>
+        <label className="commercial-filter-field">
+          Configuration status
+          <select
+            aria-label="Limit profile configuration status"
+            value={configurationStatus}
+            onChange={(e) => setConfigurationStatus(e.target.value)}
+            disabled={busy}
+          >
+            <option value="CONFIGURED">CONFIGURED</option>
+            <option value="NOT_CONFIGURED">NOT_CONFIGURED</option>
+            <option value="DISABLED">DISABLED</option>
+          </select>
+        </label>
+        <label className="commercial-filter-field">
+          Enabled
+          <select
+            aria-label="Limit profile enabled"
+            value={enabled ? 'true' : 'false'}
+            onChange={(e) => setEnabled(e.target.value === 'true')}
+            disabled={busy}
+          >
+            <option value="true">Enabled</option>
+            <option value="false">Disabled</option>
+          </select>
+        </label>
+        <footer className="commercial-detail__footer">
+          <Button type="submit" size="sm" disabled={busy}>
+            {busy ? 'Saving…' : mode === 'create' ? 'Create profile' : 'Save profile'}
+          </Button>
+        </footer>
+      </form>
+    </WorkspaceDrawer>
   );
 };
 

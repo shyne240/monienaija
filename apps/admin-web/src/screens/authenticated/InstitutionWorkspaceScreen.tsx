@@ -8,6 +8,7 @@ import {
   ScrollRegion,
   StatusBadge,
 } from '../../design-system/primitives';
+import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import {
   InstitutionAdminApi,
@@ -56,6 +57,7 @@ type TabKey =
   | 'workforce'
   | 'enrolments'
   | 'accounts'
+  | 'kycLimits'
   | 'activity';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -65,6 +67,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'workforce', label: 'Workforce access' },
   { key: 'enrolments', label: 'Customer enrolments' },
   { key: 'accounts', label: 'Accounts & attribution' },
+  { key: 'kycLimits', label: 'KYC tier-limit policy' },
   { key: 'activity', label: 'Activity' },
 ];
 
@@ -209,6 +212,9 @@ export const InstitutionWorkspaceScreen: React.FC<InstitutionWorkspaceScreenProp
         {tab === 'workforce' ? <InstitutionWorkforceTab institution={institution} /> : null}
         {tab === 'enrolments' ? <InstitutionEnrolmentsTab institution={institution} /> : null}
         {tab === 'accounts' ? <InstitutionAccountsTab institution={institution} /> : null}
+        {tab === 'kycLimits' ? (
+          <InstitutionKycLimitPolicyTab institution={institution} scopes={scopes} />
+        ) : null}
         {tab === 'activity' ? <ActivityTab institution={institution} scopes={scopes} /> : null}
       </div>
     </div>
@@ -1036,6 +1042,299 @@ const ActivityTab: React.FC<{ institution: InstitutionSummary; scopes: readonly 
               </tbody>
             </table>
           </ScrollRegion>
+        )}
+      </section>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------- kyc tier-limit policy
+
+const InstitutionKycLimitPolicyTab: React.FC<{
+  institution: InstitutionSummary;
+  scopes: string[];
+}> = ({ institution, scopes }) => {
+  const { principal } = useAuthStore();
+  const canView = scopes.includes('limit.view') || scopes.includes('institution.view');
+  const canPropose =
+    scopes.includes('limit.modify') &&
+    principal?.assuranceLevel === 'MFA' &&
+    principal?.readOnlyPrincipal !== true;
+  const canDecide =
+    scopes.includes('privileged:approve') &&
+    principal?.assuranceLevel === 'MFA' &&
+    principal?.readOnlyPrincipal !== true;
+
+  const basePath = `/internal/institutions/${encodeURIComponent(institution.id)}/kyc-tier-limit-policy`;
+  const policyState = useConsoleData<{
+    institutionId?: string;
+    enforcementEnabled?: boolean;
+    current?: {
+      version: number;
+      state: string;
+      definition: {
+        effectiveFrom?: string;
+        effectiveUntil?: string | null;
+        mappings?: Array<{
+          product: string;
+          currency: string;
+          serviceClass: string | null;
+          tiers: Record<string, { disposition: string; profileCode?: string | null }>;
+        }>;
+      };
+    } | null;
+  } | null>(
+    () => (canView ? ApiClient.get(basePath) : Promise.resolve(null)),
+    [basePath, canView],
+    'Institutional KYC tier-limit policy could not be loaded.',
+  );
+
+  const proposalsState = useConsoleData<
+    Array<{
+      id: string;
+      version: number;
+      state: string;
+      reason: string;
+      proposedBy: string;
+      proposedAt: string;
+    }>
+  >(
+    () => (canView ? ApiClient.get(`${basePath}/proposals`) : Promise.resolve([])),
+    [basePath, canView],
+    'Institutional KYC tier-limit policy proposals could not be loaded.',
+  );
+
+  const [product, setProduct] = useState('WALLET_TRANSFER');
+  const [currency, setCurrency] = useState('NGN');
+  const [level1Profile, setLevel1Profile] = useState('TIER_1_STANDARD');
+  const [level2Profile, setLevel2Profile] = useState('TIER_2_STANDARD');
+  const [level3Profile, setLevel3Profile] = useState('TIER_3_STANDARD');
+  const [effectiveFrom, setEffectiveFrom] = useState('2026-01-01T00:00:00.000Z');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const currentVersion = policyState.data?.current?.version ?? 0;
+
+  const submitProposal = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canPropose || busy) return;
+    setBusy(true);
+    setErr(null);
+    setMessage(null);
+    try {
+      await ApiClient.post(`${basePath}/proposals`, {
+        requestId: `req-${Date.now()}`,
+        expectedVersion: currentVersion,
+        reason: reason.trim(),
+        definition: {
+          effectiveFrom: effectiveFrom.trim(),
+          effectiveUntil: null,
+          mappings: [
+            {
+              product: product.trim().toUpperCase(),
+              currency: currency.trim().toUpperCase(),
+              serviceClass: null,
+              tiers: {
+                LEVEL_1: {
+                  disposition: 'PROFILE',
+                  profileCode: level1Profile.trim().toUpperCase(),
+                },
+                LEVEL_2: {
+                  disposition: 'PROFILE',
+                  profileCode: level2Profile.trim().toUpperCase(),
+                },
+                LEVEL_3: {
+                  disposition: 'PROFILE',
+                  profileCode: level3Profile.trim().toUpperCase(),
+                },
+              },
+            },
+          ],
+        },
+      });
+      setMessage('Institutional KYC tier-limit policy proposal submitted for checker review.');
+      setReason('');
+      policyState.reload();
+      proposalsState.reload();
+    } catch (error) {
+      setErr(describeError(error, 'Could not submit KYC tier-limit policy proposal.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const decideProposal = async (proposalId: string, action: 'approve' | 'reject') => {
+    if (!canDecide || busy) return;
+    setBusy(true);
+    setErr(null);
+    setMessage(null);
+    try {
+      await ApiClient.post(`${basePath}/proposals/${encodeURIComponent(proposalId)}/${action}`, {});
+      setMessage(
+        action === 'approve'
+          ? `Proposal ${proposalId} approved and activated.`
+          : `Proposal ${proposalId} rejected.`,
+      );
+      policyState.reload();
+      proposalsState.reload();
+    } catch (error) {
+      setErr(describeError(error, `Could not ${action} proposal.`));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mn-inst__stack">
+      <section className="mn-inst__card" aria-label="Institutional KYC tier-limit policy">
+        <h3 className="mn-inst__card-title">Institutional KYC tier-limit policy</h3>
+        <p className="mn-inst__hint">
+          Maps verified customer KYC tiers (<code>LEVEL_1</code>, <code>LEVEL_2</code>,{' '}
+          <code>LEVEL_3</code>) to limit profiles for this institution. Enforced conjunctively with
+          product and customer-class limit assignments.
+        </p>
+        {err && (
+          <Alert tone="danger" title="Policy operation failed">
+            {err}
+          </Alert>
+        )}
+        {message && (
+          <Alert tone="success" title="Policy updated">
+            {message}
+          </Alert>
+        )}
+        {policyState.data?.current ? (
+          <div>
+            <p>
+              <strong>Active policy version:</strong> v{policyState.data.current.version} (
+              {policyState.data.current.state}) · Runtime enforcement:{' '}
+              {policyState.data.enforcementEnabled ? 'Enabled' : 'Inactive'}
+            </p>
+          </div>
+        ) : (
+          <p className="mn-inst__hint">
+            No approved institutional KYC tier-limit policy is published yet (expectedVersion 0).
+          </p>
+        )}
+      </section>
+
+      <section className="mn-inst__card" aria-label="Propose KYC tier-limit policy">
+        <h3 className="mn-inst__card-title">Propose tier-limit mapping</h3>
+        <form onSubmit={submitProposal} className="mn-inst__form">
+          <Field label="Product code" htmlFor="kyc-limit-product">
+            <input
+              id="kyc-limit-product"
+              aria-label="Tier policy product code"
+              value={product}
+              onChange={(e) => setProduct(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="Currency" htmlFor="kyc-limit-currency">
+            <input
+              id="kyc-limit-currency"
+              aria-label="Tier policy currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="LEVEL_1 limit profile" htmlFor="kyc-limit-l1">
+            <input
+              id="kyc-limit-l1"
+              aria-label="LEVEL_1 limit profile code"
+              value={level1Profile}
+              onChange={(e) => setLevel1Profile(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="LEVEL_2 limit profile" htmlFor="kyc-limit-l2">
+            <input
+              id="kyc-limit-l2"
+              aria-label="LEVEL_2 limit profile code"
+              value={level2Profile}
+              onChange={(e) => setLevel2Profile(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="LEVEL_3 limit profile" htmlFor="kyc-limit-l3">
+            <input
+              id="kyc-limit-l3"
+              aria-label="LEVEL_3 limit profile code"
+              value={level3Profile}
+              onChange={(e) => setLevel3Profile(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="Effective from (ISO-8601)" htmlFor="kyc-limit-effective">
+            <input
+              id="kyc-limit-effective"
+              aria-label="Tier policy effective from"
+              value={effectiveFrom}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Field label="Reason" htmlFor="kyc-limit-reason">
+            <input
+              id="kyc-limit-reason"
+              aria-label="Tier policy reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={!canPropose || busy}
+              required
+            />
+          </Field>
+          <Button type="submit" variant="primary" disabled={!canPropose || busy || !reason.trim()}>
+            {busy ? 'Submitting…' : 'Propose tier-limit policy'}
+          </Button>
+        </form>
+      </section>
+
+      <section className="mn-inst__card" aria-label="Pending KYC tier-limit proposals">
+        <h3 className="mn-inst__card-title">Pending proposals</h3>
+        {(proposalsState.data ?? []).length === 0 ? (
+          <p className="mn-inst__hint">No pending KYC tier-limit policy proposals.</p>
+        ) : (
+          <ul>
+            {(proposalsState.data ?? []).map((p) => {
+              const isSelf = p.proposedBy === principal?.principalId;
+              return (
+                <li key={p.id}>
+                  <strong>
+                    v{p.version} · {p.state}
+                  </strong>{' '}
+                  — {p.reason} (proposed by <code>{p.proposedBy}</code>){' '}
+                  {p.state === 'PENDING' && canDecide && (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={busy || isSelf}
+                        onClick={() => void decideProposal(p.id, 'approve')}
+                      >
+                        Approve proposal
+                      </Button>{' '}
+                      <Button
+                        size="sm"
+                        disabled={busy || isSelf}
+                        onClick={() => void decideProposal(p.id, 'reject')}
+                      >
+                        Reject proposal
+                      </Button>
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
     </div>

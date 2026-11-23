@@ -507,3 +507,71 @@ test('assignment detail uses returned data, restores focus and clears on filter 
   expect(ApiClient.post).not.toHaveBeenCalled();
   expect(ApiClient.patch).not.toHaveBeenCalled();
 });
+
+test('assigns and toggles a customer-class SEGMENT limit assignment with precedence and effective window', async () => {
+  const segmentRow = {
+    id: 'seg-assign-1',
+    subjectType: 'SEGMENT',
+    subjectId: null,
+    segmentCode: 'PREMIUM',
+    limitProfileCode: 'CUSTOMER_PREMIUM',
+    isActive: true,
+    version: 1,
+  };
+  (ApiClient.get as jest.Mock).mockResolvedValue({ data: [segmentRow] });
+  (ApiClient.post as jest.Mock).mockResolvedValue({ ...segmentRow, id: 'seg-assign-2' });
+  (ApiClient.patch as jest.Mock).mockResolvedValue({
+    ...segmentRow,
+    isActive: false,
+    version: 2,
+  });
+
+  render(<LimitAssignmentScreen />);
+  expect(await screen.findByText('SEGMENT: PREMIUM')).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Policy subject type'), {
+    target: { value: 'SEGMENT' },
+  });
+  fireEvent.change(screen.getByLabelText('Segment code'), {
+    target: { value: 'premium' },
+  });
+  fireEvent.change(screen.getByLabelText('Policy limit profile code'), {
+    target: { value: 'customer_premium' },
+  });
+  fireEvent.change(screen.getByLabelText('Assignment precedence'), {
+    target: { value: '20' },
+  });
+  fireEvent.change(screen.getByLabelText('Assignment effective from'), {
+    target: { value: '2026-01-01T00:00:00Z' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Assign policy profile' }));
+
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith('/internal/limit-assignments', {
+      limitProfileCode: 'CUSTOMER_PREMIUM',
+      subjectType: 'SEGMENT',
+      segmentCode: 'PREMIUM',
+      precedence: 20,
+      effectiveFrom: '2026-01-01T00:00:00Z',
+    }),
+  );
+  expect(
+    await screen.findByText('Assigned profile CUSTOMER_PREMIUM to Segment PREMIUM'),
+  ).toBeTruthy();
+
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Deactivate CUSTOMER_PREMIUM for SEGMENT PREMIUM',
+    }),
+  );
+  await waitFor(() =>
+    expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/seg-assign-1', {
+      subjectType: 'SEGMENT',
+      isActive: false,
+      version: 1,
+    }),
+  );
+  expect(
+    await screen.findByText('Segment limit assignment CUSTOMER_PREMIUM deactivated.'),
+  ).toBeTruthy();
+});

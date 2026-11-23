@@ -235,6 +235,21 @@ export class CustomerClassService {
         `Customer class ${classCode} is referenced by active fee rules and cannot be disabled or deprecated`,
       );
     }
+    const limitRows = await manager.query<Array<{ id: string }>>(
+      `SELECT id
+         FROM limit_assignments
+        WHERE subject_type = 'SEGMENT'
+          AND segment_code = $1
+          AND is_active = TRUE
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [classCode],
+    );
+    if (limitRows.length > 0) {
+      throw new ConflictException(
+        `Customer class ${classCode} is referenced by active limit assignments and cannot be disabled or deprecated`,
+      );
+    }
   }
 
   private async lockCatalogue(manager: EntityManager): Promise<void> {

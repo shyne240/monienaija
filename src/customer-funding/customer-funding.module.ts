@@ -9,6 +9,7 @@ import { CustomerFundingService } from './customer-funding.service';
 import { CustomerFundingInternalController } from './customer-funding-internal.controller';
 import { CustomerFundingCustomerController } from './customer-funding-customer.controller';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
 import { CommissionModule } from '../commission/commission.module';
@@ -23,6 +24,7 @@ import { CommissionModule } from '../commission/commission.module';
     PaymentModule,
     OperationsModule,
     LimitCatalogModule,
+    CustomerClassModule,
     CommercialDecisionModule,
     FeeRulesModule,
     CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites

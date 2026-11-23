@@ -8,6 +8,7 @@ import {
 import { DataSource } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { redactRecord } from '../common/sensitive-data-redaction';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { governedAction, governedChangeFingerprint } from './governed-action.registry';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
@@ -109,6 +110,73 @@ export function governedChangeConsumptionError(
   }
 }
 
+const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
+  'productCode',
+  'product',
+  'code',
+  'name',
+  'description',
+  'domain',
+  'currency',
+  'productScope',
+  'status',
+  'enabled',
+  'configurationStatus',
+  'flatFeeMinor',
+  'percentageBps',
+  'minFeeMinor',
+  'maxFeeMinor',
+  'taxable',
+  'customerClassCode',
+  'customerClassId',
+  'agentClassId',
+  'institutionId',
+  'priority',
+  'effectiveFrom',
+  'effectiveTo',
+  'isActive',
+  'version',
+  'expectedVersion',
+  'reason',
+  'calculationBasis',
+  'calculationModel',
+  'agentShareBps',
+  'aggregatorShareBps',
+  'platformShareBps',
+  'beneficiaryType',
+  'flatRewardMinor',
+  'rewardBps',
+  'tiers',
+  'campaignCode',
+  'limitProfileCode',
+  'ruleId',
+  'direction',
+  'channel',
+  'dimension',
+  'limitValueMinor',
+  'limitValueCount',
+]);
+
+export function sanitizeCommercialRequestDetails(
+  action: string,
+  payload: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS.has(key)) {
+      filtered[key] = value;
+    }
+  }
+  if (
+    action === 'PRODUCT_MODIFY' &&
+    typeof payload.code === 'string' &&
+    filtered.productCode === undefined
+  ) {
+    filtered.productCode = payload.code;
+  }
+  return redactRecord(filtered);
+}
+
 @Injectable()
 export class CommercialRuleGovernanceService {
   constructor(
@@ -140,6 +208,7 @@ export class CommercialRuleGovernanceService {
       resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
       actionFingerprint,
       reason: command.reason,
+      requestDetails: sanitizeCommercialRequestDetails(definition.action, command.payload),
       approvalScope: definition.approvalScope,
       expiresInSeconds: command.expiresInSeconds,
       now: command.now,

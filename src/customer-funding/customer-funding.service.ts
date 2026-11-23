@@ -19,6 +19,7 @@ import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.servi
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import {
   commissionAllocatedAtAccountingBoundary,
   commissionFeeBasisMinor,
@@ -159,6 +160,8 @@ export class CustomerFundingService {
     // legacy commissionNone() shape for manual-construction unit tests).
     @Optional()
     private readonly commissionEngine?: CommissionEngine,
+    @Optional()
+    private readonly customerClassResolver?: CustomerClassResolverService,
   ) {}
 
   async createRequest(input: CreateFundingRequestInput): Promise<CustomerFundingView> {
@@ -839,11 +842,19 @@ export class CustomerFundingService {
 
     const productCode = 'CUSTOMER_FUNDING';
     const decisionAt = new Date();
+    const customerClassCode = this.customerClassResolver
+      ? await this.customerClassResolver.resolveClassCodeInManager(
+          manager,
+          ctx.customerId,
+          decisionAt,
+        )
+      : null;
 
     const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
       productCode,
       currency: ctx.currency,
       at: decisionAt,
+      ...(customerClassCode ? { customerClassCode } : {}),
     });
 
     // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);

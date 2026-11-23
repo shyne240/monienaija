@@ -343,7 +343,13 @@ export class TransferQuoteService {
             destination.ledgerAccountId,
           ]);
           await requireTransferProduct(manager, currency);
-          const price = await this.pricing.priceWithManager(manager, { amountMinor, currency });
+          const price = await this.pricing.priceWithManager(manager, {
+            amountMinor,
+            currency,
+            customerId: participants[0].type === 'CUSTOMER' ? participants[0].id : null,
+            agentClassId: participants[0].agentClassId,
+            institutionId: source.institutionId ?? null,
+          });
           const quoteId = randomUUID();
           const reference = await this.references.nextReference(
             manager,

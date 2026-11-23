@@ -113,13 +113,28 @@ const validAssignment = (row: any): boolean =>
   typeof row.limitProfileCode === 'string' &&
   Boolean(row.limitProfileCode.trim()) &&
   typeof row.isActive === 'boolean';
-const validReceipt = (row: any, subjectType: string, subjectId: string, code: string): boolean =>
+const validReceipt = (
+  row: any,
+  subjectType: string,
+  subjectId: string | null,
+  code: string,
+  segmentCode: string | null = null,
+): boolean =>
   validAssignment(row) &&
   row.subjectType === subjectType &&
-  row.subjectId === subjectId &&
+  (subjectId === null ? row.subjectId == null : row.subjectId === subjectId) &&
+  (segmentCode === null ? true : row.segmentCode === segmentCode) &&
   row.limitProfileCode === code &&
   Number.isSafeInteger(row.version) &&
   row.version > 0;
+function hasValidSubjectTarget(assignment: any): boolean {
+  if (!assignment || typeof assignment.subjectType !== 'string') return false;
+  if (assignment.subjectType === 'GLOBAL') return true;
+  if (assignment.subjectType === 'SEGMENT') {
+    return typeof assignment.segmentCode === 'string' && Boolean(assignment.segmentCode.trim());
+  }
+  return typeof assignment.subjectId === 'string' && Boolean(assignment.subjectId.trim());
+}
 type AssignmentFilters = {
   subjectType: string;
   subjectId: string;
@@ -194,6 +209,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
     classes: 0,
     assign: 0,
     classAssign: 0,
+    policyAssign: 0,
     toggle: 0,
   });
   useEffect(
@@ -230,6 +246,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
   });
   const [assignBusy, setAssignBusy] = useState(false);
   const [classAssignBusy, setClassAssignBusy] = useState(false);
+  const [policyAssignBusy, setPolicyAssignBusy] = useState(false);
   const [loading, setLoading] = useState(canReadAssignments);
   const [error, setError] = useState('');
   const [assignmentFilters, setAssignmentFilters] = useState({
@@ -242,6 +259,17 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
   const [profileCode, setProfileCode] = useState('');
   const [agentClassId, setAgentClassId] = useState('');
   const [classProfileCode, setClassProfileCode] = useState('');
+  const [policySubjectType, setPolicySubjectType] = useState<'CUSTOMER' | 'SEGMENT' | 'GLOBAL'>(
+    'SEGMENT',
+  );
+  const [policyCustomerId, setPolicyCustomerId] = useState('');
+  const [policySegmentCode, setPolicySegmentCode] = useState('');
+  const [policyProfileCode, setPolicyProfileCode] = useState('');
+  const [policyPrecedence, setPolicyPrecedence] = useState('');
+  const [policyEffectiveFrom, setPolicyEffectiveFrom] = useState('');
+  const [policyEffectiveTo, setPolicyEffectiveTo] = useState('');
+  const [policyResult, setPolicyResult] = useState('');
+  const [policyResultErr, setPolicyResultErr] = useState('');
   const [classOptions, setClassOptions] = useState<AgentClassSummaryOption[]>([]);
   const [classOptionsLoading, setClassOptionsLoading] = useState(false);
   const [classResult, setClassResult] = useState('');
@@ -278,9 +306,15 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
   } | null>(null);
   const [reviewReady, setReviewReady] = useState(false);
   const mutationInFlight = useRef(false);
-  const mutationBusy = assignBusy || classAssignBusy || Boolean(toggleBusyId);
+  const mutationBusy = assignBusy || classAssignBusy || policyAssignBusy || Boolean(toggleBusyId);
   const draftGuard = Boolean(
-    agentId.trim() || profileCode.trim() || agentClassId.trim() || classProfileCode.trim(),
+    agentId.trim() ||
+      profileCode.trim() ||
+      agentClassId.trim() ||
+      classProfileCode.trim() ||
+      policyCustomerId.trim() ||
+      policySegmentCode.trim() ||
+      policyProfileCode.trim(),
   );
   const guarded = mutationBusy || Boolean(uncertainAssignment) || draftGuard;
   useEffect(() => {
@@ -630,17 +664,112 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
     }
   };
 
+  const handleAssignPolicySubject = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (
+      !canWrite ||
+      !canModifyLimits ||
+      mutationBusy ||
+      mutationInFlight.current ||
+      uncertainAssignment
+    )
+      return;
+    setPolicyResult('');
+    setPolicyResultErr('');
+    const normalizedCode = policyProfileCode.trim().toUpperCase();
+    if (!/^[A-Z0-9_]{3,80}$/.test(normalizedCode)) {
+      setPolicyResultErr('Profile code must be 3–80 uppercase letters, digits, or underscores.');
+      return;
+    }
+    const subjectId = policySubjectType === 'CUSTOMER' ? policyCustomerId.trim() : null;
+    const segmentCode =
+      policySubjectType === 'SEGMENT' ? policySegmentCode.trim().toUpperCase() : null;
+    if (policySubjectType === 'CUSTOMER' && !subjectId) {
+      setPolicyResultErr('Customer UUID is required for CUSTOMER assignments.');
+      return;
+    }
+    if (
+      policySubjectType === 'SEGMENT' &&
+      (!segmentCode || !/^[A-Z0-9_]{3,80}$/.test(segmentCode))
+    ) {
+      setPolicyResultErr('Segment / customer class code must match ^[A-Z0-9_]{3,80}$.');
+      return;
+    }
+    const parsedPrecedence = policyPrecedence.trim()
+      ? Number.parseInt(policyPrecedence.trim(), 10)
+      : undefined;
+    if (parsedPrecedence !== undefined && !Number.isSafeInteger(parsedPrecedence)) {
+      setPolicyResultErr('Precedence must be an integer.');
+      return;
+    }
+    const assignmentReadGeneration = generations.current.assignments;
+    const generation = ++generations.current.policyAssign;
+    mutationInFlight.current = true;
+    setPolicyAssignBusy(true);
+    try {
+      const payload: Record<string, unknown> = {
+        limitProfileCode: normalizedCode,
+        subjectType: policySubjectType,
+      };
+      if (subjectId) payload.subjectId = subjectId;
+      if (segmentCode) payload.segmentCode = segmentCode;
+      if (parsedPrecedence !== undefined) payload.precedence = parsedPrecedence;
+      if (policyEffectiveFrom.trim()) payload.effectiveFrom = policyEffectiveFrom.trim();
+      if (policyEffectiveTo.trim()) payload.effectiveTo = policyEffectiveTo.trim();
+
+      const receipt = await ApiClient.post('/internal/limit-assignments', payload);
+      if (generation !== generations.current.policyAssign) return;
+      if (
+        !validReceipt(receipt, policySubjectType, subjectId, normalizedCode, segmentCode) ||
+        (receipt as any).isActive !== true ||
+        (receipt as any).version !== 1
+      )
+        throw new Error('Assignment receipt was incomplete or mismatched.');
+      const targetDesc =
+        policySubjectType === 'CUSTOMER'
+          ? `Customer ${subjectId}`
+          : policySubjectType === 'SEGMENT'
+            ? `Segment ${segmentCode}`
+            : 'Global';
+      setPolicyResult(`Assigned profile ${normalizedCode} to ${targetDesc}`);
+      setPolicyCustomerId('');
+      setPolicySegmentCode('');
+      setPolicyProfileCode('');
+      setPolicyPrecedence('');
+      setPolicyEffectiveFrom('');
+      setPolicyEffectiveTo('');
+      if (canReadAssignments && assignmentReadGeneration === generations.current.assignments) {
+        void fetchAssignments();
+      }
+    } catch (err: any) {
+      if (generation === generations.current.policyAssign) {
+        lockOutcome({
+          subjectType: policySubjectType,
+          subjectId: subjectId ?? segmentCode ?? 'GLOBAL',
+          code: normalizedCode,
+        });
+        setPolicyResultErr(
+          `Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`,
+        );
+      }
+    } finally {
+      mutationInFlight.current = false;
+      if (generation === generations.current.policyAssign) setPolicyAssignBusy(false);
+    }
+  };
+
   const handleToggleSubjectAssignment = async (assignment: any) => {
     if (!canWrite || mutationBusy || mutationInFlight.current || uncertainAssignment) return;
     const isAgent = assignment.subjectType === 'AGENT' && canAssignAgent;
-    const isAgentClass = assignment.subjectType === 'AGENT_CLASS' && canModifyLimits;
+    const isModifiableSubject =
+      ['AGENT_CLASS', 'CUSTOMER', 'SEGMENT', 'GLOBAL'].includes(assignment.subjectType) &&
+      canModifyLimits;
     if (
       !assignmentsSearched ||
       loading ||
-      typeof assignment.subjectId !== 'string' ||
-      !assignment.subjectId.trim() ||
+      !hasValidSubjectTarget(assignment) ||
       !assignments.some((row) => row.id === assignment.id && row.version === assignment.version) ||
-      (!isAgent && !isAgentClass) ||
+      (!isAgent && !isModifiableSubject) ||
       !Number.isSafeInteger(assignment.version) ||
       assignment.version < 1 ||
       typeof assignment.isActive !== 'boolean'
@@ -667,15 +796,25 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
         !validReceipt(
           receipt,
           assignment.subjectType,
-          assignment.subjectId,
+          assignment.subjectId ?? null,
           assignment.limitProfileCode,
+          assignment.segmentCode ?? null,
         ) ||
         receipt.id !== assignment.id ||
         receipt.isActive !== !assignment.isActive ||
         receipt.version !== assignment.version + 1
       )
         throw new Error('Update receipt was incomplete or mismatched.');
-      const label = assignment.subjectType === 'AGENT_CLASS' ? 'Agent Class' : 'Agent';
+      const label =
+        assignment.subjectType === 'AGENT_CLASS'
+          ? 'Agent Class'
+          : assignment.subjectType === 'CUSTOMER'
+            ? 'Customer'
+            : assignment.subjectType === 'SEGMENT'
+              ? 'Segment'
+              : assignment.subjectType === 'GLOBAL'
+                ? 'Global'
+                : 'Agent';
       const msg = `${label} limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`;
       setToggleMessage(msg);
       if (canReadAssignments && assignmentReadGeneration === generations.current.assignments) {
@@ -686,7 +825,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
       const errText = `Assignment update not confirmed; refresh before retrying. ${err?.message || 'Service unavailable.'}`;
       lockOutcome({
         subjectType: assignment.subjectType,
-        subjectId: assignment.subjectId,
+        subjectId: assignment.subjectId || assignment.segmentCode || 'GLOBAL',
         code: assignment.limitProfileCode,
       });
       setToggleError(errText);
@@ -861,6 +1000,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
                   <option value="AGENT_CLASS">AGENT_CLASS</option>
                   <option value="CUSTOMER">CUSTOMER</option>
                   <option value="SEGMENT">SEGMENT</option>
+                  <option value="GLOBAL">GLOBAL</option>
                 </select>
               </label>
               <label style={fieldLabel}>
@@ -957,7 +1097,10 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
                   {assignments.map((assignment: any) => {
                     const canToggleRow =
                       (assignment.subjectType === 'AGENT' && canAssignAgent) ||
-                      (assignment.subjectType === 'AGENT_CLASS' && canModifyLimits);
+                      (['AGENT_CLASS', 'CUSTOMER', 'SEGMENT', 'GLOBAL'].includes(
+                        assignment.subjectType,
+                      ) &&
+                        canModifyLimits);
                     return (
                       <tr key={assignment.id}>
                         <td style={mono}>
@@ -994,14 +1137,13 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
                               <button
                                 type="button"
                                 style={smallLink}
-                                aria-label={`${assignment.isActive ? 'Deactivate' : 'Activate'} ${assignment.limitProfileCode} for ${assignment.subjectType} ${assignment.subjectId || assignment.segmentCode || 'unknown subject'}`}
+                                aria-label={`${assignment.isActive ? 'Deactivate' : 'Activate'} ${assignment.limitProfileCode} for ${assignment.subjectType} ${assignment.subjectId || assignment.segmentCode || 'GLOBAL'}`}
                                 disabled={
                                   !canWrite ||
                                   mutationBusy ||
                                   Boolean(uncertainAssignment) ||
                                   loading ||
-                                  typeof assignment.subjectId !== 'string' ||
-                                  !assignment.subjectId.trim() ||
+                                  !hasValidSubjectTarget(assignment) ||
                                   !Number.isSafeInteger(assignment.version) ||
                                   assignment.version < 1
                                 }
@@ -1212,6 +1354,122 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({
                 {classResultErr && (
                   <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
                     {classResultErr}
+                  </div>
+                )}
+              </section>
+            )}
+            {canModifyLimits && (
+              <section
+                className="limit-redesign__action-card"
+                aria-label="Assign Limit Profile to Customer, Segment, or Global"
+              >
+                <h3>
+                  Assign Limit Profile to Customer, Segment, or Global (<code>CUSTOMER</code> /{' '}
+                  <code>SEGMENT</code> / <code>GLOBAL</code>)
+                </h3>
+                <p>
+                  Requires <code>limit.modify</code>. Supports customer-class segments, individual
+                  customer overrides, and global fallback with precedence and effective windows.
+                </p>
+                <form onSubmit={handleAssignPolicySubject} className="limit-redesign__action-form">
+                  <label>
+                    Policy subject type
+                    <select
+                      aria-label="Policy subject type"
+                      disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                      value={policySubjectType}
+                      onChange={(event) =>
+                        setPolicySubjectType(
+                          event.target.value as 'CUSTOMER' | 'SEGMENT' | 'GLOBAL',
+                        )
+                      }
+                    >
+                      <option value="SEGMENT">SEGMENT (Customer class)</option>
+                      <option value="CUSTOMER">CUSTOMER</option>
+                      <option value="GLOBAL">GLOBAL</option>
+                    </select>
+                  </label>
+                  {policySubjectType === 'CUSTOMER' && (
+                    <label>
+                      Customer UUID
+                      <input
+                        aria-label="Customer UUID"
+                        disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                        value={policyCustomerId}
+                        onChange={(event) => setPolicyCustomerId(event.target.value)}
+                        placeholder="Customer UUID"
+                      />
+                    </label>
+                  )}
+                  {policySubjectType === 'SEGMENT' && (
+                    <label>
+                      Segment code
+                      <input
+                        aria-label="Segment code"
+                        disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                        value={policySegmentCode}
+                        onChange={(event) => setPolicySegmentCode(event.target.value)}
+                        placeholder="e.g. STANDARD, PREMIUM, BUSINESS"
+                      />
+                    </label>
+                  )}
+                  <label>
+                    Policy limit profile code
+                    <input
+                      aria-label="Policy limit profile code"
+                      disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                      value={policyProfileCode}
+                      onChange={(event) => setPolicyProfileCode(event.target.value)}
+                      placeholder="Profile code (e.g. CUSTOMER_PREMIUM)"
+                    />
+                  </label>
+                  <label>
+                    Assignment precedence (optional)
+                    <input
+                      aria-label="Assignment precedence"
+                      type="number"
+                      disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                      value={policyPrecedence}
+                      onChange={(event) => setPolicyPrecedence(event.target.value)}
+                      placeholder="Default 0"
+                    />
+                  </label>
+                  <label>
+                    Assignment effective from (ISO-8601, optional)
+                    <input
+                      aria-label="Assignment effective from"
+                      disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                      value={policyEffectiveFrom}
+                      onChange={(event) => setPolicyEffectiveFrom(event.target.value)}
+                      placeholder="2026-01-01T00:00:00Z"
+                    />
+                  </label>
+                  <label>
+                    Assignment effective to (ISO-8601, optional)
+                    <input
+                      aria-label="Assignment effective to"
+                      disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                      value={policyEffectiveTo}
+                      onChange={(event) => setPolicyEffectiveTo(event.target.value)}
+                      placeholder="Open-ended when blank"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    style={btn}
+                    disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}
+                  >
+                    {policyAssignBusy ? 'Assigning…' : 'Assign policy profile'}
+                  </button>
+                </form>
+                {policyResult && (
+                  <div style={{ ...successBox, marginTop: 8 }} role="status">
+                    {policyResult}
+                  </div>
+                )}
+                {policyResultErr && (
+                  <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
+                    {policyResultErr}
                   </div>
                 )}
               </section>

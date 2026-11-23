@@ -534,4 +534,48 @@ describe('Commercial Approvals & Governance', () => {
       stringPolicy.id,
     ]);
   });
+
+  it('omits policy.requestDetails in listApprovals when principal lacks the action approvingFunctionCodes', async () => {
+    const feeProposal = makeApprovalRow({
+      id: '88888888-8888-4888-8888-888888888881',
+      actionType: 'FEE_RULE_CREATE',
+      resourceType: 'FEE_RULE',
+      policy: {
+        action: 'FEE_RULE_CREATE',
+        resourceType: 'FEE_RULE',
+        requestDetails: {
+          productCode: 'WALLET_TRANSFER',
+          currency: 'NGN',
+          flatFeeMinor: '100',
+          reason: 'Create fee rule',
+        },
+      },
+    });
+    const { service } = buildService([feeProposal]);
+
+    // Controller without `fee_rule.create` scope cannot read `requestDetails`
+    const withoutDomainFn = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve'],
+      }),
+    });
+    expect(withoutDomainFn.items).toHaveLength(1);
+    expect(withoutDomainFn.items[0]?.policy?.requestDetails).toBeUndefined();
+
+    // Controller with `fee_rule.create` scope receives `requestDetails`
+    const withDomainFn = await service.listApprovals({
+      principal: makePrincipal({
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve', 'fee_rule.create'],
+      }),
+    });
+    expect(withDomainFn.items).toHaveLength(1);
+    expect(withDomainFn.items[0]?.policy?.requestDetails).toEqual({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      flatFeeMinor: '100',
+      reason: 'Create fee rule',
+    });
+  });
 });

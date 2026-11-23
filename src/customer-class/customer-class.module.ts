@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
@@ -21,8 +21,8 @@ import {
 @Module({
   imports: [
     TypeOrmModule.forFeature([CustomerClass, CustomerClassAssignment]),
-    AuthorizationModule,
-    OperationsModule,
+    forwardRef(() => AuthorizationModule),
+    forwardRef(() => OperationsModule),
   ],
   controllers: [CustomerClassController, CustomerClassAssignmentController],
   providers: [CustomerClassService, CustomerClassAssignmentService, CustomerClassResolverService],

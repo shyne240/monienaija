@@ -284,3 +284,58 @@ test('an unconfirmed funding decision blocks generic checker decisions in the sa
   expect(ApiClient.post).toHaveBeenCalledTimes(1);
   confirmation.mockRestore();
 });
+
+test('CommercialApprovalInbox displays proposed parameters and executes an APPROVED commercial change', async () => {
+  principal('checker', ['privileged:approve', 'fee_rule.create']);
+  (ApiClient.get as jest.Mock).mockResolvedValue({
+    items: [
+      {
+        id: 'approval-fee-1',
+        actionType: 'FEE_RULE_CREATE',
+        resourceType: 'FEE_RULE',
+        resourceId: null,
+        requesterPrincipalId: 'maker',
+        approvedBy: 'checker',
+        reason: 'Standard wallet transfer fee',
+        approvalScope: 'privileged:approve',
+        policy: {
+          requestDetails: {
+            productCode: 'WALLET_TRANSFER',
+            currency: 'NGN',
+            flatFeeMinor: '100',
+            effectiveFrom: '2026-01-01T00:00:00.000Z',
+            reason: 'Standard wallet transfer fee',
+          },
+        },
+        status: 'APPROVED',
+        requestedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-02T00:00:00.000Z',
+        approvedAt: '2026-01-01T01:00:00.000Z',
+        rejectedAt: null,
+        consumedAt: null,
+        version: 2,
+      },
+    ],
+    total: 1,
+  });
+  (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'rule-1' });
+
+  render(<ApprovalsScreen />);
+  expect(await screen.findByText(/APPROVED \(Awaiting execution\)/)).toBeTruthy();
+  expect(screen.getByText(/productCode: WALLET_TRANSFER/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Execute approved change' }));
+  expect(
+    await screen.findByText(/Approved change approval-fee-1 executed and consumed/),
+  ).toBeTruthy();
+  expect(ApiClient.post).toHaveBeenCalledWith(
+    '/internal/fee-rules/changes/approval-fee-1/execute-create',
+    {
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      flatFeeMinor: '100',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      reason: 'Standard wallet transfer fee',
+    },
+  );
+});

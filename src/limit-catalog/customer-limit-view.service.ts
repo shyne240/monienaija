@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
 import { getWindowForDimension } from './limit-window.util';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * V1-CUSTOMER-08 — customer-safe projection of the authoritative V1 limit-catalog
@@ -92,6 +95,7 @@ export class CustomerLimitViewService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly profileResolver: LimitProfileResolverService,
+    @Optional() private readonly customerClassResolver?: CustomerClassResolverService,
   ) {}
 
   async getMyLimits(
@@ -100,9 +104,18 @@ export class CustomerLimitViewService {
     now: Date = new Date(),
   ): Promise<CustomerLimitsView> {
     const upperCurrency = currency.trim().toUpperCase();
+    const resolvedClassCode =
+      this.customerClassResolver && UUID_PATTERN.test(customerId.trim())
+        ? await this.customerClassResolver.resolveClassCodeInManager(
+            this.dataSource.manager,
+            customerId.trim(),
+            now,
+          )
+        : null;
     const resolved = await this.profileResolver.resolve(this.dataSource.manager, {
       principalType: 'CUSTOMER',
       principalId: customerId,
+      segmentCodes: resolvedClassCode ? [resolvedClassCode] : [],
       now,
     });
 

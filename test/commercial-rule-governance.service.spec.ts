@@ -168,6 +168,39 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       governedChangeFingerprint('FEE_RULE_CREATE', 'FEE_RULE', null, createPayload),
     );
     expect(approvalRepository.records.size).toBe(1);
+    const stored = [...approvalRepository.records.values()][0]!;
+    expect(stored.policy).toMatchObject({
+      requestDetails: createPayload,
+    });
+  });
+
+  it('strips non-allowlisted and sensitive fields from requestDetails while preserving PRODUCT_MODIFY productCode', async () => {
+    const { governance, approvalRepository } = fixture();
+    await governance.requestChange({
+      principal: maker,
+      action: 'PRODUCT_MODIFY',
+      payload: {
+        code: 'WALLET_TRANSFER',
+        name: 'Wallet Transfer',
+        domain: 'PAYMENTS',
+        reason: 'Register product',
+        apiKey: 'secret-api-key-value',
+        password: 'super-secret-password',
+        privateKey: 'private-key-material',
+        unexpectedInternalSecret: 'should-be-dropped',
+      },
+      reason: 'Register product',
+    });
+
+    const stored = [...approvalRepository.records.values()][0]!;
+    const details = stored.policy.requestDetails as Record<string, unknown>;
+    expect(details).toBeDefined();
+    expect(details.productCode).toBe('WALLET_TRANSFER');
+    expect(details.name).toBe('Wallet Transfer');
+    expect(details.apiKey).toBeUndefined();
+    expect(details.password).toBeUndefined();
+    expect(details.privateKey).toBeUndefined();
+    expect(details.unexpectedInternalSecret).toBeUndefined();
   });
 
   it('refuses unauthorized initiation and persists nothing', async () => {

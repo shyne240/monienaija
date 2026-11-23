@@ -286,7 +286,8 @@ const ApprovalsWorkspace: React.FC<{
         <span style={styles.gapTitle}>Approval Discovery Scope</span>
         <p style={styles.gapText}>
           Agent funding and defunding requests use the Global Funding Inbox when your session meets
-          its access rules (<code>GET /internal/agents/funding-requests</code>). Commercial approval visibility is filtered by checker authorization.
+          its access rules (<code>GET /internal/agents/funding-requests</code>). Commercial approval
+          visibility is filtered by checker authorization.
         </p>
       </div>
       <div style={styles.fundingNote}>
@@ -304,11 +305,12 @@ const ApprovalsWorkspace: React.FC<{
       </div>
 
       <CommercialApprovalInbox
-            key={principal?.principalId}
-            currentPrincipalId={principal?.principalId}
-            canApprove={canApprove && principal?.assuranceLevel === 'MFA'}
-            canWrite={canWrite}
-          />
+        key={principal?.principalId}
+        currentPrincipalId={principal?.principalId}
+        canApprove={canApprove && principal?.assuranceLevel === 'MFA'}
+        canWrite={canWrite}
+        scopes={principal?.scopes}
+      />
       {canReviewFunding && (
         <section
           id="funding-checker-workspace"

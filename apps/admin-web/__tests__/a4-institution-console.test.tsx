@@ -388,4 +388,60 @@ describe('ARENA 4 institutional console — workspace', () => {
     expect(screen.getByText(/never migrates a balance/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Request attribution/i })).toBeNull();
   });
+
+  test('kyc tier-limit policy tab submits governed proposals and approves pending proposals', async () => {
+    setPrincipal({
+      scopes: ['institution.view', 'limit.view', 'limit.modify', 'privileged:approve'],
+      roles: ['FINANCE_CONTROLLER'],
+      principalId: 'issuer:checker',
+    });
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}/kyc-tier-limit-policy/proposals`]: [
+        {
+          id: 'prop-1',
+          version: 1,
+          state: 'PENDING',
+          reason: 'Initial tier mapping',
+          proposedBy: 'issuer:maker',
+          proposedAt: '2026-11-12T10:00:00.000Z',
+        },
+      ],
+      [`/internal/institutions/${INSTITUTION_ID}/kyc-tier-limit-policy`]: {
+        institutionId: INSTITUTION_ID,
+        enforcementEnabled: true,
+        current: null,
+        history: [],
+      },
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ state: 'APPROVED' });
+
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'KYC tier-limit policy' }));
+    expect(await screen.findByText(/Initial tier mapping/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Tier policy reason'), {
+      target: { value: 'Update institution tier limits' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Propose tier-limit policy' }));
+
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        `/internal/institutions/${INSTITUTION_ID}/kyc-tier-limit-policy/proposals`,
+        expect.objectContaining({
+          expectedVersion: 0,
+          reason: 'Update institution tier limits',
+        }),
+      ),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve proposal' }));
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        `/internal/institutions/${INSTITUTION_ID}/kyc-tier-limit-policy/proposals/prop-1/approve`,
+        {},
+      ),
+    );
+  });
 });
