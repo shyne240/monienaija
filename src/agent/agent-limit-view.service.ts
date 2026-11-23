@@ -2,6 +2,11 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
+import {
+  fetchApplicableLimitRuleCandidates,
+  narrowApplicableLimitRules,
+  type ApplicableLimitRuleCandidateRow,
+} from '../limit-catalog/limit-rule-applicability';
 import { getWindowForDimension } from '../limit-catalog/limit-window.util';
 
 /**
@@ -22,6 +27,11 @@ import { getWindowForDimension } from '../limit-catalog/limit-window.util';
  * AGENT_PRODUCTS below). Never exposes limitProfileCode, assignmentId, subjectType,
  * limitRuleId, priority, channel, or audit metadata — the same projection contract as
  * the customer view.
+ *
+ * Rule *selection* is not re-derived here: it calls `limit-catalog/limit-rule-applicability.ts`,
+ * the single authoritative expression shared with LimitEnforcementService and the commercial
+ * effective-configuration preview (Arena 3 Phase 2). Displayed limits and enforced limits
+ * therefore read the same rows in the same precedence order by construction.
  */
 
 export interface AgentLimitWindowView {
@@ -65,16 +75,14 @@ export interface AgentLimitsView {
   products: AgentLimitProductView[];
 }
 
-interface RuleRow {
-  id: string;
-  product: string;
-  direction: string | null;
-  channel: string | null;
-  currency: string;
-  dimension: string;
-  limit_value_minor: string | null;
-  limit_value_count: number | null;
-}
+/**
+ * Rule selection is delegated to `limit-catalog/limit-rule-applicability.ts` — the single
+ * authoritative expression of which `limit_rules` rows govern an operation, shared with
+ * `LimitEnforcementService` (financial admission) and the commercial effective-configuration
+ * preview. This projection therefore cannot drift from enforcement by construction, and is not
+ * a second limits engine.
+ */
+type RuleRow = ApplicableLimitRuleCandidateRow;
 
 // The only agent-facing product/direction pairs actually wired to
 // LimitEnforcementService.enforceWithManager with principalType AGENT.
@@ -140,27 +148,32 @@ export class AgentLimitViewService {
     }
 
     const profileCode = resolved.limitProfileCode;
-    const ruleRows: RuleRow[] = await this.dataSource.query(
-      `SELECT id, product, direction, channel, currency, dimension,
-              limit_value_minor::text AS limit_value_minor, limit_value_count
-         FROM limit_rules
-        WHERE limit_profile_code = $1
-          AND upper(currency) = upper($2)
-          AND is_active = true
-          AND deleted_at IS NULL
-          AND effective_from <= $3
-          AND (effective_to IS NULL OR $3 < effective_to)
-          AND channel IS NULL
-        ORDER BY priority DESC, created_at ASC`,
-      [profileCode, upperCurrency, now],
-    );
+    // Candidates are fetched per product through the shared applicability module (the same
+    // call LimitEnforcementService makes), so precedence ordering (`priority DESC,
+    // created_at ASC`) and the effective window come from one place. Enforcement resolves an
+    // institution KYC tier profile for CUSTOMER principals only (`principalType !== 'CUSTOMER'`
+    // guard in LimitEnforcementService), so for an AGENT the resolved assignment profile is the
+    // complete candidate set — no second profile to union here.
+    const candidatesByProduct = new Map<string, RuleRow[]>();
+    for (const product of [...new Set(AGENT_PRODUCTS.map((entry) => entry.product))]) {
+      candidatesByProduct.set(
+        product,
+        await fetchApplicableLimitRuleCandidates(this.dataSource.manager, {
+          profileCodes: [profileCode],
+          product,
+          currency: upperCurrency,
+          now,
+        }),
+      );
+    }
 
     const products: AgentLimitProductView[] = [];
     for (const entry of AGENT_PRODUCTS) {
-      const matching = ruleRows.filter((r) => {
-        if (r.product.trim().toUpperCase() !== entry.product.toUpperCase()) return false;
-        const rd = r.direction ? r.direction.trim().toUpperCase() : null;
-        return rd === null || rd === 'BOTH' || rd === entry.direction;
+      // Agent money movements carry no channel, so a channel-scoped rule must not surface:
+      // narrowing with `channel: null` keeps exactly the rules enforcement would apply.
+      const matching = narrowApplicableLimitRules(candidatesByProduct.get(entry.product) ?? [], {
+        direction: entry.direction,
+        channel: null,
       });
       if (matching.length === 0) {
         products.push(this.unconfigured(entry.product, entry.direction, upperCurrency));
