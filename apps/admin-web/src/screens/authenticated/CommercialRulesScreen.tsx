@@ -20,12 +20,17 @@ import {
   windowState,
 } from './commercial-registry-contract';
 import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
+import { AUTHORING_CONTRACTS, authoringActions, type AuthoringDomain } from './commercial-authoring-contract';
+import { CommercialAuthoringDrawer } from './CommercialAuthoringDrawer';
+import { CommercialPreviewPanel } from './CommercialPreviewPanel';
 import './operational-surfaces.css';
 import './commercial-catalogue.css';
+import './commercial-authoring.css';
 
-type Tab = 'fees' | 'commissions' | 'rewards' | 'products' | 'limits' | 'assignments';
-type CommercialTab = Exclude<Tab, 'limits' | 'assignments'>;
+type Tab = 'preview' | 'fees' | 'commissions' | 'rewards' | 'products' | 'limits' | 'assignments';
+type CommercialTab = Exclude<Tab, 'limits' | 'assignments' | 'preview'>;
 const TAB_FUNCTIONS: Record<Tab, string> = {
+  preview: 'limit.view',
   fees: 'fee_rule.view',
   commissions: 'commission_rule.view',
   rewards: 'reward_rule.view',
@@ -34,6 +39,7 @@ const TAB_FUNCTIONS: Record<Tab, string> = {
   assignments: 'limit.view',
 };
 const TAB_LABELS: Record<Tab, string> = {
+  preview: 'Preview',
   fees: 'Fees',
   commissions: 'Commissions',
   rewards: 'Rewards',
@@ -41,9 +47,17 @@ const TAB_LABELS: Record<Tab, string> = {
   limits: 'Limits',
   assignments: 'Assignments',
 };
-const TAB_ORDER: Tab[] = ['fees', 'commissions', 'rewards', 'products', 'limits', 'assignments'];
+const TAB_ORDER: Tab[] = [
+  'preview',
+  'fees',
+  'commissions',
+  'rewards',
+  'products',
+  'limits',
+  'assignments',
+];
 const TAB_DESCRIPTION: Record<CommercialTab, string> = {
-  fees: 'Review configured fee rules, their currency, rate and effective dates.',
+  fees: 'Review configured fee rules and submit governed changes to their currency, rate and effective dates.',
   commissions: 'Review configured commission rules and who may receive them.',
   rewards: 'Review configured reward rules and their beneficiary and calculation model.',
   products: 'Review product configuration, status and scope across the catalogue.',
@@ -340,7 +354,9 @@ const RegistrySection: React.FC<{
   columns: StructuredColumn[];
   description: string;
   precedence?: string;
-}> = ({ title, endpoint, columns, description, precedence }) => {
+  /** Present only for resources with a governed authoring contract worth offering. */
+  authoringDomain?: AuthoringDomain;
+}> = ({ title, endpoint, columns, description, precedence, authoringDomain }) => {
   const filters = FILTERS[endpoint];
   const hasWindow = columns.includes(WINDOW_COLUMNS[2]);
   const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
@@ -353,6 +369,11 @@ const RegistrySection: React.FC<{
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<DataRecord | null>(null);
+  const [authoring, setAuthoring] = useState<{
+    mode: 'create' | 'modify';
+    record: DataRecord | null;
+  } | null>(null);
+  const principal = useAuthStore((state) => state.principal);
   const requestId = useRef(0);
   const load = async () => {
     const id = ++requestId.current;
@@ -449,7 +470,9 @@ const RegistrySection: React.FC<{
     <section className="commercial-registry" aria-labelledby={headingId}>
       <div className="commercial-registry__heading">
         <div>
-          <p className="commercial-kicker">READ-ONLY REGISTRY</p>
+          <p className="commercial-kicker">
+            {authoringDomain ? 'GOVERNED REGISTRY' : 'READ-ONLY REGISTRY'}
+          </p>
           <h2 id={headingId}>{title}</h2>
           <p>{description}</p>
           {precedence && (
@@ -458,14 +481,43 @@ const RegistrySection: React.FC<{
             </p>
           )}
         </div>
-        <Button
-          size="sm"
-          onClick={() => void load()}
-          disabled={loading}
-          aria-label={`${loading ? 'Loading' : 'Refresh'} ${title}`}
-        >
-          {loading ? 'Loading…' : 'Refresh'}
-        </Button>
+        <div className="commercial-registry__heading-actions">
+          {authoringDomain &&
+            (() => {
+              const contract = AUTHORING_CONTRACTS[authoringDomain];
+              const action = authoringActions({
+                domain: authoringDomain,
+                mode: 'create',
+                scopes: principal?.scopes ?? [],
+                readOnlyPrincipal: principal?.readOnlyPrincipal === true,
+              })[0];
+              const governed = contract.capability === 'GOVERNED_AUTHORING';
+              return (
+                <>
+                  <span className="commercial-authoring__capability">
+                    {governed ? 'Governed authoring available' : 'Read-only on this baseline'}
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={!action?.entitled}
+                    title={action?.unavailableReason ?? undefined}
+                    aria-label={`Propose a new ${contract.resource.toLowerCase()}`}
+                    onClick={() => setAuthoring({ mode: 'create', record: null })}
+                  >
+                    New {contract.resource.toLowerCase()}
+                  </Button>
+                </>
+              );
+            })()}
+          <Button
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            aria-label={`${loading ? 'Loading' : 'Refresh'} ${title}`}
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </Button>
+        </div>
       </div>
       <form
         className="commercial-filters"
@@ -653,7 +705,7 @@ const RegistrySection: React.FC<{
         >
           <header className="commercial-detail__header">
             <div>
-              <p className="commercial-kicker">READ-ONLY REGISTRY</p>
+              <p className="commercial-kicker">RECORD DETAILS</p>
               <h2>{title} details</h2>
             </div>
             <Button size="sm" onClick={() => setSelected(null)}>
@@ -667,7 +719,37 @@ const RegistrySection: React.FC<{
             </p>
             <StructuredKeyValueList data={selected} />
           </div>
+          {authoringDomain && (
+            <footer className="commercial-detail__footer">
+              <Button
+                size="sm"
+                disabled={
+                  !authoringActions({
+                    domain: authoringDomain,
+                    mode: 'modify',
+                    scopes: principal?.scopes ?? [],
+                    readOnlyPrincipal: principal?.readOnlyPrincipal === true,
+                  })[0]?.entitled
+                }
+                onClick={() => setAuthoring({ mode: 'modify', record: selected })}
+              >
+                Propose a governed change
+              </Button>
+            </footer>
+          )}
         </WorkspaceDrawer>
+      )}
+      {authoring && authoringDomain && (
+        <CommercialAuthoringDrawer
+          domain={authoringDomain}
+          mode={authoring.mode}
+          record={authoring.record}
+          onClose={() => setAuthoring(null)}
+          onRequested={() => {
+            setAuthoring(null);
+            void load();
+          }}
+        />
       )}
     </section>
   );
@@ -816,10 +898,12 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
         description="Explore the fee, commission, reward, product and limit configuration available to your workforce session."
       />
       <div className="commercial-boundary" role="note">
-        <strong>Read-only workspace</strong>
+        <strong>Configuration, not transactions</strong>
         <span>
-          These registries show configuration, not transaction decisions. Rules, products, profiles
-          and assignments cannot be changed here.
+          Registries show what is configured; the Preview tab explains what would govern a real
+          operation. Fee, commission, reward and limit-rule changes are proposals that a second
+          person must approve and an authorized executor must apply. Nothing here charges, accrues,
+          credits, settles or consumes a limit.
         </span>
       </div>
       <div className="commercial-tabs" role="tablist" aria-label="Commercial registries">
@@ -860,7 +944,9 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
         aria-labelledby={`commercial-tab-${tab}`}
         className="commercial-panel"
       >
-        {tab === 'limits' ? (
+        {tab === 'preview' ? (
+          <CommercialPreviewPanel key="preview" />
+        ) : tab === 'limits' ? (
           <div key="limits" className="commercial-sections">
             <RegistrySection
               title="Limit profiles"
@@ -874,6 +960,7 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
               columns={LIMIT_RULE_COLUMNS}
               description="Configured thresholds by profile, product, direction, channel, currency and dimension. Rules are not current usage."
               precedence="The baseline enforcement orders matching rules by highest priority, then oldest creation first, and evaluates all applicable thresholds. Priority does not make another matching threshold disappear."
+              authoringDomain="limits"
             />
           </div>
         ) : tab === 'assignments' ? (
@@ -893,6 +980,9 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
             columns={COLUMNS[tab]}
             description={TAB_DESCRIPTION[tab]}
             precedence={PRECEDENCE[tab]}
+            authoringDomain={
+              tab === 'fees' || tab === 'commissions' || tab === 'rewards' ? tab : undefined
+            }
           />
         )}
       </div>

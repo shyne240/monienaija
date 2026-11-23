@@ -24,10 +24,27 @@ type EvidenceRow = {
  * Historical attempts without a revision, synthetic registration attempts, caller-supplied
  * evidence, and provider payloads are never admitted here.
  */
+export interface TierEvidenceReadOptions {
+  /**
+   * Row-lock strength for the identity-revision read.
+   *
+   * `SHARE` (default) keeps the existing concurrency contract: a revision cannot be advanced
+   * while the evidence is being read. `NONE` omits the lock entirely and exists ONLY for callers
+   * inside a database-enforced `READ ONLY` transaction, where PostgreSQL rejects `FOR SHARE`.
+   * Such a caller is reporting evidence, never admitting a financial operation.
+   */
+  lockMode?: 'SHARE' | 'NONE';
+}
+
 export class KycTierEvidenceReader {
-  async read(manager: EntityManager, customerId: string): Promise<TierEvidenceSnapshot | null> {
+  async read(
+    manager: EntityManager,
+    customerId: string,
+    options: TierEvidenceReadOptions = {},
+  ): Promise<TierEvidenceSnapshot | null> {
+    const revisionLock = options.lockMode === 'NONE' ? '' : 'FOR SHARE';
     const revisions = await manager.query<Array<{ revision: string }>>(
-      'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1 FOR SHARE',
+      `SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1 ${revisionLock}`,
       [customerId],
     );
     const identityRevision = revisions[0]?.revision;

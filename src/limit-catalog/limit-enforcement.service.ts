@@ -13,6 +13,10 @@ import { CustomerFinancialEligibilityService } from '../kyc-verification/custome
 import { InstitutionKycLimitPolicyService } from './institution-kyc-limit-policy.service';
 import { LimitFailureCode, dimensionToFailureCode } from './limit-error.codes';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
+import {
+  fetchApplicableLimitRuleCandidates,
+  narrowApplicableLimitRules,
+} from './limit-rule-applicability';
 import { LimitUsageService } from './limit-usage.service';
 import { getWindowForDimension } from './limit-window.util';
 
@@ -240,45 +244,17 @@ export class LimitEnforcementService {
     // Fetch all active rules for the configured assignment and the institution-approved tier
     // profile. Filtering direction/channel below is exact; an empty match is not treated as
     // unlimited when an authoritative financial path asked for strict configuration.
-    const ruleRows: Array<{
-      id: string;
-      limit_profile_code: string;
-      product: string;
-      direction: string | null;
-      channel: string | null;
-      currency: string;
-      dimension: string;
-      limit_value_minor: string | null;
-      limit_value_count: number | null;
-      effective_from: string;
-      effective_to: string | null;
-      is_active: boolean;
-    }> = await manager.query(
-      `SELECT id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor::text AS limit_value_minor, limit_value_count, effective_from, effective_to, is_active
-         FROM limit_rules
-        WHERE limit_profile_code = ANY($1::varchar[])
-          AND upper(product) = upper($2)
-          AND upper(currency) = upper($3)
-          AND is_active = true
-          AND deleted_at IS NULL
-          AND effective_from <= $4
-          AND (effective_to IS NULL OR $4 < effective_to)
-        ORDER BY priority DESC, created_at ASC`,
-      [profileCodes, product, currency, now],
-    );
-
-    // Filter direction/channel: rule matches transaction if rule direction is null OR rule direction = transaction direction OR rule direction = BOTH
-    // And rule channel is null OR equals transaction channel
-    const applicable = ruleRows.filter((r) => {
-      const rd = r.direction ? r.direction.trim().toUpperCase() : null;
-      const rc = r.channel ? r.channel.trim().toUpperCase() : null;
-      // direction check
-      if (rd !== null && rd !== 'BOTH' && rd !== direction) return false;
-      // channel check: if rule has channel, transaction must have same channel; if rule channel null, matches any
-      if (rc !== null && rc !== channel) return false;
-      // If transaction has channel and rule is null, it matches (null means any)
-      return true;
+    // Selection lives in limit-rule-applicability.ts so the effective-configuration preview
+    // selects exactly these rules. Selection only: no evaluation, reservation or balance read.
+    const ruleRows = await fetchApplicableLimitRuleCandidates(manager, {
+      profileCodes,
+      product,
+      currency,
+      now,
     });
+
+    // Direction/channel narrowing (null/BOTH direction and null channel mean "any").
+    const applicable = narrowApplicableLimitRules(ruleRows, { direction, channel });
 
     if (
       tierProfileCode &&
