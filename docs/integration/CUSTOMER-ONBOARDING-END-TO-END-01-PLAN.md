@@ -5,22 +5,22 @@
 
 ## 1. What already exists (verified from source)
 
-| Capability | Where | State |
-| --- | --- | --- |
-| Admin customer create → DRAFT, default class, CREATED audit | `src/customer/customer.service.ts#create`, `CustomerClassAssignmentService.assignDefaultOnRegistrationInManager` | Complete, but no review projection and no evidence gate beyond phone + eligibility |
-| DRAFT → ACTIVE gate | `CustomerService.updateStatus` → `assertVerifiedPrimaryPhone` + `CustomerFinancialEligibilityService.require(requireActive=false)` | Phone + tier/assessment + trusted evidence + restrictions. **Missing: explicit outstanding-requirement reporting and a class/tier defaults surface for admins** |
-| Self-registration (mobile) phone → OTP → synthetic verify → DRAFT → credentials/PIN | `kyc-registration-session.service.ts`, `kyc-registration-verification.service.ts`, `kyc-registration-completion.service.ts`, `kyc-synthetic-credentials.service.ts` | Real, but completion is **synthetic-only** and fenced to a disposable socket cluster; the non-synthetic path ends at `ONBOARDING_PENDING` |
-| Real BVN/NIN verification | `kyc-customer-verification.service.ts` + `KycProviderGovernanceService` + `DojahKycProvider` / `MonnifyKycProvider` | Real provider adapters exist; only dispatch when governance routes them SHARE + runtime readiness. `KYC_CUSTOMER_VERIFICATION_ENABLED` defaults false |
-| Account claiming | `mobile-account-claim.service.ts` + `mobile-onboarding-auth.service.ts` | Complete for admin/pre-provisioned accounts with MONNIFY MATCH evidence and `KYC_OWNERSHIP_KEY_*`; identity conflicts fail closed. Retry hardening from PR #9 not applied yet |
-| Credential + PIN setup | `mobile-account-claim.service.ts#setup` (claim) and `kyc-synthetic-credentials.service.ts` (synthetic) | Admin never sets/reads customer secrets. **No self-service PIN for a customer whose passcode was created elsewhere** |
-| Wallet provisioning | `WalletService.createWalletInTransaction` (financial wallet + ledger account), `CustomerWalletService.createWallet` (P1.4 provisioning registry) | Real and idempotent; `CUSTOMER_FINANCIAL_ACCOUNT_BINDING_POLICY` allows only OPERATOR/SERVICE/PRIVILEGED — **no customer-accessible activation path** |
-| Mobile onboarding UI | `apps/customer-mobile/src/screens/unauthenticated/RegistrationScreen.tsx` | Phases for PHONE/OTP/PROFILE/IDENTITY/RESULT/CREDENTIALS/CLAIM/ONBOARDING_PENDING/ONBOARDING_LOGIN/ONBOARDING_AUTHENTICATED. **No rejection state, no activation status poll, no pending-review detail** |
-| Customer status read | `GET /customers/me/status` | Lifecycle + KYC state only |
+| Capability                                                                          | Where                                                                                                                                                               | State                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin customer create → DRAFT, default class, CREATED audit                         | `src/customer/customer.service.ts#create`, `CustomerClassAssignmentService.assignDefaultOnRegistrationInManager`                                                    | Complete, but no review projection and no evidence gate beyond phone + eligibility                                                                                                                       |
+| DRAFT → ACTIVE gate                                                                 | `CustomerService.updateStatus` → `assertVerifiedPrimaryPhone` + `CustomerFinancialEligibilityService.require(requireActive=false)`                                  | Phone + tier/assessment + trusted evidence + restrictions. **Missing: explicit outstanding-requirement reporting and a class/tier defaults surface for admins**                                          |
+| Self-registration (mobile) phone → OTP → synthetic verify → DRAFT → credentials/PIN | `kyc-registration-session.service.ts`, `kyc-registration-verification.service.ts`, `kyc-registration-completion.service.ts`, `kyc-synthetic-credentials.service.ts` | Real, but completion is **synthetic-only** and fenced to a disposable socket cluster; the non-synthetic path ends at `ONBOARDING_PENDING`                                                                |
+| Real BVN/NIN verification                                                           | `kyc-customer-verification.service.ts` + `KycProviderGovernanceService` + `DojahKycProvider` / `MonnifyKycProvider`                                                 | Real provider adapters exist; only dispatch when governance routes them SHARE + runtime readiness. `KYC_CUSTOMER_VERIFICATION_ENABLED` defaults false                                                    |
+| Account claiming                                                                    | `mobile-account-claim.service.ts` + `mobile-onboarding-auth.service.ts`                                                                                             | Complete for admin/pre-provisioned accounts with MONNIFY MATCH evidence and `KYC_OWNERSHIP_KEY_*`; identity conflicts fail closed. Retry hardening from PR #9 not applied yet                            |
+| Credential + PIN setup                                                              | `mobile-account-claim.service.ts#setup` (claim) and `kyc-synthetic-credentials.service.ts` (synthetic)                                                              | Admin never sets/reads customer secrets. **No self-service PIN for a customer whose passcode was created elsewhere**                                                                                     |
+| Wallet provisioning                                                                 | `WalletService.createWalletInTransaction` (financial wallet + ledger account), `CustomerWalletService.createWallet` (P1.4 provisioning registry)                    | Real and idempotent; `CUSTOMER_FINANCIAL_ACCOUNT_BINDING_POLICY` allows only OPERATOR/SERVICE/PRIVILEGED — **no customer-accessible activation path**                                                    |
+| Mobile onboarding UI                                                                | `apps/customer-mobile/src/screens/unauthenticated/RegistrationScreen.tsx`                                                                                           | Phases for PHONE/OTP/PROFILE/IDENTITY/RESULT/CREDENTIALS/CLAIM/ONBOARDING_PENDING/ONBOARDING_LOGIN/ONBOARDING_AUTHENTICATED. **No rejection state, no activation status poll, no pending-review detail** |
+| Customer status read                                                                | `GET /customers/me/status`                                                                                                                                          | Lifecycle + KYC state only                                                                                                                                                                               |
 
 ## 2. Gaps this change closes
 
 1. **Admin registration review surface.** `GET /internal/customers/:id/registration-review` (workforce, `customer.view`) returning: default customer class resolved through `CustomerClassResolverService`, KYC tier + assessment state, blocked-reason classification, and the exact outstanding requirements for DRAFT → ACTIVE (verified primary phone, approved assessment, live trusted evidence, completed onboarding, ELIGIBLE eligibility, no active restriction). Read-only; it never activates.
-2. **Hard evidence gate before DRAFT → ACTIVE.** `CustomerService.updateStatus(ACTIVE)` must reject when the trusted-evidence snapshot is missing/stale rather than only when the tier decision fails downstream — and the gate must be *reported*, not guessed, by the admin surface. (The existing eligibility call already fails closed; this change makes the failure attributable and auditable.)
+2. **Hard evidence gate before DRAFT → ACTIVE.** `CustomerService.updateStatus(ACTIVE)` must reject when the trusted-evidence snapshot is missing/stale rather than only when the tier decision fails downstream — and the gate must be _reported_, not guessed, by the admin surface. (The existing eligibility call already fails closed; this change makes the failure attributable and auditable.)
 3. **Customer wallet provisioning and activation.** New privileged, idempotent `POST /customers/me/activation` that:
    - requires an authenticated CUSTOMER SELF principal,
    - requires the same gates (`CustomerFinancialEligibilityService`, exactly one verified primary phone, no `kyc_identity_conflicts`, no active restriction),
@@ -47,13 +47,13 @@
 
 ## 5. Implementation record (what actually shipped)
 
-| Gap | Delivered | Verification |
-| --- | --- | --- |
-| 1. Admin review surface | `GET /api/v1/internal/customers/:id/registration-review` (`AdminCustomerController`), `CustomerActivationReadinessService` (read-only) | `v1-customer-onboarding-03` proofs 1–3; SUPPORT readable, customer bearer refused |
-| 2. Attributable DRAFT → ACTIVE gate | `CustomerService.updateStatus` now captures the gate's verified tier and audits `activationGate {verifiedPrimaryPhone, financialEligibility, verifiedTier, evidenceSource}` | `v1-customer-onboarding-02` (16/16), `v1-customer-onboarding-01` (15/15) |
-| 3. Customer-owned wallet provisioning | `GET/POST /api/v1/customers/me/activation` — CUSTOMER SELF, `Idempotency-Key` (8–255) required, SERIALIZABLE + bounded retry, `replayed` reported, audit `CUSTOMER_WALLET_ACTIVATION` ACTIVE/REPLAYED | `v1-customer-onboarding-03` proofs 4–9 |
-| 4. Mobile onboarding states | `POST /api/v1/customers/registration-sessions/onboarding-state` (public, session-scoped) + `RegistrationScreen` `PENDING_REVIEW` / `REJECTED` / `ACTIVATED` with the shared requirement list; client validates the payload and never invents a state | `v1-customer-onboarding-03` proofs 10–16; `apps/customer-mobile/__tests__/registration.test.tsx` (18/18) |
-| 5. PR #9 claim hardening | Unconsumed `mobile_account_claims` row deleted when `claim-match` returns non-MATCH | `batch2-legacy-registration.isolated-pg` (8/8) |
+| Gap                                   | Delivered                                                                                                                                                                                                                                            | Verification                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 1. Admin review surface               | `GET /api/v1/internal/customers/:id/registration-review` (`AdminCustomerController`), `CustomerActivationReadinessService` (read-only)                                                                                                               | `v1-customer-onboarding-03` proofs 1–3; SUPPORT readable, customer bearer refused                        |
+| 2. Attributable DRAFT → ACTIVE gate   | `CustomerService.updateStatus` now captures the gate's verified tier and audits `activationGate {verifiedPrimaryPhone, financialEligibility, verifiedTier, evidenceSource}`                                                                          | `v1-customer-onboarding-02` (16/16), `v1-customer-onboarding-01` (15/15)                                 |
+| 3. Customer-owned wallet provisioning | `GET/POST /api/v1/customers/me/activation` — CUSTOMER SELF, `Idempotency-Key` (8–255) required, SERIALIZABLE + bounded retry, `replayed` reported, audit `CUSTOMER_WALLET_ACTIVATION` ACTIVE/REPLAYED                                                | `v1-customer-onboarding-03` proofs 4–9                                                                   |
+| 4. Mobile onboarding states           | `POST /api/v1/customers/registration-sessions/onboarding-state` (public, session-scoped) + `RegistrationScreen` `PENDING_REVIEW` / `REJECTED` / `ACTIVATED` with the shared requirement list; client validates the payload and never invents a state | `v1-customer-onboarding-03` proofs 10–16; `apps/customer-mobile/__tests__/registration.test.tsx` (18/18) |
+| 5. PR #9 claim hardening              | Unconsumed `mobile_account_claims` row deleted when `claim-match` returns non-MATCH                                                                                                                                                                  | `batch2-legacy-registration.isolated-pg` (8/8)                                                           |
 
 ### Corrections made during implementation
 
@@ -74,6 +74,21 @@ test/v1-customer-onboarding-02.integration.spec.ts   16 passed   (regression)
 test/v1-customer-onboarding-01.integration.spec.ts   15 passed   (regression)
 test/runtime-access.guard.spec.ts                    16 passed   (new route-policy pins)
 test/batch2-legacy-registration.isolated-pg.test.ts   8 passed   (isolated socket cluster)
-apps/customer-mobile  jest --runInBand              234 passed   (26 suites)
+apps/customer-mobile  jest --runInBand              238 passed   (26 suites)
+apps/admin-web        jest                          930 passed   (95 suites)
 npm run lint / npm run format:check / npm run build           clean
 ```
+
+### Follow-on UI (same branch)
+
+- **Admin web — `CustomerRegistrationReviewPanel`** in `Customer360Workspace`, behind
+  `customer.view`. Renders the projection's own requirement list with `MET` / `OUTSTANDING` /
+  `UNAVAILABLE` / `BLOCKED` distinguished, lists restrictions and identity conflicts as blockers,
+  and has **no activate control** — it prints the endpoint's `activationRoute` so the reviewer goes
+  to the governed transition. A payload for a different customer id, or with a malformed
+  requirement list, renders "unavailable" rather than a half-empty table.
+- **Customer mobile — HomeScreen activation card.** `GET /customers/me/activation` is read only
+  when the dashboard has no wallet. "Set up my wallet" appears only when `activatable` is true and
+  calls `POST /customers/me/activation` with a stable key derived from the customer id, so a retry
+  converges instead of provisioning twice. Refusals are shown verbatim; success reloads the
+  dashboard. `UNAVAILABLE` requirements read "could not be confirmed", never as a customer failure.
