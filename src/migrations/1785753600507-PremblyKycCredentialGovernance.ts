@@ -92,12 +92,12 @@ export class PremblyKycCredentialGovernance1785753600507 implements MigrationInt
           IF NEW.state<>'REQUESTED' OR NEW.checker_id IS NOT NULL OR NEW.checker_session_id IS NOT NULL OR NEW.decided_at IS NOT NULL THEN
             RAISE EXCEPTION 'KYC proposals must begin in REQUESTED state' USING ERRCODE='55000';
           END IF;
-          IF kind='PROVIDER' AND (
-            (NEW.change_type='ROUTING' AND (NEW.reason_code='CREDENTIAL_CHANGE' OR NEW.expected_credential_version IS NOT NULL OR NEW.credential_change IS NOT NULL))
-            OR (NEW.change_type='PREMBLY_CREDENTIAL' AND (NEW.reason_code<>'CREDENTIAL_CHANGE' OR NEW.expected_credential_version IS NULL OR NEW.credential_change IS NULL))
-            OR NEW.change_type NOT IN ('ROUTING','PREMBLY_CREDENTIAL')
-          ) THEN
-            RAISE EXCEPTION 'KYC provider proposal type is invalid' USING ERRCODE='55000';
+          IF kind='PROVIDER' THEN
+            IF (NEW.change_type='ROUTING' AND (NEW.reason_code='CREDENTIAL_CHANGE' OR NEW.expected_credential_version IS NOT NULL OR NEW.credential_change IS NOT NULL))
+              OR (NEW.change_type='PREMBLY_CREDENTIAL' AND (NEW.reason_code<>'CREDENTIAL_CHANGE' OR NEW.expected_credential_version IS NULL OR NEW.credential_change IS NULL))
+              OR NEW.change_type NOT IN ('ROUTING','PREMBLY_CREDENTIAL') THEN
+              RAISE EXCEPTION 'KYC provider proposal type is invalid' USING ERRCODE='55000';
+            END IF;
           END IF;
           RETURN NEW;
         END IF;
