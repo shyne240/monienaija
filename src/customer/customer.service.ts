@@ -168,19 +168,37 @@ export class CustomerService {
         return customer;
       }
       this.assertCustomerTransition(customer.status, command.status);
+      // HARD EVIDENCE GATE — DRAFT/SUSPENDED -> ACTIVE.
+      //
+      // Activation is the point at which a customer gains financial access, so it must be proved
+      // from authoritative state, not asserted by the caller. Three independent gates run inside
+      // this transaction, after the `customers` row lock:
+      //   1. synthetic fixtures can never be activated;
+      //   2. exactly one verified primary phone must exist;
+      //   3. the financial-eligibility gate must pass with `requireActive = false` — an APPROVED,
+      //      current, unexpired assessment at the customer's tier, live non-synthetic trusted
+      //      evidence bound to the current identity revision, an approved tier policy in force, no
+      //      manual hold, no identity-ownership conflict, no active FROZEN/BLACKLISTED restriction.
+      // The gate result is recorded on the audit event so a reviewer can see *which* evidence was
+      // proven at the moment of activation, rather than only that a status column changed.
+      let activationGate: Record<string, unknown> | undefined;
       if (command.status === CustomerStatus.ACTIVE) {
         if (customer.isSynthetic)
           throw new ConflictException('Synthetic customers cannot be activated');
         await this.assertVerifiedPrimaryPhone(manager, id);
-        await this.financialEligibility.require(manager, id, false);
+        const tier = await this.financialEligibility.require(manager, id, false);
+        activationGate = {
+          verifiedPrimaryPhone: true,
+          financialEligibility: 'ELIGIBLE',
+          verifiedTier: tier,
+          evidenceSource: 'TRUSTED_KYC_EVIDENCE',
+        };
       }
       const previous = this.auditCustomer(customer);
       customer.status = command.status;
       customer.deletedAt =
         command.status === CustomerStatus.CLOSED ? new Date() : customer.deletedAt;
       const saved = await manager.getRepository(Customer).save(customer);
-      const gateOutcome =
-        command.status === CustomerStatus.ACTIVE ? { verifiedPrimaryPhone: true } : undefined;
       await this.audit(
         manager,
         'CUSTOMER',
@@ -188,8 +206,8 @@ export class CustomerService {
         'STATUS_UPDATED',
         actor,
         previous,
-        gateOutcome
-          ? { ...this.auditCustomer(saved), activationGate: gateOutcome }
+        activationGate
+          ? { ...this.auditCustomer(saved), activationGate }
           : this.auditCustomer(saved),
       );
       if (

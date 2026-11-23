@@ -310,7 +310,15 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
     // ('mn-••••' + last four of the national number), never the full phone-derived
     // reference. Assert the hardened masked form.
     expect(audits[0].new_values.reference).toBe(`mn-••••${first.phone.slice(-4)}`);
-    expect(audits[0].new_values.activationGate).toEqual({ verifiedPrimaryPhone: true });
+    // Activation now records the WHOLE evidence gate, not just phone verification: the
+    // financial-eligibility service returns the verified tier, and the audit says which authority
+    // proved it. The phone-verification fact is preserved for existing readers.
+    expect(audits[0].new_values.activationGate).toMatchObject({
+      verifiedPrimaryPhone: true,
+      financialEligibility: 'ELIGIBLE',
+      evidenceSource: 'TRUSTED_KYC_EVIDENCE',
+    });
+    expect(audits[0].new_values.activationGate.verifiedTier).toMatch(/^LEVEL_[123]$/);
     expect(audits[0].occurred_at).toBeTruthy();
 
     // UAT-DEFECT-001 boundary: SUPPORT is NOT an authorized workforce class on the

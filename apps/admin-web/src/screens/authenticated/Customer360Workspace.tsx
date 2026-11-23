@@ -8,6 +8,8 @@ import { useAuthStore } from '../../store/auth-store';
 import { CustomerPersonalInformationPanel } from './CustomerPersonalInformationPanel';
 import { CustomerProofOfAddressPanel } from './CustomerProofOfAddressPanel';
 import { CustomerTier3ReadinessPanel } from './CustomerTier3ReadinessPanel';
+import { CustomerRegistrationReviewPanel } from './CustomerRegistrationReviewPanel';
+import type { RegistrationReview } from './CustomerRegistrationReviewPanel';
 import { CustomerClassAssignmentPanel } from '../../components/CustomerClassAssignmentPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
@@ -97,6 +99,8 @@ interface OverviewData {
   transactions: SafeResult<TransactionList>;
   wallets: SafeResult<{ data: Array<Omit<WalletSummary, 'balanceMinor'>> }>;
   balances: Record<string, SafeResult<WalletBalance>>;
+  /** `GET /internal/customers/:id/registration-review`; null when unavailable or restricted. */
+  registrationReview: RegistrationReview | null;
 }
 
 const CUSTOMER_STATUSES: Record<string, string> = {
@@ -201,6 +205,24 @@ async function safeGet<T>(path: string): Promise<SafeResult<T>> {
         : undefined;
     return { value: null, status };
   }
+}
+
+/**
+ * Accepts the review payload only when it is structurally the projection this build understands.
+ *
+ * A partially-deployed backend must render "unavailable" rather than a half-empty readiness table —
+ * a reviewer must never read a missing field as "requirement not met".
+ */
+function normalizeRegistrationReview(
+  value: RegistrationReview | null,
+  customerId: string,
+): RegistrationReview | null {
+  if (!value || typeof value !== 'object') return null;
+  if (value.customerId !== customerId) return null;
+  if (!Array.isArray(value.requirements) || !Array.isArray(value.outstanding)) return null;
+  if (typeof value.activatable !== 'boolean') return null;
+  if (!value.requirements.every((requirement) => typeof requirement.code === 'string')) return null;
+  return value;
 }
 
 export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = (props) => {
@@ -328,6 +350,11 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
     const walletsPromise = hasFunction('customer.view_wallets')
       ? safeGet<unknown>(`/internal/customers/${customerPath}/wallets`)
       : Promise.resolve({ value: null });
+    // Read-only readiness projection; it never activates anything, and `customer.view` is the same
+    // function the endpoint itself requires.
+    const reviewPromise = hasFunction('customer.view')
+      ? safeGet<RegistrationReview>(`/internal/customers/${customerPath}/registration-review`)
+      : Promise.resolve({ value: null });
 
     Promise.all([
       phonePromise,
@@ -335,8 +362,9 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       eligibilityPromise,
       transactionsPromise,
       walletsPromise,
+      reviewPromise,
     ])
-      .then(async ([phone, readiness, eligibility, transactions, wallets]) => {
+      .then(async ([phone, readiness, eligibility, transactions, wallets, review]) => {
         const validatedWallets = validateWallets(wallets.value, customer.id);
         const walletItems = validatedWallets?.data ?? [];
         const balancePairs = await Promise.all(
@@ -360,6 +388,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           transactions,
           wallets: { ...wallets, value: validatedWallets },
           balances,
+          registrationReview: normalizeRegistrationReview(review.value, customer.id),
         });
         setOverviewLoading(false);
       })
@@ -373,6 +402,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           transactions: { value: null },
           wallets: { value: null },
           balances: {},
+          registrationReview: null,
         });
         setOverviewLoading(false);
       });
@@ -416,6 +446,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const transactionsAvailable = Array.isArray(visibleOverview?.transactions.value?.items);
   const walletCountLabel = walletItems.length === 1 ? '1 wallet' : `${walletItems.length} wallets`;
   const awaitingOverview = overviewLoading || !visibleOverview;
+  const registrationReview = visibleOverview?.registrationReview ?? null;
   const tabs = ['overview', 'personal', 'proof'] as const;
   const tabIds = ['customer-overview-tab', 'customer-personal-tab', 'customer-proof-address-tab'];
   const requestTab = (tab: 'overview' | 'personal' | 'proof') => {
@@ -892,6 +923,18 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
               financialEligibility={eligibility?.status ?? null}
               signalsLoading={awaitingOverview}
             />
+
+            {hasFunction('customer.view') && (
+              <CustomerRegistrationReviewPanel
+                review={registrationReview}
+                loading={awaitingOverview}
+                error={
+                  !awaitingOverview && !registrationReview
+                    ? 'Registration review is unavailable for this customer.'
+                    : null
+                }
+              />
+            )}
 
             <article className="cm-card cm-card-wide">
               <div className="cm-card-heading">

@@ -70,12 +70,44 @@ const kycFixture = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const routeGet = (mocks: { dashboard: unknown; kyc: unknown }) =>
+const routeGet = (mocks: { dashboard: unknown; kyc: unknown; activation?: unknown }) =>
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === '/customers/me/dashboard') return Promise.resolve(mocks.dashboard);
     if (url === '/customers/me/kyc') return Promise.resolve(mocks.kyc);
+    if (url === '/customers/me/activation' && mocks.activation !== undefined)
+      return Promise.resolve(mocks.activation);
     return Promise.reject(new Error(`unexpected url ${url}`));
   });
+
+const activationFixture = (overrides: Record<string, unknown> = {}) => ({
+  customerId: 'test-customer-uuid',
+  customerStatus: 'ACTIVE',
+  kyc: {
+    level: 'LEVEL_1',
+    status: 'APPROVED',
+    assessment: { level: 'LEVEL_1', status: 'APPROVED', expiresAt: null, reason: null },
+  },
+  customerClass: {
+    configured: true,
+    classCode: 'STANDARD',
+    className: 'Standard',
+    source: 'DEFAULT',
+    effectiveFrom: null,
+  },
+  financialEligibility: 'ELIGIBLE',
+  onboardingWorkflow: { status: 'COMPLETED', eligibility: 'ELIGIBLE', completed: true },
+  requirements: [
+    { code: 'phone_verified', label: 'Phone verified', state: 'MET' },
+    { code: 'identity_evidence', label: 'Identity verified by an approved provider', state: 'MET' },
+    { code: 'wallet', label: 'Wallet provisioned', state: 'OUTSTANDING' },
+  ],
+  outstanding: ['wallet'],
+  activatable: true,
+  wallet: null,
+  wallets: [],
+  evaluatedAt: '2026-11-23T06:00:00.000Z',
+  ...overrides,
+});
 
 /**
  * ARENA 4 — the dashboard now reads ONE backend projection (`GET /customers/me/dashboard`) plus the
@@ -134,6 +166,9 @@ describe('HomeScreen banking dashboard', () => {
 
     expect(queryByText('Available balance')).toBeNull();
     expect(getByText('Contact support')).toBeTruthy();
+    // Readiness is only fetched when there is no wallet; with no activation route mock available
+    // the card stays explanatory and offers no provisioning action.
+    expect(queryByText('Set up my wallet')).toBeNull();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
@@ -190,5 +225,126 @@ describe('HomeScreen banking dashboard', () => {
 
     expect(queryByText('Available balance')).toBeNull();
     expect(getByText('Retry')).toBeTruthy();
+  });
+});
+
+describe('HomeScreen customer-owned wallet activation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('offers activation only when every backend requirement is met', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        balance: { wallets: [], primary: null },
+        receivingIdentity: null,
+      }),
+      kyc: kycFixture({ kycLevel: 'LEVEL_1', kycStatus: 'APPROVED' }),
+      activation: activationFixture(),
+    });
+
+    const { getByText } = render(<HomeScreen />);
+
+    await waitFor(() =>
+      expect(getByText('Every requirement is met. You can set up your wallet now.')).toBeTruthy(),
+    );
+    expect(getByText('Set up my wallet')).toBeTruthy();
+  });
+
+  test('lists what is outstanding and offers no action when the account is not ready', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        balance: { wallets: [], primary: null },
+        receivingIdentity: null,
+      }),
+      kyc: kycFixture({ kycLevel: 'NONE', kycStatus: 'NOT_STARTED' }),
+      activation: activationFixture({
+        activatable: false,
+        customerStatus: 'DRAFT',
+        financialEligibility: 'NOT_ELIGIBLE',
+        requirements: [
+          { code: 'phone_verified', label: 'Phone verified', state: 'MET' },
+          {
+            code: 'kyc_assessment',
+            label: 'KYC assessment approved',
+            state: 'OUTSTANDING',
+          },
+          {
+            code: 'identity_evidence',
+            label: 'Identity verified by an approved provider',
+            state: 'UNAVAILABLE',
+          },
+          { code: 'wallet', label: 'Wallet provisioned', state: 'OUTSTANDING' },
+        ],
+        outstanding: ['kyc_assessment', 'identity_evidence', 'wallet'],
+      }),
+    });
+
+    const { getByText, queryByText } = render(<HomeScreen />);
+
+    await waitFor(() =>
+      expect(getByText('Your account is not ready for a wallet yet:')).toBeTruthy(),
+    );
+    expect(getByText(/KYC assessment approved/)).toBeTruthy();
+    // An unreadable dependency is labelled as such instead of being shown as a customer failure.
+    expect(getByText(/could not be confirmed/)).toBeTruthy();
+    expect(queryByText('Set up my wallet')).toBeNull();
+  });
+
+  test('activates with a stable idempotency key and reports the result', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        balance: { wallets: [], primary: null },
+        receivingIdentity: null,
+      }),
+      kyc: kycFixture({ kycLevel: 'LEVEL_1', kycStatus: 'APPROVED' }),
+      activation: activationFixture(),
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      customerId: 'test-customer-uuid',
+      activated: true,
+      replayed: false,
+      currency: 'NGN',
+      wallet: {
+        walletId: 'wallet-1',
+        provisioningWalletId: 'provisioning-1',
+        currency: 'NGN',
+        status: 'ACTIVE',
+        balanceHint: 'LEDGER_DERIVED',
+      },
+      checks: { customerActive: true, verifiedPrimaryPhone: true, onboardingCompleted: true },
+      activatedAt: '2026-11-23T06:00:00.000Z',
+    });
+
+    const { getByText } = render(<HomeScreen />);
+    await waitFor(() => expect(getByText('Set up my wallet')).toBeTruthy());
+    fireEvent.press(getByText('Set up my wallet'));
+
+    await waitFor(() => expect(getByText(/Your NGN wallet is ready/)).toBeTruthy());
+    expect(ApiClient.post).toHaveBeenCalledWith(
+      '/customers/me/activation',
+      {},
+      { idempotencyKey: 'activate.test-customer-uuid.primary-wallet' },
+    );
+  });
+
+  test('reports a refusal from the backend instead of claiming success', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        balance: { wallets: [], primary: null },
+        receivingIdentity: null,
+      }),
+      kyc: kycFixture({ kycLevel: 'LEVEL_1', kycStatus: 'APPROVED' }),
+      activation: activationFixture(),
+    });
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new Error('Account activation by MonieNaija is required before a wallet can be provisioned'),
+    );
+
+    const { getByText } = render(<HomeScreen />);
+    await waitFor(() => expect(getByText('Set up my wallet')).toBeTruthy());
+    fireEvent.press(getByText('Set up my wallet'));
+
+    await waitFor(() => expect(getByText(/activation by MonieNaija is required/i)).toBeTruthy());
   });
 });

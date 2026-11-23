@@ -71,6 +71,11 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration-sessions/synthetic-credentials',
   'POST /api/v1/customers/registration-sessions/synthetic-credentials/status',
   'POST /api/v1/customers/registration-sessions/onboarding-route',
+  // Mobile onboarding state: the authoritative NEW/CLAIM/RESUME_CLAIM/LOGIN/PENDING_REVIEW/
+  // REJECTED/ACTIVATED read for the phone-verified registration session. Scoped by that
+  // session's verified phone only (never a caller-supplied customer id) and returns no
+  // identifiers, credentials or provider data.
+  'POST /api/v1/customers/registration-sessions/onboarding-state',
   'POST /api/v1/customers/registration-sessions/claim-match',
   'POST /api/v1/customers/registration-sessions/claim-credentials',
   'POST /api/v1/customers/registration-sessions/onboarding-login',
@@ -1825,6 +1830,53 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: ['reconciliation.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Arena 3 — Commercial Configuration Studio read surfaces (effective-configuration preview and
+    // governed change history). Workforce-only, gated here on `limit.view` so a denial happens at
+    // the guard (and is audited as a denied workforce function) rather than depending on controller
+    // code staying correct. Must precede the generic `/api/v1/internal/` branch, which declares no
+    // function gate at all and would otherwise only authenticate the caller.
+    //
+    // The per-action read function for change history (fee_rule.view / commission_rule.view /
+    // reward_rule.view) is data-dependent on `actionType`, and a route policy is a pure function of
+    // method+path. It is therefore resolved from the governed-action registry inside
+    // `PrivilegedActionApprovalReadService`; this branch guarantees authentication, principal type
+    // and `limit.view`, and the controller re-checks the action-specific function.
+    if (path.startsWith('/api/v1/internal/commercial-configuration/effective-preview')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'commercial-configuration-preview',
+        policy: {
+          resourceType: 'commercial-configuration-preview',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['limit.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (path.startsWith('/api/v1/internal/commercial-configuration/change-history')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'commercial-configuration-change-history',
+        policy: {
+          resourceType: 'commercial-configuration-change-history',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['limit.view'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

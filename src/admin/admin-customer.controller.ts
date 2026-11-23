@@ -23,6 +23,7 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 import { CustomerDirectoryQueryDto } from './dto/customer-directory-query.dto';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
+import { CustomerActivationReadinessService } from '../customer-onboarding/customer-activation-readiness.service';
 import { WalletService } from '../wallet/wallet.service';
 import { SupportService } from '../support/support.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
@@ -42,6 +43,7 @@ export class AdminCustomerController {
     private readonly walletService: WalletService,
     private readonly supportService: SupportService,
     private readonly auth: AuthorizationService,
+    private readonly activationReadiness: CustomerActivationReadinessService,
   ) {}
 
   @Get()
@@ -366,6 +368,59 @@ export class AdminCustomerController {
         verifiedAt: contact.verifiedAt,
       })),
       activationGate: { verifiedPrimaryPhone: primaryVerified },
+    };
+  }
+
+  /**
+   * Admin-assisted registration review.
+   *
+   * Answers the two questions a workforce reviewer actually has when a customer was registered on
+   * their behalf:
+   *   1. what defaults the platform applied (customer class of service, KYC tier/assessment), and
+   *   2. exactly what evidence is still outstanding before the account may be activated and given a
+   *      wallet.
+   *
+   * Read-only and non-activating: it delegates to the same `CustomerActivationReadinessService` the
+   * customer's own `/customers/me/activation` view uses, so the administrator and the customer can
+   * never be shown two different requirement lists. It exposes masked references and status codes
+   * only — never document numbers, credentials, PINs or provider payloads.
+   */
+  @Get(':id/registration-review')
+  async getRegistrationReview(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'customer.view');
+    this.assertUuid(id, 'id');
+    const customer = await this.findVisibleCustomer(id);
+    const snapshot = await this.activationReadiness.evaluateOuter(id);
+    return {
+      customerId: snapshot.customerId,
+      reference: maskCustomerReference((customer as unknown as Customer).reference),
+      customerType: snapshot.customerType,
+      customerStatus: snapshot.customerStatus,
+      isSynthetic: snapshot.isSynthetic,
+      defaults: {
+        customerClass: snapshot.customerClass,
+        kyc: snapshot.kyc,
+      },
+      onboardingWorkflow: snapshot.onboardingWorkflow,
+      financialEligibility: snapshot.financialEligibility.eligible ? 'ELIGIBLE' : 'NOT_ELIGIBLE',
+      restrictions: snapshot.restrictions,
+      identityConflicts: snapshot.identityConflicts,
+      trustedEvidence: snapshot.trustedEvidence,
+      wallet: snapshot.wallet.provisioned
+        ? {
+            walletId: snapshot.wallet.walletId,
+            currency: snapshot.wallet.currency,
+            status: snapshot.wallet.status,
+          }
+        : null,
+      requirements: snapshot.requirements,
+      outstanding: snapshot.outstanding,
+      activatable: snapshot.activatable,
+      // Activation stays on the governed lifecycle route; this projection deliberately does not
+      // offer an alternate mutation path.
+      activationRoute: 'PATCH /api/v1/customers/:id',
+      evaluatedAt: snapshot.evaluatedAt,
     };
   }
 

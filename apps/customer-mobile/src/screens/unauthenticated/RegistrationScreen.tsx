@@ -13,6 +13,10 @@ import {
   customerOnboardingKycWorkflowApi,
   type CustomerKycWorkflowStatus,
 } from '../../services/customer-kyc-verification';
+import {
+  mobileOnboardingStateApi,
+  type MobileOnboardingState,
+} from '../../services/mobile-onboarding-state';
 import { SecureStorage } from '../../services/secure-storage';
 import { theme } from '../../theme';
 import { useAuthStore } from '../../store/auth-store';
@@ -28,6 +32,9 @@ type Step =
   | 'CREDENTIALS'
   | 'CLAIM'
   | 'ONBOARDING_PENDING'
+  | 'PENDING_REVIEW'
+  | 'REJECTED'
+  | 'ACTIVATED'
   | 'ONBOARDING_LOGIN'
   | 'ONBOARDING_AUTHENTICATED';
 type Kind = 'BVN' | 'NIN';
@@ -52,6 +59,96 @@ async function uuid(): Promise<string> {
   b[8] = (b[8]! & 63) | 128;
   const h = Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/**
+ * Single mapping from the backend's authoritative stage to this screen's step.
+ *
+ * `NEW` means the verified phone has no customer yet. When identity simulation is enabled (test
+ * builds only) the screen continues into the synthetic flow; otherwise registration cannot proceed
+ * without an approved identity provider, and the customer is told exactly that.
+ */
+function resolveStage(
+  state: MobileOnboardingState,
+  canSimulate: boolean,
+):
+  | 'PROFILE'
+  | 'CLAIM'
+  | 'CREDENTIALS'
+  | 'ONBOARDING_LOGIN'
+  | 'PENDING_REVIEW'
+  | 'REJECTED'
+  | 'ACTIVATED'
+  | 'NEW' {
+  switch (state.stage) {
+    case 'NEW':
+      return canSimulate ? 'PROFILE' : 'NEW';
+    case 'CLAIM':
+      return 'CLAIM';
+    case 'RESUME_CLAIM':
+      return 'CREDENTIALS';
+    case 'LOGIN':
+      return 'ONBOARDING_LOGIN';
+    case 'PENDING_REVIEW':
+      return 'PENDING_REVIEW';
+    case 'REJECTED':
+      return 'REJECTED';
+    case 'ACTIVATED':
+      // Never route an activated customer into onboarding: financial login is the only path that
+      // issues a financial session.
+      return 'ACTIVATED';
+    default:
+      return 'PENDING_REVIEW';
+  }
+}
+
+/**
+ * Resolves the next step from the authoritative onboarding state, falling back to the weaker
+ * `onboarding-route` read when the projection is unavailable.
+ *
+ * The fallback is deliberately *less* capable: it cannot express PENDING_REVIEW/REJECTED/ACTIVATED,
+ * so an unknown answer becomes "pending review" only when the legacy route also has nothing better
+ * to offer. Nothing here invents an approval.
+ */
+async function resolveWithFallback(options: {
+  sessionId: string;
+  bearer: string;
+  simulate: boolean;
+  draftCreated: boolean;
+  readState: () => Promise<MobileOnboardingState>;
+  readRoute: () => Promise<{ next: string }>;
+}): Promise<{
+  stage:
+    | 'PROFILE'
+    | 'CLAIM'
+    | 'CREDENTIALS'
+    | 'ONBOARDING_LOGIN'
+    | 'PENDING_REVIEW'
+    | 'REJECTED'
+    | 'ACTIVATED'
+    | 'NEW';
+  state: MobileOnboardingState | null;
+  degraded: boolean;
+}> {
+  try {
+    const state = await options.readState();
+    return { stage: resolveStage(state, options.simulate), state, degraded: false };
+  } catch {
+    const route = await options.readRoute();
+    const stage =
+      route.next === 'LOGIN'
+        ? 'ONBOARDING_LOGIN'
+        : route.next === 'RESUME_CLAIM'
+          ? 'CREDENTIALS'
+          : route.next === 'CLAIM'
+            ? 'CLAIM'
+            : route.next === 'NEW' && options.simulate
+              ? 'PROFILE'
+              : route.next === 'RESUME' && options.draftCreated
+                ? 'CREDENTIALS'
+                : 'PENDING_REVIEW';
+    return { stage, state: null, degraded: true };
+  }
 }
 
 interface RemainingRequirementsProps {
@@ -106,6 +203,14 @@ export const RegistrationScreen: React.FC = () => {
   const [onboardingKyc, setOnboardingKyc] = useState<CustomerKycWorkflowStatus | null>(null);
   const [onboardingKycError, setOnboardingKycError] = useState('');
   const [onboardingKycLoading, setOnboardingKycLoading] = useState(false);
+  /**
+   * The backend's authoritative onboarding stage. It is read from
+   * `POST /customers/registration-sessions/onboarding-state` after phone verification and on every
+   * explicit refresh/resume, and it is what drives the pending-review / rejected / activated
+   * screens. The client never derives these states itself.
+   */
+  const [onboardingState, setOnboardingState] = useState<MobileOnboardingState | null>(null);
+  const [onboardingStateError, setOnboardingStateError] = useState('');
   const [busy, setBusy] = useState(false);
   const [verification, setVerification] = useState<{
     state: VerificationState;
@@ -149,6 +254,26 @@ export const RegistrationScreen: React.FC = () => {
       setOnboardingKycLoading(false);
     }
   }, [onboardingToken]);
+  const refreshOnboardingState = useCallback(async () => {
+    if (!session || session.phase !== 'VERIFIED') return;
+    setBusy(true);
+    try {
+      const state = await mobileOnboardingStateApi.read(session.id, session.token);
+      setOnboardingState(state);
+      setOnboardingStateError('');
+      const resolved = resolveStage(state, __DEV__ && simulation);
+      setClaimFlow(resolved === 'CLAIM' || resolved === 'CREDENTIALS');
+      setStep(resolved === 'NEW' ? 'ONBOARDING_PENDING' : resolved);
+    } catch (e) {
+      setOnboardingStateError(
+        e instanceof ApiError && e.status === 401
+          ? 'Your registration session expired. Verify your phone number again.'
+          : 'We could not load your registration status. Please try again.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [session, simulation]);
   useEffect(() => {
     if (step !== 'ONBOARDING_AUTHENTICATED' || !onboardingToken) {
       setOnboardingKyc(null);
@@ -243,34 +368,54 @@ export const RegistrationScreen: React.FC = () => {
           setError('If your code has expired, request a new one.');
           return;
         }
-        const route = await post<{
-          next: 'NEW' | 'LOGIN' | 'CLAIM' | 'RESUME' | 'RESUME_CLAIM' | 'PENDING';
-        }>('onboarding-route', { sessionId: saved.id }, saved.token);
+        // Authoritative state: handles NEW / CLAIM / RESUME_CLAIM / LOGIN / PENDING_REVIEW /
+        // REJECTED / ACTIVATED for the customer that owns this verified phone.
+        const resolvedOutcome = await resolveWithFallback({
+          sessionId: saved.id,
+          bearer: saved.token,
+          simulate: canSimulate,
+          draftCreated: !!saved.draftCreated,
+          readState: () => mobileOnboardingStateApi.read(saved.id, saved.token),
+          readRoute: () => post<{ next: string }>('onboarding-route', { sessionId: saved.id }, saved.token),
+        });
         if (!live) return;
-        if (route.next === 'LOGIN') {
+        setOnboardingState(resolvedOutcome.state);
+        setOnboardingStateError(
+          resolvedOutcome.degraded
+            ? 'We could not load your registration status. Nothing was approved or rejected by this screen.'
+            : '',
+        );
+        const resolved = resolvedOutcome.stage;
+        if (resolved === 'ONBOARDING_LOGIN') {
           setStep('ONBOARDING_LOGIN');
           return;
         }
-        if (route.next === 'RESUME_CLAIM') {
+        if (resolved === 'PENDING_REVIEW') {
+          setStep('PENDING_REVIEW');
+          return;
+        }
+        if (resolved === 'REJECTED') {
+          setStep('REJECTED');
+          return;
+        }
+        if (resolved === 'ACTIVATED') {
+          setStep('ACTIVATED');
+          return;
+        }
+        if (resolved === 'CREDENTIALS') {
           setClaimFlow(true);
           setStep('CREDENTIALS');
           return;
         }
-        if (route.next === 'CLAIM') {
+        if (resolved === 'CLAIM') {
           setClaimFlow(true);
           setStep(saved.claimMatched ? 'CREDENTIALS' : 'CLAIM');
           return;
         }
-        if (route.next === 'NEW' && !canSimulate) {
+        if (resolved === 'NEW' && !canSimulate) {
           setStep('ONBOARDING_PENDING');
           return;
         }
-        if (route.next === 'PENDING' && !saved.draftCreated) {
-          setStep('ONBOARDING_PENDING');
-          return;
-        }
-        if (route.next !== 'NEW' && route.next !== 'PENDING' && route.next !== 'RESUME')
-          throw new Error('unknown route');
         const profile = await post<{
           firstName: string;
           lastName: string;
@@ -385,23 +530,26 @@ export const RegistrationScreen: React.FC = () => {
       );
       setCode('');
       await save({ ...session, token: r.authorization, phase: 'VERIFIED' });
-      const route = await post<{
-        next: 'NEW' | 'LOGIN' | 'CLAIM' | 'RESUME' | 'RESUME_CLAIM' | 'PENDING';
-      }>('onboarding-route', { sessionId: session.id }, r.authorization);
-      setClaimFlow(route.next === 'CLAIM' || route.next === 'RESUME_CLAIM');
-      setStep(
-        route.next === 'LOGIN'
-          ? 'ONBOARDING_LOGIN'
-          : route.next === 'RESUME_CLAIM'
-            ? 'CREDENTIALS'
-            : route.next === 'CLAIM'
-              ? 'CLAIM'
-              : route.next === 'NEW' && simulation
-                ? 'PROFILE'
-                : route.next === 'RESUME' && session.draftCreated
-                  ? 'CREDENTIALS'
-                  : 'ONBOARDING_PENDING',
+      const outcome = await resolveWithFallback({
+        sessionId: session.id,
+        bearer: r.authorization,
+        simulate: __DEV__ && simulation,
+        draftCreated: !!session.draftCreated,
+        readState: () => mobileOnboardingStateApi.read(session.id, r.authorization),
+        readRoute: () =>
+          post<{ next: string }>('onboarding-route', { sessionId: session.id }, r.authorization),
+      });
+      setOnboardingState(outcome.state);
+      setOnboardingStateError(
+        outcome.degraded
+          ? 'We could not load your registration status. Nothing was approved or rejected by this screen.'
+          : '',
       );
+      // `NEW` is not a renderable step here: the caller verified its phone moments ago and identity
+      // simulation is off, so the flow is reported as pending review rather than a blank screen.
+      const resolved = outcome.stage === 'NEW' ? 'ONBOARDING_PENDING' : outcome.stage;
+      setClaimFlow(resolved === 'CLAIM' || resolved === 'CREDENTIALS');
+      setStep(resolved);
     });
   const saveProfile = () =>
     withError(async () => {
@@ -609,6 +757,13 @@ export const RegistrationScreen: React.FC = () => {
           {error}
         </Text>
       )}
+      {/* Shown on every step: if the authoritative projection could not be read, the customer must
+          know that what they see is a weaker answer, not a decision the platform made. */}
+      {!!onboardingStateError && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {onboardingStateError}
+        </Text>
+      )}
       {!!verification && !['CREDENTIALS', 'ONBOARDING_LOGIN'].includes(step) && (
         <VerificationNotice state={verification.state} detail={verification.detail} />
       )}
@@ -800,6 +955,69 @@ export const RegistrationScreen: React.FC = () => {
             ]}
           />
           <Button label="Start again" onPress={() => void reset()} />
+        </View>
+      )}
+      {step === 'PENDING_REVIEW' && (
+        <View>
+          <Text style={styles.message}>
+            Your identity is still under review. Nothing financial has been enabled, and no wallet
+            can be created until review is complete.
+          </Text>
+          <RemainingRequirements
+            rows={
+              onboardingState
+                ? onboardingState.requirements.map((requirement) => ({
+                    label: requirement.label,
+                    done: requirement.state === 'MET',
+                  }))
+                : [
+                    { label: 'Phone verified', done: true },
+                    { label: 'Identity (BVN/NIN) verified', done: false },
+                    { label: 'KYC assessment approved', done: false },
+                  ]
+            }
+          />
+          {onboardingState?.customer ? (
+            <Text style={styles.message}>
+              Reference {onboardingState.customer.referenceMasked} · KYC{' '}
+              {onboardingState.customer.kycStatus} {onboardingState.customer.kycLevel}
+            </Text>
+          ) : null}
+          {onboardingStateError ? <Text style={styles.error}>{onboardingStateError}</Text> : null}
+          <Button
+            label="Check again"
+            loading={busy}
+            onPress={() => void refreshOnboardingState()}
+          />
+          <Button label="Start again" variant="text" onPress={() => void reset()} />
+        </View>
+      )}
+      {step === 'REJECTED' && (
+        <View>
+          <Text style={styles.error}>
+            Your registration could not be approved because the identity check did not pass. No
+            financial service has been enabled for this phone number.
+          </Text>
+          {onboardingState?.outstanding?.length ? (
+            <RemainingRequirements
+              rows={onboardingState.requirements
+                .filter((requirement) => requirement.state !== 'MET')
+                .map((requirement) => ({ label: requirement.label, done: false }))}
+            />
+          ) : null}
+          <Text style={styles.message}>
+            If you believe this is wrong, contact support with the reference shown in the app. Do
+            not create a second registration for the same phone number.
+          </Text>
+          <Button label="Start again" variant="text" onPress={() => void reset()} />
+        </View>
+      )}
+      {step === 'ACTIVATED' && (
+        <View>
+          <Text style={styles.message}>
+            Your account is activated. Sign in with your passcode to use financial services.
+          </Text>
+          <Button label="Go to sign in" onPress={() => navigation.navigate('Login')} />
         </View>
       )}
       {step === 'ONBOARDING_LOGIN' && (
