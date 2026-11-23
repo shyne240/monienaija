@@ -23,6 +23,11 @@ import {
   type CustomerDashboard,
   type CustomerKycProjection,
 } from '../../services/customer-account';
+import {
+  CustomerActivationApi,
+  activationIdempotencyKey,
+  type CustomerActivationView,
+} from '../../services/customer-activation';
 import { mapTransactionToRow } from '../../services/transfer-view';
 import {
   HIDDEN_BALANCE,
@@ -61,6 +66,15 @@ export const HomeScreen: React.FC = () => {
   const [kycError, setKycError] = useState('');
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [copied, setCopied] = useState(false);
+  /**
+   * Customer-owned activation readiness. Only fetched when the dashboard shows no wallet: that is
+   * the one state where the customer can do something about it, and fetching it otherwise would
+   * imply an action that does not exist for an already-provisioned account.
+   */
+  const [activation, setActivation] = useState<CustomerActivationView | null>(null);
+  const [activationError, setActivationError] = useState('');
+  const [activationBusy, setActivationBusy] = useState(false);
+  const [activationNotice, setActivationNotice] = useState('');
 
   const load = useCallback(async () => {
     setError('');
@@ -75,6 +89,25 @@ export const HomeScreen: React.FC = () => {
           ? caught.message
           : 'We could not load your account just now.',
       );
+    }
+    try {
+      const projection = await CustomerAccountApi.dashboard();
+      if (!projection.balance.primary) {
+        try {
+          setActivation(await CustomerActivationApi.view());
+          setActivationError('');
+        } catch {
+          // Activation readiness is supplementary. Its failure must not blank the dashboard; the
+          // card simply explains that the check could not be made.
+          setActivation(null);
+          setActivationError('We could not check your activation status just now.');
+        }
+      } else {
+        setActivation(null);
+        setActivationError('');
+      }
+    } catch {
+      setActivation(null);
     }
     try {
       setKyc(await CustomerAccountApi.kyc());
@@ -95,6 +128,36 @@ export const HomeScreen: React.FC = () => {
       live = false;
     };
   }, [load]);
+
+  /**
+   * Provisions this customer's own wallet through `POST /customers/me/activation`.
+   *
+   * The idempotency key is derived from the customer id (never random per press), so a retry after
+   * a timeout converges on the same wallet instead of provisioning a second one. Nothing here
+   * activates the customer's lifecycle: the backend refuses unless MonieNaija already did that.
+   */
+  const activateWallet = useCallback(async () => {
+    if (!activation || activationBusy) return;
+    setActivationBusy(true);
+    setActivationNotice('');
+    try {
+      const result = await CustomerActivationApi.activate(
+        activationIdempotencyKey(activation.customerId),
+      );
+      setActivationNotice(
+        result.replayed || result.activated
+          ? `Your ${result.currency} wallet is ready. Pull down to refresh your balance.`
+          : 'Activation is being processed.',
+      );
+      await load();
+    } catch (caught) {
+      const message =
+        caught instanceof Error && caught.message ? caught.message : 'Activation failed.';
+      setActivationNotice(message);
+    } finally {
+      setActivationBusy(false);
+    }
+  }, [activation, activationBusy, load]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -239,6 +302,35 @@ export const HomeScreen: React.FC = () => {
                 ? 'Your customer record exists, but no wallet is provisioned for it. Balances, transfers and cash operations stay unavailable until MonieNaija provisions one.'
                 : 'We could not confirm your wallet. Pull down to retry.'}
             </Text>
+            {activation ? (
+              <View style={styles.activationBlock}>
+                <Text style={styles.activationLabel}>
+                  {activation.activatable
+                    ? 'Every requirement is met. You can set up your wallet now.'
+                    : 'Your account is not ready for a wallet yet:'}
+                </Text>
+                {!activation.activatable ? (
+                  <View style={styles.activationList}>
+                    {activation.requirements
+                      .filter((requirement) => requirement.state !== 'MET')
+                      .map((requirement) => (
+                        <Text key={requirement.code} style={styles.activationRequirement}>
+                          ○ {requirement.label}
+                          {requirement.state === 'UNAVAILABLE' ? ' (could not be confirmed)' : ''}
+                        </Text>
+                      ))}
+                  </View>
+                ) : (
+                  <Button
+                    label={activationBusy ? 'Setting up…' : 'Set up my wallet'}
+                    loading={activationBusy}
+                    onPress={() => void activateWallet()}
+                  />
+                )}
+              </View>
+            ) : null}
+            {!!activationError && <Text style={styles.activationError}>{activationError}</Text>}
+            {!!activationNotice && <Text style={styles.activationNotice}>{activationNotice}</Text>}
             <Button
               label="Contact support"
               variant="outline"
@@ -537,6 +629,12 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.semibold,
   },
+  activationBlock: { gap: 8, marginTop: 4 },
+  activationLabel: { fontSize: 13, lineHeight: 19, color: '#334155' },
+  activationList: { gap: 4 },
+  activationRequirement: { fontSize: 13, lineHeight: 19, color: '#475569' },
+  activationError: { fontSize: 13, lineHeight: 19, color: '#b91c1c' },
+  activationNotice: { fontSize: 13, lineHeight: 19, color: '#166534' },
   noWalletCard: {
     backgroundColor: theme.colors.surface.white,
     borderRadius: 16,

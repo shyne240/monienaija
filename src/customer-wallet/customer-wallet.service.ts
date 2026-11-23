@@ -150,6 +150,97 @@ export class CustomerWalletService {
     return this.getWallet(customerId, walletId);
   }
 
+  /**
+   * Idempotent, in-transaction provisioning of the customer's PRIMARY wallet record.
+   *
+   * Used by the customer activation path (`CustomerWalletActivationService`) which must create the
+   * P1.4 provisioning wallet and the financial wallet in ONE transaction. Reuses every rule of
+   * {@link createWallet} — the eligibility gate, the single-PRIMARY invariant, ownership and the
+   * append-only provisioning history — but is deliberately *not* a second write path: it is the
+   * same body with the caller's transaction and an already-resolved actor.
+   *
+   * Returns `{ wallet, created }`; `created: false` means a non-deleted PRIMARY wallet already
+   * existed and was returned unchanged (never re-audited, never re-versioned).
+   */
+  async ensurePrimaryWalletInManager(
+    manager: EntityManager,
+    customerId: string,
+    command: { currency: string; actor: string },
+  ): Promise<{ wallet: CustomerWalletView; created: boolean }> {
+    this.assertUuid(customerId, 'customerId');
+    const actor = this.normalizeActor(command.actor);
+    const currency = normalizeCurrency(command.currency);
+    await this.requireCustomer(manager.getRepository(Customer), customerId);
+    const repository = manager.getRepository(CustomerWallet);
+    const existing = await repository.findOne({
+      where: { customerId, type: CustomerWalletType.PRIMARY },
+    });
+    if (existing && this.isNotDeleted(existing.deletedAt)) {
+      return { wallet: this.toView(existing), created: false };
+    }
+    await this.requireEligibleProvisioning(manager, customerId);
+    const wallet = await repository.save(
+      repository.create({
+        id: randomUUID(),
+        customerId,
+        type: CustomerWalletType.PRIMARY,
+        currency,
+        // A wallet whose provisioning preconditions are all satisfied is ACTIVE on creation;
+        // anything less would strand a customer with a provisioned-but-unusable wallet.
+        status: CustomerWalletStatus.ACTIVE,
+        closedAt: null,
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+    const ownership = await manager.getRepository(WalletOwnership).save(
+      manager.getRepository(WalletOwnership).create({
+        id: randomUUID(),
+        walletId: wallet.id,
+        customerId,
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+    await this.audit(
+      manager,
+      'CUSTOMER_WALLET',
+      wallet.id,
+      'CREATED',
+      actor,
+      undefined,
+      this.walletValues(wallet),
+    );
+    await this.audit(
+      manager,
+      'WALLET_OWNERSHIP',
+      ownership.id,
+      'CREATED',
+      actor,
+      undefined,
+      this.ownershipValues(ownership),
+    );
+    await this.appendHistory(
+      manager,
+      wallet.id,
+      WalletProvisioningHistoryAction.PROVISIONED,
+      actor,
+      null,
+      wallet.status,
+      { type: wallet.type, currency: wallet.currency, source: 'CUSTOMER_ACTIVATION' },
+    );
+    await this.appendHistory(
+      manager,
+      wallet.id,
+      WalletProvisioningHistoryAction.OWNERSHIP_CREATED,
+      actor,
+      null,
+      null,
+      { ownershipId: ownership.id },
+    );
+    return { wallet: this.toView(wallet), created: true };
+  }
+
   async listWallets(customerId: string): Promise<CustomerWalletView[]> {
     this.assertUuid(customerId, 'customerId');
     await this.requireCustomer(this.customerRepository, customerId);

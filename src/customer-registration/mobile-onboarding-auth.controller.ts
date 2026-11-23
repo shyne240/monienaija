@@ -13,6 +13,7 @@ import type { FastifyRequest } from 'fastify';
 import { KycFoundationError } from '../kyc-verification/kyc.types';
 import { MobileAccountClaimService } from './mobile-account-claim.service';
 import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
+import { MobileOnboardingStateService } from './mobile-onboarding-state.service';
 class RouteDto {
   @IsUUID() sessionId!: string;
 }
@@ -35,6 +36,7 @@ export class MobileOnboardingAuthController {
   constructor(
     private readonly auth: MobileOnboardingAuthService,
     private readonly claims: MobileAccountClaimService,
+    private readonly onboardingState: MobileOnboardingStateService,
   ) {}
   private token(req: FastifyRequest): string {
     const token =
@@ -57,6 +59,17 @@ export class MobileOnboardingAuthController {
   @HttpCode(200)
   route(@Body() b: RouteDto, @Req() req: FastifyRequest) {
     return this.run(() => this.auth.route(b.sessionId, this.token(req)));
+  }
+  /**
+   * One authoritative onboarding-state read for the mobile client: NEW / CLAIM / RESUME_CLAIM /
+   * LOGIN / PENDING_REVIEW / REJECTED / ACTIVATED. Scoped to the phone-verified registration
+   * session; never accepts a customer id.
+   */
+  @Header('Cache-Control', 'no-store')
+  @Post('onboarding-state')
+  @HttpCode(200)
+  state(@Body() b: RouteDto, @Req() req: FastifyRequest) {
+    return this.run(() => this.onboardingState.state(b.sessionId, this.token(req)));
   }
   @Header('Cache-Control', 'no-store')
   @Post('claim-match')
