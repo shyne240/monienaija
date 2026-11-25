@@ -26,6 +26,9 @@ Filters (`type`, `status`, exact `reference`, Lagos `from`/`to`) are ANDed befor
 
 ## Latest local validation
 
+Finance #25 combined real-session browser diagnostic: **BLOCKED**, with exact PR heads, tree provenance and fresh screenshots in [FINANCE25-ROUNDTRIP.md](FINANCE25-ROUNDTRIP.md). Wallet journal return and both-record denial checks pass, but missing History → journal navigation and Finance Bank to Wallet source mapping prevent the requested two-product round trip. Do not close that gate. The separate five-product browser acceptance is documented in [BROWSER-ACCEPTANCE.md](BROWSER-ACCEPTANCE.md).
+
+
 The follow-up volume test runs the full migration chain and real AppModule against an independently created disposable PostgreSQL cluster. All six local-role integration tests pass, including authentication of all 11 existing fixture accounts, unchanged hashes, institution isolation, direct/reference denial and immediate revocation. The local-role suite is HTTP-only. New Bank to Wallet identity browser evidence is recorded separately below. Prior Bank to Wallet browser evidence remains in `evidence/real-workforce-results.json`; the latest HTTP run is recorded separately in `evidence/real-workforce-http-results.json`.
 
 `evidence/migrated-query-plan.json` now contains ANALYZE/BUFFERS plans for the full combined UNION and type, exact-reference, type/status/Lagos-date and keyset predicates. Fixture: **20,002 inbound rows**, evenly split across two institutions; other source tables are empty. Latest timings are in the regenerated plan artifact; this turn did not add a mixed-product workload or tune those queries. These are diagnostic single runs, not production SLOs or representative mixed-product certification. Verified rows are never deleted to clean up; the harness drops its disposable database.

@@ -1,6 +1,6 @@
 # Finance → Transaction History detail-link contract
 
-Status: published for review; combined real-session acceptance remains outstanding. Finance #25 head `891a1c1777855b9e921cfc50c962f2626d7eecf8` was inspected, not merged. Its adapter supports the original four types; its combined browser harness mocks API responses. Neither proves the five added types or real bidirectional authorization.
+Status: published for review; combined real-session acceptance is **blocked**, not complete. The [Finance25 round-trip diagnostic](FINANCE25-ROUNDTRIP.md) combines PR23 `3c7f5c98fee27cb7164ee27f75605aeb58226c51` and Finance #25 `891a1c1777855b9e921cfc50c962f2626d7eecf8` without merging either PR. Real-session browser checks prove the wallet journal return and both-record permission/scope denials, but History has no forward journal link and Finance has no posted Bank to Wallet source/return mapping. Its original adapter supports only the original four types. The older mocked Finance harness is not the evidence for this diagnostic.
 
 ## Link
 
