@@ -64,23 +64,25 @@ export const HISTORY_SQL = `WITH history AS (
  LEFT JOIN LATERAL (SELECT b.* FROM banking_outbound_operations b WHERE b.external_operation_id=fc.external_operation_id ORDER BY b.created_at,b.id LIMIT 1) bo ON true
  LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id=fc.external_operation_id
  UNION ALL
- SELECT COALESCE(bank.id,r.id),'BANK_TO_WALLET',r.status,COALESCE(o.provider_reference,r.id::text),COALESCE(bank.recorded_at,r.created_at),j.posted_at,
- r.amount_minor::text,COALESCE(bank.provider_fee_minor,0)::text,'0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('walletId',r.wallet_account_id,'provider',r.provider_key,'providerObservedAt',r.provider_observed_at)
+ SELECT r.id,'BANK_TO_WALLET',r.status,COALESCE(o.provider_reference,r.id::text),r.created_at,j.posted_at,
+ r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('walletId',r.wallet_account_id,'provider',r.provider_key,'providerObservedAt',r.provider_observed_at,'identitySource','LEGACY_RECEIPT_WITHOUT_ENVIRONMENT')
  FROM inbound_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
- LEFT JOIN LATERAL (SELECT b.id,b.recorded_at,b.provider_fee_minor FROM banking_inbound_payments b WHERE b.provider_key=r.provider_key AND encode(sha256(convert_to(b.provider_transaction_reference,'UTF8')),'hex')=r.provider_reference_hash AND b.institution_id=j.institution_id ORDER BY b.recorded_at,b.id LIMIT 1) bank ON true
  LEFT JOIN LATERAL (SELECT x.provider_reference FROM inbound_funding_observations x WHERE x.provider_key=r.provider_key AND x.provider_reference_hash=r.provider_reference_hash AND x.evidence_hash=r.evidence_hash ORDER BY x.created_at,x.id LIMIT 1) o ON true
  WHERE r.status='CREDITED'
  UNION ALL
- SELECT b.id,'BANK_TO_WALLET',b.verification_state,b.provider_transaction_reference,b.recorded_at,NULL::timestamptz,
- b.credited_amount_minor::text,b.provider_fee_minor::text,'0',b.currency,b.institution_id,ARRAY[b.ledger_transaction_id]::uuid[],
- jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END)
- FROM banking_inbound_payments b WHERE NOT EXISTS (SELECT 1 FROM agent_float_funding_receipts af WHERE af.institution_id=b.institution_id AND af.provider_key=b.provider_key AND af.environment=b.environment AND af.provider_transaction_reference=b.provider_transaction_reference) AND NOT EXISTS (
- SELECT 1 FROM inbound_funding_receipts r JOIN ledger_journals receipt_j ON receipt_j.id=r.journal_id WHERE r.provider_key=b.provider_key AND receipt_j.institution_id=b.institution_id AND r.provider_reference_hash=encode(sha256(convert_to(b.provider_transaction_reference,'UTF8')),'hex'))
+ SELECT b.id,'BANK_TO_WALLET',CASE WHEN r.id IS NOT NULL THEN 'CREDITED' ELSE b.verification_state END,b.provider_transaction_reference,b.recorded_at,j.posted_at,
+ b.credited_amount_minor::text,b.provider_fee_minor::text,'0',b.currency,b.institution_id,ARRAY[COALESCE(r.journal_id,b.ledger_transaction_id)]::uuid[],
+ jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN r.id IS NOT NULL THEN 'FLOAT_CREDITED' WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END,'floatReceiptId',r.id,'walletId',r.wallet_account_id,'identitySource','BANK_INTAKE')
+ FROM banking_inbound_payments b
+ LEFT JOIN banking_inbound_float_links identity ON identity.payment_id=b.id
+ LEFT JOIN agent_float_funding_receipts r ON r.id=identity.float_receipt_id
+ LEFT JOIN ledger_journals j ON j.id=r.journal_id
  UNION ALL
  SELECT r.id,'AGENT_FUNDING','CREDITED',r.provider_transaction_reference,r.credited_at,j.posted_at,r.amount_minor::text,'0','0',r.currency,r.institution_id,ARRAY[r.journal_id]::uuid[],
  jsonb_build_object('agentId',r.agent_id,'walletId',r.wallet_account_id,'provider',r.provider_key,'policyId',r.policy_id,'providerObservedAt',r.provider_observed_at,'fundingSource','INSTITUTION_BANK_RECEIPT')
  FROM agent_float_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
+ WHERE NOT EXISTS (SELECT 1 FROM banking_inbound_float_links identity WHERE identity.float_receipt_id=r.id)
  UNION ALL
  SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
  jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason)
@@ -190,7 +192,9 @@ export class TransactionHistoryController {
     if (!HISTORY_TYPES.includes(type) || !UUID.test(id))
       throw new BadRequestException('Invalid transaction key');
     const rows: Record<string, unknown>[] = await this.db.query(
-      `${HISTORY_SQL} SELECT id,type,status,reference,created_at AS "createdAt",completed_at AS "completedAt",amount_minor AS "amountMinor",fee_minor AS "feeMinor",vat_minor AS "vatMinor",currency,institution_id AS "institutionId",investigation, CASE WHEN $5::boolean THEN journals ELSE NULL END AS journals FROM scoped WHERE type=$3 AND id=$4::uuid`,
+      `${HISTORY_SQL} SELECT id,type,status,reference,created_at AS "createdAt",completed_at AS "completedAt",amount_minor AS "amountMinor",fee_minor AS "feeMinor",vat_minor AS "vatMinor",currency,institution_id AS "institutionId",investigation, CASE WHEN $5::boolean THEN journals ELSE NULL END AS journals FROM scoped WHERE (type=$3 AND id=$4::uuid) OR
+ ($3='AGENT_FUNDING' AND type='BANK_TO_WALLET' AND EXISTS (
+ SELECT 1 FROM banking_inbound_float_links identity WHERE identity.payment_id=scoped.id AND identity.float_receipt_id=$4::uuid))`,
       [...values, type, id, req.authorizationPrincipal!.scopes.includes('ledger.view')],
     );
     if (!rows.length) throw new NotFoundException('Transaction not found');

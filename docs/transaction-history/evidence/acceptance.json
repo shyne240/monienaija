@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-25T11:34:33.747Z",
+  "date": "2026-11-25T12:28:24.814Z",
   "scope": "Disposable minimal PostgreSQL schema; production controller and AuthorizationService; audit sink and browser bearer adapter test-only. NOT full application/session integration.",
   "checks": [
     {
@@ -40,10 +40,6 @@
     },
     {
       "name": "malformed filters and cursor rejected",
-      "result": "PASS"
-    },
-    {
-      "name": "Chromium full SPA mixed history, next page, combined filters, C2C detail (real PostgreSQL read API; synthetic bearer adapter)",
       "result": "PASS"
     }
   ]

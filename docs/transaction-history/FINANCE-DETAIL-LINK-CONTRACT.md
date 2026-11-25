@@ -41,12 +41,14 @@ References are display/search values, not globally unique keys. Exact-reference 
 
 ## Follow-up added products
 
-Additional keys: `WALLET_TO_BANK` (financial commitment UUID for customer OR agent), `BANK_TO_WALLET` (banking evidence UUID when matched, otherwise credited receipt UUID), `CUSTOMER_FUNDING` (staff funding request UUID), `AGENT_FUNDING` (governed request UUID or institutional float receipt UUID), `AGENT_DEFUNDING` (governed request UUID).
+Additional keys: `WALLET_TO_BANK` (financial commitment UUID for customer OR agent), `BANK_TO_WALLET` (immutable bank intake UUID; legacy wallet receipt UUID remains separate without environment evidence), `CUSTOMER_FUNDING` (staff funding request UUID), `AGENT_FUNDING` (governed request UUID or standalone institutional float receipt UUID; linked float receipt UUID remains a detail alias), `AGENT_DEFUNDING` (governed request UUID).
 
 `CASH_IN` and `CASH_OUT` now display **Cash to Wallet** and **Wallet to Cash** without changing stored keys. Cash to Cash remains on its parent. No generic deposit/withdrawal type.
 
 Authorization decision: bounded list and detail both require existing `transaction.view`; no role grants added and `transaction.search` remains reserved/non-assignable. See FOLLOWUP-COVERAGE.md for cross-pipeline inbound identity limitations and withheld unscoped records. Do not promise new inbound lifecycle links beyond tested mappings until that draft gate is resolved.
 
-## Release warning: added inbound keys are provisional
+## Proven inbound keys and preserved aliases
 
-The current receipt/banking match uses provider/hash/institution without environment proof; a later banking row can change the selected UUID. Banking → institutional float changes TYPE and UUID. No persisted alias exists. Suspense resolution has not been demonstrated. These are release blockers, not supported saved-link guarantees. The original four mappings above remain unchanged. See README.md for the single current gate checklist.
+Bank intake → verification → proven float credit keeps `BANK_TO_WALLET/<banking UUID>`. Migration 0806 persists the exact institution/provider/environment/reference/account/currency/net-amount match to the posted float receipt. The linked float receipt is not a second list row. `AGENT_FUNDING/<float receipt UUID>` remains a detail alias, resolved within the institution-scoped query; its response contains canonical `BANK_TO_WALLET` TYPE/UUID. This includes receipt-first arrival. Finance must not derive these aliases from reference prefixes.
+
+Legacy wallet receipts have no environment and keep `BANK_TO_WALLET/<receipt UUID>` independently. Hash-only bank/receipt matching was removed. Suspense has no implemented resolution/binding contract and is not presented as resolved. No inferred historical alias backfill occurs. See [INBOUND-IDENTITY.md](INBOUND-IDENTITY.md) for exact evidence and unsupported transitions. The original four Finance mappings remain unchanged; Finance #25 combined round-trip acceptance remains a separate gate.

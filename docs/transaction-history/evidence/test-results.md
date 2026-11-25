@@ -42,3 +42,16 @@
 - `migrated-query-plan.json`: 20,002 inbound rows, two institutions, full UNION plans for combined/type/reference/type-status-date/keyset. Other source tables empty; not a representative mixed-product certification.
 - `npx eslint test/local-dev-11-roles.integration.spec.ts` and `npx tsc --noEmit` passed.
 - No production read projection or money-moving service changed. Durable inbound identity and unposted attribution remain unresolved. Finance #25 was inspected only; its mocked combined harness is not real-session evidence. Remaining browser matrix not run. See README.md.
+
+## Durable inbound identity follow-up
+
+Supported proof and unsupported legacy/suspense cases: `../INBOUND-IDENTITY.md`.
+
+- Migration 0806, complete migrated AppModule, disposable PostgreSQL: **9 suites / 104 tests passed**, including actual browser local-admin sign-in, original Bank to Wallet detail URL reopening after verification/float credit, one canonical all-type reference row, scoped receipt aliases, another institution denied, mismatched reference/account/environment/amount/institution refused, bank/float replay and unchanged 11 password hashes. Controlled sandbox provider verifier and policy-backed float authority; real ledger, sessions and guards.
+- Command: `NODE_ENV=test PG_TEST_RUN_ID=identity26i PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=55440 DB_USER=monienaija DB_PASSWORD=monienaija-pw NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false HISTORY_IDENTITY_BROWSER=yes LD_LIBRARY_PATH=/tmp/al2023/lib npx jest --config jest.integration.config.js --runInBand test/a3d-agent-float-funding.integration.spec.ts test/banking-inbound-service.integration.spec.ts test/local-dev-11-roles.integration.spec.ts test/migration-chain.integration.spec.ts test/v1-release-01-production-readiness-migration-sync.integration.spec.ts test/arena5-consolidation-migration-upgrade.integration.spec.ts test/migration-0804-owner-authority.integration.spec.ts test/stage8-financial-engine-migration.integration.spec.ts test/stage10-recovery-migration.integration.spec.ts`.
+- Additional migrated compatibility: **4 suites / 68 tests passed** (agent funding, outlets/terminals, agent lifecycle, customer-class backfill), same environment with `PG_TEST_RUN_ID=identity26h`, browser flag omitted.
+- Focused unit authorization/Lagos/migration inventory: **2 suites / 13 tests passed**.
+- Synthetic read harness rerun: **10 checks passed**; separate from real workforce proof.
+- Nest build and root TypeScript check passed. Focused changed-file ESLint passed. Source lint completed in the combined command; test lint was rerun separately as `npm run lint:test` and passed after the combined command exceeded the tool wait window.
+- New artifacts: `inbound-identity-results.json`, `inbound-identity-before.png`, `inbound-identity-after.png`. The saved browser URL is local disposable evidence, not a live production transaction or deployed approval.
+- Regenerated inbound-only volume plan is incidental to rerunning the existing role suite; no new mixed-product workload or tuning claim. Original four-product links and grants unchanged. Remaining browser matrix, unposted funding attribution, mixed-product plans and Finance #25 round trip stay open; PR remains draft.
