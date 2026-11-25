@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 /**
  * Tier 1 runtime ceiling proof (PR #24 follow-up).
  *
@@ -14,10 +13,9 @@
  * Mobile flow and local role passwords are untouched.
  */
 import { randomUUID } from 'node:crypto';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { TransferService } from '../src/transfer/transfer.service';
@@ -73,7 +71,7 @@ const fixtureAuthorization = {
 
 describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
   let dataSource: DataSource;
-  let moduleRef: any;
+  let moduleRef: TestingModule;
   let app: NestFastifyApplication;
   let transfers: TransferService;
   let effectiveConfig: CustomerEffectiveConfigurationService;
@@ -89,7 +87,7 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .compile();
-    app = moduleRef.createNestApplication(new FastifyAdapter()) as NestFastifyApplication;
+    app = moduleRef.createNestApplication(new FastifyAdapter());
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -226,74 +224,6 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
       reason: 'Synthetic Tier 1 ceiling proof: approved institution tier cap',
     });
     await governance.decide(checker, institutionId, proposal.id, true);
-  }
-
-  async function seedAssessedCustomer(label: string): Promise<string> {
-    const id = randomUUID();
-    const revision = '1';
-    await dataSource.query(
-      `INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status)
-       VALUES($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
-      [id, `t1ceil-${label}-${id.slice(0, 8)}`],
-    );
-    await dataSource.query(
-      `INSERT INTO kyc_customer_identity_revisions(customer_id,revision) VALUES($1,$2)
-       ON CONFLICT (customer_id) DO UPDATE SET revision = EXCLUDED.revision`,
-      [id, revision],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_profiles(customer_id,display_name,first_name,last_name,date_of_birth,is_active)
-       VALUES($1,'Ceiling Proof','Ceiling','Proof','1990-01-01',true)`,
-      [id],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at)
-       VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
-      [id, `+23480${Math.floor(10000000 + Math.random() * 89999999)}`],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_kyc_assessments(id,customer_id,kyc_level,kyc_status,reason,assessed_by,is_current,expires_at)
-       VALUES($1,$2,'LEVEL_1','APPROVED','TIER1_CEILING_PROOF','SYSTEM_KYC_EVALUATOR',true,clock_timestamp()+interval '30 days')`,
-      [randomUUID(), id],
-    );
-    const credentialId = randomUUID();
-    await dataSource.query(
-      `INSERT INTO customer_authentication_credentials
-        (id,customer_id,credential_type,password_hash,hash_algorithm,password_version,status)
-       VALUES($1,$2,'PASSWORD','$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012','BCRYPT',1,'ACTIVE')`,
-      [credentialId, id],
-    );
-    const sessionId = randomUUID();
-    const tokenHash = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-    await dataSource.query(
-      `INSERT INTO authentication_sessions
-        (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at)
-       VALUES($1,$2,$3,$4,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
-      [sessionId, id, credentialId, tokenHash],
-    );
-    const consent = randomUUID();
-    const dummyMac = 'a'.repeat(64);
-    await dataSource.query(
-      `INSERT INTO kyc_consents
-        (id,customer_id,session_id,kind,notice_version,actor_id,identity_revision,provider,route_version,expires_at)
-       VALUES($1,$2,$3,'BVN','tier1-ceiling-proof-v1',$2,$4,'MONNIFY',1,clock_timestamp()+interval '1 hour')`,
-      [consent, id, sessionId, revision],
-    );
-    const attempt = randomUUID();
-    await dataSource.query(
-      `INSERT INTO kyc_verification_attempts
-        (id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,
-         provider_route_version,outcome,identity_revision,completed_at,expires_at)
-       VALUES($1,$2,$3,$4,'BVN','MONNIFY','tier1-ceiling-proof-v1',$5,$5,'test-v1',1,'MATCH',$6,clock_timestamp(),clock_timestamp()+interval '1 hour')`,
-      [attempt, id, consent, randomUUID(), dummyMac, revision],
-    );
-    const claimMac = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-    await dataSource.query(
-      `INSERT INTO kyc_identity_claims(id,kind,identifier_mac,customer_id,attempt_id,status)
-       VALUES($1,'BVN',$2,$3,$4,'VERIFIED')`,
-      [randomUUID(), claimMac, id, attempt],
-    );
-    return id;
   }
 
   async function seedKycEvidence(customerId: string): Promise<void> {
@@ -503,9 +433,9 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
 
     // Displayed/effective limit must reflect the controlling tier cap, not the higher commercial cap.
     const effective = await effectiveConfig.evaluate(sender.customerId);
-    const wt = effective.products.find((p: any) => p.productCode === 'WALLET_TRANSFER');
+    const wt = effective.products.find((p) => p.productCode === 'WALLET_TRANSFER');
     expect(wt).toBeDefined();
-    const maxTx = wt!.limits.find((l: any) => l.dimension === 'MAX_AMOUNT_PER_TX');
+    const maxTx = wt!.limits.find((l) => l.dimension === 'MAX_AMOUNT_PER_TX');
     expect(maxTx).toBeDefined();
     expect(maxTx!.status).toBe('RESOLVED');
     expect(String(maxTx!.limitValueMinor)).toBe(TIER_CAP_MINOR);
@@ -521,11 +451,11 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
       currency: 'NGN',
       idempotencyKey: `t1-below-${randomUUID()}`,
       narration: 'Tier1 ceiling proof below cap',
-    } as any);
+    } as Parameters<typeof transfers.createTransfer>[0]);
     expect(below.status).toBe(TransferStatus.COMPLETED);
 
     // Transfer just above tier cap is denied; higher commercial cap must not allow it.
-    let aboveError: any;
+    let aboveError: unknown;
     try {
       await transfers.createTransfer({
         ownership: { kind: 'CUSTOMER_SELF', customerId: sender.customerId },
@@ -535,15 +465,23 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
         currency: 'NGN',
         idempotencyKey: `t1-above-${randomUUID()}`,
         narration: 'Tier1 ceiling proof above cap',
-      } as any);
+      } as Parameters<typeof transfers.createTransfer>[0]);
     } catch (e) {
       aboveError = e;
     }
     expect(aboveError).toBeDefined();
-    const status = aboveError.getStatus?.() ?? aboveError.statusCode ?? aboveError.status;
+    const err = aboveError as {
+      getStatus?: () => number;
+      statusCode?: number;
+      status?: number;
+      getResponse?: () => unknown;
+      response?: unknown;
+    };
+    const status = err.getStatus?.() ?? err.statusCode ?? err.status;
     expect(status).toBe(422);
-    const resp = aboveError.getResponse?.() ?? aboveError.response ?? {};
-    const code = String(resp.error ?? resp.code ?? '');
+    const resp = (err.getResponse?.() ?? err.response ?? {}) as Record<string, unknown>;
+    const rawCode = resp.error ?? resp.code;
+    const code = typeof rawCode === 'string' || typeof rawCode === 'number' ? String(rawCode) : '';
     expect(code).toMatch(/LIMIT_MAX_AMOUNT_EXCEEDED|MAX_AMOUNT_EXCEEDED/i);
 
     // Control: commercial profile remained higher (did not control decision).
