@@ -1,0 +1,151 @@
+{
+  "kind": "arena6-real-session-workflow",
+  "generatedAt": "2026-11-25T13:11:34.438Z",
+  "environment": {
+    "nodeEnv": "test",
+    "database": "disposable, created + migrated by test/support/pg-harness.ts for this run only",
+    "productionGate": "NOT bypassed: the app is built the way every *.integration.spec.ts builds it"
+  },
+  "workflow": [
+    {
+      "step": "sign-in + dashboard",
+      "role": "FINANCE_AUDITOR",
+      "status": 200,
+      "templateKey": "FINANCIAL_AUDIT_ASSURANCE",
+      "cardAuthorized": true,
+      "drilldownView": "notificationOperations",
+      "cardReadStatus": 200,
+      "cardAnonymousStatus": 401,
+      "cardPayload": {
+        "period": "today",
+        "from": "2026-11-25T00:00:00.000Z",
+        "to": "2026-11-25T13:11:34.180Z",
+        "availability": "UNAVAILABLE",
+        "configuration": "UNKNOWN",
+        "reason": "the notification operations projection is not wired in this deployment",
+        "totals": {
+          "deliveries": 0,
+          "exceptions": 0,
+          "byStatus": []
+        },
+        "errorCodes": [],
+        "retry": {
+          "manualRetrySupported": false
+        },
+        "provider": {
+          "availability": "UNKNOWN",
+          "channels": []
+        },
+        "checkedAt": "2026-11-25T13:11:34.180Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "step": "queue → trace → audit",
+      "queueStatus": 200,
+      "queueRows": 1,
+      "queueAllFailed": true,
+      "traceStatus": 200,
+      "relatedEvent": {
+        "availability": "FOUND",
+        "id": "e3ff1605-8b9f-4e3d-98ab-379da2f70236"
+      },
+      "providerReceipts": {
+        "availability": "NONE_RECORDED",
+        "returned": 0,
+        "reason": "the provider has reported nothing about this message; absence of a receipt is not evidence of delivery or failure"
+      },
+      "outboxSkipReason": null,
+      "auditStatus": 200,
+      "auditEvents": 1,
+      "auditFirst": {
+        "action": "ARENA6_SYNTHETIC_DELIVERY_RECORDED",
+        "correlationId": "arena6-real-6bc9d4d1-409d-4427-be61-11e570b13ea2"
+      }
+    }
+  ],
+  "restrictedRole": {
+    "role": "RISK_FRAUD",
+    "dashboardStatus": 200,
+    "widgetsVisible": 3,
+    "unauthorizedDrilldowns": 0,
+    "protectedReads": [
+      {
+        "path": "/api/v1/internal/notifications/operations/summary?hours=24",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/notifications/deliveries?status=FAILED&page=1&limit=20",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/notifications/deliveries/86d36b8b-3d5b-46b2-99ab-84dc37bcd3d6",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/audit/inspection?correlationId=arena6-real-6bc9d4d1-409d-4427-be61-11e570b13ea2",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/diagnostics",
+        "status": 403,
+        "bodyBytes": 89
+      }
+    ]
+  },
+  "health": {
+    "status": 200,
+    "overall": "ok",
+    "components": [
+      {
+        "key": "database",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T13:11:34.306Z"
+      },
+      {
+        "key": "migrations",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T13:11:34.307Z"
+      },
+      {
+        "key": "reconciliation",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T13:11:34.322Z"
+      },
+      {
+        "key": "outbox",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T13:11:34.307Z"
+      },
+      {
+        "key": "workers",
+        "state": "unknown",
+        "availability": "UNAVAILABLE",
+        "reason": "no completed tick observed in this process; disabled workers are never measured by design",
+        "checkedAt": "2026-11-25T13:11:34.323Z"
+      }
+    ]
+  },
+  "notCertified": [
+    "no browser rendering in this file (see docs/integration/evidence/arena6-drilldown/ for that leg)",
+    "no provider call was made, so no provider receipt can be FOUND here",
+    "the shipped bootstrap still refuses to listen; no AR6 change alters that"
+  ],
+  "accountsSeeded": 11,
+  "productionReadiness": {
+    "refuses": true,
+    "reason": "Production readiness failed: financial_dependencies_not_ready"
+  }
+}

@@ -71,3 +71,135 @@ node scripts/arena6-drilldown-browser-check.cjs --dist /tmp/arena6-dist \
 # interactive click-through of the same synthetic fixtures
 node scripts/arena6-drilldown-browser-check.cjs --dist /tmp/arena6-dist --serve-only --port 4322
 ```
+
+---
+
+## Addendum (later the same day) — CI green, the consolidated-matrix question, and a real-session run
+
+### 1. Backend CI failed on this branch's own lint, and only that
+
+`gh api .../check-runs/139205768101/annotations` gave four `no-unnecessary-type-assertion` errors
+(three `as string | Date` casts in `dashboard-widget-data.service.ts`, one
+`as Record<string, unknown>` in `dashboard-seed.service.ts`), and `npm run lint:test` gave 101 more in
+the three new root specs — all of them `as any` dependency doubles
+(`no-unsafe-argument`/`no-unsafe-return`/`no-explicit-any`) plus `require-await` on stub callbacks. Every
+other file under `test/**` was clean, so nothing pre-existing was inherited and nothing outside this PR
+was touched.
+
+Fix: dropped the four casts; the specs now build **structural fakes cast once at the seam**
+(`as unknown as DataSource`, `… as unknown as ReconciliationService`, `… as unknown as Repository<…>`),
+which is stricter than before — the expectations are still type-checked against the real contract, and the
+delivery-trace spec can still assert on the queries that were *not* issued. A `onlyRow()` accessor replaced
+unchecked `store[0]` indexing. No assertion was weakened: the three files still run 8 + 7 + 6 cases.
+
+**CI at the exact head `66674b950ab9419ea78c84edcd641f338abc819f`:** `Backend (lint, format, build, unit
+tests)` **pass**, `Admin Web (types, tests, build)` **pass**, `Backend (container image builds)` **pass**,
+Customer Mobile **pass**, Agent Mobile **pass**, `Classify changes` **pass**. Locally, with the same
+commands: `npm run lint` clean, `npm run format:check` clean, `npm run build` clean, and
+`npx jest test/arena6-* test/health.e2e test/authorization-http-matrix test/runtime-access.guard` →
+6 suites / 201 tests pass.
+
+### 2. `test/consolidated-matrix.spec.ts` — not shared, not a defect, and untouched
+
+The one root-suite failure was this clone being a **shallow** checkout (`git rev-parse --is-shallow-repository`
+→ `true`, 3 commits deep, `.git/shallow` present). The recorded evidence commit
+`dd1b631490a3fe04e791857e65a7fc89f7965a73` was simply not in the object store, so
+`git merge-base --is-ancestor` could not answer.
+
+Reproduced both ways rather than assumed:
+
+| state | `git cat-file -t dd1b6314…` | spec result |
+| --- | --- | --- |
+| shallow clone (3 deep), PR head | `fatal: git cat-file: could not get object info` | 1 failed / 12 passed |
+| after `git fetch --unshallow origin` (1173 commits) | `commit` | **13 passed, 13 total** |
+
+With full history the assertion also resolves for the PR **base** —
+`git merge-base --is-ancestor dd1b6314… origin/arena/5-main-web-integration` → contains, and same for this
+head; `origin/main` does not contain it, and ~78 other `arena/*` branches do. So the outcome is not shared
+across branches as a failure and there is nothing for this PR to reconcile. `git diff --stat
+origin/arena/5-main-web-integration...HEAD -- test/consolidated-matrix.spec.ts
+docs/integration/evidence/consolidated/` is **empty**: the assertion and its evidence file were not edited.
+CI is unaffected because the backend job checks out with `fetch-depth: 0` — the workflow carries the comment
+"The consolidated evidence matrix verifies commit ancestry against HEAD", and that job runs the whole root
+`npm test`.
+
+### 3. One real-session workflow on a fully migrated disposable PostgreSQL
+
+New suite `test/arena6-real-session-workflow.integration.spec.ts` (6 tests, all passing). It is the piece
+the synthetic Chromium harness could not claim: real `AppModule`, real session store, real
+`AuthorizationService.requireFunction`, real `notification_deliveries` rows, real migrated schema.
+
+* Bootstrap: **reused, not invented** — `node scripts/prepare-pg-test-env.js --create-if-missing` (the same
+  step the CI PostgreSQL job runs, so the real login route is configured exactly as the other
+  real-AppModule integration suites configure it), an embedded disposable cluster started by
+  `scripts/.start-disposable-pg-acceptance.cjs` on a random loopback port, and the run driven by
+  `npm run test:pg` so `test/support/pg-harness.ts` creates and migrates a per-run database
+  (`PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes` was set by hand, as that runner requires).
+* Accounts: seeded through the **pre-existing** fixture
+  `scripts/local-dev-seed-11-roles.js` (`seedLocalRoles`, insert-only) — 11 accounts, same emails and
+  passwords as local dev, its own `assertSafe` guards (loopback host, NODE_ENV, both workers disabled)
+  left running. No account, password, role definition or grant was changed.
+* Sign-in is a real `POST /api/v1/internal/a2/workforce/local-admin-sessions` with a password; every read
+  after it is a real `Authorization: Bearer` request to a listening socket (`app.listen({port: 0,
+  host: '127.0.0.1'})`).
+* **Chain** (FINANCE_AUDITOR — the only seeded role holding both `notification.view_deliveries` and
+  `audit.search`; OPERATIONS holds the first and not the second, which is why the negative test is not
+  vacuous): `my-dashboard` → `FINANCIAL_AUDIT_ASSURANCE`, card
+  `notification-delivery-exceptions` authorized with `drilldown.view = notificationOperations` and
+  `dataEndpoint` → the queue `GET …/internal/notifications/deliveries?status=FAILED` (server-applied
+  filter; every returned row `FAILED`) → `GET …/deliveries/{id}` trace
+  (`relatedEvent.availability = FOUND` — a real `outbox_events` row appended through `OutboxService` and
+  marked published; `providerReceipts.availability = NONE_RECORDED` with the reason text *"absence of a
+  receipt is not evidence of delivery or failure"*) → `GET …/internal/audit/inspection?correlationId=…`,
+  which finds the audit event written through `AuditService.record()` in the same flow, same correlation id.
+* **Restricted role** (RISK_FRAUD, 1 granted function): its dashboard resolves (200) with 3 widgets and
+  **zero** authorized drill-downs into `notificationOperations`/`auditEvents`; all five protected reads —
+  operations summary, delivery queue, the specific delivery by id, audit inspection by correlation id,
+  `/internal/diagnostics` — are **403**, each body 89 bytes and asserted *not* to contain the correlation
+  id, the delivery id, or the destination. The refusal is the server's, not the client's.
+* **One unavailable health source, for real:** `/internal/diagnostics` returned five components; four
+  `CHECKED`, and `workers` `state: unknown / availability: UNAVAILABLE / reason: "no completed tick
+  observed in this process; disabled workers are never measured by design"` — true in this deployment,
+  because both workers are disabled by the test guard. The suite asserts that every non-`CHECKED`
+  component carries a reason.
+* **Gate intact:** the suite calls `ProductionReadinessService.verifyStartup()` itself and asserts it
+  **throws** (`Production readiness failed: financial_dependencies_not_ready`); the evidence file records
+  that. Nothing in this PR loosens `src/main.ts` or `FINANCIAL_DEPENDENCY_BLOCKERS`. That refusal is why
+  the app is booted the way every `*.integration.spec.ts` boots it, and why the earlier browser leg stubs
+  the API at the network layer instead of pretending a listening production process exists.
+* Evidence: `docs/integration/evidence/arena6-real-session/real-session-workflow.json`, written by the run
+  (`ARENA6_EVIDENCE_DIR`), including the whole card payload and a `notCertified` list: no browser rendering
+  in that file, no provider call, shipped bootstrap still refuses to listen.
+
+**Observation for the owner (not fixed here, out of AR6 scope):** the card's own proxy read answered
+`availability: UNAVAILABLE`, `configuration: UNKNOWN`, *"the notification operations projection is not wired
+in this deployment"*, `totals.deliveries: 0` — while the drill-down queue over the *same* table returned the
+synthetic FAILED row. The card behaved correctly (it named the missing source instead of inventing a
+number), but the dashboard's proxy path and the operations workspace do not currently resolve the same
+provider wiring; that is a `DashboardWidgetDataService` → `NotificationOperationsService` composition
+question, and wiring it would be a new read path, which AR6 excluded.
+
+### 4. Commands
+
+```bash
+node scripts/prepare-pg-test-env.js --create-if-missing
+node scripts/.start-disposable-pg-acceptance.cjs &      # prints DISPOSABLE_PG_READY {"host","port"}
+NODE_ENV=test DB_HOST=127.0.0.1 DB_PORT=<port> DB_USER=arena_pg_test \
+  DB_PASSWORD=arena-disposable-test-only DB_ADMIN_NAME=postgres DB_NAME=<any> DB_SSL=false \
+  PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes NOTIFICATION_WORKER_ENABLED=false \
+  CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false \
+  ARENA6_EVIDENCE_DIR=docs/integration/evidence/arena6-real-session \
+  npm run test:pg -- arena6-real-session
+npm run lint && npm run format:check && npm run build
+```
+
+### 5. Merge blockers remaining
+
+1. The PostgreSQL jobs (`Backend (real PostgreSQL integration)`, `Backend (isolated PostgreSQL suites)`)
+   were *skipping* on the first head and *running* at the time of writing; the merge should wait for them at
+   the new head, which now also includes this addendum's spec.
+2. The observation in §3 (card proxy read `UNAVAILABLE` vs the queue's row) is a product decision for the
+   owner, not a defect in AR6's scope.
+3. Still not certified, unchanged from the first report: no browser leg against a live backend session
+   (the gate above forbids it), no real provider sandbox, and the accessibility/keyboard matrix is
+   component-test-level only.
