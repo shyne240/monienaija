@@ -1446,7 +1446,34 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
         subjectType: 'CUSTOMER',
         subjectId: customerId,
       });
-      expect((await enforce({ principalId: customerId })).ruleIds).toEqual([ruleId]);
+      const runtimeAfterApply = await enforce({ principalId: customerId });
+      expect(runtimeAfterApply.ruleIds).toEqual([ruleId]);
+
+      // …and the NEXT preview explains the same decision for that same subject: the acceptance
+      // requirement is that preview and the runtime limit decision agree after a governed change,
+      // not merely that each works in isolation.
+      const previewAfterApply = await request(app.getHttpServer())
+        .get(
+          `${PREVIEW_PATH}?productCode=${PRODUCT}&currency=${CURRENCY}&principalType=CUSTOMER&principalId=${customerId}&amountMinor=1000`,
+        )
+        .set(auth(controller.token));
+      expect(previewAfterApply.status).toBe(200);
+      expect(previewAfterApply.body.limits.status).toBe('RESOLVED');
+      expect(
+        previewAfterApply.body.limits.rules.map((rule: { ruleId: string }) => rule.ruleId),
+      ).toEqual(runtimeAfterApply.ruleIds);
+      expect(
+        previewAfterApply.body.limits.rules.map((rule: { ruleId: string }) => rule.ruleId),
+      ).toEqual([ruleId]);
+      expect(previewAfterApply.body.limits.evaluatedDimensions).toEqual(
+        runtimeAfterApply.dimensions,
+      );
+      // The rule the checker approved is the one the preview explains, with its approved value.
+      expect(previewAfterApply.body.limits.rules[0]).toMatchObject({
+        ruleId,
+        dimension: 'MAX_AMOUNT_PER_TX',
+        limitValueMinor: '750000',
+      });
     });
 
     it('refuses a tampered payload at execution and leaves the approval un-consumed', async () => {
