@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { InstitutionKycLimitPolicyService } from '../limit-catalog/institution-kyc-limit-policy.service';
 import {
   fetchApplicableLimitRuleCandidates,
   narrowApplicableLimitRules,
@@ -82,7 +84,21 @@ export class CustomerEffectiveConfigurationService {
     private readonly feeResolver: FeeRuleResolverService,
     private readonly feeCalculator: FeeRuleCalculatorService,
     private readonly limitProfileResolver: LimitProfileResolverService,
+    private readonly moduleRef: ModuleRef,
+    @Optional() private readonly tierLimitPolicies?: InstitutionKycLimitPolicyService,
   ) {}
+
+  private get customerEligibility():
+    | import('../kyc-verification/customer-financial-eligibility.service').CustomerFinancialEligibilityService
+    | undefined {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { CustomerFinancialEligibilityService } = require('../kyc-verification/customer-financial-eligibility.service');
+      return this.moduleRef.get(CustomerFinancialEligibilityService, { strict: false });
+    } catch {
+      return undefined;
+    }
+  }
 
   async evaluate(customerId: string): Promise<CustomerEffectiveConfiguration> {
     return this.dataSource.transaction((manager) => this.evaluateInManager(manager, customerId));
@@ -127,6 +143,30 @@ export class CustomerEffectiveConfigurationService {
         eligibleForVerifiedTier,
         classId: classResolution.classId,
       };
+    }
+
+    // Resolve institution and trusted tier for regulatory ceiling application.
+    const institutionRows = await manager.query<Array<{ institution_id: string | null }>>(
+      `SELECT institution_id FROM wallet_accounts
+        WHERE lower(customer_id)=lower($1) AND institution_id IS NOT NULL
+        ORDER BY created_at ASC, id ASC LIMIT 1`,
+      [customerId],
+    );
+    const institutionId = institutionRows[0]?.institution_id ?? null;
+    let trustedTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null = null;
+    if (
+      institutionId &&
+      this.tierLimitPolicies?.enforcementEnabled &&
+      this.customerEligibility &&
+      ['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(String(verifiedTier))
+    ) {
+      try {
+        trustedTier = await this.customerEligibility.require(manager, customerId, {
+          lockMode: 'NONE',
+        });
+      } catch {
+        trustedTier = null;
+      }
     }
 
     const out: EffectiveProductConfiguration[] = [];
@@ -205,7 +245,31 @@ export class CustomerEffectiveConfigurationService {
         principalId: customerId,
         segmentCodes: classCode ? [classCode] : [],
       });
-      const profileCodes = resolved ? [resolved.limitProfileCode] : [];
+
+      let tierProfileCode: string | null = null;
+      if (institutionId && trustedTier && this.tierLimitPolicies) {
+        try {
+          const tierResolution = await this.tierLimitPolicies.resolveWithManager(manager, {
+            institutionId,
+            product: productCode,
+            currency,
+            serviceClass: null,
+            tier: trustedTier,
+          });
+          if (tierResolution.mapping.disposition === 'PROFILE') {
+            tierProfileCode = tierResolution.mapping.profileCode;
+          }
+        } catch {
+          // Tier policy unavailable: fall back to assignment rules; enforcement remains authoritative.
+        }
+      }
+
+      const profileCodes = [
+        ...new Set([
+          ...(resolved ? [resolved.limitProfileCode] : []),
+          ...(tierProfileCode ? [tierProfileCode] : []),
+        ]),
+      ];
       const candidates = profileCodes.length
         ? await fetchApplicableLimitRuleCandidates(manager, {
             profileCodes,
@@ -220,8 +284,8 @@ export class CustomerEffectiveConfigurationService {
       });
 
       const limits: EffectiveLimitValue[] = REQUIRED_DIMENSIONS.map((dim) => {
-        const rule = applicable.find((r) => String(r.dimension).toUpperCase() === dim);
-        if (!rule) {
+        const matching = applicable.filter((r) => String(r.dimension).toUpperCase() === dim);
+        if (matching.length === 0) {
           return {
             dimension: dim,
             status: 'MISSING',
@@ -235,21 +299,56 @@ export class CustomerEffectiveConfigurationService {
             isUnlimited: false,
           };
         }
-        const isUnlimited = Boolean(
-          (rule as unknown as { is_unlimited?: boolean; isUnlimited?: boolean }).is_unlimited ??
-            (rule as unknown as { isUnlimited?: boolean }).isUnlimited,
+        // Conjunctive rules: the effective ceiling is the most restrictive applicable rule.
+        // An unlimited commercial rule cannot override a finite ceiling.
+        let selected = matching[0]!;
+        let selectedUnlimited = Boolean(
+          (selected as unknown as { is_unlimited?: boolean }).is_unlimited ??
+            (selected as unknown as { isUnlimited?: boolean }).isUnlimited,
         );
+        let selectedMinor = selected.limit_value_minor ? BigInt(selected.limit_value_minor) : null;
+        let selectedCount = selected.limit_value_count ?? null;
+        for (const rule of matching.slice(1)) {
+          const isUnlimited = Boolean(
+            (rule as unknown as { is_unlimited?: boolean }).is_unlimited ??
+              (rule as unknown as { isUnlimited?: boolean }).isUnlimited,
+          );
+          const minor = rule.limit_value_minor ? BigInt(rule.limit_value_minor) : null;
+          const count = rule.limit_value_count ?? null;
+          if (selectedUnlimited && !isUnlimited) {
+            selected = rule;
+            selectedUnlimited = false;
+            selectedMinor = minor;
+            selectedCount = count;
+            continue;
+          }
+          if (isUnlimited) continue;
+          if (minor !== null && (selectedMinor === null || minor < selectedMinor)) {
+            selected = rule;
+            selectedMinor = minor;
+            selectedCount = count;
+          } else if (minor === null && count !== null && (selectedCount === null || count < selectedCount)) {
+            selected = rule;
+            selectedCount = count;
+          }
+        }
+        const source =
+          tierProfileCode && selected.limit_profile_code === tierProfileCode
+            ? resolved && resolved.limitProfileCode === tierProfileCode
+              ? 'ASSIGNMENT_AND_TIER_POLICY'
+              : 'TIER_POLICY'
+            : 'ASSIGNMENT';
         return {
           dimension: dim,
-          status: isUnlimited ? 'UNLIMITED' : 'RESOLVED',
-          limitValueMinor: rule.limit_value_minor ?? null,
-          limitValueCount: rule.limit_value_count ?? null,
-          ruleId: rule.id,
-          profileCode: rule.limit_profile_code,
-          source: resolved && rule.limit_profile_code === resolved.limitProfileCode ? 'ASSIGNMENT' : 'ASSIGNMENT',
-          effectiveFrom: rule.effective_from ? new Date(rule.effective_from).toISOString() : null,
-          effectiveTo: rule.effective_to ? new Date(rule.effective_to).toISOString() : null,
-          isUnlimited,
+          status: selectedUnlimited ? 'UNLIMITED' : 'RESOLVED',
+          limitValueMinor: selected.limit_value_minor ?? null,
+          limitValueCount: selected.limit_value_count ?? null,
+          ruleId: selected.id,
+          profileCode: selected.limit_profile_code,
+          source,
+          effectiveFrom: selected.effective_from ? new Date(selected.effective_from).toISOString() : null,
+          effectiveTo: selected.effective_to ? new Date(selected.effective_to).toISOString() : null,
+          isUnlimited: selectedUnlimited,
         };
       });
 

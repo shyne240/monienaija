@@ -30,6 +30,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
 import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
 import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
@@ -50,6 +51,7 @@ import { CustomerEffectiveConfigurationService } from '../customer-onboarding/cu
     CustomerWalletModule,
     CustomerClassModule,
     FeeRulesModule,
+    KycTierModule,
     LimitCatalogModule,
     ProductCatalogModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,

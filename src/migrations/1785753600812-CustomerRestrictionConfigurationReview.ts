@@ -16,11 +16,11 @@ export class CustomerRestrictionConfigurationReview1785753600812 implements Migr
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const rows = await queryRunner.query<Array<{ count: string }>>(`
+    const rows = (await queryRunner.query(`
       SELECT COUNT(*)::text AS count
       FROM customer_restrictions
       WHERE type = 'CONFIGURATION_REVIEW' AND deleted_at IS NULL
-    `);
+    `)) as Array<{ count: string }>;
     if (Number(rows[0]?.count ?? '0') > 0) {
       throw new Error(
         'Refusing to drop CONFIGURATION_REVIEW restriction type while active rows exist',

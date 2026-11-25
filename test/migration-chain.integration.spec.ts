@@ -403,6 +403,9 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'GeneralizeFinancialAuthorizationsForAgents1785753600803',
         'GeneralizeExternalOperationsForAgents1785753600804',
         'CreateCustomerClasses1785753600805',
+        'CustomerTierDefaultClassMappings1785753600810',
+        'LimitRuleUnlimited1785753600811',
+        'CustomerRestrictionConfigurationReview1785753600812',
       ]);
       const boundary = await db.query<
         Array<{ decisions: string | null; consumptions: string | null; guarded: boolean }>

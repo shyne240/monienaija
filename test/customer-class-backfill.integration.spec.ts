@@ -9,11 +9,17 @@ describe('customer class migration backfill (PostgreSQL)', () => {
     const db = await createEmptyIntegrationDataSource('class-backfill');
     try {
       await db.initialize();
+      const tailNames = new Set([
+        'CreateCustomerClasses1785753600805',
+        'CustomerTierDefaultClassMappings1785753600810',
+        'LimitRuleUnlimited1785753600811',
+        'CustomerRestrictionConfigurationReview1785753600812',
+      ]);
       const all = [...db.migrations];
       db.migrations.splice(
         0,
         db.migrations.length,
-        ...all.filter((m) => m.name !== 'CreateCustomerClasses1785753600805'),
+        ...all.filter((m) => !tailNames.has(m.name ?? '')),
       );
       await db.runMigrations({ transaction: 'all' });
       const customers = [
@@ -33,6 +39,9 @@ describe('customer class migration backfill (PostgreSQL)', () => {
       db.migrations.splice(0, db.migrations.length, ...all);
       expect((await db.runMigrations({ transaction: 'all' })).map((m) => m.name)).toEqual([
         'CreateCustomerClasses1785753600805',
+        'CustomerTierDefaultClassMappings1785753600810',
+        'LimitRuleUnlimited1785753600811',
+        'CustomerRestrictionConfigurationReview1785753600812',
       ]);
       const read = () =>
         db.query<Array<{ customer_id: string; code: string; source: string }>>(

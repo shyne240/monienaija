@@ -65,19 +65,28 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the customer class migration', () => {
+  it('ends at the customer restriction configuration review migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
     // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
-    // dual-lane (customer/agent) A6 financial authorization + external-ops, and Arena 1 appended
-    // 0805 (customer classes). The head is pinned exactly — a head-only allowance would let a
-    // skipped earlier identity pass.
+    // dual-lane (customer/agent) A6 financial authorization + external-ops, Arena 1 appended
+    // 0805 (customer classes), and this branch appended 0810-0812 (tier-default mappings,
+    // unlimited limits, configuration-review restriction). The head is pinned exactly — a
+    // head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
     expect(migrations.at(-2)).toMatchObject({
-      timestamp: '1785753600804',
-      name: 'GeneralizeExternalOperationsForAgents1785753600804',
+      timestamp: '1785753600811',
+      name: 'LimitRuleUnlimited1785753600811',
+    });
+    expect(migrations.at(-3)).toMatchObject({
+      timestamp: '1785753600810',
+      name: 'CustomerTierDefaultClassMappings1785753600810',
+    });
+    expect(migrations.at(-4)).toMatchObject({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
     });
   });
 
@@ -136,11 +145,13 @@ describe('migration inventory', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
-  it('contains the appended identities 0800-0805 after the Arena 3D range in order', () => {
+  it('contains the appended identities 0800-0812 after the Arena 3D range in order', () => {
     // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
     // agent verified-phone proof, typed beneficiary ownership), Arena 5 appended 0803–0804
-    // (dual-lane financial authorization + external-operations generalisation), and Arena 1
-    // appended 0805 (customer classes). Each identity is published and is never renumbered.
+    // (dual-lane financial authorization + external-operations generalisation), Arena 1
+    // appended 0805 (customer classes), and this branch appended 0810-0812 (tier-default
+    // mappings, unlimited limits, configuration-review restriction). Each identity is published
+    // and is never renumbered.
     const appended = [
       ['1785753600800', 'BindWalletTransferQuotes1785753600800'],
       ['1785753600801', 'AgentVerifiedPhone1785753600801'],
@@ -148,6 +159,9 @@ describe('migration inventory', () => {
       ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
       ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
       ['1785753600805', 'CreateCustomerClasses1785753600805'],
+      ['1785753600810', 'CustomerTierDefaultClassMappings1785753600810'],
+      ['1785753600811', 'LimitRuleUnlimited1785753600811'],
+      ['1785753600812', 'CustomerRestrictionConfigurationReview1785753600812'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -160,13 +174,13 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 169 migration identities', () => {
-    // The consolidated inventory is the union of the two frozen branches: 152 common identities
-    // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
-    // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
-    // fee-targeting migration contributed by PR #4 (0506), the Prembly credential-governance
-    // migration (0507), and the customer-class migration contributed by Arena 1 (0805). Any
-    // additional or missing file fails this assertion.
+  it('contains exactly 172 migration identities', () => {
+    // The consolidated inventory is the union of the two frozen branches plus this branch's
+    // additive migrations: 152 common identities (151 byte-identical plus one formatted 3D copy),
+    // nine appended by Arena 3D, three by Arena 2C, two by Arena 5 (agent financial
+    // authorization + external-ops), additive fee-targeting (0506), Prembly credential-governance
+    // (0507), customer-class (0805), and tier-default/unlimited-limit/configuration-review
+    // migrations (0810-0812). Any additional or missing file fails this assertion.
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
@@ -182,7 +196,22 @@ describe('migration inventory', () => {
       name: 'CreateCustomerClasses1785753600805',
       file: '1785753600805-CreateCustomerClasses.ts',
     });
-    expect(migrations.length).toBe(169);
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600810',
+      name: 'CustomerTierDefaultClassMappings1785753600810',
+      file: '1785753600810-CustomerTierDefaultClassMappings.ts',
+    });
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600811',
+      name: 'LimitRuleUnlimited1785753600811',
+      file: '1785753600811-LimitRuleUnlimited.ts',
+    });
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
+      file: '1785753600812-CustomerRestrictionConfigurationReview.ts',
+    });
+    expect(migrations.length).toBe(172);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {
