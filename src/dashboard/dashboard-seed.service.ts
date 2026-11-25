@@ -33,7 +33,11 @@ export class DashboardSeedService implements OnApplicationBootstrap {
     await this.seedIfEmpty();
   }
 
-  async seedIfEmpty(): Promise<{ templates: number; assignments: number; layoutAdditions?: number }> {
+  async seedIfEmpty(): Promise<{
+    templates: number;
+    assignments: number;
+    layoutAdditions?: number;
+  }> {
     const templates = await this.seedTemplates();
     const assignments = await this.seedAssignments();
     const layoutAdditions = await this.applyLayoutAdditions();
@@ -74,7 +78,7 @@ export class DashboardSeedService implements OnApplicationBootstrap {
       // No row yet: the base seed above already contains these widgets, so there is nothing to patch.
       if (!template) continue;
 
-      const metadata = (template.metadata ?? {}) as Record<string, unknown>;
+      const metadata = template.metadata ?? {};
       const recorded = Array.isArray(metadata.layoutAdditions)
         ? metadata.layoutAdditions.filter((key): key is string => typeof key === 'string')
         : [];

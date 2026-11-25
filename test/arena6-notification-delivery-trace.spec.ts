@@ -1,3 +1,5 @@
+import type { DataSource } from 'typeorm';
+
 import { NotificationOperationsService } from '../src/admin/notification-operations.service';
 
 /**
@@ -33,10 +35,24 @@ const deliveryRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const serviceFor = (handler: (sql: string, params: unknown[]) => unknown) =>
-  new NotificationOperationsService({
-    query: jest.fn(async (sql: string, params?: unknown[]) => handler(sql, params ?? [])),
-  } as any);
+/**
+ * A DataSource double, cast to the declared dependency type at the seam. Returning the mock alongside
+ * the fake lets a test assert on what was asked for, which is the only way to pin "did not query at all"
+ * — an absence cannot be observed through the returned payload.
+ */
+type QueryHandler = (sql: string, params: unknown[]) => unknown;
+
+const fakeDataSource = (handler: QueryHandler) => {
+  const query = jest.fn(
+    (sql: string, params: unknown[] = []): Promise<unknown> =>
+      // Deferred so a handler that throws models a failed statement, i.e. a rejected query.
+      Promise.resolve().then(() => handler(sql, params)),
+  );
+  return { query, dataSource: { query } as unknown as DataSource };
+};
+
+const serviceFor = (handler: QueryHandler): NotificationOperationsService =>
+  new NotificationOperationsService(fakeDataSource(handler).dataSource);
 
 describe('ARENA 6 — notification delivery trace', () => {
   it('links the delivery to its outbox event and the consumer receipt on it', async () => {
@@ -93,21 +109,19 @@ describe('ARENA 6 — notification delivery trace', () => {
   });
 
   it('says NOT_FOUND when the delivery carries no event key, without querying for one', async () => {
-    const query = jest.fn(async (sql: string) =>
+    const { query, dataSource } = fakeDataSource((sql) =>
       sql.includes('FROM notification_deliveries') && sql.includes('WHERE id=$1')
         ? [deliveryRow({ event_key: '' })]
         : sql.includes('notification_delivery_attempts')
           ? []
           : [],
     );
-    const service = new NotificationOperationsService({ query } as any);
+    const service = new NotificationOperationsService(dataSource);
     const detail = await service.deliveryDetail('delivery-1', false);
 
     expect(detail.relatedEvent.availability).toBe('NOT_FOUND');
     expect(String(detail.relatedEvent.reason)).toMatch(/no event key/i);
-    expect(
-      query.mock.calls.some(([sql]) => String(sql).includes('FROM outbox_events o')),
-    ).toBe(false);
+    expect(query.mock.calls.some(([sql]) => sql.includes('FROM outbox_events o'))).toBe(false);
   });
 
   it('reports UNAVAILABLE, not NOT_FOUND, when the event read itself fails', async () => {
@@ -115,7 +129,8 @@ describe('ARENA 6 — notification delivery trace', () => {
       if (sql.includes('FROM notification_deliveries') && sql.includes('WHERE id=$1'))
         return [deliveryRow()];
       if (sql.includes('notification_delivery_attempts')) return [];
-      if (sql.includes('FROM outbox_events o')) throw new Error('relation outbox_events does not exist');
+      if (sql.includes('FROM outbox_events o'))
+        throw new Error('relation outbox_events does not exist');
       if (sql.includes('notification_delivery_receipts'))
         throw new Error('relation notification_delivery_receipts does not exist');
       return [];
@@ -182,7 +197,8 @@ describe('ARENA 6 — notification delivery trace', () => {
     const seen: Array<{ sql: string; params: unknown[] }> = [];
     const service = serviceFor((sql, params) => {
       seen.push({ sql, params });
-      if (sql.includes('GROUP BY channel, status')) return [{ channel: 'SMS', status: 'FAILED', count: 3 }];
+      if (sql.includes('GROUP BY channel, status'))
+        return [{ channel: 'SMS', status: 'FAILED', count: 3 }];
       if (sql.includes('error_code')) return [];
       if (sql.includes('notification_outbox_receipts')) return [];
       return [{ count: '0' }];

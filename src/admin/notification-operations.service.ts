@@ -302,7 +302,8 @@ export class NotificationOperationsService {
 
   async summary(input: NotificationOperationsSummaryInput): Promise<NotificationOperationsSummary> {
     const hours = Math.min(Math.max(Math.trunc(input.hours) || 24, 1), 168);
-    const to = input.to instanceof Date && !Number.isNaN(input.to.getTime()) ? input.to : new Date();
+    const to =
+      input.to instanceof Date && !Number.isNaN(input.to.getTime()) ? input.to : new Date();
     const from =
       input.from instanceof Date && !Number.isNaN(input.from.getTime())
         ? input.from
@@ -563,7 +564,8 @@ export class NotificationOperationsService {
    */
   private async readRelatedEvent(eventKey: string): Promise<NotificationRelatedEvent> {
     const checkedAt = new Date().toISOString();
-    const source = 'outbox_events + notification_outbox_receipts (consumer ' + NOTIFICATION_CONSUMER_NAME + ')';
+    const source =
+      'outbox_events + notification_outbox_receipts (consumer ' + NOTIFICATION_CONSUMER_NAME + ')';
     if (!eventKey) {
       return {
         availability: 'NOT_FOUND',
@@ -671,11 +673,9 @@ export class NotificationOperationsService {
       const items = rows.map((receipt) => ({
         id: receipt.id,
         kind: receipt.kind,
-        verification: (
-          ['SIGNED', 'SHARED_SECRET', 'UNVERIFIED'].includes(receipt.verification)
-            ? receipt.verification
-            : 'UNVERIFIED'
-        ) as NotificationProviderReceiptTrace['items'][number]['verification'],
+        verification: (['SIGNED', 'SHARED_SECRET', 'UNVERIFIED'].includes(receipt.verification)
+          ? receipt.verification
+          : 'UNVERIFIED') as NotificationProviderReceiptTrace['items'][number]['verification'],
         // The raw provider detail is free text and is never projected; only a recognized
         // closed-set classification code survives.
         providerCode: sanitizeDeliveryErrorCode(receipt.provider_code),

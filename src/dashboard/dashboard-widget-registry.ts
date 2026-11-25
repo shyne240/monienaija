@@ -285,7 +285,7 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     widgetKey: 'notification-delivery-exceptions',
     displayName: 'Notification Delivery Exceptions',
     description:
-      'Failed, dead and outcome-unknown notification deliveries in the selected window, with sanitized error codes and the next scheduled automatic retry. Read-only by policy: recovery is the worker\'s bounded automatic retry, so this card reports the backlog and never offers a retry control.',
+      "Failed, dead and outcome-unknown notification deliveries in the selected window, with sanitized error codes and the next scheduled automatic retry. Read-only by policy: recovery is the worker's bounded automatic retry, so this card reports the backlog and never offers a retry control.",
     requiredFunctions: ['notification.view_deliveries'],
     fetchMode: 'proxy',
     supportsPeriodFilter: true,

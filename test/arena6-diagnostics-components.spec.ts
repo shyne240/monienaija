@@ -1,5 +1,9 @@
+import type { DataSource } from 'typeorm';
+
 import { DiagnosticsService } from '../src/operations/diagnostics.service';
 import type { DiagnosticsReport } from '../src/operations/operations.types';
+import type { ReconciliationService } from '../src/reconciliation/reconciliation.service';
+import type { WorkerSupervisorService } from '../src/operations/worker-supervisor.service';
 
 /**
  * ARENA 6 — System Health component reporting.
@@ -16,18 +20,49 @@ const isoTimestamp = (value: unknown) => {
   expect(Number.isNaN(Date.parse(value as string))).toBe(false);
 };
 
-const dataSource = (implementation: (sql: string) => unknown) =>
-  ({ query: jest.fn(async (sql: string) => implementation(sql)) }) as any;
-
-const reconciliation = (status: 'PASS' | 'WARNING' | 'ERROR') =>
-  ({ runReconciliation: jest.fn(async () => ({ status })) }) as any;
-
-const throwingReconciliation = () =>
+/**
+ * The doubles are structural fakes, cast once at the seam to the dependency type the service declares.
+ * Casting through `unknown` rather than handing the constructor an `any` keeps every expectation below
+ * type-checked against the real contract: a renamed or widened field on `HealthComponentReport` has to
+ * fail here, not silently pass against a loose stub.
+ */
+const dataSource = (implementation: (sql: string) => unknown): DataSource =>
   ({
-    runReconciliation: jest.fn(async () => {
-      throw new Error('connection reset');
+    query: jest.fn((sql: string): Promise<unknown> => {
+      try {
+        return Promise.resolve(implementation(sql));
+      } catch (error) {
+        return Promise.reject(error instanceof Error ? error : new Error('query failed'));
+      }
     }),
-  }) as any;
+  }) as unknown as DataSource;
+
+const reconciliation = (status: 'PASS' | 'WARNING' | 'ERROR'): ReconciliationService =>
+  ({
+    runReconciliation: jest.fn(
+      (): Promise<{ status: 'PASS' | 'WARNING' | 'ERROR' }> => Promise.resolve({ status }),
+    ),
+  }) as unknown as ReconciliationService;
+
+/** A reconciliation run that could not complete at all — distinct from one that reported an ERROR. */
+const throwingReconciliation = (): ReconciliationService =>
+  ({
+    runReconciliation: jest.fn((): Promise<never> => Promise.reject(new Error('connection reset'))),
+  }) as unknown as ReconciliationService;
+
+interface SupervisorStub {
+  generatedAt: string;
+  status: 'ok' | 'degraded' | 'indeterminate';
+  workers: Array<{ name: string; enabled: boolean; activityObserved: boolean }>;
+  neverObserved: string[];
+  disabled: string[];
+  failing: string[];
+  stale: string[];
+  scope: string;
+}
+
+const supervisor = (report: SupervisorStub): WorkerSupervisorService =>
+  ({ report: (): SupervisorStub => report }) as unknown as WorkerSupervisorService;
 
 const healthy = (sql: string): unknown => {
   if (sql.includes('SELECT 1')) return [{ ok: 1 }];
@@ -41,20 +76,16 @@ describe('ARENA 6 — diagnostics components', () => {
     const service = new DiagnosticsService(
       dataSource(healthy),
       reconciliation('PASS'),
-      {
-        report: () => ({
-          generatedAt: '2026-11-05T10:00:00.000Z',
-          status: 'ok',
-          workers: [
-            { name: 'notification-delivery', enabled: true, activityObserved: true },
-          ],
-          neverObserved: [],
-          disabled: [],
-          failing: [],
-          stale: [],
-          scope: 'process-local',
-        }),
-      } as any,
+      supervisor({
+        generatedAt: '2026-11-05T10:00:00.000Z',
+        status: 'ok',
+        workers: [{ name: 'notification-delivery', enabled: true, activityObserved: true }],
+        neverObserved: [],
+        disabled: [],
+        failing: [],
+        stale: [],
+        scope: 'process-local',
+      }),
     );
 
     const report: DiagnosticsReport = await service.getDiagnostics();
@@ -160,18 +191,16 @@ describe('ARENA 6 — diagnostics components', () => {
     const service = new DiagnosticsService(
       dataSource(healthy),
       reconciliation('PASS'),
-      {
-        report: () => ({
-          generatedAt: '2026-11-05T11:00:00.000Z',
-          status: 'indeterminate',
-          workers: [],
-          neverObserved: ['notification-delivery'],
-          disabled: ['banking-dispatch'],
-          failing: [],
-          stale: [],
-          scope: 'process-local',
-        }),
-      } as any,
+      supervisor({
+        generatedAt: '2026-11-05T11:00:00.000Z',
+        status: 'indeterminate',
+        workers: [],
+        neverObserved: ['notification-delivery'],
+        disabled: ['banking-dispatch'],
+        failing: [],
+        stale: [],
+        scope: 'process-local',
+      }),
     );
 
     const report = await service.getDiagnostics();

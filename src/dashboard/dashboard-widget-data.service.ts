@@ -537,8 +537,7 @@ export class DashboardWidgetDataService {
       status: row.status,
       count: row.count,
     }));
-    const countOf = (status: string) =>
-      byStatus.find((row) => row.status === status)?.count ?? 0;
+    const countOf = (status: string) => byStatus.find((row) => row.status === status)?.count ?? 0;
     const exceptions = countOf('FAILED') + countOf('DEAD') + countOf('UNKNOWN');
     const channels = summary.provider.channels.map((channel) => ({
       channel: channel.channel,
@@ -559,7 +558,11 @@ export class DashboardWidgetDataService {
         to: summary.window.to instanceof Date ? summary.window.to.toISOString() : undefined,
       },
       availability: 'MEASURED' as const,
-      configuration: noTransportReported ? 'NO_TRANSPORT_CONFIGURED' : anyTransport ? 'CONFIGURED' : 'UNKNOWN',
+      configuration: noTransportReported
+        ? 'NO_TRANSPORT_CONFIGURED'
+        : anyTransport
+          ? 'CONFIGURED'
+          : 'UNKNOWN',
       configurationNote: noTransportReported
         ? 'No notification channel currently has a usable transport, so an empty delivery log in this window means nothing could be attempted — not that nothing failed.'
         : undefined,
@@ -571,9 +574,7 @@ export class DashboardWidgetDataService {
       errorCodes: summary.failureDiagnostics.map((row) => ({
         errorCode: row.errorCode,
         count: row.count,
-        lastSeenAt: row.lastSeenAt
-          ? new Date(row.lastSeenAt as string | Date).toISOString()
-          : null,
+        lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt).toISOString() : null,
       })),
       retry: {
         pending: summary.retryBacklog.pending,
@@ -581,10 +582,10 @@ export class DashboardWidgetDataService {
         dead: summary.retryBacklog.dead,
         unknown: summary.retryBacklog.unknown,
         oldestPendingAt: summary.retryBacklog.oldestPendingAt
-          ? new Date(summary.retryBacklog.oldestPendingAt as string | Date).toISOString()
+          ? new Date(summary.retryBacklog.oldestPendingAt).toISOString()
           : null,
         nextScheduledRetryAt: summary.retryBacklog.nextScheduledRetryAt
-          ? new Date(summary.retryBacklog.nextScheduledRetryAt as string | Date).toISOString()
+          ? new Date(summary.retryBacklog.nextScheduledRetryAt).toISOString()
           : null,
         manualRetrySupported: false,
         policyReference: summary.retryPolicy.manualRetryPolicyReference,
@@ -595,7 +596,7 @@ export class DashboardWidgetDataService {
         channels,
       },
       definition:
-        'Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated over the same read-only delivery log the notification operations workspace shows. Read-only: recovery is the worker\'s bounded automatic retry, and no retry control exists on this card.',
+        "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated over the same read-only delivery log the notification operations workspace shows. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
       checkedAt,
       source,
     };

@@ -1,4 +1,8 @@
+import type { Repository } from 'typeorm';
+
 import { DashboardSeedService } from '../src/dashboard/dashboard-seed.service';
+import type { DashboardTemplate } from '../src/dashboard/dashboard-template.entity';
+import type { RoleDashboardAssignment } from '../src/dashboard/role-dashboard-assignment.entity';
 import {
   DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS,
   DASHBOARD_TEMPLATE_SEED,
@@ -18,42 +22,78 @@ import { AUTHORIZATION_ROLE_FUNCTION_SEED } from '../src/authorization-catalogue
  * migration-additive path, and it has to satisfy two demands that pull against each other — a card
  * must reach deployments that are already running, and an operator who removes it must keep it removed.
  * These tests pin both halves, because the first is a rollout bug and the second is a governance bug.
+ *
+ * The repository doubles are deliberately structural rather than `any`: every expectation below is a
+ * statement about persisted shape (`layout.widgets`, `metadata.layoutAdditions`), and a fake typed as
+ * `any` would let a renamed field pass while proving nothing.
  */
+
+interface Placement {
+  widgetKey: string;
+  order: number;
+  title?: string;
+}
 
 interface Row {
   templateKey: string;
   displayName: string;
   description: string;
   operationalArea: string;
-  layout: { widgets: Array<{ widgetKey: string; order: number; title?: string }> };
+  layout: { widgets: Placement[] };
   isActive: boolean;
   metadata: Record<string, unknown> | null;
 }
 
-const repo = (rows: Row[]) => {
-  const store = [...rows];
-  const instance = {
+interface FakeTemplateRepo {
+  readonly store: Row[];
+  readonly findOne: jest.Mock<Promise<Row | null>, [{ where?: { templateKey?: string } }]>;
+  readonly create: jest.Mock<Row, [Partial<Row>]>;
+  readonly save: jest.Mock<Promise<Row>, [Row]>;
+}
+
+const repo = (rows: Row[]): FakeTemplateRepo => {
+  const store: Row[] = rows.map((row) => ({
+    ...row,
+    layout: { widgets: row.layout.widgets.map((widget) => ({ ...widget })) },
+    metadata: row.metadata ? { ...row.metadata } : null,
+  }));
+  return {
     store,
-    findOne: jest.fn(async (options: any) =>
-      store.find((row) => row.templateKey === options?.where?.templateKey) ?? null,
+    findOne: jest.fn(
+      (options: { where?: { templateKey?: string } }): Promise<Row | null> =>
+        Promise.resolve(
+          store.find((row) => row.templateKey === options?.where?.templateKey) ?? null,
+        ),
     ),
-    create: jest.fn((value: any) => value),
-    save: jest.fn(async (value: any) => {
+    create: jest.fn((value: Partial<Row>): Row => value as Row),
+    save: jest.fn((value: Row): Promise<Row> => {
       const index = store.findIndex((row) => row.templateKey === value.templateKey);
-      if (index === -1) store.push({ metadata: null, ...value });
-      else store[index] = { ...store[index], ...value };
-      return value;
+      if (index === -1) store.push(value);
+      else store[index] = value;
+      return Promise.resolve(value);
     }),
   };
-  return instance as any;
 };
 
-const emptyAssignmentRepo = () =>
+const emptyAssignmentRepo = (): Repository<RoleDashboardAssignment> =>
   ({
-    findOne: jest.fn(async () => null),
-    create: jest.fn((value: any) => value),
-    save: jest.fn(async (value: any) => value),
-  }) as any;
+    findOne: jest.fn((): Promise<RoleDashboardAssignment | null> => Promise.resolve(null)),
+    create: jest.fn(
+      (value: Partial<RoleDashboardAssignment>): RoleDashboardAssignment =>
+        value as RoleDashboardAssignment,
+    ),
+    save: jest.fn(
+      (value: RoleDashboardAssignment): Promise<RoleDashboardAssignment> => Promise.resolve(value),
+    ),
+  }) as unknown as Repository<RoleDashboardAssignment>;
+
+/** The one row a test cares about, asserted to exist so the expectations stay readable. */
+const onlyRow = (store: Row[], templateKey: string): Row => {
+  const row = store.find((candidate) => candidate.templateKey === templateKey);
+  if (!row)
+    throw new Error(`no '${templateKey}' row was persisted (store held ${store.length} rows)`);
+  return row;
+};
 
 /** A deployment from *before* the card existed: the same template, without it placed. */
 const preCardRow = (templateKey: string, widgetKeys: string[]): Row => ({
@@ -68,8 +108,14 @@ const preCardRow = (templateKey: string, widgetKeys: string[]): Row => ({
   metadata: null,
 });
 
-const service = (templateRepo: any) =>
-  new DashboardSeedService(templateRepo, emptyAssignmentRepo());
+const service = (templateRepo: FakeTemplateRepo): DashboardSeedService =>
+  new DashboardSeedService(
+    templateRepo as unknown as Repository<DashboardTemplate>,
+    emptyAssignmentRepo(),
+  );
+
+const keysOf = (row: Row | undefined): string[] =>
+  (row?.layout.widgets ?? []).map((widget) => widget.widgetKey);
 
 describe('ARENA 6 — dashboard layout additions', () => {
   it('declares an addition for every seeded template that places the card', () => {
@@ -98,26 +144,25 @@ describe('ARENA 6 — dashboard layout additions', () => {
     const result = await service(templateRepo).seedIfEmpty();
 
     expect(result.layoutAdditions).toBe(1);
-    const widgets = templateRepo.store[0].layout.widgets;
-    expect(widgets.map((widget: any) => widget.widgetKey)).toEqual([
+    const rowNow = onlyRow(templateRepo.store, 'EXECUTIVE_GOVERNANCE');
+    expect(keysOf(rowNow)).toEqual([
       'identity-session',
       'entitlements-scopes',
       'transaction-summary',
       'notification-delivery-exceptions',
     ]);
     // The declared order is respected, not renumbered away.
-    expect(widgets.at(-1)!.order).toBe(11);
-    expect(templateRepo.store[0].metadata.layoutAdditions).toEqual([
-      'notification-delivery-exceptions',
-    ]);
-    expect(String(templateRepo.store[0].metadata.layoutAdditionsReason)).toMatch(/ARENA 6/);
-    expect(typeof templateRepo.store[0].metadata.layoutAdditionsAt).toBe('string');
+    expect(rowNow.layout.widgets.at(-1)?.order).toBe(11);
+    expect(rowNow.metadata?.layoutAdditions).toEqual(['notification-delivery-exceptions']);
+    expect(String(rowNow.metadata?.layoutAdditionsReason)).toMatch(/ARENA 6/);
+    expect(typeof rowNow.metadata?.layoutAdditionsAt).toBe('string');
   });
 
   it('is idempotent: a second boot adds nothing', async () => {
     const templateRepo = repo([preCardRow('TRANSACTION_OPERATIONS', ['transaction-summary'])]);
     await service(templateRepo).seedIfEmpty();
     const afterFirst = JSON.stringify(templateRepo.store);
+    expect(onlyRow(templateRepo.store, 'TRANSACTION_OPERATIONS').layout.widgets).toHaveLength(2);
 
     const second = await service(templateRepo).seedIfEmpty();
     expect(second.layoutAdditions).toBeUndefined();
@@ -148,15 +193,11 @@ describe('ARENA 6 — dashboard layout additions', () => {
     const result = await service(templateRepo).seedIfEmpty();
 
     expect(result.layoutAdditions).toBeUndefined();
-    expect(templateRepo.store[0].layout.widgets.map((widget: any) => widget.widgetKey)).toEqual([
-      'reconciliation-status',
-      'audit-trail',
-    ]);
+    const rowNow = onlyRow(templateRepo.store, 'FINANCIAL_AUDIT_ASSURANCE');
+    expect(keysOf(rowNow)).toEqual(['reconciliation-status', 'audit-trail']);
     // The governance record survives an unrelated boot so the removal stays attributable.
-    expect(templateRepo.store[0].metadata.layoutAdditions).toEqual([
-      'notification-delivery-exceptions',
-    ]);
-    expect(templateRepo.store[0].metadata.layoutAdditionsAt).toBe('2026-11-05T00:00:00.000Z');
+    expect(rowNow.metadata?.layoutAdditions).toEqual(['notification-delivery-exceptions']);
+    expect(rowNow.metadata?.layoutAdditionsAt).toBe('2026-11-05T00:00:00.000Z');
   });
 
   it('refuses an addition that names an unregistered widget, before touching any row', async () => {
@@ -181,26 +222,21 @@ describe('ARENA 6 — dashboard layout additions', () => {
     // programming error, so no half-applied layout may be persisted on the way out. (The base seed
     // legitimately created the other templates first — this asserts only the targeted row.)
     const targeted = templateRepo.store.find(
-      (row: Row) => row.templateKey === 'A_TEMPLATE_WITH_NO_DECLARED_ADDITION',
-    )!;
-    expect(targeted.layout.widgets.map((widget: any) => widget.widgetKey)).toEqual([
-      'transaction-summary',
-    ]);
-    expect(targeted.metadata).toBeNull();
+      (candidate: Row) => candidate.templateKey === 'A_TEMPLATE_WITH_NO_DECLARED_ADDITION',
+    );
+    expect(keysOf(targeted)).toEqual(['transaction-summary']);
+    expect(targeted?.metadata).toBeNull();
   });
 
-  it('leaves every other template untouched when one addition is missing its row', async () => {
+  it('patches only the templates a deployment actually has, creating nothing on the way', async () => {
     // Only one of the three templates exists in this deployment; the others are skipped, not created.
     const templateRepo = repo([preCardRow('TRANSACTION_OPERATIONS', ['recent-transactions'])]);
     const result = await service(templateRepo).seedIfEmpty();
     expect(result.layoutAdditions).toBe(1);
     const operations = templateRepo.store.find(
-      (row: Row) => row.templateKey === 'TRANSACTION_OPERATIONS',
-    )!;
-    expect(operations.layout.widgets.map((widget: any) => widget.widgetKey)).toEqual([
-      'recent-transactions',
-      'notification-delivery-exceptions',
-    ]);
+      (candidate: Row) => candidate.templateKey === 'TRANSACTION_OPERATIONS',
+    );
+    expect(keysOf(operations)).toEqual(['recent-transactions', 'notification-delivery-exceptions']);
   });
 
   it('keeps every seeded and added widget resolvable, so boot validation cannot regress', () => {
@@ -212,21 +248,23 @@ describe('ARENA 6 — dashboard layout additions', () => {
       for (const widget of template.widgets) expect(keys.has(widget.widgetKey)).toBe(true);
     }
     for (const addition of DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS) {
-      const widget = addition.widgets.at(0)!;
+      const widget = addition.widgets.at(0);
+      expect(widget).toBeDefined();
+      if (!widget) continue;
       expect(findWidgetDefinition(widget.widgetKey)).toBeDefined();
       const template = DASHBOARD_TEMPLATE_SEED.find(
         (entry) => entry.templateKey === addition.templateKey,
       );
       expect(template).toBeDefined();
-      const seeded = template!.widgets.find((entry) => entry.widgetKey === widget.widgetKey);
+      const seeded = template?.widgets.find((entry) => entry.widgetKey === widget.widgetKey);
       // The seed placement and its additive reconciliation must agree, or the two paths disagree.
       expect(seeded?.order).toBe(widget.order);
     }
   });
 
   it('places the card exactly where the granted function already reaches', () => {
-    const exceptions = findWidgetDefinition('notification-delivery-exceptions')!;
-    expect(exceptions.requiredFunctions).toEqual(['notification.view_deliveries']);
+    const exceptions = findWidgetDefinition('notification-delivery-exceptions');
+    expect(exceptions?.requiredFunctions).toEqual(['notification.view_deliveries']);
 
     const templatesWithCard = new Set(
       DASHBOARD_TEMPLATE_SEED.filter((template) =>
@@ -240,10 +278,8 @@ describe('ARENA 6 — dashboard layout additions', () => {
     );
     for (const assignment of ROLE_DASHBOARD_ASSIGNMENT_SEED) {
       const carries = templatesWithCard.has(assignment.templateKey);
-      // A card placed for a role that cannot load it renders as a permanent restriction notice, and a
+      // A card placed for a role that cannot load it renders as a permanent restriction notice; a
       // role that can read delivery exceptions but sees no card has no route into the workspace.
-      // A card placed for a role that cannot load it renders as a permanent restriction notice; a role
-      // that can read delivery exceptions but sees no card has no route into the workspace.
       expect(carries).toBe(holders.has(assignment.roleKey));
     }
     expect([...templatesWithCard].sort()).toEqual([

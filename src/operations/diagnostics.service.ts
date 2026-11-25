@@ -116,11 +116,7 @@ export class DiagnosticsService {
         {
           key: 'migrations',
           label: 'Schema migration head',
-          state: !migrations.ok
-            ? 'unknown'
-            : appliedCount > 0
-              ? 'ok'
-              : ('degraded' as const),
+          state: !migrations.ok ? 'unknown' : appliedCount > 0 ? 'ok' : ('degraded' as const),
           availability: migrations.ok ? 'CHECKED' : 'UNAVAILABLE',
           meaning: migrations.ok
             ? 'Rows recorded in `typeorm_migrations`. A count is a presence check on the migration ledger, not proof that the schema matches the code this build expects.'
@@ -152,11 +148,7 @@ export class DiagnosticsService {
         {
           key: 'outbox',
           label: 'Outbox backlog',
-          state: !outbox.ok
-            ? 'unknown'
-            : outbox.value === 0
-              ? 'ok'
-              : ('degraded' as const),
+          state: !outbox.ok ? 'unknown' : outbox.value === 0 ? 'ok' : ('degraded' as const),
           availability: outbox.ok ? 'CHECKED' : 'UNAVAILABLE',
           meaning: outbox.ok
             ? outbox.value === 0
@@ -236,7 +228,8 @@ export class DiagnosticsService {
         label: 'Background worker supervision',
         state: 'unknown',
         availability: 'UNAVAILABLE',
-        meaning: 'The supervisor could not produce a report, so worker liveness is unknown for this process.',
+        meaning:
+          'The supervisor could not produce a report, so worker liveness is unknown for this process.',
         detail: {},
         checkedAt: probe.checkedAt,
         source: 'WorkerSupervisorService.report()',
@@ -247,8 +240,7 @@ export class DiagnosticsService {
     return {
       key: 'workers',
       label: 'Background worker supervision',
-      state:
-        report.status === 'ok' ? 'ok' : report.status === 'degraded' ? 'degraded' : 'unknown',
+      state: report.status === 'ok' ? 'ok' : report.status === 'degraded' ? 'degraded' : 'unknown',
       availability: report.status === 'indeterminate' ? 'UNAVAILABLE' : 'CHECKED',
       meaning:
         report.status === 'indeterminate'
