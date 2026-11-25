@@ -219,6 +219,9 @@ interface PreviewCommissionSectionBody {
   status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   allocations: PreviewCommissionAllocation[];
+  /** Present only when status === 'AMBIGUOUS': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds: string[] | null;
+  ambiguousPriority: number | null;
   /** Stated explicitly: nothing is accrued or settled here. */
   accrualPosted: false;
 }
@@ -246,6 +249,9 @@ interface PreviewRewardSectionBody {
   status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   grants: PreviewRewardGrant[];
+  /** Present only when status === 'AMBIGUOUS': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds: string[] | null;
+  ambiguousPriority: number | null;
   /** Reward financial execution stays unwired; the preview never credits a wallet. */
   creditPosted: false;
 }

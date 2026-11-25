@@ -966,6 +966,8 @@ export class EffectiveConfigurationPreviewService {
         status: 'NOT_APPLICABLE',
         note: 'No amount was supplied, so commission payable on this operation could not be computed. Commission rules may still exist; supply an amountMinor to resolve them.',
         allocations: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         accrualPosted: false,
       };
     }
@@ -985,11 +987,29 @@ export class EffectiveConfigurationPreviewService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Commission resolution failed';
+      const ambiguous = this.parseAmbiguity(message, 'COMMISSION_RULE_AMBIGUOUS');
+      if (ambiguous) {
+        input.explanation.push({
+          code: 'COMMISSION_RULE_AMBIGUOUS',
+          message: `Commission rules ${ambiguous.ruleIds.join(', ')} share priority ${ambiguous.priority ?? 'the same top priority'}; none was selected. Remove the tie before relying on this configuration.`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'AMBIGUOUS',
+          note: `More than one commission rule shares the highest priority (${ambiguous.priority ?? 'unknown'}). The resolver refused to choose, so no commission is selected.`,
+          allocations: [],
+          ambiguousRuleIds: ambiguous.ruleIds,
+          ambiguousPriority: ambiguous.priority,
+          accrualPosted: false,
+        };
+      }
       input.explanation.push(warning('COMMISSION_RESOLUTION_UNAVAILABLE', message));
       return {
         status: 'UNAVAILABLE',
         note: `Commission could not be resolved: ${message}`,
         allocations: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         accrualPosted: false,
       };
     }
@@ -1021,6 +1041,8 @@ export class EffectiveConfigurationPreviewService {
           ? 'Commission that would be allocated for this operation. Nothing is accrued, settled or posted by this preview.'
           : 'No commission rule applies to this product, currency and targeting.',
       allocations,
+      ambiguousRuleIds: null,
+      ambiguousPriority: null,
       accrualPosted: false,
     };
   }
@@ -1052,6 +1074,8 @@ export class EffectiveConfigurationPreviewService {
         status: 'NOT_APPLICABLE',
         note: 'No amount was supplied, so reward value could not be computed. Reward rules may still exist; supply an amountMinor to resolve them.',
         grants: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         creditPosted: false,
       };
     }
@@ -1073,11 +1097,29 @@ export class EffectiveConfigurationPreviewService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Reward resolution failed';
+      const ambiguous = this.parseAmbiguity(message, 'REWARD_RULE_AMBIGUOUS');
+      if (ambiguous) {
+        input.explanation.push({
+          code: 'REWARD_RULE_AMBIGUOUS',
+          message: `Reward rules ${ambiguous.ruleIds.join(', ')} share priority ${ambiguous.priority ?? 'the same top priority'}; none was selected. Remove the tie before relying on this configuration.`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'AMBIGUOUS',
+          note: `More than one reward rule shares the highest priority (${ambiguous.priority ?? 'unknown'}). The resolver refused to choose, so no reward is selected.`,
+          grants: [],
+          ambiguousRuleIds: ambiguous.ruleIds,
+          ambiguousPriority: ambiguous.priority,
+          creditPosted: false,
+        };
+      }
       input.explanation.push(warning('REWARD_RESOLUTION_UNAVAILABLE', message));
       return {
         status: 'UNAVAILABLE',
         note: `Reward could not be resolved: ${message}`,
         grants: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         creditPosted: false,
       };
     }
@@ -1106,6 +1148,8 @@ export class EffectiveConfigurationPreviewService {
           ? 'Reward that would be granted for this operation. Nothing is credited or settled by this preview; reward financial execution remains unwired.'
           : 'No reward rule applies to this product, currency and targeting.',
       grants,
+      ambiguousRuleIds: null,
+      ambiguousPriority: null,
       creditPosted: false,
     };
   }
@@ -1169,6 +1213,27 @@ export class EffectiveConfigurationPreviewService {
     if (Number.isNaN(parsed.getTime()))
       throw new BadRequestException('at must be an ISO-8601 instant');
     return parsed;
+  }
+
+  private parseAmbiguity(
+    message: string,
+    code: 'COMMISSION_RULE_AMBIGUOUS' | 'REWARD_RULE_AMBIGUOUS',
+  ): { ruleIds: string[]; priority: number | null } | null {
+    if (!message.includes(code)) return null;
+    const priorityMatch = /share priority (\d+)/i.exec(message);
+    const idsMatch = /rule ids: ([^)]+)\)/i.exec(message);
+    const rawIds = idsMatch?.[1] ?? '';
+    const ruleIds = rawIds
+      ? rawIds
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .sort()
+      : [];
+    return {
+      ruleIds,
+      priority: priorityMatch ? Number.parseInt(priorityMatch[1]!, 10) : null,
+    };
   }
 }
 

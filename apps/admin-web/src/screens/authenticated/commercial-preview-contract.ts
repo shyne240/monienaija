@@ -28,10 +28,12 @@ export type PreviewSectionStatus =
   | 'MISSING'
   /** Resolver refused a tied top rule set. Nothing was selected. */
   | 'AMBIGUOUS'
-  /** Resolver contract is not available on this baseline; no inference was attempted. */
+  /** The section does not apply to this request; no inference was attempted. */
   | 'NOT_APPLICABLE'
   /** The section could not be evaluated (invalid input, unavailable policy). */
-  | 'UNAVAILABLE';
+  | 'UNAVAILABLE'
+  /** The caller lacks the read function for this section; nothing was disclosed. */
+  | 'RESTRICTED';
 
 export type PreviewSeverity = 'INFO' | 'WARNING' | 'BLOCKER';
 
@@ -183,6 +185,9 @@ export interface PreviewCommissionSection {
   status: PreviewSectionStatus;
   note: string | null;
   allocations: PreviewCommissionAllocation[];
+  /** Present only when status === \'AMBIGUOUS\': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds?: string[] | null;
+  ambiguousPriority?: number | null;
   /** Stated explicitly: nothing is accrued or settled here. */
   accrualPosted: false;
 }
@@ -208,6 +213,9 @@ export interface PreviewRewardSection {
   status: PreviewSectionStatus;
   note: string | null;
   grants: PreviewRewardGrant[];
+  /** Present only when status === \'AMBIGUOUS\': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds?: string[] | null;
+  ambiguousPriority?: number | null;
   /** Reward financial execution stays unwired; the preview never credits a wallet. */
   creditPosted: false;
 }

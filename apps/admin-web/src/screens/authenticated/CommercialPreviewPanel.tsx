@@ -18,6 +18,7 @@ const TONE: Record<PreviewSectionStatus, 'success' | 'warning' | 'danger' | 'neu
   AMBIGUOUS: 'warning',
   NOT_APPLICABLE: 'neutral',
   UNAVAILABLE: 'warning',
+  RESTRICTED: 'neutral',
 };
 
 /**
@@ -336,6 +337,9 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
               </Section>
 
               <Section title="Effective limit profile" status={result.limits.status}>
+                <p className="commercial-preview__boundary-note">
+                  Missing limit configuration is not an unlimited allowance. Only explicitly resolved rules govern the operation.
+                </p>
                 <dl className="commercial-preview__kv">
                   <div>
                     <dt>Assignment profile</dt>
@@ -403,8 +407,20 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
                     <dd>{result.fee.rule?.ruleId ?? 'No applicable rule'}</dd>
                   </div>
                   <div>
+                    <dt>Version</dt>
+                    <dd>{result.fee.rule?.ruleVersion ?? '—'}</dd>
+                  </div>
+                  <div>
                     <dt>Priority</dt>
                     <dd>{result.fee.rule?.priority ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Effective window</dt>
+                    <dd>
+                      {result.fee.rule
+                        ? `${result.fee.rule.effectiveFrom} → ${result.fee.rule.effectiveTo ?? 'open-ended'}`
+                        : '—'}
+                    </dd>
                   </div>
                   <div>
                     <dt>Flat fee (minor)</dt>
@@ -416,7 +432,19 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
                   </div>
                   <div>
                     <dt>Computed fee (minor)</dt>
-                    <dd>{result.fee.computed?.feeMinor ?? 'Not computed'}</dd>
+                    <dd>
+                      {result.fee.computed?.feeMinor === '0'
+                        ? '0 (zero fee — explicit rule)'
+                        : (result.fee.computed?.feeMinor ?? 'Not computed')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Computed total (minor)</dt>
+                    <dd>
+                      {result.fee.computed?.totalMinor === '0'
+                        ? '0 (zero total — explicit rule)'
+                        : (result.fee.computed?.totalMinor ?? 'Not computed')}
+                    </dd>
                   </div>
                   <div>
                     <dt>Computed VAT (minor)</dt>
@@ -435,14 +463,27 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
               </Section>
 
               <Section title="Applicable commission rule" status={result.commission.status}>
-                {result.commission.allocations.length === 0 ? (
+                {result.commission.status === 'AMBIGUOUS' ? (
+                  <dl className="commercial-preview__kv">
+                    <div>
+                      <dt>Ambiguous priority</dt>
+                      <dd>{result.commission.ambiguousPriority ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Conflicting rules</dt>
+                      <dd>{result.commission.ambiguousRuleIds?.join(', ') ?? '—'}</dd>
+                    </div>
+                  </dl>
+                ) : result.commission.allocations.length === 0 ? (
                   <p>No commission allocation resolved.</p>
                 ) : (
                   <ul>
                     {result.commission.allocations.map((allocation) => (
                       <li key={`${allocation.ruleId}-${allocation.recipientType}`}>
                         {allocation.recipientType}: {allocation.amountMinor} minor · rule{' '}
-                        <code>{allocation.ruleId}</code>
+                        <code>{allocation.ruleId}</code> · priority {allocation.priority} ·{' '}
+                        {allocation.effectiveFrom}
+                        {allocation.effectiveTo ? ` → ${allocation.effectiveTo}` : ' (open-ended)'}
                       </li>
                     ))}
                   </ul>
@@ -451,14 +492,27 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
               </Section>
 
               <Section title="Applicable reward rule" status={result.reward.status}>
-                {result.reward.grants.length === 0 ? (
+                {result.reward.status === 'AMBIGUOUS' ? (
+                  <dl className="commercial-preview__kv">
+                    <div>
+                      <dt>Ambiguous priority</dt>
+                      <dd>{result.reward.ambiguousPriority ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Conflicting rules</dt>
+                      <dd>{result.reward.ambiguousRuleIds?.join(', ') ?? '—'}</dd>
+                    </div>
+                  </dl>
+                ) : result.reward.grants.length === 0 ? (
                   <p>No reward grant resolved.</p>
                 ) : (
                   <ul>
                     {result.reward.grants.map((grant) => (
                       <li key={`${grant.ruleId}-${grant.beneficiaryType}`}>
                         {grant.beneficiaryType} {grant.rewardType}: {grant.amountMinor} minor · rule{' '}
-                        <code>{grant.ruleId}</code>
+                        <code>{grant.ruleId}</code> · priority {grant.priority} ·{' '}
+                        {grant.effectiveFrom}
+                        {grant.effectiveTo ? ` → ${grant.effectiveTo}` : ' (open-ended)'}
                       </li>
                     ))}
                   </ul>
