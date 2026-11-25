@@ -107,6 +107,8 @@ export interface PreviewLimitRule {
   currency: string;
   limitValueMinor: string | null;
   limitValueCount: number | null;
+  /** Explicit unlimited cap (PR #24 coordination); when true, no minor/count cap applies. */
+  isUnlimited?: boolean;
   priority: number;
   effectiveFrom: string;
   effectiveTo: string | null;

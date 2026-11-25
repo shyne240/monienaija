@@ -389,9 +389,11 @@ export const CommercialPreviewPanel: React.FC<{ defaultProduct?: string }> = ({ 
                           <td>{rule.source}</td>
                           <td>{rule.priority}</td>
                           <td>
-                            {rule.limitValueMinor !== null
-                              ? `${rule.limitValueMinor} minor`
-                              : `${rule.limitValueCount ?? '—'} count`}
+                            {rule.isUnlimited
+                              ? 'Unlimited (explicit)'
+                              : rule.limitValueMinor !== null
+                                ? `${rule.limitValueMinor} minor`
+                                : `${rule.limitValueCount ?? '—'} count`}
                           </td>
                         </tr>
                       ))}
