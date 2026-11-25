@@ -226,13 +226,27 @@ async function main() {
     } catch {
       body = text;
     }
+    // Evidence is shareable: credentials and bearer tokens never enter the transcript.
+    const redact = (value) => {
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          /password|accesstoken|token|authorization/i.test(key)
+            ? '[REDACTED]'
+            : typeof entry === 'string'
+              ? entry.replace(/eyJ[A-Za-z0-9_-]+/g, '[REDACTED]')
+              : redact(entry),
+        ]),
+      );
+    };
     TRANSCRIPT.push({
       method: options.method ?? 'GET',
       route,
       status: response.status,
-      body: options.body ?? null,
+      body: redact(options.body ?? null),
       responsePreview:
-        typeof body === 'string' ? body.slice(0, 200) : JSON.stringify(body).slice(0, 400),
+        typeof body === 'string' ? body.slice(0, 200) : JSON.stringify(redact(body)).slice(0, 400),
     });
     return { status: response.status, body };
   };

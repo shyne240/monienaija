@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-25T11:14:34.988Z",
+  "generatedAt": "2026-11-25T11:31:02.196Z",
   "api": "stubbed",
   "checks": [
     {
@@ -10,7 +10,7 @@
     {
       "name": "LEDGER-SEARCH-RETURNS-SCOPED-ROWS",
       "ok": true,
-      "detail": "1 result row(s), institution and source rendered"
+      "detail": "3 result row(s), institution and source rendered"
     },
     {
       "name": "JOURNAL-DETAIL-SHOWS-NEXT-ACTION-AND-SOURCE",
@@ -18,14 +18,19 @@
       "detail": "next action=\"Execute the approved reversal\", source link visible=true"
     },
     {
-      "name": "TRANSACTION-SHOWS-LEDGER-POSTING",
+      "name": "TRANSFER-LINKS-TO-UNIFIED-HISTORY-BY-BUSINESS-KEY",
       "ok": true,
-      "detail": "status=\"FOUND — The transaction is recorded by one posted ledger journal.\", journal button visible=true"
+      "detail": "href=#transaction-history/WALLET_TRANSFER/aa11bb22-3333-4444-8555-666677778888"
     },
     {
-      "name": "JOURNAL-RECORD-DEEP-LINK-REOPENS-ELIGIBILITY",
+      "name": "CASH-IN-LINKS-BY-CANONICAL-JOURNAL-ID",
       "ok": true,
-      "detail": "transaction → journal deep link rendered the eligibility panel"
+      "detail": "href=#transaction-history/CASH_IN/1a2b3c4d-2222-4333-8444-555566667777 (expected CASH_IN/1a2b3c4d-2222-4333-8444-555566667777, not deposit-1)"
+    },
+    {
+      "name": "UNSUPPORTED-PRODUCT-SHOWS-LINK-UNAVAILABLE",
+      "ok": true,
+      "detail": "Transaction history link unavailable — Unified Transaction History has no mapping for customer funding yet."
     },
     {
       "name": "RECONCILIATION-SHOWS-NOT-ESTABLISHED-AND-SOURCES",
