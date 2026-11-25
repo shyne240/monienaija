@@ -1,6 +1,6 @@
 # Finance → Transaction History detail-link contract
 
-Status: published for review; Finance acknowledgement outstanding. No changes to Finance ledger/reconciliation packages are implied.
+Status: published for review; combined real-session acceptance remains outstanding. Finance #25 head `891a1c1777855b9e921cfc50c962f2626d7eecf8` was inspected, not merged. Its adapter supports the original four types; its combined browser harness mocks API responses. Neither proves the five added types or real bidirectional authorization.
 
 ## Link
 
@@ -10,7 +10,7 @@ transactionDetailLink(type, id);
 // => #transaction-history/<TYPE>/<UUID>
 ```
 
-Existing TYPE values (unchanged): `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT`, `CASH_TO_CASH`.
+Original TYPE values (unchanged): `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT`, `CASH_TO_CASH`.
 
 Use the **business transaction key**, not an arbitrary ledger-line, event or journal ID:
 
@@ -18,7 +18,7 @@ Use the **business transaction key**, not an arbitrary ledger-line, event or jou
 - Cash-to-cash: `cash_to_cash_transfers.id` even if the link originates from claim/expiry investigation.
 - Cash-in/out: original posted canonical-service journal ID; never reversal journal ID.
 
-Do not infer a transaction TYPE from a reference prefix. Finance must resolve ownership from its actual source record. For other products, show an unavailable link until their history mapping is implemented. Do not link bank commitment IDs as wallet transfers.
+Do not infer a transaction TYPE from a reference prefix. Finance must resolve ownership from its actual source record. For added products, use the mappings below only when the source identity is proven. The Finance adapter does not yet implement those mappings; show unavailable rather than guessing. Do not link bank commitment IDs as wallet transfers.
 
 Example:
 
@@ -37,7 +37,7 @@ References are display/search values, not globally unique keys. Exact-reference 
 1. Finance: acknowledge this key contract and use source business keys in future link integrations.
 2. Navigation owner: retain legacy view aliases but do not reintroduce separate Transfers/Deposits/Withdrawals/Cash-to-cash menu entries.
 3. Authorization owner: decide whether list uses existing `transaction.view` (this draft) or a newly activated `transaction.search`; no entitlement changes made here.
-4. Product + Finance: decide operational float funding/defunding visibility and primitive deposit/withdrawal taxonomy before new filter types are exposed.
+4. Product + Finance: review posted operational float coverage and approve any future unposted attribution/backfill; generic primitives remain excluded.
 
 ## Follow-up added products
 
@@ -46,3 +46,7 @@ Additional keys: `WALLET_TO_BANK` (financial commitment UUID for customer OR age
 `CASH_IN` and `CASH_OUT` now display **Cash to Wallet** and **Wallet to Cash** without changing stored keys. Cash to Cash remains on its parent. No generic deposit/withdrawal type.
 
 Authorization decision: bounded list and detail both require existing `transaction.view`; no role grants added and `transaction.search` remains reserved/non-assignable. See FOLLOWUP-COVERAGE.md for cross-pipeline inbound identity limitations and withheld unscoped records. Do not promise new inbound lifecycle links beyond tested mappings until that draft gate is resolved.
+
+## Release warning: added inbound keys are provisional
+
+The current receipt/banking match uses provider/hash/institution without environment proof; a later banking row can change the selected UUID. Banking → institutional float changes TYPE and UUID. No persisted alias exists. Suspense resolution has not been demonstrated. These are release blockers, not supported saved-link guarantees. The original four mappings above remain unchanged. See README.md for the single current gate checklist.

@@ -34,3 +34,11 @@
 - Real-session artifacts: `real-workforce-results.json`, `real-workforce-bank-to-wallet.png`, `real-workforce-bank-detail.png`. Query plan: `migrated-query-plan.json` (two-row migrated fixture; no production volume claim).
 - Nest build, Admin Web typecheck/build and focused ESLint passed. See FOLLOWUP-COVERAGE.md for explicit withheld records, data-change proposal, authorization decision and unresolved matrix/identity/performance gates.
 - CI status is reported on PR #23 at its exact pushed SHA; earlier-head CI is not evidence for this follow-up. No merge request or approval is implied.
+
+## Volume follow-up (supersedes the two-row plan above)
+
+- Full migration chain, disposable PostgreSQL, real AppModule and all 11-role fixture checks: **6/6 passed**. Command: `NODE_ENV=test PG_TEST_RUN_ID=historyvol28 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes DB_HOST=127.0.0.1 DB_PORT=55440 DB_USER=monienaija DB_PASSWORD=monienaija-pw npx jest --config jest.integration.config.js --runInBand test/local-dev-11-roles.integration.spec.ts`.
+- Latest run is HTTP-only: `real-workforce-http-results.json`. Existing browser artifacts above are prior-head evidence, not rerun in this change.
+- `migrated-query-plan.json`: 20,002 inbound rows, two institutions, full UNION plans for combined/type/reference/type-status-date/keyset. Other source tables empty; not a representative mixed-product certification.
+- `npx eslint test/local-dev-11-roles.integration.spec.ts` and `npx tsc --noEmit` passed.
+- No production read projection or money-moving service changed. Durable inbound identity and unposted attribution remain unresolved. Finance #25 was inspected only; its mocked combined harness is not real-session evidence. Remaining browser matrix not run. See README.md.

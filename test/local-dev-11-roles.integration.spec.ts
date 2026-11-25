@@ -186,22 +186,60 @@ describe('local development 11-role fixture (real migrations, PostgreSQL, Nest H
     );
     await read(base, treasury).expect(403);
     await request(app.getHttpServer()).get(base).expect(401);
-    const plans = await ds.query(
-      `EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${HISTORY_SQL} SELECT id FROM scoped WHERE type='BANK_TO_WALLET' ORDER BY created_at DESC,type DESC,id DESC LIMIT 21`,
-      [false, ops.principal.principalId],
+    // Disposable-only volume fixture: keep grants, credentials and existing business rows intact.
+    // Both institutions are populated so plans exercise the actual scope predicate.
+    await ds.query(
+      `INSERT INTO banking_inbound_payments
+       (institution_id,provider_key,environment,provider_transaction_reference,currency,
+        gross_amount_minor,provider_fee_minor,credited_amount_minor,verification_state,recorded_at)
+       SELECT CASE WHEN n % 2=0 THEN $1::uuid ELSE $2::uuid END,'MONNIFY','sandbox',
+        'HISTORY-VOLUME-' || n,'NGN',10000,100,9900,
+        CASE WHEN n % 3=0 THEN 'UNVERIFIED' ELSE 'VERIFIED' END,
+        '2026-11-24T12:00:00Z'::timestamptz - n * interval '1 minute'
+       FROM generate_series(1,20000) n`,
+      [own, foreign],
     );
-    fs.writeFileSync(
-      out + '/migrated-query-plan.json',
-      JSON.stringify(
-        {
-          fixture:
-            'two inbound rows, fully migrated schema; not a production-scale performance certification',
-          plan: plans,
-        },
-        null,
-        2,
-      ),
-    );
+    await ds.query('ANALYZE banking_inbound_payments');
+    await ds.query('ANALYZE workforce_institution_assignments');
+    const plans: Record<string, unknown> = {};
+    const queries = {
+      combined: '',
+      type: "WHERE type='BANK_TO_WALLET'",
+      reference: "WHERE reference='HISTORY-VOLUME-10000'",
+      typeStatusDate:
+        "WHERE type='BANK_TO_WALLET' AND status='VERIFIED' AND created_at >= '2026-11-23T23:00:00Z' AND created_at < '2026-11-24T23:00:00Z'",
+      cursor:
+        "WHERE (created_at,type,id) < ('2026-11-22T12:00:00Z'::timestamptz,'BANK_TO_WALLET','ffffffff-ffff-4fff-8fff-ffffffffffff'::uuid)",
+    };
+    {
+      for (const [name, predicate] of Object.entries(queries)) {
+        plans[name] = await ds.query(
+          `EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${HISTORY_SQL} SELECT id FROM scoped ${predicate} ORDER BY created_at DESC,type DESC,id DESC LIMIT 21`,
+          [false, ops.principal.principalId],
+        );
+      }
+      expect(
+        (await read(base + '?reference=HISTORY-VOLUME-10000', ops).expect(200)).body.items,
+      ).toHaveLength(1);
+      expect(
+        (await read(base + '?reference=HISTORY-VOLUME-10001', ops).expect(200)).body.items,
+      ).toEqual([]);
+      fs.writeFileSync(
+        out + '/migrated-query-plan.json',
+        JSON.stringify(
+          {
+            fixture:
+              '20002 inbound rows split evenly across two institutions; full UNION, real workforce scope; other product sources empty. Not a balanced production workload.',
+            postgres: (await ds.query('SELECT version()'))[0].version,
+            plans,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    // Verified inbound rows are immutable. The harness drops the entire disposable database;
+    // do not disable immutability triggers to clean up fixtures.
     if (process.env.HISTORY_BROWSER === 'yes') {
       await app.listen(3099, '0.0.0.0');
       const { chromium } = require('playwright');
@@ -247,7 +285,10 @@ describe('local development 11-role fixture (real migrations, PostgreSQL, Nest H
       await ds.query('SELECT id,password_hash FROM local_admin_credentials ORDER BY id'),
     ).toEqual(credentialsBefore);
     fs.writeFileSync(
-      out + '/real-workforce-results.json',
+      out +
+        (process.env.HISTORY_BROWSER === 'yes'
+          ? '/real-workforce-results.json'
+          : '/real-workforce-http-results.json'),
       JSON.stringify(
         {
           checks: [

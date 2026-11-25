@@ -1,6 +1,6 @@
 # PR #23 follow-up — current coverage and remaining gates
 
-This document supersedes the four-type coverage/verification blockers in the initial README and initial PR description. Base remains `41edf587c262edafbd3eb2cc1b3042c614a9730e`; no mobile or password changes.
+This document gives detailed product coverage; README.md is the current release checklist. The initial packet is archived in INITIAL-REVIEW-PACKET.md. Base remains `41edf587c262edafbd3eb2cc1b3042c614a9730e`; no mobile or password changes.
 
 ## Product-to-record map
 
@@ -53,7 +53,7 @@ Affected classes:
 - `local-dev-11-roles.integration.spec.ts`: all accounts HTTP-authenticate; OPERATIONS own-institution list/detail allowed, foreign list/reference denied and direct detail 404, FINANCE_AUDITOR platform read allowed, TREASURY 403, unauthenticated 401, immediate assignment revocation within same token. Password hashes unchanged. Chromium uses actual sign-in form and real backend guards, not a bearer adapter.
 - Real-workforce screenshots currently cover **Bank to Wallet only**; nine-type screenshots use the explicitly labelled minimal-schema read harness with synthetic authentication. The five-type end-to-end execution→history→browser matrix is not complete and remains a draft gate.
 - Product execution regression runs: 3 banking suites / 41 tests and 3 funding suites / 61 tests passed. They validate existing execution paths, not a claim every result was opened by a real workforce browser.
-- Query plan artifact: EXPLAIN ANALYZE/BUFFERS on fully migrated schema with two inbound rows. It demonstrates actual predicate/plan execution, NOT production-scale latency certification. Large-volume plans, per-source pagination indexes and type/date/reference plan comparisons remain outstanding.
+- Query plan artifact now exercises the full UNION with 20,002 inbound rows split across two institutions, and combined/type/reference/type-status-date/keyset plans. Other product sources are empty; mixed-product representative-volume certification and tuning remain outstanding. Latest real-role rerun: 6/6 passed, HTTP only; prior browser evidence is retained separately.
 - Inbound identity edge cases remain a gate: records arriving later in a different intake pipeline, mismatched environment/reference evidence, suspense-to-wallet resolution and banking-evidence → institutional float receipt links need a durable cross-pipeline business-key design/migration before promising every new inbound link survives every transition. Existing four product links are unchanged.
 - Customer/agent pending or rejected funding history needs the safe attribution change above; no automatic backfill was made.
 - Full backend CI at exact pushed head must be checked on GitHub; do not cite prior-head green checks as this commit's result. PR remains draft; no merge requested.
