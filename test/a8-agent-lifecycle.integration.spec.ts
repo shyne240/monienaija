@@ -596,7 +596,7 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     );
     expect(latest[0]).toEqual({
       timestamp: '1785753600812',
-      name: 'CreateCustomerClasses1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
   });
 });

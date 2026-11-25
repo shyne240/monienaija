@@ -7,6 +7,7 @@ import { pbkdf2Sync, randomUUID } from 'node:crypto';
 import request = require('supertest');
 
 import { AppModule } from '../src/app.module';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
@@ -133,6 +134,7 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await seedActivationCommercialConfig(dataSource);
   });
 
   async function createCustomer(

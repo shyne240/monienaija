@@ -112,26 +112,78 @@ export class CustomerEffectiveConfigurationService {
     ]);
 
     const verifiedTier = customerRows[0]?.kyc_level ?? null;
-    const classCode = classResolution?.classCode ?? null;
+    let classResolutionEffective = classResolution;
+    // Fall back to the approved tier default class when no active assignment exists.
+    // Activation commits the tier-default assignment at activation time; before that,
+    // the approved tier default is the prospective effective class for readiness/config.
+    if (
+      !classResolutionEffective &&
+      verifiedTier &&
+      ['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(verifiedTier)
+    ) {
+      const tdRows = await manager.query<
+        Array<{
+          class_id: string;
+          class_code: string;
+          class_name: string;
+          class_status: string;
+          class_enabled: boolean;
+          class_configuration_status: string;
+          class_deleted_at: Date | null;
+        }>
+      >(
+        `SELECT td.class_id, c.code AS class_code, c.name AS class_name,
+                c.status AS class_status, c.enabled AS class_enabled,
+                c.configuration_status AS class_configuration_status, c.deleted_at AS class_deleted_at
+           FROM customer_tier_default_classes td
+           JOIN customer_classes c ON c.id = td.class_id
+          WHERE td.tier = $1 AND td.status = 'APPROVED'
+          LIMIT 1`,
+        [verifiedTier],
+      );
+      const td = tdRows[0];
+      if (
+        td &&
+        td.class_deleted_at == null &&
+        td.class_enabled === true &&
+        td.class_status === 'ACTIVE' &&
+        td.class_configuration_status === 'CONFIGURED'
+      ) {
+        classResolutionEffective = {
+          customerId,
+          assignmentId: '',
+          classId: td.class_id,
+          classCode: td.class_code,
+          className: td.class_name,
+          assignmentVersion: 0,
+          classVersion: 0,
+          source: 'TIER_DEFAULT',
+          effectiveFrom: new Date(0),
+          effectiveTo: null,
+        };
+      }
+    }
+
+    const classCode = classResolutionEffective?.classCode ?? null;
     let assignedClass: CustomerEffectiveConfiguration['assignedClass'] = null;
-    if (classResolution) {
+    if (classResolutionEffective) {
       let eligibleForVerifiedTier: boolean | null = null;
       if (verifiedTier && ['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(verifiedTier)) {
         const tierDefaultRows = await manager.query<Array<{ is_match: boolean }>>(
           `SELECT (class_id = $2 AND status = 'APPROVED') AS is_match
              FROM customer_tier_default_classes
             WHERE tier = $1`,
-          [verifiedTier, classResolution.classId],
+          [verifiedTier, classResolutionEffective.classId],
         );
         eligibleForVerifiedTier =
           tierDefaultRows.length > 0 ? Boolean(tierDefaultRows[0]?.is_match) : null;
       }
       assignedClass = {
-        classCode: classResolution.classCode,
-        className: classResolution.className,
-        source: classResolution.source,
+        classCode: classResolutionEffective.classCode,
+        className: classResolutionEffective.className,
+        source: classResolutionEffective.source,
         eligibleForVerifiedTier,
-        classId: classResolution.classId,
+        classId: classResolutionEffective.classId,
       };
     }
 
