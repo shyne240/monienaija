@@ -126,7 +126,7 @@ untouched (its own 18/18 disposable-environment suite still passes).
 10. **Revocation:** prepared approval → checker decision → `DELETE …/roles/:principalId/:roleKey` returns `REVOKED`; the _same_ session token immediately gets `401` on the previously granted route; re-sign-in fails; the definition remains active with no active assignment.
 11. **Regression:** all eleven local accounts still sign in with their original roles.
 
-### Browser evidence
+### Component-level browser evidence (fixture API)
 
 The harness now also drives a custom-role session (`SOC_ANALYST`, grants `fee_rule.view` +
 `audit.search`) and the definition workspace. Checks added on top of the 27:
@@ -140,7 +140,81 @@ The harness now also drives a custom-role session (`SOC_ANALYST`, grants `fee_ru
 | `ROLE-DEFINITION-SUBMITTED`      | The submitted body carries `SOC_ANALYST` and exactly two `VIEW` grants.                                                         |
 | `ROLE-DEFINITION-AWAITS-CHECKER` | The new definition is listed as awaiting independent approval, with its functions.                                              |
 
-Total browser checks: **33/33**.
+Total fixture-API browser checks: **33/33**.
+
+This harness answers `/api/v1/**` in the browser, so it proves client behaviour only. The run below
+supersedes it for enforcement.
+
+### Real-session browser evidence (real PostgreSQL, real workforce sessions)
+
+`scripts/b9-real-session-browser.cjs` drives the same production bundle against a **real Nest
+application** (`AppModule`, Fastify, the product's own global prefix, validation pipe and request
+context) on a **fully migrated disposable PostgreSQL** seeded with the eleven local accounts
+(`scripts/b9-real-session-server.cjs` serves the bundle and proxies `/api/v1` to it). Every identity
+is a real workforce login: no request is intercepted, and every decision below is taken by server
+code, not by the harness.
+
+The one direct database write is the synthetic user's credential row — the product has no HTTP
+account-provisioning route, and the demo requires a real account whose access can be granted and
+then taken away. The script refuses a non-loopback host and cleans its own fixture first.
+
+| Check                                  | What the real stack showed                                                                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFINITION-CATALOGUE-FROM-API`        | The editor loaded **93** assignable catalogue functions from `GET /role-definitions/functions`.                                                 |
+| `DEFINITION-SUBMITTED`                 | `SOC_ANALYST` (CREATE, read-only) submitted with exactly `fee_rule.view` + `customer.view`, listed as awaiting independent approval.            |
+| `DEFINITION-SELF-APPROVAL-UNAVAILABLE` | The proposer is offered **no** decision control on its own definition.                                                                          |
+| `DEFINITION-CHECKER-WORKSPACE`         | `FINANCE_CONTROLLER` opens a definitions-only review workspace; the assignment form is not rendered for a session without assignment authority. |
+| `DEFINITION-APPROVED`                  | `POST /role-definitions/proposals/:id/approve` → `201`; the card reads "Approved — not yet applied".                                            |
+| `DEFINITION-APPLIED`                   | The initiator applied it: "Applied to the catalogue".                                                                                           |
+| `ASSIGNMENT-APPROVAL-PREPARED`         | The assign form produced a real `FINANCE_ROLE_ASSIGN` approval for the synthetic principal, fingerprint included.                               |
+| `ASSIGNMENT-APPROVAL-DECIDED`          | The independent checker approved it through the Approvals workspace: `POST /approvals/:id/approve` → `201`.                                     |
+| `ASSIGNMENT-APPLIED`                   | `POST /internal/a2/workforce/roles` → `201`.                                                                                                    |
+| `CUSTOM-ROLE-SIGNED-IN`                | Sign-in as the synthetic user returned `roles=[SOC_ANALYST]`, `scopes=[customer.view,fee_rule.view]`.                                           |
+| `CUSTOM-ROLE-GRANTED-MENUS`            | Sidebar: `customerClasses, customers, dashboard, feeRules`.                                                                                     |
+| `CUSTOM-ROLE-DENIED-MENU`              | Workforce directory and Role governance are absent.                                                                                             |
+| `CUSTOM-ROLE-GRANTED-PAGE`             | The granted Fee rules workspace rendered for the custom role.                                                                                   |
+| `CUSTOM-ROLE-GRANTED-READS`            | `GET /internal/fee-rules` → `200`, `GET /internal/customers` → `200` with that session's token.                                                 |
+| `CUSTOM-ROLE-DENIED-API`               | `GET /internal/workforce/directory` → `403`, `GET /role-definitions/proposals` → `403`.                                                         |
+| `REVOCATION-APPROVAL-PREPARED`         | A real `FINANCE_ROLE_REVOKE` approval was prepared for the same principal.                                                                      |
+| `REVOCATION-APPROVED`                  | Independent checker decision → `201`.                                                                                                           |
+| `REVOCATION-APPLIED`                   | `DELETE /internal/a2/workforce/roles/:principal/SOC_ANALYST` → `200`.                                                                           |
+| `ACCESS-LOST-IMMEDIATELY`              | The **same** token that read fee rules returned `401` after the revocation.                                                                     |
+| `SESSION-INVALIDATED-IN-UI`            | Reloading the analyst workspace returned the operator to the login screen.                                                                      |
+| `ELEVEN-FIXTURES-UNCHANGED`            | All eleven seeded accounts still authenticate and still carry their original role.                                                              |
+| `NO-UNEXPECTED-PAGE-ERRORS`            | No uncaught browser errors during the run.                                                                                                      |
+
+**22/22 checks passed.** Screenshots (1440×1000) in
+`docs/integration/evidence/b9-real-session/`: `definition-submitted`, `definition-approved`,
+`definition-applied`, `assignment-applied`, `custom-role-granted`, `after-revocation`, plus
+`report.md` / `report.json`.
+
+One navigation rule changed to make this reachable: Role governance was gated only on assignment
+authority, so the independent checker could not open the definitions awaiting its decision. It is
+now also shown to a session holding `workforce.role.view` + `workforce.role.create`; the workspace
+itself still withholds every assignment control from such a session (`canApply={false}`), and
+`FINANCE_AUDITOR` (view without create) is unaffected.
+
+## Proposed workforce approval policy (not implemented here)
+
+Role changes currently ride the Finance rule. Moving them onto a workforce rule is a policy
+decision, so this PR documents the exact change instead of making it:
+
+```json
+{
+  "action": "WORKFORCE_ROLE_ASSIGN",
+  "initiatorRoles": ["SUPER_ADMIN", "ADMINISTRATOR"],
+  "approvingRoles": ["FINANCE_CONTROLLER"],
+  "requiredAssurance": "MFA",
+  "selfApprovalProhibited": true
+}
+```
+
+and the same for `WORKFORCE_ROLE_REVOKE`. The work is: add both actions to
+`governed-action.registry.ts` with their resource types and fingerprint sources, point
+`role-approval-requests` / `assign` / `revoke` at them, and extend the deployment's
+`A2_MAKER_CHECKER_RULES_JSON`. Until that lands, `ADMINISTRATOR` is deliberately **not** given
+`workforce.role.create` / `workforce.role.assign`, and the evidence above stands on the current
+Finance-named rule: `SUPER_ADMIN` initiates, `FINANCE_CONTROLLER` checks.
 
 ## Known gaps and blockers
 
@@ -152,13 +226,15 @@ Total browser checks: **33/33**.
    roles, and `ADMINISTRATOR` cannot author or assign configurable roles (only `SUPER_ADMIN` holds
    `workforce.role.create` / `workforce.role.assign`). Extending the registry is a policy decision,
    not a code gap that can be closed unilaterally.
-2. **Browser evidence uses a fixture API.** The harness intercepts `**/api/v1/**` at the browser
-   network layer. It proves client behaviour, state handling and navigation, not server enforcement;
-   server enforcement is the real-PostgreSQL suite above. A single harness that drives the real API
-   end to end is still absent.
-3. **No standalone dev server locally.** `FINANCIAL_DEPENDENCY_BLOCKERS` (8, no override) make
-   `dist/main.js` refuse to boot, so browser runs are served from a static bundle and the API is
-   stubbed or driven in-process by Jest.
+2. **Two browser harnesses, deliberately.** `admin-web-workforce-b9-browser.cjs` answers
+   `**/api/v1/**` in the browser and proves client behaviour, state handling and navigation;
+   `b9-real-session-browser.cjs` drives the real API and proves enforcement (22/22 above). The
+   fixture harness is kept because it can assert negative UI states cheaply, but its results are
+   never cited as proof of a server decision.
+3. **No standalone `dist/main.js` locally.** `FINANCIAL_DEPENDENCY_BLOCKERS` (8, no override) make
+   the production entrypoint refuse to boot, so `scripts/b9-real-session-server.cjs` boots the same
+   `AppModule` in-process and proxies to it. The browser therefore exercises the real router,
+   guards, pipes and database; what it does not exercise is the deployment's health/readiness gate.
 4. **No OIDC identity provider locally.** Only the local-admin password path exists
    (`local-admin-sessions`); the real OIDC exchange is covered by unit/integration tests with
    synthetic assertions, not by the browser run.
@@ -194,10 +270,21 @@ cd apps/admin-web && ADMIN_WEB_API_BASE_URL=/api/v1 \
 LD_LIBRARY_PATH=/tmp/al2023/lib node scripts/admin-web-workforce-b9-browser.cjs \
   --dist /tmp/b9-dist --out docs/integration/evidence/b9-workforce-approvals \
   --executable /tmp/chromium
+
+# Real-session browser acceptance (real bundle -> real API -> disposable PostgreSQL)
+cd apps/admin-web && ADMIN_WEB_API_BASE_URL=/api/v1 \
+  npx vite build --outDir /tmp/b9-real-dist --emptyOutDir && cd ..
+node scripts/b9-real-session-server.cjs /tmp/b9-real-dist &   # :4401 bundle, :4400 API
+LD_LIBRARY_PATH=/tmp/al2023/lib node scripts/b9-real-session-browser.cjs \
+  --executable /tmp/chromium
 ```
 
-The browser run writes `report.md`, `report.json` and four 1440×1000 screenshots into
-`docs/integration/evidence/b9-workforce-approvals/`.
+The fixture run writes `report.md`, `report.json` and four 1440×1000 screenshots into
+`docs/integration/evidence/b9-workforce-approvals/`; the real-session run writes the same plus six
+screenshots into `docs/integration/evidence/b9-real-session/`. The real-session script deletes and
+recreates only its own `SOC_ANALYST` definition, its approvals and the synthetic
+`soc-analyst@monienaija.local` credential/assignments, so it is rerunnable on the same disposable
+cluster.
 
 ## Results
 
@@ -205,7 +292,8 @@ The browser run writes `report.md`, `report.json` and four 1440×1000 screenshot
 | ---------------------------------------------- | -------------------------------- |
 | Admin Web Jest                                 | **100 suites / 1032 tests pass** |
 | Admin Web `tsc --noEmit`                       | clean                            |
-| Browser acceptance                             | **33/33** checks pass            |
+| Browser acceptance (fixture API)               | **33/33** checks pass            |
+| Browser acceptance (real sessions, real PG)    | **22/22** checks pass            |
 | B9 real-PG/HTTP acceptance (approvals)         | 17/17                            |
 | B9 real-PG/HTTP acceptance (configurable role) | **16/16**                        |
 | Super-admin recovery (real PG)                 | 18/18                            |

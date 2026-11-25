@@ -456,11 +456,23 @@ const RoleWorkspace: React.FC<{
   };
 
   if (!canManageAnyRoles) {
+    // A checker (FINANCE_CONTROLLER) holds no assignment authority but must still be able to open
+    // the definitions that are waiting for it. The assignment form stays closed; reviewing a
+    // definition is a decision, not a grant.
     return (
-      <div className="mn-operational" style={styles.container} role="alert">
-        <div style={styles.errorBox}>
-          Role governance requires an applicable workforce role function, the authorized initiator
-          role, and a session that is not read-only.
+      <div className="mn-operational mn-role-workspace role-redesign" style={styles.container}>
+        <PageHeader
+          eyebrow="Workforce and governance"
+          title="Role definition review"
+          description="This session cannot change role assignments. It can review role definitions that await an independent decision."
+        />
+        <RoleDefinitionsPanel canDefine={false} canDecide={canDecideDefinitions} canApply={false} />
+        <div className="role-redesign__boundary" role="note">
+          <strong>Assignment authority not held</strong>
+          <span>
+            Assigning or revoking a role requires an applicable workforce role function, the
+            authorized initiator role, and a session that is not read-only.
+          </span>
         </div>
       </div>
     );
