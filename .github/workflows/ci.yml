@@ -133,7 +133,7 @@ jobs:
           ADMIN_WEB_DEV_PROXY_TARGET=http://127.0.0.1:3099 npm run dev --prefix apps/admin-web -- --host 0.0.0.0 > "$RUNNER_TEMP/history-vite.log" 2>&1 &
       - name: Five-product real workforce browser acceptance
         env:
-          PG_TEST_RUN_ID: history_browser_${{ github.run_id }}_${{ github.run_attempt }}
+          PG_TEST_RUN_ID: historybrowser
           HISTORY_MATRIX_BROWSER: 'yes'
           HISTORY_MATRIX_OUT: data/validation/transaction-history-browser-matrix
         run: npx jest --config jest.integration.config.js --runInBand test/transaction-history-browser-matrix.integration.spec.ts
