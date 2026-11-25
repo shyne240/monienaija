@@ -117,14 +117,14 @@ export class CustomerEffectiveConfigurationService {
     if (classResolution) {
       let eligibleForVerifiedTier: boolean | null = null;
       if (verifiedTier && ['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(verifiedTier)) {
-        const clsRows = await manager.query<Array<{ eligible_tiers: string[] | null }>>(
-          `SELECT eligible_tiers FROM customer_classes WHERE id = $1`,
-          [classResolution.classId],
+        const tierDefaultRows = await manager.query<Array<{ is_match: boolean }>>(
+          `SELECT (class_id = $2 AND status = 'APPROVED') AS is_match
+             FROM customer_tier_default_classes
+            WHERE tier = $1`,
+          [verifiedTier, classResolution.classId],
         );
-        const tiers = clsRows[0]?.eligible_tiers;
-        eligibleForVerifiedTier = Array.isArray(tiers)
-          ? tiers.map(String).includes(verifiedTier)
-          : null;
+        eligibleForVerifiedTier =
+          tierDefaultRows.length > 0 ? Boolean(tierDefaultRows[0]?.is_match) : null;
       }
       assignedClass = {
         classCode: classResolution.classCode,
