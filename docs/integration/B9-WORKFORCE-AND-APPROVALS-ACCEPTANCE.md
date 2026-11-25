@@ -291,6 +291,17 @@ recreates only its own `SOC_ANALYST` definition, its approvals and the synthetic
 `soc-analyst@monienaija.local` credential/assignments, so it is rerunnable on the same disposable
 cluster.
 
+### Test-infrastructure fix
+
+The exact-head CI run exposed two unrelated flaky failures while validating this work: the
+wholesale `TRUNCATE … RESTART IDENTITY CASCADE` in `truncateAllTables` deadlocked once against a
+still-writing session (SQLSTATE `40P01`) in `v1-limit-04-limit-runtime` and once in
+`v1-notification-provider-configuration-01`, failing those batches outright. The harness now runs
+that statement through `truncateWithDeadlockRetry`, which retries only the two retryable transaction
+codes already recognised by `isRetryableTransactionError` (`40001`, `40P01`), bounded to
+`MAX_SERIALIZABLE_ATTEMPTS` (3) and propagating every other failure on the first attempt. Covered by
+`test/pg-harness-truncate-retry.spec.ts` (6/6).
+
 ## Results
 
 | Suite                                          | Result                           |
