@@ -44,16 +44,28 @@ const endpoint = '/internal/admin/transaction-history';
 export function transactionDetailLink(type: string, id: string) {
   return `#transaction-history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
 }
-export const TransactionHistoryScreen: React.FC = () => {
+export const TransactionHistoryScreen: React.FC<{
+  onOpenJournal?: (journalId: string) => void;
+}> = ({ onOpenJournal }) => {
   const { principal, sessionId } = useAuthStore();
   return (
     <History
       key={JSON.stringify([sessionId, principal])}
       allowed={!!principal?.scopes.includes('transaction.view')}
+      canViewLedger={!!principal?.scopes.includes('ledger.view')}
+      onOpenJournal={onOpenJournal}
     />
   );
 };
-function History({ allowed }: { allowed: boolean }) {
+function History({
+  allowed,
+  canViewLedger,
+  onOpenJournal,
+}: {
+  allowed: boolean;
+  canViewLedger: boolean;
+  onOpenJournal?: (journalId: string) => void;
+}) {
   const [draft, setDraft] = useState(empty);
   const [query, setQuery] = useState(empty);
   const [cursors, setCursors] = useState<string[]>(['']);
@@ -374,11 +386,16 @@ function History({ allowed }: { allowed: boolean }) {
                 <p>
                   Reference: <code>{detail.reference}</code>
                 </p>
-                {detail.journals ? (
+                {canViewLedger && detail.journals ? (
                   detail.journals.filter(Boolean).length ? (
                     detail.journals.filter(Boolean).map((id) => (
                       <p key={id}>
                         <code>{id}</code>
+                        {onOpenJournal && (
+                          <button type="button" onClick={() => onOpenJournal(id!)}>
+                            Open journal
+                          </button>
+                        )}
                       </p>
                     ))
                   ) : (

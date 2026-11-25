@@ -123,6 +123,12 @@ test.each([
 ])(
   'distinguishes absent fee/journal evidence from zero or denied permission ($feeLabel)',
   async ({ fee, journals, feeLabel, journalLabel }) => {
+    if (journals) {
+      const principal = useAuthStore.getState().principal!;
+      useAuthStore.setState({
+        principal: { ...principal, scopes: ['transaction.view', 'ledger.view'] },
+      });
+    }
     window.location.hash = transactionDetailLink(row.type, row.id);
     get.mockImplementation((url: string) =>
       Promise.resolve(
@@ -139,3 +145,36 @@ test.each([
     expect(within(dialog).getByText(journalLabel)).toBeTruthy();
   },
 );
+
+test.each([true, false])('journal action requires ledger.view (%s)', async (ledgerAccess) => {
+  const journalId = '22222222-2222-4222-8222-222222222222';
+  const onOpenJournal = jest.fn();
+  const principal = useAuthStore.getState().principal!;
+  useAuthStore.setState({
+    principal: {
+      ...principal,
+      scopes: ledgerAccess ? ['transaction.view', 'ledger.view'] : ['transaction.view'],
+    },
+  });
+  window.location.hash = transactionDetailLink(row.type, row.id);
+  get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes('/' + row.type + '/')
+        ? { ...row, journals: [null, journalId] }
+        : { items: [row], nextCursor: null },
+    ),
+  );
+  const view = render(<TransactionHistoryScreen onOpenJournal={onOpenJournal} />);
+  const dialog = await screen.findByRole('dialog');
+  await within(dialog).findByRole('heading', { name: row.reference });
+  if (ledgerAccess) {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open journal' }));
+    expect(onOpenJournal).toHaveBeenCalledWith(journalId);
+    act(() => useAuthStore.setState({ principal: { ...principal, scopes: ['transaction.view'] } }));
+    view.rerender(<TransactionHistoryScreen onOpenJournal={onOpenJournal} />);
+    await screen.findByText('Ledger information requires ledger.view.');
+  } else {
+    expect(within(dialog).queryByRole('button', { name: 'Open journal' })).toBeNull();
+    expect(within(dialog).queryByText(journalId)).toBeNull();
+  }
+});

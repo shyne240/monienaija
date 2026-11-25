@@ -50,6 +50,7 @@ type View = AdminView;
 
 interface NavContext {
   transactionKey?: string;
+  journalId?: string;
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
@@ -669,7 +670,12 @@ export const Layout: React.FC = () => {
           />
         );
       case 'transfers':
-        if (!navContext.customerId) return <TransactionHistoryScreen />;
+        if (!navContext.customerId)
+          return (
+            <TransactionHistoryScreen
+              onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+            />
+          );
         return (
           <TransactionObservabilityScreen
             initialType="TRANSFER"
@@ -682,7 +688,12 @@ export const Layout: React.FC = () => {
           />
         );
       case 'ledgerExplorer':
-        return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
+        return (
+          <LedgerOperationsScreen
+            onLedgerGuardChange={reportLedgerGuard}
+            initialJournalId={navContext.journalId}
+          />
+        );
       case 'reconciliation':
         return <ReconciliationObservabilityScreen />;
       case 'bankingOperations':

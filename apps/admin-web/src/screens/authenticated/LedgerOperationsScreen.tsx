@@ -77,8 +77,9 @@ function matchesReversedLines(original: JournalLine[], reversed: JournalLine[]):
 }
 
 export const LedgerOperationsScreen: React.FC<{
+  initialJournalId?: string;
   onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ onLedgerGuardChange }) => {
+}> = ({ onLedgerGuardChange, initialJournalId }) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([
     sessionId,
@@ -92,13 +93,19 @@ export const LedgerOperationsScreen: React.FC<{
     principal?.readOnlyPrincipal,
   ]);
   return (
-    <LedgerWorkspace key={key} principal={principal} onLedgerGuardChange={onLedgerGuardChange} />
+    <LedgerWorkspace
+      key={key}
+      principal={principal}
+      onLedgerGuardChange={onLedgerGuardChange}
+      initialJournalId={initialJournalId}
+    />
   );
 };
 const LedgerWorkspace: React.FC<{
   principal: ReturnType<typeof useAuthStore.getState>['principal'];
+  initialJournalId?: string;
   onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ principal, onLedgerGuardChange }) => {
+}> = ({ principal, onLedgerGuardChange, initialJournalId }) => {
   const generations = useRef({ accounts: 0, journal: 0, reversal: 0 });
   useEffect(
     () => () => {
@@ -222,8 +229,7 @@ const LedgerWorkspace: React.FC<{
     else setIsLoading(false);
   }, [searchCurrency, canViewLedger]);
 
-  const handleSearchJournal = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadJournal = async (rawId: string) => {
     if (
       !canViewLedger ||
       reversalLoading ||
@@ -235,12 +241,12 @@ const LedgerWorkspace: React.FC<{
       Boolean(reversalApprovalId.trim())
     )
       return;
-    if (!searchJournalId.trim()) {
+    if (!rawId.trim()) {
       setJournalError('Journal ID is required');
       return;
     }
     const request = ++generations.current.journal;
-    const id = searchJournalId.trim();
+    const id = rawId.trim();
     setJournalError('');
     setJournal(null);
     setJournalLoading(true);
@@ -261,6 +267,18 @@ const LedgerWorkspace: React.FC<{
       if (request === generations.current.journal) setJournalLoading(false);
     }
   };
+
+  const handleSearchJournal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loadJournal(searchJournalId);
+  };
+  useEffect(() => {
+    if (!canViewLedger || !initialJournalId) return;
+    setSearchJournalId(initialJournalId);
+    void loadJournal(initialJournalId);
+    // Same entry contract as Finance #25; shell guards govern context changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewLedger, initialJournalId]);
 
   const refreshJournalForReview = async () => {
     if (!journal || !reversalReviews[journal.id] || reviewReadLoading || reversalLock.current)
