@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
 import { randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -66,7 +66,6 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
   let ledgerAccountId = '';
   /** A second wallet the caller may not read: attributed to the foreign institution. */
   let foreignWalletId = '';
-  let foreignLedgerAccountId = '';
 
   const url = (wallet: string, tail: string) => `${base}/${customerId}/wallets/${wallet}/${tail}`;
 
@@ -144,9 +143,6 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
     const foreignWallet = await fixture.createWallet(customerId, 'USD');
     foreignWalletId = foreignWallet.walletId;
     await fixture.attributeWallet(foreignWalletId, foreignInstitution);
-    foreignLedgerAccountId = (
-      await ds.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [foreignWalletId])
-    )[0].ledger_account_id;
   }, 300_000);
 
   afterAll(async () => {
@@ -262,7 +258,7 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
        VALUES($1,$2,'ACTIVE','wallet-statement-suite')`,
       [principalId, institutionId],
     );
-    return { principalId, token: established.accessToken as string };
+    return { principalId, token: established.accessToken };
   };
 
   test('produces a multi-page branded PDF whose balances reconcile to the ledger', async () => {
@@ -429,7 +425,6 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
   }, 120_000);
 
   test('refuses another institution’s wallet even with the exact ids and a valid session', async () => {
-    const operator = (await fixture.workforce()).operator;
     const superAdmin = (await fixture.workforce()).superAdmin;
 
     /*
