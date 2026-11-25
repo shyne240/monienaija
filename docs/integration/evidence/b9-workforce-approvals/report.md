@@ -1,6 +1,6 @@
 # Arena B9 — Workforce & Approvals browser acceptance
 
-Generated: 2026-11-25T12:38:36.271Z
+Generated: 2026-11-25T12:43:59.282Z
 Browser: 153.0.8010.0 · viewport 1440x1000
 API: fixture (route-intercepted at the browser network layer)
 
@@ -44,6 +44,6 @@ API: fixture (route-intercepted at the browser network layer)
 
 Screenshots in this directory: `b9-approvals-inbox-1440x1000.png`,
 `b9-workforce-directory-1440x1000.png`, `b9-role-governance-1440x1000.png`,
-`b9-super-admin-recovery-1440x1000.png`.
+`b9-super-admin-recovery-1440x1000.png`, `b9-role-definitions-1440x1000.png`.
 
 Client behaviour only. Server maker-checker, role, institution, MFA and recovery controls are covered by the Nest HTTP and PostgreSQL suites.

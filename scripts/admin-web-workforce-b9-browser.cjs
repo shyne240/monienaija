@@ -1507,6 +1507,8 @@ async function main() {
     proposalCard.replace(/\s+/g, ' ').slice(0, 200),
   );
 
+  await page.screenshot({ path: path.join(out, 'b9-role-definitions-1440x1000.png') });
+
   if (probeMode) {
     console.log('B9_PROBE ' + JSON.stringify(probe));
     await browser.close();
@@ -1763,7 +1765,7 @@ async function main() {
       '',
       'Screenshots in this directory: `b9-approvals-inbox-1440x1000.png`,',
       '`b9-workforce-directory-1440x1000.png`, `b9-role-governance-1440x1000.png`,',
-      '`b9-super-admin-recovery-1440x1000.png`.',
+      '`b9-super-admin-recovery-1440x1000.png`, `b9-role-definitions-1440x1000.png`.',
       '',
       report.api.note,
       '',
