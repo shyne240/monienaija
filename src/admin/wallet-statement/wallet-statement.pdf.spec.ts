@@ -110,10 +110,9 @@ describe('Wallet statement PDF structure', () => {
       unescaped.replace(/^[\s\S]*?(\u00fe\u00ff)/, '').replace(/\).*$/s, ''),
       'latin1',
     );
-    const decoded = Buffer.from(title)
-      .swap16()
-      .toString('utf16le')
-      .replace(/\u0000/g, '');
+    // UTF-16BE title bytes: byte-swap, decode, and drop the padding NULs (split/join avoids a
+    // control character in a regular expression, which the shared lint rules reject).
+    const decoded = Buffer.from(title).swap16().toString('utf16le').split('\u0000').join('');
     expect(decoded).toContain('MonieNaija wallet statement');
     expect(decoded).toContain('5A6B');
     // No UUID anywhere in the document's metadata objects.

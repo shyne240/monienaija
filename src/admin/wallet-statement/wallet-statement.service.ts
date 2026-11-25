@@ -190,8 +190,8 @@ export class WalletStatementService {
         const effect = factor * BigInt(line.amount_minor);
         total = total + effect;
         signedMinor = effect.toString();
-        // `total` is a local mutation, so it is reassigned here rather than captured.
-        runningMinor = (total as bigint).toString();
+        // `total` was narrowed by the `!== null` check above and reassigned here, so it is a bigint.
+        runningMinor = total.toString();
         if (effect >= 0n) credits = (credits ?? 0n) + effect;
         else debits = (debits ?? 0n) + effect;
       }

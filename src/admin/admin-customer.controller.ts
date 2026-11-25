@@ -34,7 +34,6 @@ import { getRequestContext } from '../production/request-context';
 import {
   maskWalletIdentifier,
   parseStatementPeriod,
-  sanitizeNarration,
 } from './wallet-statement/wallet-statement.format';
 import { WalletStatementRenderService } from './wallet-statement/wallet-statement-render.service';
 import {
