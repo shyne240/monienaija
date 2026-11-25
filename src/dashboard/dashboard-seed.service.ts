@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 
 import { findWidgetDefinition } from './dashboard-widget-registry';
 import {
+  DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS,
   DASHBOARD_TEMPLATE_SEED,
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from './dashboard-templates.seed';
@@ -32,15 +33,71 @@ export class DashboardSeedService implements OnApplicationBootstrap {
     await this.seedIfEmpty();
   }
 
-  async seedIfEmpty(): Promise<{ templates: number; assignments: number }> {
+  async seedIfEmpty(): Promise<{ templates: number; assignments: number; layoutAdditions?: number }> {
     const templates = await this.seedTemplates();
     const assignments = await this.seedAssignments();
-    if (templates + assignments > 0) {
+    const layoutAdditions = await this.applyLayoutAdditions();
+    if (templates + assignments + layoutAdditions > 0) {
       this.logger.log(
-        `Dashboard platform: inserted ${templates} template(s), ${assignments} assignment(s)`,
+        `Dashboard platform: inserted ${templates} template(s), ${assignments} assignment(s), reconciled ${layoutAdditions} template layout(s)`,
       );
     }
-    return { templates, assignments };
+    return {
+      templates,
+      assignments,
+      ...(layoutAdditions > 0 ? { layoutAdditions } : {}),
+    };
+  }
+
+  /**
+   * Applies the declared additive layout reconciliations (see
+   * `DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS` for why they exist and why they are append-only).
+   *
+   * Three guards, all so that a bootstrap never overrides a human decision: the widget must exist in
+   * the registry (fail loudly, same rule as the base seed); it must not already be placed; and once a
+   * key has been recorded in the template's own metadata it is never re-added, so removing a later
+   * addition stays a removal.
+   */
+  private async applyLayoutAdditions(): Promise<number> {
+    let applied = 0;
+    for (const addition of DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS) {
+      for (const widget of addition.widgets) {
+        if (!findWidgetDefinition(widget.widgetKey)) {
+          throw new Error(
+            `DashboardSeedService: layout addition for '${addition.templateKey}' references unknown widget '${widget.widgetKey}'.`,
+          );
+        }
+      }
+      const template = await this.templateRepo.findOne({
+        where: { templateKey: addition.templateKey } as never,
+      });
+      // No row yet: the base seed above already contains these widgets, so there is nothing to patch.
+      if (!template) continue;
+
+      const metadata = (template.metadata ?? {}) as Record<string, unknown>;
+      const recorded = Array.isArray(metadata.layoutAdditions)
+        ? metadata.layoutAdditions.filter((key): key is string => typeof key === 'string')
+        : [];
+      const placed = new Set(template.layout?.widgets?.map((widget) => widget.widgetKey) ?? []);
+      const missing = addition.widgets.filter(
+        (widget) => !placed.has(widget.widgetKey) && !recorded.includes(widget.widgetKey),
+      );
+      if (missing.length === 0) continue;
+
+      template.layout = {
+        ...template.layout,
+        widgets: [...(template.layout?.widgets ?? []), ...missing],
+      };
+      template.metadata = {
+        ...metadata,
+        layoutAdditions: [...recorded, ...missing.map((widget) => widget.widgetKey)],
+        layoutAdditionsReason: addition.reason,
+        layoutAdditionsAt: new Date().toISOString(),
+      };
+      await this.templateRepo.save(template);
+      applied += 1;
+    }
+    return applied;
   }
 
   private async seedTemplates(): Promise<number> {

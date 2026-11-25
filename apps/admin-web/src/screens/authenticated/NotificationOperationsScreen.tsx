@@ -12,6 +12,8 @@ import {
   type NotificationDeliveryDetail,
   type NotificationDeliveryPage,
   type NotificationOperationsSummary,
+  type NotificationProviderReceiptTrace,
+  type NotificationRelatedEvent,
 } from '../../services/arena4-operations-api';
 import { useAuthStore } from '../../store/auth-store';
 import './arena4-operations.css';
@@ -49,11 +51,26 @@ interface Filters {
 
 const emptyFilters = (): Filters => ({ status: '', channel: '', search: '', from: '', to: '' });
 
-export const NotificationOperationsScreen: React.FC = () => {
+/** Timestamps are shown with an explicit fallback so "absent" never renders as a blank cell. */
+function formatStamp(value: unknown): string {
+  if (typeof value !== 'string' && typeof value !== 'number') return 'not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'not recorded' : date.toLocaleString();
+}
+
+export const NotificationOperationsScreen: React.FC<{
+  /** Queue prefilter handed over by the dashboard exception card. */
+  initialStatus?: string;
+  /** Correlation drill-down into the audit workspace, offered only when that view is reachable. */
+  onOpenAuditSearch?: (correlationId: string) => void;
+}> = ({ initialStatus, onOpenAuditSearch }) => {
   const scopes = useAuthStore((state) => state.principal?.scopes);
   const canView = scopes?.includes('notification.view_deliveries') ?? false;
   return canView ? (
-    <NotificationOperationsWorkspace />
+    <NotificationOperationsWorkspace
+      initialStatus={initialStatus}
+      onOpenAuditSearch={onOpenAuditSearch}
+    />
   ) : (
     <Alert tone="danger" title="Notification operations unavailable">
       This workspace requires the <code>notification.view_deliveries</code> authorization function.
@@ -61,12 +78,18 @@ export const NotificationOperationsScreen: React.FC = () => {
   );
 };
 
-const NotificationOperationsWorkspace: React.FC = () => {
+const NotificationOperationsWorkspace: React.FC<{
+  initialStatus?: string;
+  onOpenAuditSearch?: (correlationId: string) => void;
+}> = ({ initialStatus, onOpenAuditSearch }) => {
   const [summary, setSummary] = useState<NotificationOperationsSummary | null>(null);
   const [deliveries, setDeliveries] = useState<NotificationDeliveryPage | null>(null);
   const [detail, setDetail] = useState<NotificationDeliveryDetail | null>(null);
-  const [filters, setFilters] = useState<Filters>(emptyFilters());
-  const [applied, setApplied] = useState<Filters>(emptyFilters());
+  const initialFilters: Filters = STATUS_OPTIONS.includes(initialStatus ?? '')
+    ? { ...emptyFilters(), status: initialStatus as string }
+    : emptyFilters();
+  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [applied, setApplied] = useState<Filters>(initialFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
@@ -95,6 +118,15 @@ const NotificationOperationsWorkspace: React.FC = () => {
   useEffect(() => {
     void load(applied);
   }, [applied, load]);
+
+  /**
+   * Both trace objects are read as optional even though the current contract always sends them:
+   * a payload from a build that predates the trace (or a truncated read) must degrade to an explicit
+   * "no trace available" statement, not to a render error that removes the whole detail panel — the
+   * operator still needs the delivery record itself to do their job.
+   */
+  const relatedEvent = detail?.relatedEvent as NotificationRelatedEvent | undefined;
+  const providerReceipts = detail?.providerReceipts as NotificationProviderReceiptTrace | undefined;
 
   const openDetail = async (row: Record<string, unknown>) => {
     const id = typeof row.id === 'string' ? row.id : '';
@@ -189,10 +221,33 @@ const NotificationOperationsWorkspace: React.FC = () => {
         </Button>
       </form>
 
+      {initialFilters.status && applied.status === initialFilters.status ? (
+        /*
+         * This workspace was opened from somewhere else — a dashboard exception tile or a health
+         * finding — with a status already chosen. Saying so keeps the pre-filter visible instead of
+         * letting it read as the natural state of the page: the table below is deliberately narrowed,
+         * while the aggregate cards are window-wide and were not narrowed with it.
+         */
+        <p className="a4-ops__muted" data-testid="a4-prefilter-note">
+          Opened with Status = {initialFilters.status} already applied, from the record you came
+          from. Clear it above to see the whole window — note that the summary counts beside it are
+          window-wide and are not narrowed by this filter.
+        </p>
+      ) : null}
+
       {loading ? (
         <p role="status">Loading notification operations…</p>
       ) : summary ? (
         <>
+          <p className="a4-ops__muted" data-testid="a4-summary-generated-at">
+            Aggregates computed {summary.generatedAt ? new Date(summary.generatedAt).toLocaleString() : 'without a reported time'}{' '}
+            · window {summary.window.hours}h from{' '}
+            {new Date(summary.window.from).toLocaleString()}
+            {summary.window.to ? ` to ${new Date(summary.window.to).toLocaleString()}` : ''} ·
+            these counts are for the summary window only and do not describe the filtered table
+            below.
+          </p>
+
           <div className="a4-ops__grid">
             <div className="a4-ops__card">
               <h3>Deliveries (last 24h)</h3>
@@ -232,6 +287,24 @@ const NotificationOperationsWorkspace: React.FC = () => {
                 ))}
               </ul>
             </div>
+          </div>
+
+          <div className="a4-ops__card">
+            <h3>Outbox consumer checkpoints</h3>
+            {(summary.outboxReceipts ?? []).length === 0 ? (
+              <p className="a4-ops__muted" data-testid="a4-outbox-receipts-unavailable">
+                The delivery summary did not return consumer checkpoint counts. Absence here means
+                the figure was not provided, not that no receipts exist.
+              </p>
+            ) : (
+              <ul>
+                {(summary.outboxReceipts ?? []).map((row) => (
+                  <li key={row.status}>
+                    {row.status}: {row.count}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="a4-ops__card">
@@ -289,6 +362,143 @@ const NotificationOperationsWorkspace: React.FC = () => {
             <span className="a4-ops__pill">{detail.delivery.status}</span>
           </h3>
           <StructuredKeyValueList data={detail.delivery} />
+
+          <div>
+            <h4>Delivery trace</h4>
+            <p className="a4-ops__muted">
+              Each step below is read from the store that owns it, at the time stated. A step that
+              could not be read is labelled as unread rather than as healthy.
+            </p>
+            {relatedEvent && providerReceipts ? (
+            <ol className="a4-ops__trace" data-testid="a4-delivery-trace">
+              <li>
+                <strong>Event raised</strong>
+                {relatedEvent.availability === 'FOUND' ? (
+                  <>
+                    <span>
+                      Outbox event {relatedEvent.id} · {relatedEvent.eventType} ·
+                      status {relatedEvent.status} · {relatedEvent.attempts} delivery
+                      attempt(s) by the publisher
+                      {relatedEvent.eventHasError
+                        ? ' · the event row records an error string (its text stays behind outbox.view)'
+                        : ''}
+                    </span>
+                    <span className="a4-ops__muted">
+                      occurred {formatStamp(relatedEvent.occurredAt)} · published{' '}
+                      {formatStamp(relatedEvent.publishedAt)}
+                    </span>
+                  </>
+                ) : (
+                  <span data-testid="a4-trace-event-not-read">
+                    {relatedEvent.availability === 'NOT_FOUND'
+                      ? 'No upstream outbox event is addressable from this delivery.'
+                      : 'The upstream outbox event could not be read by this surface.'}{' '}
+                    {relatedEvent.reason} — this is not evidence about the event&rsquo;s
+                    health.
+                  </span>
+                )}
+                <span className="a4-ops__muted">
+                  Checked {formatStamp(relatedEvent.checkedAt)} · source{' '}
+                  {relatedEvent.source}
+                </span>
+              </li>
+              <li>
+                <strong>Event consumed by the notification worker</strong>
+                {relatedEvent.receipt ? (
+                  <span>
+                    Consumer receipt {relatedEvent.receipt.status}
+                    {relatedEvent.receipt.reason
+                      ? ` · reason ${relatedEvent.receipt.reason}`
+                      : ''}
+                    {relatedEvent.receipt.status !== 'MATERIALIZED'
+                      ? ' · no delivery row was created by this event for this consumer, so a "missing delivery" finding here is explained by suppression or quarantine, not by a lost message'
+                      : ''}
+                    {` · ${relatedEvent.receipt.attempts} processing attempt(s) · next attempt ${formatStamp(relatedEvent.receipt.nextAttemptAt)} · updated ${formatStamp(relatedEvent.receipt.updatedAt)}`}
+                  </span>
+                ) : (
+                  <span data-testid="a4-trace-receipt-absent">
+                    {relatedEvent.availability === 'FOUND'
+                      ? 'No consumer receipt row exists for this event, so the materialization decision was never recorded.'
+                      : 'No consumer receipt could be read because the event itself was not available to this surface.'}
+                  </span>
+                )}
+              </li>
+              <li>
+                <strong>Delivery outcome</strong>
+                <span>
+                  {detail.delivery.status} · {detail.delivery.channel} ·{' '}
+                  {detail.delivery.recipientType} {detail.delivery.recipientId} ·{' '}
+                  {detail.delivery.attempts} attempt(s) · errorCode{' '}
+                  {detail.delivery.errorCode ?? 'none recorded'} · failedAt{' '}
+                  {formatStamp(detail.delivery.failedAt)} · nextAttemptAt{' '}
+                  {formatStamp(detail.delivery.nextAttemptAt)}
+                </span>
+              </li>
+              <li>
+                <strong>Provider-reported outcome</strong>
+                {providerReceipts.availability === 'AVAILABLE' ? (
+                  <ul>
+                    {providerReceipts.items.map((receipt) => (
+                      <li key={receipt.id} data-testid="a4-provider-receipt">
+                        {receipt.kind} · verification {receipt.verification} ·{' '}
+                        {receipt.providerCode ?? 'no recognized provider classification'} ·
+                        provider time {formatStamp(receipt.occurredAt)} · received{' '}
+                        {formatStamp(receipt.receivedAt)}
+                      </li>
+                    ))}
+                    {providerReceipts.returned >= providerReceipts.limit ? (
+                      <li className="a4-ops__muted">
+                        Showing the {providerReceipts.limit} most recent receipts for this
+                        delivery.
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : (
+                  <span data-testid="a4-provider-receipts-none">
+                    {providerReceipts.availability === 'NONE_RECORDED'
+                      ? 'The provider reported nothing about this message.'
+                      : 'Provider receipts could not be read by this surface.'}{' '}
+                    {providerReceipts.reason ?? ''} Absence of a provider receipt is not
+                    evidence of delivery or of failure.
+                  </span>
+                )}
+                <span className="a4-ops__muted">
+                  Checked {formatStamp(providerReceipts.checkedAt)} · source{' '}
+                  {providerReceipts.source}
+                </span>
+              </li>
+              <li>
+                <strong>Channel availability now</strong>
+                <span>
+                  {detail.provider.channel}: {detail.provider.available ? 'available' : 'unavailable'}
+                  {detail.provider.provider ? ` (${detail.provider.provider})` : ''} · projection{' '}
+                  {detail.provider.projectionScope}
+                </span>
+              </li>
+            </ol>
+              ) : (
+                <p className="a4-ops__muted" data-testid="a4-delivery-trace-unavailable">
+                  This delivery record was returned without a trace projection, so the upstream
+                  event, the consumer receipt and the provider receipts cannot be confirmed from
+                  this surface. Nothing here should be read as &ldquo;the event was fine&rdquo;.
+                </p>
+              )}
+            {onOpenAuditSearch && detail.delivery.correlationId ? (
+              <Button
+                size="sm"
+                data-testid="open-audit-from-delivery"
+                onClick={() => onOpenAuditSearch(String(detail.delivery.correlationId))}
+              >
+                Trace this request in audit events →
+              </Button>
+            ) : null}
+            {detail.delivery.correlationId ? (
+              <p className="a4-ops__muted">
+                Correlation identifier (sanitized by the server): {detail.delivery.correlationId}
+              </p>
+            ) : null}
+          </div>
+
           <div>
             <h4>Idempotency</h4>
             <p className="a4-ops__muted">

@@ -29,6 +29,58 @@ export interface ResolvedWidget {
   supportsPeriodFilter?: boolean;
   kind: DashboardWidgetKind | string;
   authorized: boolean;
+  /** Catalogue functions the widget needs; used to explain a restricted tile. */
+  requiredFunctions?: readonly string[];
+  /**
+   * The workspace the server says holds this card's records. Declared by the backend registry,
+   * resolved through the console's navigation guard, and never synthesized on the client.
+   */
+  drilldown?: { view: string; label: string; preset?: string };
+  /** Endpoint that answers for this card, so a figure can be traced to its source. */
+  dataEndpoint?: string;
+}
+
+/**
+ * `notification-delivery-exceptions` payload shape, as produced by
+ * `GET /internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions`.
+ *
+ * `availability`/`configuration` are the load-bearing pair: a measured zero, an unreadable
+ * delivery log and a deployment with no transport configured are three different operational
+ * truths and the card must not flatten them into one number.
+ */
+export interface NotificationExceptionsResponse {
+  period: DashboardPeriod;
+  from: string;
+  to: string;
+  availability: 'MEASURED' | 'UNAVAILABLE';
+  configuration?: 'CONFIGURED' | 'NO_TRANSPORT_CONFIGURED' | 'UNKNOWN';
+  configurationNote?: string;
+  reason?: string;
+  window?: { hours?: number; from?: string; to?: string };
+  totals: {
+    deliveries: number;
+    exceptions: number;
+    byStatus: Array<{ status: string; count: number }>;
+  };
+  errorCodes: Array<{ errorCode: string; count: number; lastSeenAt: string | null }>;
+  retry: {
+    pending?: number;
+    failedAwaitingRetry?: number;
+    dead?: number;
+    unknown?: number;
+    oldestPendingAt?: string | null;
+    nextScheduledRetryAt?: string | null;
+    manualRetrySupported: false;
+    policyReference?: string;
+  };
+  provider: {
+    availability: 'CHECKED' | 'UNKNOWN';
+    projectionScope?: string;
+    channels: Array<{ channel: string; available: boolean }>;
+  };
+  definition?: string;
+  checkedAt: string;
+  source?: string;
 }
 
 export interface ResolvedDashboard {
@@ -77,6 +129,8 @@ export interface WidgetRegistryEntry {
   endpoint?: string;
   supportsPeriodFilter?: boolean;
   kind: DashboardWidgetKind | string;
+  /** Declared destination for the card's records, as read from the server-side registry. */
+  drilldown?: { view: string; label: string; preset?: string };
 }
 
 export type DashboardPeriod = 'today' | '7d' | '30d' | 'custom';

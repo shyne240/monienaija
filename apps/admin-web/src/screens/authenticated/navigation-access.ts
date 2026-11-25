@@ -55,6 +55,17 @@ export interface AdminNavigationContext {
   agentId?: string;
   openAgentApplications?: boolean;
   institutionId?: string;
+  /**
+   * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6): pre-filters the audit workspace so a card can hand a
+   * staff member the record they were just looking at instead of an unfiltered list. These are
+   * search criteria only — the audit read surface is already restricted server-side, and no
+   * navigation context can widen it.
+   */
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  /** Delivery-queue prefilter (e.g. `FAILED`) set by the dashboard exception card. */
+  notificationStatus?: string;
 }
 
 const LEGACY_VIEW_ALIASES: Partial<Record<AdminView, AdminView>> = {

@@ -204,6 +204,48 @@ export function isWorkforceOverview(value: unknown): boolean {
     )
   );
 }
+/**
+ * Validation for the notification exception card. Deliberately strict about the availability pair:
+ * a payload that claims `MEASURED` without a complete status breakdown is treated as invalid rather
+ * than displayed, because "0 exceptions" is a claim about the whole delivery log and a partial read
+ * cannot support it.
+ */
+export function isNotificationExceptions(value: unknown): boolean {
+  if (!object(value)) return false;
+  if (value.availability === 'UNAVAILABLE') {
+    return text(value.reason) && timestamp(value.checkedAt);
+  }
+  if (value.availability !== 'MEASURED') return false;
+  const totals = value.totals;
+  const provider = value.provider;
+  return Boolean(
+    timestamp(value.checkedAt) &&
+      object(totals) &&
+      count(totals.deliveries) &&
+      count(totals.exceptions) &&
+      Array.isArray(totals.byStatus) &&
+      totals.byStatus.every(
+        (row: unknown) => object(row) && text(row.status) && count(row.count),
+      ) &&
+      Array.isArray(value.errorCodes) &&
+      value.errorCodes.every(
+        (row: unknown) =>
+          object(row) &&
+          text(row.errorCode) &&
+          count(row.count) &&
+          (row.lastSeenAt === null || timestamp(row.lastSeenAt)),
+      ) &&
+      object(provider) &&
+      ['CHECKED', 'UNKNOWN'].includes(provider.availability) &&
+      Array.isArray(provider.channels) &&
+      provider.channels.every(
+        (row: unknown) => object(row) && text(row.channel) && typeof row.available === 'boolean',
+      ) &&
+      (value.configuration === undefined ||
+        ['CONFIGURED', 'NO_TRANSPORT_CONFIGURED', 'UNKNOWN'].includes(value.configuration)),
+  );
+}
+
 export function isAuditEntries(value: unknown): boolean {
   return (
     Array.isArray(value) &&

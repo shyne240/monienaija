@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
+import { useAuthStore } from '../../store/auth-store';
 import { colors } from './tokens';
 import { ScrollRegion } from '../../design-system/primitives';
-import { WidgetCard } from './WidgetCard';
+import { WidgetCard, WidgetDrilldownButton } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
 import { useWidgetData } from './useWidgetData';
 import {
   isReconciliationWidgetData,
   isStatusCountData,
+  isNotificationExceptions,
   isTransactionSummary,
   isTransactionTrend,
   isRecentTransactions,
@@ -27,6 +29,7 @@ import {
   formatPercent,
   formatDate,
   type DashboardPeriod,
+  type NotificationExceptionsResponse,
   type ResolvedWidget,
   type TransactionSummaryResponse,
   type TransactionTrendResponse,
@@ -95,7 +98,9 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
  * revenue and success rate are each labelled and defined explicitly; no "profit" figure is shown
  * anywhere — the backend does not compute or expose one (see `feeRevenueNote`/`commissionNote`).
  */
-export const TransactionSummaryWidget: React.FC = () => {
+export const TransactionSummaryWidget: React.FC<{ actions?: React.ReactNode }> = ({
+  actions,
+}) => {
   const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -118,17 +123,20 @@ export const TransactionSummaryWidget: React.FC = () => {
       loading={loading}
       error={error}
       actions={
-        <PeriodControls
-          period={period}
-          from={from}
-          to={to}
-          compare={compare}
-          showCompare
-          onPeriodChange={setPeriod}
-          onFromChange={setFrom}
-          onToChange={setTo}
-          onCompareChange={setCompare}
-        />
+        <>
+          <PeriodControls
+            period={period}
+            from={from}
+            to={to}
+            compare={compare}
+            showCompare
+            onPeriodChange={setPeriod}
+            onFromChange={setFrom}
+            onToChange={setTo}
+            onCompareChange={setCompare}
+          />
+          {actions}
+        </>
       }
     >
       {data && (
@@ -215,7 +223,7 @@ export const TransactionSummaryWidget: React.FC = () => {
 };
 
 /** Daily completed-transaction count with an accessible exact-value table. */
-export const TransactionTrendWidget: React.FC = () => {
+export const TransactionTrendWidget: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const [period, setPeriod] = useState<DashboardPeriod>('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -247,14 +255,17 @@ export const TransactionTrendWidget: React.FC = () => {
       error={error}
       empty={!!data && daily.length === 0}
       actions={
-        <PeriodControls
-          period={period}
-          from={from}
-          to={to}
-          onPeriodChange={setPeriod}
-          onFromChange={setFrom}
-          onToChange={setTo}
-        />
+        <>
+          <PeriodControls
+            period={period}
+            from={from}
+            to={to}
+            onPeriodChange={setPeriod}
+            onFromChange={setFrom}
+            onToChange={setTo}
+          />
+          {actions}
+        </>
       }
     >
       {daily.length > 0 && (
@@ -344,7 +355,9 @@ export const TransactionTrendWidget: React.FC = () => {
 };
 
 /** 4A. Recent transaction activity (Defects #3/#4 fixed: UNION ALL syntax + wrong completed-at column for cash-to-cash). */
-export const RecentTransactionsWidget: React.FC = () => {
+export const RecentTransactionsWidget: React.FC<{ actions?: React.ReactNode }> = ({
+  actions,
+}) => {
   const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`);
     if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.');
@@ -359,6 +372,8 @@ export const RecentTransactionsWidget: React.FC = () => {
       loading={loading}
       error={error}
       empty={!!data && rows.length === 0}
+      emptyLabel="Measured zero — no completed, failed or pending transactions were returned for the authorized read."
+      actions={actions}
     >
       {rows.length > 0 && (
         <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns.">
@@ -402,7 +417,7 @@ interface LedgerSummaryRow {
   credits_minor: string;
 }
 
-export const LedgerSummaryWidget: React.FC = () => {
+export const LedgerSummaryWidget: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const { data, loading, error } = useWidgetData<LedgerSummaryRow[]>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/ledger-summary`);
     if (!isLedgerSummary(value)) throw new Error('Invalid ledger summary response.');
@@ -416,6 +431,8 @@ export const LedgerSummaryWidget: React.FC = () => {
       loading={loading}
       error={error}
       empty={!!data && rows.length === 0}
+      emptyLabel="Measured zero — no ledger journals exist for the authorized read."
+      actions={actions}
     >
       {rows.length > 0 && (
         <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns.">
@@ -447,7 +464,9 @@ export const LedgerSummaryWidget: React.FC = () => {
   );
 };
 
-export const ReconciliationStatusWidget: React.FC = () => {
+export const ReconciliationStatusWidget: React.FC<{ actions?: React.ReactNode }> = ({
+  actions,
+}) => {
   const { data, loading, error } = useWidgetData<ReconciliationWidgetData>(async () => {
     const response: unknown = await ApiClient.get(`${DASH}/widgets/reconciliation-status`);
     if (!isReconciliationWidgetData(response))
@@ -460,6 +479,7 @@ export const ReconciliationStatusWidget: React.FC = () => {
       description="Independent reconciliation and trial-balance reports, generated separately."
       loading={loading}
       error={error}
+      actions={actions}
     >
       {data && (
         <>
@@ -503,7 +523,7 @@ interface WorkforceOverviewResponse {
   activeSessionCount: number;
 }
 
-export const WorkforceOverviewWidget: React.FC = () => {
+export const WorkforceOverviewWidget: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const { data, loading, error } = useWidgetData<WorkforceOverviewResponse>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/workforce-overview`);
     if (!isWorkforceOverview(value)) throw new Error('Invalid workforce overview response.');
@@ -515,6 +535,7 @@ export const WorkforceOverviewWidget: React.FC = () => {
       description="Active workforce headcount, role distribution and currently active sessions."
       loading={loading}
       error={error}
+      actions={actions}
     >
       {data && (
         <>
@@ -573,6 +594,7 @@ export const StatusCountWidget: React.FC<{
       loading={loading}
       error={error}
       empty={!!data && rows.length === 0 && pendingApplicationCount === undefined}
+      emptyLabel="Measured zero — the queue was read and nothing is waiting."
       actions={actions}
     >
       {data && (
@@ -600,11 +622,23 @@ export const StatusCountWidget: React.FC<{
 interface AuditWidgetRow {
   id: string;
   entityType: string;
+  entityId?: string;
   action: string;
   actor: string;
   occurredAt: string;
 }
-export const AuditTrailWidget: React.FC = () => {
+/**
+ * Preview of the audit stream. The card is a *preview*: it shows the projection only, and the two
+ * ways out of it are explicit. `onOpenSearch` hands the operator to the audit search workspace (a
+ * different capability, `audit.search`, which the console gates on the server's behalf), and
+ * `onOpenRecord` goes one step further for a single row — opening the search already filtered to
+ * that event's entity, which is what "which record did this change touch" actually needs.
+ */
+export const AuditTrailWidget: React.FC<{
+  onOpenSearch?: () => void;
+  onOpenRecord?: (entityId: string, entityType: string) => void;
+  actions?: React.ReactNode;
+}> = ({ onOpenSearch, onOpenRecord, actions }) => {
   const { data, loading, error } = useWidgetData<AuditWidgetRow[]>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/audit-trail`);
     if (!isAuditEntries(value)) throw new Error('Invalid audit activity response.');
@@ -617,6 +651,17 @@ export const AuditTrailWidget: React.FC = () => {
       loading={loading}
       error={error}
       empty={!!data && data.length === 0}
+      emptyLabel="Measured zero — the audit read succeeded and returned no events for this principal."
+      actions={
+        <>
+          {actions}
+          <WidgetDrilldownButton
+            label="Search audit events →"
+            onOpen={onOpenSearch}
+            testId="audit-widget-search"
+          />
+        </>
+      }
     >
       {data && data.length > 0 && (
         <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns.">
@@ -635,6 +680,7 @@ export const AuditTrailWidget: React.FC = () => {
                 <th scope="col" style={styles.th}>
                   Actor
                 </th>
+                {onOpenRecord ? <th scope="col">Record</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -644,6 +690,19 @@ export const AuditTrailWidget: React.FC = () => {
                   <td style={styles.td}>{row.entityType}</td>
                   <td style={styles.td}>{row.action}</td>
                   <td style={styles.td}>{row.actor}</td>
+                  {onOpenRecord ? (
+                    <td style={styles.td}>
+                      <button
+                        type="button"
+                        className="one-overview-link"
+                        data-testid={`audit-row-open-${row.id}`}
+                        disabled={!row.entityId}
+                        onClick={() => onOpenRecord(String(row.entityId), String(row.entityType))}
+                      >
+                        Open record →
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -765,41 +824,353 @@ export const DirectoryLinkWidget: React.FC<{
 );
 
 /**
+ * Self-evidence tiles. `identity-session` and `entitlements-scopes` are the two widgets the registry
+ * declares with no required functions, because they are always the caller's own data — the session
+ * that was minted for you and the grants that were resolved for you at that moment. They are rendered
+ * from the authenticated session already held in the store, so no endpoint is called and no other
+ * principal's identity can appear here.
+ *
+ * Their value on a dashboard is not decorative: every other card's meaning depends on who is looking.
+ * A restricted tile, an empty queue and a "you may not assign templates" note are only explainable
+ * against the roles and assurance level in force, so putting that information next to the numbers
+ * removes the most common source of "the dashboard is broken" reports.
+ */
+export const IdentitySessionWidget: React.FC = () => {
+  const principal = useAuthStore((state) => state.principal);
+  return (
+    <WidgetCard
+      title="Session Identity"
+      description="The signed-in workforce session this dashboard is rendered for."
+      source="Authenticated session (no data request)"
+    >
+      {principal ? (
+        <ul style={styles.list} data-testid="identity-session-values">
+          <li style={styles.listItem}>
+            Principal: <code style={styles.code}>{principal.principalId}</code>
+          </li>
+          <li style={styles.listItem}>
+            Type: <strong>{principal.type}</strong>
+          </li>
+          <li style={styles.listItem}>
+            Audience: <strong>{principal.audience}</strong>
+          </li>
+          <li style={styles.listItem}>
+            Assurance level: <strong>{principal.assuranceLevel}</strong>
+          </li>
+          {principal.readOnlyPrincipal ? (
+            <li style={styles.listItem}>
+              <span style={{ color: colors.warning }}>
+                Read-only principal — mutations are refused by the server regardless of this
+                dashboard&rsquo;s controls.
+              </span>
+            </li>
+          ) : null}
+        </ul>
+      ) : (
+        <p style={styles.note}>No session is held by this tab.</p>
+      )}
+    </WidgetCard>
+  );
+};
+
+export const EntitlementsWidget: React.FC = () => {
+  const principal = useAuthStore((state) => state.principal);
+  const roles = principal?.roles ?? [];
+  const scopes = principal?.scopes ?? [];
+  return (
+    <WidgetCard
+      title="Entitlements"
+      description="Roles and catalogue functions resolved for this session; they decide what every other card can show."
+      empty={roles.length === 0 && scopes.length === 0}
+      emptyLabel="Measured zero — this session carries no roles or functions, so every data card is restricted."
+      source="Session token claims (no data request)"
+    >
+      <div style={styles.kpiRow}>
+        <KpiTile label="Roles" value={String(roles.length)} />
+        <KpiTile label="Functions" value={String(scopes.length)} />
+      </div>
+      {roles.length > 0 ? (
+        <ul style={styles.list} data-testid="entitlements-roles">
+          {roles.map((role) => (
+            <li key={role} style={styles.listItem}>
+              {role}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {scopes.length > 0 ? (
+        <details>
+          <summary style={{ fontSize: 12, color: colors.textMuted }}>
+            Allowed functions ({scopes.length})
+          </summary>
+          <ul style={styles.list}>
+            {scopes.map((scope) => (
+              <li key={scope} style={styles.listItem}>
+                <code style={styles.code}>{scope}</code>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </WidgetCard>
+  );
+};
+
+/**
+ * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6) — the notification exception card.
+ *
+ * The card exists to answer one question without a trip through three screens: "is anything failing
+ * to reach customers right now, and what is the sanitized reason?" It therefore renders the three
+ * states the delivery log can be in — measured, unreadable, or not provisioned — separately, and it
+ * never offers a retry: recovery is the worker's bounded automatic retry, and the read-only policy
+ * is stated on the card rather than hidden behind a disabled control.
+ */
+export const NotificationExceptionsWidget: React.FC<{
+  onOpenQueue?: () => void;
+  /** Deep link into the operations workspace with these failures already filtered. */
+  onOpenFailures?: () => void;
+}> = ({ onOpenQueue, onOpenFailures }) => {
+  const [period, setPeriod] = useState<DashboardPeriod>('7d');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const { data, loading, error } = useWidgetData<NotificationExceptionsResponse>(async () => {
+    const params = periodParams(period, from, to);
+    const result: unknown = await ApiClient.get(
+      `${DASH}/widgets/notification-delivery-exceptions${buildQuery(params)}`,
+    );
+    if (!isNotificationExceptions(result))
+      throw new Error('The delivery exception source did not return a usable answer.');
+    return result as NotificationExceptionsResponse;
+  }, [period, from, to]);
+
+  const unavailable = !error && data?.availability === 'UNAVAILABLE' ? data.reason : undefined;
+  const exceptions = data?.availability === 'MEASURED' ? data.totals.exceptions : undefined;
+  const noTransport = data?.configuration === 'NO_TRANSPORT_CONFIGURED';
+  const statusRow = (status: string) =>
+    data?.totals.byStatus.find((row) => row.status === status)?.count ?? 0;
+
+  return (
+    <WidgetCard
+      title="Notification Delivery Exceptions"
+      description="Failed, dead and outcome-unknown notifications in the selected period, with sanitized provider error codes."
+      loading={loading}
+      error={error}
+      unavailable={unavailable}
+      notConfigured={
+        noTransport && data?.configurationNote ? data.configurationNote : undefined
+      }
+      empty={data?.availability === 'MEASURED' && (exceptions ?? 0) === 0 && !noTransport}
+      emptyLabel="Measured zero — the delivery log was read for this period and nothing failed."
+      checkedAt={data?.checkedAt}
+      source={data?.source}
+      actions={
+        <>
+          <PeriodControls
+            period={period}
+            from={from}
+            to={to}
+            onPeriodChange={setPeriod}
+            onFromChange={setFrom}
+            onToChange={setTo}
+          />
+          {data?.availability === 'MEASURED' ? (
+            <WidgetDrilldownButton
+              label="Investigate failures →"
+              onOpen={exceptions && exceptions > 0 ? onOpenFailures : onOpenQueue}
+              testId="notification-exceptions-drilldown"
+            />
+          ) : null}
+        </>
+      }
+    >
+      {data && data.availability === 'MEASURED' && (
+        <>
+          <div style={styles.kpiRow}>
+            <KpiTile
+              label="Exceptions"
+              value={String(data.totals.exceptions)}
+              caption="FAILED + DEAD + UNKNOWN"
+            />
+            <KpiTile label="Failed" value={String(statusRow('FAILED'))} />
+            <KpiTile label="Dead lettered" value={String(statusRow('DEAD'))} />
+            <KpiTile label="Outcome unknown" value={String(statusRow('UNKNOWN'))} />
+            <KpiTile
+              label="Deliveries in window"
+              value={String(data.totals.deliveries)}
+              caption="All statuses"
+            />
+          </div>
+          <div style={styles.kpiRow}>
+            <KpiTile
+              label="Awaiting automatic retry"
+              value={String(data.retry.failedAwaitingRetry ?? 0)}
+              caption={
+                data.retry.nextScheduledRetryAt
+                  ? `Next retry ${formatDate(data.retry.nextScheduledRetryAt)}`
+                  : 'No retry scheduled'
+              }
+            />
+          </div>
+          {data.errorCodes.length > 0 ? (
+            <ul style={styles.list}>
+              {data.errorCodes.slice(0, 5).map((row) => (
+                <li key={row.errorCode} style={styles.listItem}>
+                  <code style={styles.code}>{row.errorCode}</code>
+                  <strong style={{ marginLeft: 6 }}>{row.count}</strong>
+                  <span style={{ marginLeft: 6, color: colors.textFaint }}>
+                    last seen {formatDate(row.lastSeenAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p style={styles.note}>No sanitized provider error codes were recorded in this window.</p>
+          )}
+          <p style={styles.note} data-testid="notification-exceptions-policy">
+            Read-only surface: manual retry is not part of the approved delivery policy
+            {data.retry.policyReference ? (
+              <>
+                {' '}
+                (<code style={styles.code}>{data.retry.policyReference}</code>)
+              </>
+            ) : null}
+            . Recovery is the worker&rsquo;s bounded automatic retry.
+          </p>
+          {data.definition ? <p style={styles.note}>{data.definition}</p> : null}
+        </>
+      )}
+    </WidgetCard>
+  );
+};
+
+/**
  * Dispatches a resolved `my-dashboard` widget entry to its rendering component. A widget the
  * backend already marked `authorized: false` is shown as a restricted tile WITHOUT any data
  * fetch being attempted — this mirrors the backend's own defense-in-depth re-check per widget and
  * ensures a tampered/stale client-side widget list can never even attempt an unauthorized call.
  */
+/**
+ * Context a drill-down may carry, so a card can open a workspace *on the thing it was looking at*
+ * rather than on an unfiltered list. Keys mirror the admin console's own navigation context.
+ */
+export interface WidgetDrilldownContext {
+  customerId?: string;
+  agentId?: string;
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  openAgentApplications?: boolean;
+  notificationStatus?: string;
+}
+
 export const WidgetRenderer: React.FC<{
   widget: ResolvedWidget;
   onNavigateToCustomers?: () => void;
   onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
-}> = ({ widget, onNavigateToCustomers, onNavigateToAgents }) => {
+  /**
+   * Opens the workspace the registry declared for this card. The console decides whether the
+   * current principal may have it (`canAccessAdminView`); an unavailable target yields no button
+   * at all rather than a button that leads to a denial.
+   */
+  onOpenView?: (view: string, context?: WidgetDrilldownContext) => void;
+  /**
+   * Whether the current principal may open a view at all. A declared destination this role cannot
+   * reach renders no button rather than a button that leads nowhere — a dead control is worse than a
+   * missing one, because it reads as a fault in the workspace rather than a limit on the session.
+   * Omitting the predicate means "the caller already gated what it passes".
+   */
+  canOpenView?: (view: string) => boolean;
+}> = ({ widget, onNavigateToCustomers, onNavigateToAgents, onOpenView, canOpenView }) => {
+  /**
+   * Resolves the registry-declared destination into an affordance. The registry is the only source
+   * of `view`: a payload that names a workspace the console does not know is ignored, so the
+   * server can never be the origin of an unexpected navigation.
+   */
+  const reachable = (view: string | undefined): boolean =>
+    Boolean(view && onOpenView && (!canOpenView || canOpenView(view)));
+  const openFor = (context?: WidgetDrilldownContext) => {
+    const declared = widget.drilldown;
+    if (!declared || !onOpenView || !reachable(declared.view)) return undefined;
+    const open = onOpenView;
+    return () =>
+      open(declared.view, {
+        // Only presets the console actually implements are translated; an unrecognized
+        // preset still navigates to the declared view, it just cannot invent a behavior.
+        ...(declared.preset === 'openAgentApplications' ? { openAgentApplications: true } : {}),
+        ...(context ?? {}),
+      });
+  };
+  const drilldownActions = widget.drilldown && reachable(widget.drilldown.view) ? (
+    <WidgetDrilldownButton
+      label={widget.drilldown.label}
+      onOpen={openFor()}
+      testId={`widget-drilldown-${widget.widgetKey}`}
+    />
+  ) : undefined;
+
   if (!widget.authorized) {
     return (
       <WidgetCard
         title={widget.title || widget.displayName}
         description={widget.description}
         restricted
+        missingFunctions={widget.requiredFunctions}
       />
     );
   }
 
   switch (widget.widgetKey) {
+    case 'identity-session':
+      return <IdentitySessionWidget />;
+    case 'entitlements-scopes':
+      return <EntitlementsWidget />;
     case 'transaction-summary':
-      return <TransactionSummaryWidget />;
+      return <TransactionSummaryWidget actions={drilldownActions} />;
     case 'transaction-trend':
-      return <TransactionTrendWidget />;
+      return <TransactionTrendWidget actions={drilldownActions} />;
     case 'recent-transactions':
-      return <RecentTransactionsWidget />;
+      return <RecentTransactionsWidget actions={drilldownActions} />;
     case 'ledger-summary':
-      return <LedgerSummaryWidget />;
+      return <LedgerSummaryWidget actions={drilldownActions} />;
     case 'reconciliation-status':
-      return <ReconciliationStatusWidget />;
+      return <ReconciliationStatusWidget actions={drilldownActions} />;
     case 'audit-trail':
-      return <AuditTrailWidget />;
+      return (
+        <AuditTrailWidget
+          actions={drilldownActions}
+          onOpenSearch={
+            reachable('auditEvents') ? () => onOpenView!('auditEvents') : undefined
+          }
+          onOpenRecord={
+            reachable('auditEvents')
+              ? (entityId, entityType) =>
+                  onOpenView!('auditEvents', {
+                    auditEntityId: entityId,
+                    auditEntityType: entityType,
+                  })
+              : undefined
+          }
+        />
+      );
+    case 'notification-delivery-exceptions':
+      return (
+        <NotificationExceptionsWidget
+          onOpenQueue={
+            reachable('notificationOperations')
+              ? () => onOpenView!('notificationOperations')
+              : undefined
+          }
+          onOpenFailures={
+            reachable('notificationOperations')
+              ? () =>
+                  onOpenView!('notificationOperations', { notificationStatus: 'FAILED' })
+              : undefined
+          }
+        />
+      );
     case 'workforce-overview':
-      return <WorkforceOverviewWidget />;
+      return <WorkforceOverviewWidget actions={drilldownActions} />;
     case 'agent-lifecycle-summary':
       return (
         <StatusCountWidget
@@ -807,11 +1178,18 @@ export const WidgetRenderer: React.FC<{
           title={widget.title || widget.displayName}
           description={widget.description}
           actions={
-            onNavigateToAgents ? (
-              <button type="button" style={styles.linkButton} onClick={() => onNavigateToAgents()}>
-                Open Agent Network →
-              </button>
-            ) : undefined
+            <>
+              {drilldownActions}
+              {onNavigateToAgents ? (
+                <button
+                  type="button"
+                  style={styles.linkButton}
+                  onClick={() => onNavigateToAgents()}
+                >
+                  Open Agent Network →
+                </button>
+              ) : null}
+            </>
           }
         />
       );
@@ -823,6 +1201,7 @@ export const WidgetRenderer: React.FC<{
           widgetKey={widget.widgetKey}
           title={widget.title || widget.displayName}
           description={widget.description}
+          actions={drilldownActions}
         />
       );
     case 'customer-directory-shortcut':
@@ -830,7 +1209,9 @@ export const WidgetRenderer: React.FC<{
         <DirectoryLinkWidget
           title={widget.title || widget.displayName}
           description={widget.description}
-          onNavigate={onNavigateToCustomers}
+          onNavigate={
+            openFor() ?? (onNavigateToCustomers ? () => onNavigateToCustomers() : undefined)
+          }
         />
       );
     case 'agent-network-shortcut':
@@ -872,15 +1253,18 @@ export const WidgetRenderer: React.FC<{
             description={directCopy[widget.widgetKey as DirectWidgetKey].description}
             widgetKey={widget.widgetKey as DirectWidgetKey}
             actions={
-              isAgentApplicationsQueue && onNavigateToAgents ? (
-                <button
-                  type="button"
-                  style={styles.linkButton}
-                  onClick={() => onNavigateToAgents({ openApplications: true })}
-                >
-                  Open Onboarding Queue →
-                </button>
-              ) : undefined
+              <>
+                {drilldownActions}
+                {isAgentApplicationsQueue && onNavigateToAgents ? (
+                  <button
+                    type="button"
+                    style={styles.linkButton}
+                    onClick={() => onNavigateToAgents({ openApplications: true })}
+                  >
+                    Open Onboarding Queue →
+                  </button>
+                ) : null}
+              </>
             }
           />
         );

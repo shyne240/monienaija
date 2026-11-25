@@ -8,6 +8,7 @@ import { OneSummaryCards } from '../../components/dashboard/OneSummaryCards';
 import {
   TransactionTrendWidget,
   RecentTransactionsWidget,
+  WidgetRenderer,
 } from '../../components/dashboard/widgets';
 import {
   TransactionStatus,
@@ -24,8 +25,34 @@ const DASH = '/internal/a2/workforce/dashboard';
 interface DashboardScreenProps {
   onNavigateToCustomers?: () => void;
   onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
-  onNavigate?: (view: AdminView) => void;
+  onNavigate?: (view: AdminView, context?: DashboardNavigationContext) => void;
 }
+
+/**
+ * Context a card may attach to a drill-down. Kept deliberately narrow: it carries an identifier the
+ * destination workspace already understands, never a query, route fragment or URL the card invented.
+ */
+export interface DashboardNavigationContext {
+  customerId?: string;
+  agentId?: string;
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  openAgentApplications?: boolean;
+}
+
+/**
+ * Widgets the dashboard renders through its own bespoke panels (the "one dashboard" treatment)
+ * rather than the generic tile renderer. They are excluded from the generic pass so a widget is
+ * fetched exactly once per load; a key listed here is never dropped, it is rendered differently.
+ */
+const BESPOKE_WIDGET_KEYS = new Set([
+  'transaction-summary',
+  'transaction-trend',
+  'recent-transactions',
+  'reconciliation-status',
+  'audit-trail',
+]);
 
 /** Resolve dashboard authorization from the server before requesting overview data. */
 function validDashboard(value: unknown): value is ResolvedDashboard {
@@ -51,7 +78,19 @@ function validDashboard(value: unknown): value is ResolvedDashboard {
         typeof w.kind === 'string' &&
         typeof w.authorized === 'boolean' &&
         (w.title === undefined || typeof w.title === 'string') &&
-        (w.endpoint === undefined || typeof w.endpoint === 'string'),
+        (w.endpoint === undefined || typeof w.endpoint === 'string') &&
+        (w.requiredFunctions === undefined ||
+          (Array.isArray(w.requiredFunctions) &&
+            w.requiredFunctions.every((fn) => typeof fn === 'string' && !!fn.trim()))) &&
+        // A drill-down is only trusted when it names a view key and a label; anything else is
+        // dropped (the widget still renders, it just gets no button).
+        (w.drilldown === undefined ||
+          (typeof w.drilldown === 'object' &&
+            w.drilldown !== null &&
+            typeof (w.drilldown as { view?: unknown }).view === 'string' &&
+            !!(w.drilldown as { view?: string }).view?.trim() &&
+            typeof (w.drilldown as { label?: unknown }).label === 'string')) &&
+        (w.dataEndpoint === undefined || typeof w.dataEndpoint === 'string'),
     ) &&
     new Set(dashboard.widgets.map((w) => w.widgetKey)).size === dashboard.widgets.length
   );
@@ -94,12 +133,40 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({
 
   if (!principal) return null;
 
+  /**
+   * Presence *and* authorization. A key that is merely placed in the template but not authorized for
+   * this session must not enable a panel: the dashboard used to ask "is it in the layout" in one
+   * place and "is it mine" in another, which is how a restricted role could be offered an action it
+   * could not complete. Every bespoke panel below therefore asks the authorized question, and
+   * restricted placements are rendered (not hidden) by the generic pass, which explains the lock.
+   */
   const has = (key: string) =>
     dashboard?.widgets.some((widget) => widget.widgetKey === key && widget.authorized) === true;
-  const navigate = (view: AdminView) =>
-    onNavigate && canAccessAdminView(view, principal.scopes, principal.roles)
-      ? () => onNavigate(view)
+  const isPlaced = (key: string) => dashboard?.widgets.some((w) => w.widgetKey === key) === true;
+  const navigate = (view: AdminView, context?: DashboardNavigationContext) =>
+    onNavigate && canAccessAdminView(view, principal.scopes, principal.roles, context)
+      ? () => onNavigate(view, context)
       : undefined;
+  /**
+   * The single funnel every generic card drill-down goes through. The destination comes from the
+   * server's widget registry, but the *authorization* to open it is resolved here against the same
+   * navigation contract the shell uses, and then again by the backend on the next page's data
+   * calls — a registry entry that names a workspace this role cannot open produces no button.
+   */
+  const openView = (view: string, context?: DashboardNavigationContext) => {
+    const candidate = view as AdminView;
+    if (!canAccessAdminView(candidate, principal.scopes, principal.roles, context)) return;
+    onNavigate?.(candidate, context);
+  };
+  /**
+   * The same decision, asked *before* a control is rendered instead of after it is clicked, so an
+   * unreachable destination never becomes a button that does nothing.
+   */
+  const canOpenView = (view: string) =>
+    canAccessAdminView(view as AdminView, principal.scopes, principal.roles);
+  const remainingWidgets = (dashboard?.widgets ?? [])
+    .filter((widget) => !BESPOKE_WIDGET_KEYS.has(widget.widgetKey))
+    .sort((a, b) => a.order - b.order);
   const role = principal.roles[0]?.replace(/_/g, ' ').toLowerCase() || 'operator';
   return (
     <div className="mn-operational mn-dashboard">
@@ -133,11 +200,26 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({
           {has('transaction-summary') && (
             <OneSummaryCards
               canAgents={has('agent-lifecycle-summary') && principal.scopes.includes('agent.view')}
-              agentNotConfigured={
-                !dashboard.widgets.some((widget) => widget.widgetKey === 'agent-lifecycle-summary')
-              }
+              agentNotConfigured={!isPlaced('agent-lifecycle-summary')}
               canCustomers={principal.scopes.includes('customer.view')}
             />
+          )}
+          {isPlaced('notification-delivery-exceptions') && (
+            <div className="one-dashboard-widget one-dashboard-widget--notification-exceptions">
+              {/*
+                Placed, then decided by the renderer: an authorized placement renders the card and its
+                records, a restricted one renders the lock and names the missing function. Hiding the tile
+                entirely would leave the operator to conclude the dashboard has no such source, which is a
+                different — and wrong — fact. The renderer fetches nothing for a restricted widget.
+              */}
+              <WidgetRenderer
+                widget={
+                  dashboard!.widgets.find((widget) => widget.widgetKey === 'notification-delivery-exceptions')!
+                }
+                onOpenView={openView}
+                canOpenView={canOpenView}
+              />
+            </div>
           )}
           {has('reconciliation-status') && (
             <ReconciliationNotice onOpen={navigate('reconciliation')} />
@@ -187,9 +269,22 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({
               </div>
             )}
           </div>
+          {remainingWidgets
+            .filter((widget) => widget.widgetKey !== 'notification-delivery-exceptions')
+            .map((widget) => (
+              <div className="one-dashboard-widget" key={widget.widgetKey}>
+                <WidgetRenderer
+                  widget={widget}
+                  onOpenView={openView}
+                  canOpenView={canOpenView}
+                />
+              </div>
+            ))}
           {!dashboard.widgets.length && (
             <p className="one-dashboard-state">
-              No widgets are configured for your current dashboard template.
+              No widgets are configured for your current dashboard template. Your session still has
+              its own identity and entitlement tiles available; ask a dashboard administrator to
+              assign a template for operational data.
             </p>
           )}
         </>

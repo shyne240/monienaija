@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { NON_FRAUD_CASE_CATEGORIES } from '../customer-compliance/customer-compliance-access';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { AuditService } from '../operations/audit.service';
+import type { NotificationOperationsService } from '../admin/notification-operations.service';
 
 export type DashboardPeriod = 'today' | '7d' | '30d' | 'custom';
 
@@ -139,6 +145,15 @@ export class DashboardWidgetDataService {
     private readonly dataSource: DataSource,
     private readonly reconciliationService: ReconciliationService,
     private readonly auditService: AuditService,
+    /**
+     * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6). The delivery-exception card is a *projection* of the
+     * read-only notification operations surface, not a second implementation of delivery counting:
+     * the same aggregates the operations workspace shows are what the card shows. Optional so the
+     * widget service stays constructible (and every existing widget stays testable) in a build where
+     * the notification module is not wired — an absent collaborator is reported as an unavailable
+     * source by the card, never as a zero.
+     */
+    @Optional() private readonly notificationOperations?: NotificationOperationsService,
   ) {}
 
   /**
@@ -454,6 +469,136 @@ export class DashboardWidgetDataService {
        ORDER BY status
     `);
     return { byStatus: rows.map((r) => ({ status: r.status, count: Number(r.count ?? 0) })) };
+  }
+
+  /**
+   * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6) — the notification exception card.
+   *
+   * Three states are kept apart, because they lead an operator to different actions and a single
+   * number cannot express them:
+   *
+   *  - `availability: 'MEASURED'` with `exceptions: 0` — a genuine zero. The delivery log was read
+   *    and nothing failed in the window.
+   *  - `availability: 'UNAVAILABLE'` — the delivery log could not be read (or the projection is not
+   *    wired here). Reported as unknown; it must never be rendered as `0`.
+   *  - `configuration: 'NO_TRANSPORT_CONFIGURED'` — the window is quiet because no channel has a
+   *    usable transport. An empty delivery log then means "nothing could be attempted", not
+   *    "nothing went wrong", which is the difference between a calm shift and an outage nobody sees.
+   *
+   * No delivery is mutated or replayed here, and no new authorization is invented: the card requires
+   * the same `notification.view_deliveries` the operations surface already requires, so it cannot
+   * disclose a count that the queue it links to would withhold. Provider identity (names, retry
+   * tuning) deliberately stays behind `notification.provider.view`, exactly as in that surface.
+   */
+  async notificationDeliveryExceptions(range: PeriodRange) {
+    const checkedAt = new Date().toISOString();
+    const source = 'NotificationOperationsService.summary() over notification_deliveries';
+    const windowMeta = {
+      period: range.period,
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+    };
+    if (!this.notificationOperations) {
+      return {
+        ...windowMeta,
+        availability: 'UNAVAILABLE',
+        configuration: 'UNKNOWN',
+        reason: 'the notification operations projection is not wired in this deployment',
+        totals: { deliveries: 0, exceptions: 0, byStatus: [] },
+        errorCodes: [],
+        retry: { manualRetrySupported: false },
+        provider: { availability: 'UNKNOWN', channels: [] },
+        checkedAt,
+        source,
+      };
+    }
+
+    const windowHours = Math.max(
+      1,
+      Math.min(168, Math.round((range.to.getTime() - range.from.getTime()) / 3_600_000)),
+    );
+    let summary: Awaited<ReturnType<NotificationOperationsService['summary']>>;
+    try {
+      summary = await this.notificationOperations.summary({
+        hours: windowHours,
+        from: range.from,
+        to: range.to,
+        includeProviderIdentity: false,
+      });
+    } catch {
+      // Thrown rather than swallowed into a zero: a card that reads "0 exceptions" during an
+      // outage is worse than a card that admits it cannot see.
+      throw new ServiceUnavailableException(
+        'Notification delivery data is unavailable; the delivery log could not be read. This is not a zero.',
+      );
+    }
+
+    const byStatus = summary.totals.byStatus.map((row) => ({
+      status: row.status,
+      count: row.count,
+    }));
+    const countOf = (status: string) =>
+      byStatus.find((row) => row.status === status)?.count ?? 0;
+    const exceptions = countOf('FAILED') + countOf('DEAD') + countOf('UNKNOWN');
+    const channels = summary.provider.channels.map((channel) => ({
+      channel: channel.channel,
+      available: channel.available,
+    }));
+    const anyTransport = channels.some((channel) => channel.available);
+    const noTransportReported =
+      channels.length > 0 && channels.every((channel) => channel.available === false);
+
+    return {
+      ...windowMeta,
+      window: {
+        hours: summary.window.hours,
+        from:
+          summary.window.from instanceof Date
+            ? summary.window.from.toISOString()
+            : String(summary.window.from),
+        to: summary.window.to instanceof Date ? summary.window.to.toISOString() : undefined,
+      },
+      availability: 'MEASURED' as const,
+      configuration: noTransportReported ? 'NO_TRANSPORT_CONFIGURED' : anyTransport ? 'CONFIGURED' : 'UNKNOWN',
+      configurationNote: noTransportReported
+        ? 'No notification channel currently has a usable transport, so an empty delivery log in this window means nothing could be attempted — not that nothing failed.'
+        : undefined,
+      totals: {
+        deliveries: summary.totals.deliveries,
+        exceptions,
+        byStatus,
+      },
+      errorCodes: summary.failureDiagnostics.map((row) => ({
+        errorCode: row.errorCode,
+        count: row.count,
+        lastSeenAt: row.lastSeenAt
+          ? new Date(row.lastSeenAt as string | Date).toISOString()
+          : null,
+      })),
+      retry: {
+        pending: summary.retryBacklog.pending,
+        failedAwaitingRetry: summary.retryBacklog.failedAwaitingRetry,
+        dead: summary.retryBacklog.dead,
+        unknown: summary.retryBacklog.unknown,
+        oldestPendingAt: summary.retryBacklog.oldestPendingAt
+          ? new Date(summary.retryBacklog.oldestPendingAt as string | Date).toISOString()
+          : null,
+        nextScheduledRetryAt: summary.retryBacklog.nextScheduledRetryAt
+          ? new Date(summary.retryBacklog.nextScheduledRetryAt as string | Date).toISOString()
+          : null,
+        manualRetrySupported: false,
+        policyReference: summary.retryPolicy.manualRetryPolicyReference,
+      },
+      provider: {
+        availability: 'CHECKED' as const,
+        projectionScope: summary.provider.projectionScope,
+        channels,
+      },
+      definition:
+        'Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated over the same read-only delivery log the notification operations workspace shows. Read-only: recovery is the worker\'s bounded automatic retry, and no retry control exists on this card.',
+      checkedAt,
+      source,
+    };
   }
 
   private async rows(sql: string, parameters: unknown[] = []): Promise<Row[]> {
