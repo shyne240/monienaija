@@ -1,13 +1,21 @@
 # Tier 1 Admin Web Browser Harness (PR #24)
 
+## Verification status (follow-up)
+
+- [x] **Tier 1 HTTP claim evidence preserved (sandbox, no browser):** staff completion leaves the account unclaimed/ready-to-claim for wallet provisioning; pre-claim registration session cannot provision a wallet (`POST /api/v1/customers/me/activation` with registration-session bearer + Idempotency-Key returned `401 Authentication required`); the existing claim flow issues a working customer session (`claim-match` MATCH, `claim-credentials` SET_UP, onboarding-login returned customer-api session, `/customers/me`, `/customers/me/profile`, `/customers/me/wallets`, `/customers/me/activation` returned 200 with expected ACTIVE/LEVEL_1 profile and no provisioned wallet). See "HTTP evidence captured in sandbox (no browser)" below.
+- [x] **Runtime ceiling proof (fully migrated disposable PostgreSQL):** approved synthetic institution Tier 1 transaction cap controls runtime admission when a higher commercial transaction cap is configured. Effective configuration reports the Tier 1 cap as the controlling `MAX_AMOUNT_PER_TX` (`source=TIER_POLICY`, not unlimited). A WALLET_TRANSFER just below the Tier 1 cap succeeds; a transfer just above the Tier 1 cap is denied with `LIMIT_MAX_AMOUNT_EXCEEDED` (422). Other required limits set high to isolate the cap. Proof: `test/tier1-runtime-ceiling.integration.spec.ts` (passes on disposable PG).
+- [ ] **Admin Web browser walkthrough:** pending. Chromium/Playwright browser download was unavailable in the Arena sandbox; run the harness below on a machine with browser access.
+
 Chromium/Playwright browser download was unavailable in the Arena sandbox (`npx playwright install chromium` failed with `ECONNRESET`; no system browser present). This document provides a repeatable harness and fixture setup so the Admin Web UI step can be verified elsewhere against the same branch/head.
 
 ## Branch / head
+
 - Branch: `arena/52ff58d1-monienaija`
 - PR: https://github.com/shyne240/monienaija/pull/24 (draft)
 - Head at time of writing: `ed62f417` (includes lint+format fixes and tier-default eligibility fix `0e5a2d3b`)
 
 ## Preconditions
+
 - Node/npm as per repo.
 - Disposable PostgreSQL reachable; migrations applied.
 - Backend built: `npm run build`
@@ -19,19 +27,25 @@ Chromium/Playwright browser download was unavailable in the Arena sandbox (`npx 
   - Matching `kyc_ownership_key_state` row with proof `71db50bad487883cb68392342f12f69bfd6b174f6c9e1a67c1a6db220b3d716d`.
 
 ## Start services
+
 Backend (port 3000, binds 0.0.0.0 by default in dev config used here):
+
 ```bash
 source /tmp/backend-env.sh  # or export equivalent envs
 node dist/main.js
 ```
+
 Admin Web (port 5173):
+
 ```bash
 cd apps/admin-web
 VITE_API_PROXY_TARGET=http://localhost:3000 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 ## Fixture (disposable DB only)
+
 Run the fixture scripts in `/tmp` created during this session on a fresh disposable migrated DB (do not run against production):
+
 1. `seed-policy.cjs` - approves KYC tier policy v1.
 2. `create-tier1b.cjs` - creates DRAFT customer `804207c1-75cc-4127-be1d-29b6c4fa4d69` (`t1-804207c1`, +2348012345001).
 3. `seed-evidence2.cjs` + `fix-rev*.cjs` - seeds verified BVN evidence aligned to evidence reader identity revision.
@@ -41,6 +55,7 @@ Run the fixture scripts in `/tmp` created during this session on a fresh disposa
 7. For claimable state: ensure no active passcode/pin credentials for the probe customer.
 
 Expected probe customer (disposable DB):
+
 - id: `804207c1-75cc-4127-be1d-29b6c4fa4d69`
 - reference: `t1-804207c1`
 - phone: `8012345001` / `+2348012345001`
@@ -52,6 +67,7 @@ Expected probe customer (disposable DB):
 - outstanding after activation: wallet (ready-to-claim before credentials set)
 
 ## Browser steps (manual or Playwright)
+
 1. Open Admin Web `http://localhost:5173`.
 2. Sign in with local workforce admin: `admin@monienaija.local` / `MonieNaijaAdmin123!`.
 3. Navigate to Customer Directory -> open customer `t1-804207c1` / `804207c1-75cc-4127-be1d-29b6c4fa4d69`.
@@ -63,8 +79,10 @@ Expected probe customer (disposable DB):
 5. For ceiling test, update MAX_AMOUNT_PER_TX commercial rule above 5,000,000 (e.g. 10,000,000) or set explicitly unlimited (not `maximumFeeMinor:null`) and capture Admin Web amount limit vs runtime behavior just above tier cap.
 
 ## Automated Playwright harness
+
 See `scripts/tier1-admin-web-harness.spec.ts` (Playwright test skeleton) and `scripts/run-tier1-admin-web-harness.sh`.
 Run after installing browsers on a machine with browser access:
+
 ```bash
 cd apps/admin-web
 npm i -D @playwright/test
@@ -73,9 +91,10 @@ npx playwright test ../../scripts/tier1-admin-web-harness.spec.ts --config=../..
 ```
 
 ## HTTP evidence captured in sandbox (no browser)
+
 - Registration review (workforce bearer) showed: `activatable=true`, `financialEligibility=ELIGIBLE`, `trustedEvidence=VERIFIED [BVN]`, assigned STANDARD/TIER_DEFAULT, effective WALLET_TRANSFER fee/limits RESOLVED, outstanding `[wallet]`.
 - Pre-claim registration session cannot provision wallet: `POST /api/v1/customers/me/activation` with registration-session bearer + Idempotency-Key returned `401 Authentication required`.
 - Claim with valid synthetic ownership evidence: `POST /customers/registration-sessions/claim-match` (BVN 22222222222, ownership key/mac aligned) returned `MATCH`; `claim-credentials` returned `SET_UP`.
 - Post-claim access: onboarding-login returned customer-api session; `/customers/me`, `/customers/me/profile`, `/customers/me/wallets`, `/customers/me/activation` returned 200 with expected ACTIVE/LEVEL_1 profile and no provisioned wallet.
 - Fee quote runtime comparison: effective-preview `amountMinor=100000` computed feeMinor 10000/vat 0/total 110000, matching displayed registration-review quote.
-- Ceiling (commercial above tier): MAX_AMOUNT_PER_TX bumped to 10,000,000 in commercial profile; effective-preview reflected 10,000,000. In this disposable env tier-limit enforcement activation was false and no institution tier policy was supplied, so preview did not apply a separate tier ceiling.
+- Ceiling (commercial above tier, historical sandbox snapshot): MAX_AMOUNT_PER_TX bumped to 10,000,000 in commercial profile; effective-preview reflected 10,000,000. In that disposable env tier-limit enforcement activation was false and no institution tier policy was supplied, so preview did not apply a separate tier ceiling. Superseded for runtime control by the runtime ceiling proof above / `test/tier1-runtime-ceiling.integration.spec.ts`.
