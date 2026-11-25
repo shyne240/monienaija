@@ -38,7 +38,8 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { createHash, randomUUID } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -679,6 +680,148 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
       ).rejects.toThrow(/exceeds 1000000/i);
     });
 
+    it('separates an authored ZERO statutory charge from a missing rule', async () => {
+      const operator = await provisionRole('SUPER_ADMIN');
+      const customerId = await seedCustomerWithProfile();
+
+      // No fee rule at all: VAT was never authored, so nothing is zero — it is missing.
+      const missing = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      expect(missing.fee.status).toBe('MISSING');
+      expect(missing.statutoryCharges.status).toBe('NOT_APPLICABLE');
+      expect(missing.statutoryCharges.lines).toEqual([]);
+      expect(missing.statutoryCharges.note).toMatch(/missing rule, not a zero charge/i);
+
+      // An approved rule that states no VAT: this IS a zero, and it is authored.
+      await dataSource.query(
+        `INSERT INTO fee_rules(product_code,currency,flat_fee_minor,percentage_bps,vat_bps,
+                                effective_from,is_active,created_by)
+         VALUES($1,'NGN',50,0,0,clock_timestamp()-interval '1 hour',true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+      const authoredZero = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      expect(authoredZero.fee.status).toBe('RESOLVED');
+      expect(authoredZero.statutoryCharges.status).toBe('RESOLVED');
+      expect(authoredZero.statutoryCharges.lines).toHaveLength(1);
+      expect(authoredZero.statutoryCharges.lines[0]).toMatchObject({
+        charge: 'VAT_ON_SERVICE_FEE',
+        rateBps: 0,
+        amountMinor: '0',
+        provenance: 'AUTHORED',
+      });
+      expect(authoredZero.statutoryCharges.note).toMatch(
+        /authored zero — distinct from a missing rule/i,
+      );
+
+      // A VAT-bearing rule reports the AUTHORED rate — never one of ours.
+      await dataSource.query(`DELETE FROM fee_rules WHERE product_code=$1`, [
+        WALLET_TO_BANK.productCode,
+      ]);
+      await dataSource.query(
+        `INSERT INTO fee_rules(product_code,currency,flat_fee_minor,percentage_bps,vat_bps,
+                                effective_from,is_active,created_by)
+         VALUES($1,'NGN',50,0,750,clock_timestamp()-interval '1 hour',true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+      const withVat = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      expect(withVat.statutoryCharges.lines[0]).toMatchObject({
+        rateBps: 750,
+        provenance: 'AUTHORED',
+      });
+      expect(withVat.statutoryCharges.lines[0].amountMinor).toBe('3'); // 7.5% of 50, floored
+    });
+
+    it('names the statutory charges it does NOT model instead of implying zero', async () => {
+      const operator = await provisionRole('SUPER_ADMIN');
+      const body = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+      });
+      const notModelled = body.statutoryCharges.notModelled.map(
+        (c: { charge: string }) => c.charge,
+      );
+      expect(notModelled).toEqual(
+        expect.arrayContaining(['STAMP_DUTY', 'REGULATORY_LEVY', 'PROVIDER_FEE']),
+      );
+      // Not modelled must never be presented as a zero rate.
+      for (const line of body.statutoryCharges.notModelled) {
+        expect(line.reason.length).toBeGreaterThan(30);
+      }
+      expect(body.statutoryCharges.postsJournalLegs).toBe(false);
+    });
+
+    it('states that commission is never evaluated on either bank route', async () => {
+      const operator = await provisionRole('SUPER_ADMIN');
+      const customerId = await seedCustomerWithProfile();
+      const profileCode = (seedCustomerWithProfile as unknown as { profileCode?: string })
+        .profileCode!;
+
+      // Author a real, resolvable commission rule for the outbound product.
+      await dataSource.query(
+        `INSERT INTO commission_rules(product_code,currency,recipient_type,calculation_basis,
+                                      calculation_model,flat_commission_minor,effective_from,priority,
+                                      is_active,created_by)
+         VALUES($1,'NGN','AGENT','FEE','FIXED',25,clock_timestamp()-interval '1 hour',10,true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+      await dataSource.query(
+        `INSERT INTO fee_rules(product_code,currency,flat_fee_minor,percentage_bps,vat_bps,
+                                effective_from,is_active,created_by)
+         VALUES($1,'NGN',100,0,0,clock_timestamp()-interval '1 hour',true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+
+      const body = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      // The rule RESOLVES (it is genuinely authored) — and the preview says it will NOT be applied.
+      expect(body.commission.status).toBe('RESOLVED');
+      expect(body.commission.allocations.length).toBeGreaterThan(0);
+      expect(body.commission.note).toMatch(/NOT applied/i);
+      expect(body.explanation).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
+            severity: 'BLOCKER',
+          }),
+        ]),
+      );
+
+      // The runtime half of the claim: the commitment service has no commission step at all.
+      const commitmentSource = readFileSync(
+        join(__dirname, '..', 'src/financial-commitment/financial-commitment.service.ts'),
+        'utf8',
+      );
+      expect(commitmentSource).not.toContain('CommissionEngine');
+      expect(commitmentSource).not.toContain('agentCommissionMinor');
+      expect(profileCode).toBeTruthy();
+    });
+
     it('records machine-readable evidence for the PR body', async () => {
       const evidencePath = process.env.PR27_EVIDENCE_OUT?.trim();
       if (!evidencePath) return;
@@ -774,6 +917,19 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
                   runtimeRuleId: outboundFeeRule?.id ?? null,
                   sameRuleRow: outboundFeeRule?.id === outbound.fee.rule?.ruleId,
                 },
+                statutoryCharges: {
+                  status: outbound.statutoryCharges.status,
+                  lines: outbound.statutoryCharges.lines,
+                  notModelled: outbound.statutoryCharges.notModelled.map(
+                    (c: { charge: string }) => c.charge,
+                  ),
+                },
+                commission: {
+                  previewStatus: outbound.commission.status,
+                  appliedByRuntime: false,
+                  runtimeDecision: 'NONE — the commitment service never invokes CommissionEngine',
+                  note: outbound.commission.note,
+                },
                 limits: {
                   previewStatus: outbound.limits.status,
                   previewRuleIds: outbound.limits.rules.map((r: { ruleId: string }) => r.ruleId),
@@ -790,6 +946,16 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
                 authoritativeRecord: BANK_TO_WALLET.authoritativeRecord,
                 feeDisposition: BANK_TO_WALLET.feeDisposition,
                 executionBlockers: BANK_TO_WALLET.executionBlockers,
+                statutoryCharges: {
+                  status: inbound.statutoryCharges.status,
+                  lines: inbound.statutoryCharges.lines,
+                  note: inbound.statutoryCharges.note,
+                },
+                commission: {
+                  previewStatus: inbound.commission.status,
+                  appliedByRuntime: false,
+                  runtimeDecision: 'NONE — the inbound credit path runs no commission step',
+                },
                 limits: {
                   previewStatus: inbound.limits.status,
                   previewRuleIds: inbound.limits.rules.map((r: { ruleId: string }) => r.ruleId),

@@ -80,6 +80,18 @@ export interface BankingProductIdentity {
   /** Who can price/limit this direction. */
   readonly principalTypes: readonly ('CUSTOMER' | 'AGENT')[];
   readonly feeDisposition: BankingFeeDisposition;
+  /**
+   * Which commission machinery, if any, evaluates this direction at runtime.
+   *
+   *  - `COMMISSION_ENGINE` — the operation records a governed commercial decision snapshot through
+   *    `CommissionEngine` inside its own transaction.
+   *  - `NONE` — no commission decision exists on this route at all. Commission rules are perfectly
+   *    authorable against the product (the resolver and preview will find them), but nothing would
+   *    ever evaluate them, because the route has no snapshot step and no commission settlement.
+   */
+  readonly commissionDisposition: 'COMMISSION_ENGINE' | 'NONE';
+  /** Plain-English statement of the commission situation, surfaced in the preview. */
+  readonly commissionNote: string;
   /** Plain-English reason, surfaced verbatim in previews and the coverage document. */
   readonly feeNote: string;
   /** The execution entry point that actually performs the movement today, or null when unavailable. */
@@ -98,6 +110,14 @@ export const WALLET_TO_BANK: BankingProductIdentity = Object.freeze({
   feeDisposition: 'APPROVED_RULE',
   feeNote:
     'Outbound bank transfers price from the approved fee rule in force for WALLET_TO_BANK. No rule means no charge is bound, and the commitment proceeds without one — never a default fee.',
+  // GAP (recorded, not hidden): a wallet→bank commitment evaluates fee and limit inside its
+  // SERIALIZABLE transaction, and `banking_operation_fee_bindings` carries an `agent_commission_minor`
+  // column — but the commitment never populates it and never calls `CommissionEngine`, so no
+  // commercial decision snapshot exists for this route. A commission rule authored against
+  // WALLET_TO_BANK therefore resolves in the preview and would be ignored by the runtime.
+  commissionDisposition: 'NONE',
+  commissionNote:
+    'No commission is evaluated or recorded on a wallet→bank transfer. The commitment binds fee and limit only; it never invokes the commission engine, so an authored commission rule for this product would be previewable but never applied or settled.',
   executionEntryPoint: 'financial-commitment/financial-commitment.service.ts',
   executionBlockers: Object.freeze([] as string[]),
 });
@@ -109,6 +129,9 @@ export const BANK_TO_WALLET: BankingProductIdentity = Object.freeze({
   legacyLimitAliases: Object.freeze([] as string[]),
   principalTypes: Object.freeze(['CUSTOMER'] as const),
   feeDisposition: 'NOT_APPLICABLE_INBOUND_CREDIT',
+  commissionDisposition: 'NONE',
+  commissionNote:
+    'No commission is evaluated on a bank credit. The recipient never instructed the movement, no commission settlement exists on the inbound path, and the credit path runs no commercial decision snapshot.',
   feeNote:
     'A bank credit is money the customer did not instruct us to spend, so no customer service fee is charged on it. This is a commercial decision, not a missing rule: no fee rule is seeded and none is invented. The only fee inbound evidence carries is the PROVIDER charge on the receipt (provider_fee_minor), which is external cost, not revenue.',
   executionEntryPoint: 'virtual-account/inbound-funding.service.ts',

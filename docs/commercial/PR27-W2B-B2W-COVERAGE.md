@@ -5,9 +5,11 @@ Status: **implemented this turn**, branch `arena/41dde913-monienaija`, base
 
 Pinned to code by two suites:
 
-- `test/v1-commercial-bank-direction-coverage.spec.ts` — the static coverage contract (19 cases).
+- `test/v1-commercial-bank-direction-coverage.spec.ts` — the static coverage contract (23 cases,
+  including the all-nine-product checklist).
 - `test/v1-bank-direction-preview-runtime-parity.integration.spec.ts` — preview vs runtime parity on
-  disposable PostgreSQL with real workforce sessions (8 cases).
+  disposable PostgreSQL with real workforce sessions (11 cases, including statutory-charge
+  zero-vs-missing and the commission gap).
 
 Machine-readable result: `docs/commercial/evidence/pr27-bank-direction-parity.json`.
 
@@ -114,6 +116,39 @@ asserted — synthetic values are used only in tests.
   makes (documented as synthetic because no execution authority exists); a breach is refused.
 - **Bank → Wallet fee**: product reported DISABLED, fee section not `RESOLVED`, blockers listed.
 
+## Commissions and statutory charges — the exact remaining gaps
+
+The full trace is product → fee → **commission** → **statutory charges** → limit → runtime decision.
+Fees and limits are wired (above). The last two are not, and this is what each one needs.
+
+### Commission: no bank direction evaluates it (recorded, not hidden)
+
+| Direction     | Rules authorable?                                                                                       | Preview                                                                                          | Runtime                                                                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet → Bank | **yes** — `commission_rules.product_code` is a FK to `products.code`, and `WALLET_TO_BANK` is a product | resolves and **says it will not be applied**, with a `COMMISSION_NOT_APPLIED_BY_RUNTIME` BLOCKER | **none.** `financial-commitment.service.ts` never calls `CommissionEngine` and never passes `agentCommissionMinor`, although `banking_operation_fee_bindings.agent_commission_minor` exists and would store it |
+| Bank → Wallet | **yes** (same product row)                                                                              | same explicit blocker                                                                            | **none.** No commission step on the inbound path                                                                                                                                                               |
+
+That is the gap in one sentence: **a commission rule authored against either bank product would be
+previewable and never applied or settled.** Closing it needs the commitment to evaluate
+`CommissionEngine.decideWithManager(...)` inside its existing SERIALIZABLE transaction (as
+`transfer.service.ts` already does for `WALLET_TRANSFER`), persist the decision, and record it in a
+commercial decision snapshot — plus a settlement/accounting path for the agent share. None of that is
+invented here; the preview now refuses to imply it.
+
+### Statutory charges: VAT is modelled, everything else is absent
+
+| Charge                 | Modelled?                                     | Where                                                                                                                              |
+| ---------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| VAT on our service fee | **yes**, authored per `fee_rules.vat_bps`     | computed on the clamped fee; stored as `tax_minor` on the banking binding                                                          |
+| Stamp duty             | **no** — no column, table, resolver or engine | reported under `notModelled`, **never** as a zero rate                                                                             |
+| Regulatory levy        | **no**                                        | reported under `notModelled`                                                                                                       |
+| Provider fee           | **no**, and not statutory                     | outbound: unknown at authorization, never added to the customer debit. inbound: preserved as receipt evidence `provider_fee_minor` |
+
+The preview exposes this as a first-class `statutoryCharges` section, separate from `fee`, so the
+zero-vs-missing distinction is visible: an authored `vat_bps: 0` reports `RESOLVED` with
+`provenance: AUTHORED`; no rule at all reports `NOT_APPLICABLE` / "missing rule, not a zero charge";
+and `BANK_TO_WALLET` reports `NOT_APPLICABLE` because it carries no fee for VAT to attach to.
+
 ## Still open in PR #27 (draft)
 
 - [ ] Limit-profile authoring screens in Admin Web (this turn wires resolution, not authoring UI).
@@ -121,6 +156,9 @@ asserted — synthetic values are used only in tests.
 - [ ] PR #24 tier-ceiling alignment: the institution KYC tier path still resolves product mappings by
       product code, so a `WALLET_TO_BANK` tier mapping is authorable but has not been reconciled with
       that PR's ceiling model.
-- [ ] Agent commission preview + missing/ambiguous-rule demonstration (commission rules are governed
-      but not yet exercised for a bank direction).
+- [ ] **Commission on bank directions**: preview now states the gap explicitly (BLOCKER); the runtime
+      still evaluates no commission for either direction. Needs a `CommissionEngine` call inside the
+      commitment transaction + decision snapshot + agent settlement.
+- [ ] **Statutory charges beyond VAT**: absent from the data model. Needs a real schema + a regulatory
+      decision, not a configuration entry.
 - [ ] Inbound execution authority + suspense policy: the two blockers above.

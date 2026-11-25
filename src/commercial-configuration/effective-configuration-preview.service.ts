@@ -21,6 +21,7 @@ import {
   type BankingFeeDisposition,
 } from '../product-catalog/banking-product-identities';
 import { ProductCatalogService } from '../product-catalog/product-catalog.service';
+import { statutoryChargesFor } from '../product-catalog/statutory-charges';
 import { RewardRuleResolverService } from '../reward/reward-rule-resolver.service';
 import type { RewardGrantDecision, RewardResolution } from '../reward/reward.types';
 
@@ -286,7 +287,29 @@ export class EffectiveConfigurationPreviewService {
         agentClassId,
         feeMinor: fee.feeMinor,
         explanation,
+        // PR #27: a direction whose runtime never evaluates commission must say so. Otherwise an
+        // operator sees authored rules RESOLVED here and reasonably concludes they are applied.
+        commissionDisposition: bankingIdentityFor(productCode)?.commissionDisposition ?? null,
+        commissionNote: bankingIdentityFor(productCode)?.commissionNote ?? null,
       });
+
+      // Statutory charges derive from the fee decision already taken above, so they cannot disagree
+      // with it. Gated on the FEE read function: statutory charges ARE fee treatment.
+      const feeMayRead = may(SECTION_FUNCTIONS.fee);
+      const statutoryCharges = feeMayRead
+        ? statutoryChargesFor(productCode, {
+            status: fee.section.status,
+            // Narrow the union: a RESTRICTED section never reaches here (feeMayRead is false then).
+            vatBps: 'rule' in fee.section ? (fee.section.rule?.vatBps ?? null) : null,
+            vatMinor: 'computed' in fee.section ? (fee.section.computed?.vatMinor ?? null) : null,
+          })
+        : {
+            status: 'NOT_APPLICABLE' as const,
+            note: 'Statutory charges are withheld with the fee section this caller may not read.',
+            lines: [],
+            notModelled: [],
+            postsJournalLegs: false as const,
+          };
 
       const reward = await this.rewardSection({
         manager,
@@ -303,7 +326,16 @@ export class EffectiveConfigurationPreviewService {
         explanation,
       });
 
-      return { customerClass, kyc, limits, fee, commission, reward, transactionReadOnly };
+      return {
+        customerClass,
+        kyc,
+        limits,
+        fee,
+        statutoryCharges,
+        commission,
+        reward,
+        transactionReadOnly,
+      };
     });
 
     if (principalId === null)
@@ -343,6 +375,10 @@ export class EffectiveConfigurationPreviewService {
       kycRestriction: result.kyc.section,
       limits: result.limits,
       fee: result.fee.section,
+      // PR #27 — statutory charges are reported SEPARATELY from fee and commission, because the
+      // question "is this zero, or is it missing?" has a different answer here than anywhere else:
+      // VAT is modelled (authored per rule), everything else is absent from the data model.
+      statutoryCharges: result.statutoryCharges,
       commission: result.commission,
       reward: result.reward,
       explanation: ordered,
@@ -350,6 +386,7 @@ export class EffectiveConfigurationPreviewService {
         sections: {
           limits: result.limits.status,
           fee: result.fee.section.status,
+          statutoryCharges: result.statutoryCharges.status,
           commission: result.commission.status,
           reward: result.reward.status,
         },
@@ -985,6 +1022,8 @@ export class EffectiveConfigurationPreviewService {
     agentClassId: string | null;
     feeMinor: string | null;
     explanation: PreviewExplanation[];
+    commissionDisposition: 'COMMISSION_ENGINE' | 'NONE' | null;
+    commissionNote: string | null;
   }): Promise<EffectiveConfigurationPreview['commission']> {
     if (!input.enabled) {
       input.explanation.push(
@@ -1064,6 +1103,33 @@ export class EffectiveConfigurationPreviewService {
         aggregatorId: allocation.targeting.aggregatorId,
       },
     }));
+
+    // PR #27 — the honest answer for a route with no commission step.
+    //
+    // If rules DO resolve, the default note ("commission that would be allocated") is a false promise
+    // for such a route: nothing would allocate them. Say what actually happens instead, and raise it
+    // as a BLOCKER so an operator authoring commission against the product sees the gap rather than a
+    // green RESOLVED. If no rules resolve either, the section is MISSING and the same gap is stated.
+    if (input.commissionDisposition === 'NONE') {
+      const resolved = allocations.length > 0;
+      input.explanation.push({
+        code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
+        message: resolved
+          ? `Commission rules resolve for ${input.productCode}, but this route never evaluates commission: ${input.commissionNote ?? ''}`.trim()
+          : `No commission rule applies to ${input.productCode}, and this route never evaluates commission anyway: ${input.commissionNote ?? ''}`.trim(),
+        severity: 'BLOCKER',
+      });
+      return {
+        status: resolved ? 'RESOLVED' : 'MISSING',
+        note: resolved
+          ? `${input.commissionNote ?? 'This route does not evaluate commission.'} The rules below are therefore NOT applied.`
+          : `${input.commissionNote ?? 'This route does not evaluate commission.'} No commission rule resolves for this product, currency and targeting either.`,
+        allocations,
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
+        accrualPosted: false,
+      };
+    }
 
     return {
       status: allocations.length > 0 ? 'RESOLVED' : 'MISSING',

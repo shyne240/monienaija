@@ -206,6 +206,60 @@ describe('PR27 V1 commercial coverage — Wallet to Bank / Bank to Wallet', () =
     });
   });
 
+  describe('all-nine-product coverage checklist', () => {
+    it('covers every seeded product, with both bank directions named explicitly', () => {
+      // The checklist the mission asks for: nine products, not seven-plus-an-exception.
+      expect(V1_PRODUCT_CODES).toHaveLength(9);
+      expect([...V1_PRODUCT_CODES].sort()).toEqual([
+        'AGENT_DEFUNDING',
+        'AGENT_FUNDING',
+        'BANK_TO_WALLET',
+        'CASH_TO_CASH',
+        'CASH_TO_WALLET',
+        'CUSTOMER_FUNDING',
+        'WALLET_TO_BANK',
+        'WALLET_TO_CASH',
+        'WALLET_TRANSFER',
+      ]);
+    });
+
+    it('still lists the two open authoring items against this PR', () => {
+      // Limit-profile editing and tier-ceiling alignment with Onboarding are NOT closed by the
+      // product wiring; they are recorded on the draft checklist in docs/commercial.
+      const coverage = read('docs/commercial/PR27-W2B-B2W-COVERAGE.md');
+      expect(coverage).toMatch(/Limit-profile authoring/i);
+      expect(coverage).toMatch(/PR #24 tier-ceiling alignment/i);
+      expect(coverage).toMatch(/WALLET_TO_BANK/);
+      expect(coverage).toMatch(/BANK_TO_WALLET/);
+    });
+  });
+
+  describe('commission and statutory charges — the recorded gaps', () => {
+    it('declares that neither bank direction evaluates commission at runtime', () => {
+      expect(WALLET_TO_BANK.commissionDisposition).toBe('NONE');
+      expect(BANK_TO_WALLET.commissionDisposition).toBe('NONE');
+      // The commitment service is where that would happen, and it does not.
+      const commitment = read('src/financial-commitment/financial-commitment.service.ts');
+      expect(commitment).not.toContain('CommissionEngine');
+      expect(commitment).not.toContain('agentCommissionMinor');
+      // And the live snapshot path confirms what a wired route looks like.
+      expect(read('src/transfer/transfer.service.ts')).toContain('CommissionEngine');
+    });
+
+    it('names the statutory charges that are not modelled instead of zeroing them', () => {
+      const statutory = read('src/product-catalog/statutory-charges.ts');
+      for (const charge of ['STAMP_DUTY', 'REGULATORY_LEVY', 'PROVIDER_FEE']) {
+        expect(statutory).toContain(charge);
+      }
+      // A not-modelled charge must never be given a numeric rate: the type allows the marker, and no
+      // code path produces such a line with a rate attached.
+      expect(statutory).toContain("'NOT_MODELLED'");
+      expect(statutory).toContain('not zero, and no rate is asserted');
+      // Every authored line comes from a real fee rule, never from this module.
+      expect(statutory).toContain("provenance: 'AUTHORED'");
+    });
+  });
+
   describe('no live provider calls and no invented values', () => {
     it('wires no provider into the identity module', () => {
       const source = read('src/product-catalog/banking-product-identities.ts');
