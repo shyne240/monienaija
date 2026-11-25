@@ -384,10 +384,32 @@ test('controlled evidence gates activation and customer wallet creation, without
 test('misconfigured deployment (zero configured products, no usable class) blocks initial DRAFT->ACTIVE activation and explains why', async () => {
   const customers = app.get(CustomerService);
   const id = await subject('LEVEL_1', ['BVN']);
-  const savedDefaults = await db.query(`SELECT * FROM customer_tier_default_classes ORDER BY tier`);
-  const savedClass = await db.query(
+  type TierDefaultRow = {
+    tier: string;
+    class_id: string;
+    status: string;
+    approved_at: Date | null;
+    approved_by: string | null;
+    reason: string | null;
+    created_by: string;
+    updated_by: string | null;
+    version: number;
+    created_at: Date;
+    updated_at: Date;
+  };
+  type ClassRow = {
+    code: string;
+    status: string;
+    enabled: boolean;
+    configuration_status: string;
+    is_default: boolean;
+  };
+  const savedDefaults = (await db.query(
+    `SELECT tier, class_id, status, approved_at, approved_by, reason, created_by, updated_by, version, created_at, updated_at FROM customer_tier_default_classes ORDER BY tier`,
+  )) as unknown as TierDefaultRow[];
+  const savedClass = (await db.query(
     `SELECT code, status, enabled, configuration_status, is_default FROM customer_classes WHERE code='B2C_TEST_DEFAULT'`,
-  );
+  )) as unknown as ClassRow[];
   try {
     await db.query(`DELETE FROM customer_tier_default_classes`);
     await db.query(
@@ -396,25 +418,33 @@ test('misconfigured deployment (zero configured products, no usable class) block
     await db.query(
       `UPDATE customer_classes SET enabled=false, status='DISABLED', configuration_status='NOT_CONFIGURED' WHERE code='B2C_TEST_DEFAULT'`,
     );
-    let err: any;
+    let err: unknown;
     try {
       await customers.updateStatus(id, { status: CustomerStatus.ACTIVE, actor: 'fixture' });
     } catch (e) {
       err = e;
     }
     expect(err).toBeTruthy();
-    const response = err?.response ?? err?.getResponse?.() ?? {};
-    expect(String(response.code ?? err?.code ?? '')).toBe('ACTIVATION_CONFIGURATION_INCOMPLETE');
+    const errObj = err as { response?: unknown; getResponse?: () => unknown; code?: unknown };
+    const response = (errObj.response ?? errObj.getResponse?.() ?? {}) as {
+      code?: unknown;
+      issues?: Array<{ code?: string; message?: string }>;
+    };
+    const errCode = response.code ?? errObj.code;
+    expect(typeof errCode === 'string' ? errCode : '').toBe('ACTIVATION_CONFIGURATION_INCOMPLETE');
     expect(Array.isArray(response.issues)).toBe(true);
-    const codes = response.issues.map((i: any) => i.code);
+    const issues = response.issues ?? [];
+    const codes = issues.map((i) => i.code);
     expect(codes).toContain('NO_ENABLED_PRODUCTS');
     // No usable class: no approved tier default resolves and no usable manual class exists.
     expect(
-      codes.some((c: string) =>
-        ['TIER_DEFAULT_MISSING', 'TIER_DEFAULT_NOT_APPROVED', 'TIER_DEFAULT_CLASS_UNUSABLE', 'MANUAL_CLASS_UNUSABLE'].includes(c),
+      codes.some((c) =>
+        ['TIER_DEFAULT_MISSING', 'TIER_DEFAULT_NOT_APPROVED', 'TIER_DEFAULT_CLASS_UNUSABLE', 'MANUAL_CLASS_UNUSABLE'].includes(
+          String(c),
+        ),
       ),
     ).toBe(true);
-    expect(response.issues.every((i: any) => typeof i.message === 'string' && i.message.length > 0)).toBe(true);
+    expect(issues.every((i) => typeof i.message === 'string' && i.message.length > 0)).toBe(true);
   } finally {
     await db.query(
       `UPDATE products SET enabled=true, configuration_status='CONFIGURED' WHERE domain='CUSTOMER'`,
