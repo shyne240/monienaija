@@ -709,16 +709,6 @@ export const Layout: React.FC = () => {
             onLedgerGuardChange={reportLedgerGuard}
             initialJournalId={navContext.journalId}
             initialReference={navContext.ledgerReference}
-            onOpenTransaction={(source) =>
-              handleNav(
-                source.type === 'DEPOSIT'
-                  ? 'cashIn'
-                  : source.type === 'WITHDRAWAL'
-                    ? 'cashOut'
-                    : 'transfers',
-                { transactionId: source.id, transactionType: source.type },
-              )
-            }
           />
         );
       case 'reconciliation':

@@ -82,6 +82,42 @@ const recordSummary = {
   postedAt: '2026-11-20T09:00:01.000Z',
 };
 
+const depositJournalId = '1a2b3c4d-2222-4333-8444-555566667777';
+const fundingJournalId = '9f8e7d6c-3333-4444-8555-666677778888';
+const depositRecord = {
+  ...recordSummary,
+  id: depositJournalId,
+  reference: 'DEP-2026-000044',
+  totalMinor: '50000',
+  source: {
+    type: 'DEPOSIT',
+    id: 'deposit-1',
+    reference: 'DEP-2026-000044',
+    status: 'COMPLETED',
+    linkedBy: 'JOURNAL_ID',
+    navigable: true,
+  },
+  institution,
+  postedAt: '2026-11-21T09:00:01.000Z',
+  createdAt: '2026-11-21T09:00:00.000Z',
+};
+const fundingRecord = {
+  ...recordSummary,
+  id: fundingJournalId,
+  reference: 'FUND-2026-000007',
+  totalMinor: '70000',
+  source: {
+    type: 'CUSTOMER_FUNDING',
+    id: 'funding-1',
+    reference: 'FUND-2026-000007',
+    status: 'PENDING',
+    linkedBy: 'JOURNAL_ID',
+    navigable: false,
+  },
+  institution,
+  postedAt: '2026-11-22T09:00:01.000Z',
+  createdAt: '2026-11-22T09:00:00.000Z',
+};
 const journalDetail = {
   ...recordSummary,
   idempotencyKey: `transfer:${transactionId}:ledger-post`,
@@ -119,6 +155,16 @@ const journalDetail = {
   ],
 };
 
+const depositDetail = {
+  ...journalDetail,
+  ...depositRecord,
+  lines: journalDetail.lines.map((line) => ({ ...line })),
+};
+const fundingDetail = {
+  ...journalDetail,
+  ...fundingRecord,
+  lines: journalDetail.lines.map((line) => ({ ...line })),
+};
 const eligibility = {
   journalId,
   eligible: true,
@@ -324,8 +370,8 @@ async function main() {
       return json(route, breaks);
     if (url.pathname.endsWith('/internal/finance-operations/ledger/journals'))
       return json(route, {
-        items: [recordSummary],
-        total: 1,
+        items: [recordSummary, depositRecord, fundingRecord],
+        total: 3,
         hasMore: false,
         limit: 50,
         offset: 0,
@@ -339,6 +385,10 @@ async function main() {
       });
     if (url.pathname.endsWith(`/internal/finance-operations/ledger/journals/${journalId}`))
       return json(route, journalDetail);
+    if (url.pathname.endsWith(`/internal/finance-operations/ledger/journals/${depositJournalId}`))
+      return json(route, depositDetail);
+    if (url.pathname.endsWith(`/internal/finance-operations/ledger/journals/${fundingJournalId}`))
+      return json(route, fundingDetail);
     if (url.pathname.endsWith(`/reversal-eligibility`)) return json(route, eligibility);
     if (url.pathname.includes('/internal/finance-operations/transactions/'))
       return json(route, {
@@ -356,7 +406,7 @@ async function main() {
       });
     if (url.pathname.includes('/ledger/journals/'))
       return json(route, {
-        id: journalId,
+        id: decodeURIComponent(url.pathname.split('/').pop()),
         status: 'POSTED',
         currency: 'NGN',
         accountingUnit: 'NGN',
@@ -408,7 +458,7 @@ async function main() {
   await page.click('[data-testid="ledger-record-search-submit"]');
   await page.locator('[data-testid="ledger-record-results"]').waitFor({ timeout: 15000 });
   const rows = await page.locator('[data-testid^="ledger-record-open-"]').count();
-  record('LEDGER-SEARCH-RETURNS-SCOPED-ROWS', rows === 1, `${rows} result row(s), institution and source rendered`);
+  record('LEDGER-SEARCH-RETURNS-SCOPED-ROWS', rows === 3, `${rows} result row(s), institution and source rendered`);
 
   await page.locator(`[data-testid="ledger-record-open-${journalId}"]`).click();
   await page.locator('[data-testid="reversal-eligibility"]').waitFor({ timeout: 15000 });
@@ -420,28 +470,44 @@ async function main() {
     `next action="${nextAction.trim()}", source link visible=${sourceVisible}`,
   );
 
-  // --- Transaction ↔ journal link ------------------------------------------
-  await page.locator('[data-testid="open-source-transaction"]').click();
-  await page.locator('[data-testid="transaction-journal-link"]').waitFor({ timeout: 15000 });
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[data-testid="transaction-journal-status"]')?.textContent?.includes('FOUND'),
-    { timeout: 15000 },
-  );
-  const linkText = await page.locator('[data-testid="transaction-journal-status"]').innerText();
-  const openJournal = await page.locator('[data-testid="open-journal-record"]').isVisible();
+  // --- Finance → Transaction History contract link --------------------------
+  const transferHref = await page
+    .locator('[data-testid="open-unified-transaction-detail"]')
+    .getAttribute('href');
   record(
-    'TRANSACTION-SHOWS-LEDGER-POSTING',
-    /FOUND/.test(linkText) && openJournal,
-    `status="${linkText.replace(/\s+/g, ' ').slice(0, 90)}", journal button visible=${openJournal}`,
+    'TRANSFER-LINKS-TO-UNIFIED-HISTORY-BY-BUSINESS-KEY',
+    transferHref === `#transaction-history/WALLET_TRANSFER/${transactionId}`,
+    `href=${transferHref}`,
   );
 
-  await page.locator('[data-testid="open-journal-record"]').click();
+  // Cash-in/cash-out must use the original posted journal ID, never the deposit/withdrawal row id.
+  await page.fill('[data-testid="ledger-record-reference"]', 'DEP-2026-000044');
+  await page.click('[data-testid="ledger-record-search-submit"]');
+  await page.locator('[data-testid="ledger-record-results"]').waitFor({ timeout: 15000 });
+  await page.locator(`[data-testid="ledger-record-open-${depositJournalId}"]`).click();
   await page.locator('[data-testid="reversal-eligibility"]').waitFor({ timeout: 15000 });
+  const cashInHref = await page
+    .locator('[data-testid="open-unified-transaction-detail"]')
+    .getAttribute('href');
   record(
-    'JOURNAL-RECORD-DEEP-LINK-REOPENS-ELIGIBILITY',
-    true,
-    'transaction → journal deep link rendered the eligibility panel',
+    'CASH-IN-LINKS-BY-CANONICAL-JOURNAL-ID',
+    cashInHref === `#transaction-history/CASH_IN/${depositJournalId}`,
+    `href=${cashInHref} (expected CASH_IN/${depositJournalId}, not deposit-1)`,
+  );
+
+  // A product with no history mapping must say so rather than guess.
+  await page.fill('[data-testid="ledger-record-reference"]', 'FUND-2026-000007');
+  await page.click('[data-testid="ledger-record-search-submit"]');
+  await page.locator('[data-testid="ledger-record-results"]').waitFor({ timeout: 15000 });
+  await page.locator(`[data-testid="ledger-record-open-${fundingJournalId}"]`).click();
+  await page.locator('[data-testid="transaction-history-unavailable"]').waitFor({ timeout: 15000 });
+  const unavailableText = await page
+    .locator('[data-testid="transaction-history-unavailable"]')
+    .innerText();
+  record(
+    'UNSUPPORTED-PRODUCT-SHOWS-LINK-UNAVAILABLE',
+    /unavailable/i.test(unavailableText) && /no mapping/i.test(unavailableText),
+    unavailableText.replace(/\s+/g, ' ').slice(0, 140),
   );
 
   // --- Reconciliation evidence ---------------------------------------------

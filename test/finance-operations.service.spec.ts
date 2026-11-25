@@ -121,11 +121,13 @@ const institutionRow = {
   status: 'APPROVED',
 };
 
-function fixture(options: {
-  scopes?: { platform?: boolean; institutions?: string[] };
-  readiness?: unknown[];
-  handler?: (sql: string, params: unknown[]) => unknown[] | undefined;
-} = {}) {
+function fixture(
+  options: {
+    scopes?: { platform?: boolean; institutions?: string[] };
+    readiness?: unknown[];
+    handler?: (sql: string, params: unknown[]) => unknown[] | undefined;
+  } = {},
+) {
   const dataSource = new RecordingDataSource();
   const defaultHandler = (sql: string): unknown[] => {
     if (/FROM financial_institutions\s+WHERE id = \$1/.test(sql)) return [institutionRow];
@@ -138,17 +140,16 @@ function fixture(options: {
 
   const scope = {
     hasPlatformAuthority: jest.fn().mockReturnValue(options.scopes?.platform === true),
-    institutionIdsForPrincipal: jest
-      .fn()
-      .mockResolvedValue(options.scopes?.institutions ?? []),
-    assertCanAccessInstitution: jest.fn(async (_principal, institutionId: string) => {
-      if (options.scopes?.platform) return;
+    institutionIdsForPrincipal: jest.fn().mockResolvedValue(options.scopes?.institutions ?? []),
+    assertCanAccessInstitution: jest.fn((_principal, institutionId: string) => {
+      if (options.scopes?.platform) return Promise.resolve();
       const ids = options.scopes?.institutions ?? [];
       if (!ids.includes(institutionId)) {
         const error = new Error('Institution not found');
         (error as { status?: number }).status = 404;
-        throw error;
+        return Promise.reject(error);
       }
+      return Promise.resolve();
     }),
   } as unknown as InstitutionWorkforceScopeService;
 
@@ -232,7 +233,9 @@ describe('FinanceOperationsService ledger search & scope', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]!.institution?.id).toBe(INSTITUTION_A);
     expect(result.scope).toMatchObject({ mode: 'INSTITUTIONS', institutionIds: [INSTITUTION_A] });
-    const rowQuery = dataSource.calls.find((call) => call.sql.includes('i.code AS institution_code'));
+    const rowQuery = dataSource.calls.find((call) =>
+      call.sql.includes('i.code AS institution_code'),
+    );
     expect(rowQuery).toBeDefined();
     expect(rowQuery!.sql).toContain('(j.institution_id IS NULL OR j.institution_id = ANY($');
     expect(rowQuery!.params).toContainEqual([INSTITUTION_A]);
@@ -242,7 +245,9 @@ describe('FinanceOperationsService ledger search & scope', () => {
     const { service, dataSource } = fixture({ scopes: { institutions: [] } });
     const result = await service.searchJournals(preparerA, {});
     expect(result.scope.mode).toBe('NONE');
-    const rowQuery = dataSource.calls.find((call) => call.sql.includes('i.code AS institution_code'));
+    const rowQuery = dataSource.calls.find((call) =>
+      call.sql.includes('i.code AS institution_code'),
+    );
     expect(rowQuery!.sql).toContain('j.institution_id IS NULL');
   });
 
@@ -250,7 +255,9 @@ describe('FinanceOperationsService ledger search & scope', () => {
     const { service, dataSource } = fixture({ scopes: { platform: true } });
     const result = await service.searchJournals(platformPrincipal, {});
     expect(result.scope.mode).toBe('PLATFORM');
-    const rowQuery = dataSource.calls.find((call) => call.sql.includes('i.code AS institution_code'));
+    const rowQuery = dataSource.calls.find((call) =>
+      call.sql.includes('i.code AS institution_code'),
+    );
     expect(rowQuery!.sql).not.toContain('j.institution_id IS NULL');
   });
 
@@ -260,9 +267,9 @@ describe('FinanceOperationsService ledger search & scope', () => {
       service.searchJournals(preparerA, { institutionId: INSTITUTION_B }),
     ).rejects.toThrow('Institution not found');
     // Scope was decided before any ledger row could be read.
-    expect(
-      dataSource.calls.some((call) => call.sql.includes('i.code AS institution_code')),
-    ).toBe(false);
+    expect(dataSource.calls.some((call) => call.sql.includes('i.code AS institution_code'))).toBe(
+      false,
+    );
   });
 
   it('searches supported reference forms, including source transaction references', async () => {
@@ -274,7 +281,9 @@ describe('FinanceOperationsService ledger search & scope', () => {
       limit: '10',
     });
     expect(result.supportedReferenceForms).toContain('Transfer reference');
-    const rowQuery = dataSource.calls.find((call) => call.sql.includes('i.code AS institution_code'));
+    const rowQuery = dataSource.calls.find((call) =>
+      call.sql.includes('i.code AS institution_code'),
+    );
     for (const clause of [
       'j.reference ILIKE',
       'j.idempotency_key ILIKE',
@@ -313,7 +322,10 @@ describe('FinanceOperationsService journal detail & transaction link', () => {
   it('answers 404 for a journal attributed to another institution', async () => {
     const { service } = fixture({
       scopes: { institutions: [INSTITUTION_A] },
-      handler: (sql) => (sql.includes('FROM ledger_journals j') ? [journalRow({ institution_id: INSTITUTION_B })] : []),
+      handler: (sql) =>
+        sql.includes('FROM ledger_journals j')
+          ? [journalRow({ institution_id: INSTITUTION_B })]
+          : [],
     });
     await expect(service.getJournal(preparerA, JOURNAL_B)).rejects.toThrow('Journal not found');
   });
@@ -361,7 +373,10 @@ describe('FinanceOperationsService journal detail & transaction link', () => {
     const journal = await service.getJournal(preparerA, JOURNAL_ID);
     expect(journal.totalMinor).toBe('250000');
     expect(journal.lines).toHaveLength(2);
-    expect(journal.lines[0]).toMatchObject({ direction: 'DEBIT', accountCode: 'CUSTOMER_FUNDS-CLEARING-NGN' });
+    expect(journal.lines[0]).toMatchObject({
+      direction: 'DEBIT',
+      accountCode: 'CUSTOMER_FUNDS-CLEARING-NGN',
+    });
     expect(journal.reversal.kind).toBe('NORMAL');
   });
 
@@ -391,9 +406,9 @@ describe('FinanceOperationsService journal detail & transaction link', () => {
     expect(link.ledgerAccess).toBe('DENIED_LEDGER_VIEW');
     expect(link.outcome).toBe('LEDGER_ACCESS_DENIED');
     expect(link.journal).toBeNull();
-    expect(
-      dataSource.calls.some((call) => call.sql.includes('i.code AS institution_code')),
-    ).toBe(false);
+    expect(dataSource.calls.some((call) => call.sql.includes('i.code AS institution_code'))).toBe(
+      false,
+    );
   });
 
   it('links a completed transaction to its journal for a ledger.view principal', async () => {
@@ -497,7 +512,11 @@ describe('FinanceOperationsService reversal eligibility', () => {
     const eligibility = await service.reversalEligibility(auditor, JOURNAL_ID);
     expect(eligibility.eligible).toBe(false);
     expect(eligibility.reasonCode).toBe('READ_ONLY_PRINCIPAL');
-    expect(eligibility.permissions).toMatchObject({ canView: true, canRequest: false, canExecute: false });
+    expect(eligibility.permissions).toMatchObject({
+      canView: true,
+      canRequest: false,
+      canExecute: false,
+    });
     expect(eligibility.nextAction).toBe('NONE');
     expect(eligibility.blockers[0]?.action).toContain('FINANCE_PREPARER');
   });
@@ -542,10 +561,7 @@ describe('FinanceOperationsService reversal eligibility', () => {
 
   it('makes ineligibility actionable for reversals and already-reversed journals', async () => {
     const isReversal = eligibilityFixture({ reversal_of_journal_id: JOURNAL_B }, null);
-    const reversalEligibility = await isReversal.service.reversalEligibility(
-      preparerA,
-      JOURNAL_ID,
-    );
+    const reversalEligibility = await isReversal.service.reversalEligibility(preparerA, JOURNAL_ID);
     expect(reversalEligibility.eligible).toBe(false);
     expect(reversalEligibility.reasonCode).toBe('JOURNAL_IS_A_REVERSAL');
     expect(reversalEligibility.blockers[0]).toMatchObject({
@@ -565,11 +581,9 @@ describe('FinanceOperationsService reversal eligibility', () => {
   });
 
   it('refuses eligibility for another institution\u2019s journal', async () => {
-    const { service } = eligibilityFixture(
-      { institution_id: INSTITUTION_B },
-      null,
-      { institutions: [INSTITUTION_A] },
-    );
+    const { service } = eligibilityFixture({ institution_id: INSTITUTION_B }, null, {
+      institutions: [INSTITUTION_A],
+    });
     await expect(service.reversalEligibility(preparerA, JOURNAL_B)).rejects.toThrow(
       'Journal not found',
     );
@@ -591,7 +605,10 @@ describe('FinanceOperationsService reconciliation breaks', () => {
           return options.exceptions ?? [];
         }
         if (sql.includes("state IN ('FAILED','ABANDONED')")) return options.failedRuns ?? [];
-        if (sql.includes('count(*)::text AS total') && sql.includes('banking_reconciliation_exceptions')) {
+        if (
+          sql.includes('count(*)::text AS total') &&
+          sql.includes('banking_reconciliation_exceptions')
+        ) {
           return [{ total: String(options.exceptions?.length ?? 0) }];
         }
         if (/FROM financial_institutions\s+WHERE id = \$1/.test(sql)) return [institutionRow];
@@ -615,6 +632,9 @@ describe('FinanceOperationsService reconciliation breaks', () => {
     ]);
     expect(report.sources[0]!.result).toBe('AGREED');
     expect(report.sources[1]!.availability).toBe('UNAVAILABLE');
+    // Absent provider evidence is never a successful reconciliation, and never "agreed".
+    expect(report.sources[1]!.result).toBe('NOT_PERFORMED');
+    expect(report.reconciliationEstablished).toBe(false);
     expect(report.sources[1]!.result).not.toBe('AGREED');
     expect(report.sources[2]!.availability).toBe('UNAVAILABLE');
     expect(report.sources[2]!.result).toBe('NOT_PERFORMED');

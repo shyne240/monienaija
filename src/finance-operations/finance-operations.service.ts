@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -52,17 +47,6 @@ const SUPPORTED_REFERENCE_FORMS = [
 
 const REVERSAL_ACTION_TYPE = 'LEDGER_JOURNAL_REVERSAL';
 const REVERSAL_RESOURCE_TYPE = 'LEDGER_JOURNAL';
-
-const SOURCE_LABEL: Record<JournalSourceType, string> = {
-  TRANSFER: 'Wallet transfer',
-  DEPOSIT: 'Deposit',
-  WITHDRAWAL: 'Withdrawal',
-  CASH_OUT_EXECUTION: 'Agent cash-out execution',
-  INBOUND_FUNDING: 'Inbound funding receipt',
-  CUSTOMER_FUNDING: 'Customer funding request',
-  AGENT_FUNDING: 'Agent funding request',
-  CASH_TO_CASH: 'Cash-to-cash transfer',
-};
 
 interface JournalRow {
   id: string;
@@ -132,9 +116,7 @@ export class FinanceOperationsService {
     };
   }
 
-  async listInstitutions(
-    principal: AuthorizationPrincipal,
-  ): Promise<FinanceInstitutionsResponse> {
+  async listInstitutions(principal: AuthorizationPrincipal): Promise<FinanceInstitutionsResponse> {
     const scope = await this.scopeFor(principal);
     const rows: Array<{
       id: string;
@@ -533,7 +515,10 @@ export class FinanceOperationsService {
           action: 'Ask the approving controller to execute the approved reversal.',
         });
       }
-    } else if (approval?.status && ['REJECTED', 'EXPIRED', 'CANCELLED', 'CONSUMED'].includes(approval.status)) {
+    } else if (
+      approval?.status &&
+      ['REJECTED', 'EXPIRED', 'CANCELLED', 'CONSUMED'].includes(approval.status)
+    ) {
       reasonCode = 'PREVIOUS_REQUEST_CLOSED';
       reason = `The most recent reversal request is ${approval.status}. A new governed request is required.`;
       nextAction = canRequest ? 'REQUEST_REVERSAL' : 'NONE';
@@ -541,7 +526,8 @@ export class FinanceOperationsService {
         eligible = false;
         blockers.push({
           code: 'REQUEST_ENTITLEMENT_REQUIRED',
-          message: 'Requesting a reversal requires ledger.reverse and an MFA-verified writable session.',
+          message:
+            'Requesting a reversal requires ledger.reverse and an MFA-verified writable session.',
           action: 'Ask a FINANCE_PREPARER to raise a new reversal request.',
         });
       }
@@ -589,8 +575,7 @@ export class FinanceOperationsService {
         resourceType: REVERSAL_RESOURCE_TYPE,
         makerRole: 'FINANCE_PREPARER',
         checkerRole: 'FINANCE_CONTROLLER',
-        note:
-          'Reversal runs through the registered LEDGER_JOURNAL_REVERSAL maker-checker action: a preparer requests, an independent controller approves, and execution consumes that approval in the same posting transaction. This surface never posts a journal directly.',
+        note: 'Reversal runs through the registered LEDGER_JOURNAL_REVERSAL maker-checker action: a preparer requests, an independent controller approves, and execution consumes that approval in the same posting transaction. This surface never posts a journal directly.',
       },
     };
   }
@@ -664,11 +649,15 @@ export class FinanceOperationsService {
       generatedAt,
     });
 
-    const errors = breaks.filter((entry) => entry.state === 'ERROR' || entry.severity === 'CRITICAL').length;
+    const errors = breaks.filter(
+      (entry) => entry.state === 'ERROR' || entry.severity === 'CRITICAL',
+    ).length;
     const warnings = breaks.filter(
       (entry) => entry.state === 'WARNING' || entry.state === 'UNAVAILABLE',
     ).length;
-    const unavailableSources = sources.filter((entry) => entry.availability === 'UNAVAILABLE').length;
+    const unavailableSources = sources.filter(
+      (entry) => entry.availability === 'UNAVAILABLE',
+    ).length;
     const reconciliationEstablished = sources.every(
       (entry) => entry.availability === 'AVAILABLE' && entry.result === 'AGREED',
     );
@@ -1335,12 +1324,8 @@ export class FinanceOperationsService {
     const source: ReconciliationSourceView = {
       source: 'EXTERNAL_PROVIDER',
       label: 'External provider reconciliation',
-      result:
-        !providerUsable && !evidenceObserved
-          ? 'UNAVAILABLE'
-          : evidenceObserved
-            ? 'EVIDENCE_RECORDED'
-            : 'NOT_PERFORMED',
+      // A provider surface that cannot be read is *not performed*, never an unavailable pass.
+      result: evidenceObserved ? 'EVIDENCE_RECORDED' : 'NOT_PERFORMED',
       availability: providerUsable
         ? evidenceObserved
           ? 'AVAILABLE'
@@ -1351,7 +1336,9 @@ export class FinanceOperationsService {
       description:
         'Compares what the banking provider reported (provider observations) with our internal record for the same subject. It is not an internal ledger check.',
       evidenceKind: 'PROVIDER_OBSERVATION',
-      checkedAt: evidenceObserved ? this.iso(rows[0]?.created_at ?? failedRuns[0]?.started_at ?? new Date()) : null,
+      checkedAt: evidenceObserved
+        ? this.iso(rows[0]?.created_at ?? failedRuns[0]?.started_at ?? new Date())
+        : null,
       detail: providerUsable
         ? evidenceObserved
           ? `${rows.length} provider exception(s) in range; existing provider evidence is reviewable.`
@@ -1372,7 +1359,8 @@ export class FinanceOperationsService {
     generatedAt: string;
   }): ReconciliationSourceView[] {
     const allInternalPassed =
-      input.internalChecks.length > 0 && input.internalChecks.every((entry) => entry.status === 'PASS');
+      input.internalChecks.length > 0 &&
+      input.internalChecks.every((entry) => entry.status === 'PASS');
     const internal: ReconciliationSourceView = {
       source: 'INTERNAL_LEDGER',
       label: 'Internal ledger checks',
@@ -1625,10 +1613,7 @@ export class FinanceOperationsService {
 
   private internalBreak(
     institution: FinanceInstitutionSummary,
-    input: Omit<
-      FinanceBreakView,
-      'institution' | 'source' | 'state' | 'run' | 'provider'
-    > &
+    input: Omit<FinanceBreakView, 'institution' | 'source' | 'state' | 'run' | 'provider'> &
       Partial<Pick<FinanceBreakView, 'journalId'>>,
   ): FinanceBreakView {
     return {
@@ -1717,12 +1702,10 @@ export class FinanceOperationsService {
   ): { from: Date; to: Date } {
     const now = new Date();
     const defaultDays = options.defaultDays ?? 30;
-    let from = fromInput
+    const from = fromInput
       ? this.parseBoundary(fromInput, 'from', 'start')
       : new Date(now.getTime() - defaultDays * DAY_MS);
-    let to = toInput
-      ? this.parseBoundary(toInput, 'to', 'end')
-      : new Date(now.getTime());
+    const to = toInput ? this.parseBoundary(toInput, 'to', 'end') : new Date(now.getTime());
     if (Number.isNaN(from.getTime())) throw new BadRequestException('from must be a valid date');
     if (Number.isNaN(to.getTime())) throw new BadRequestException('to must be a valid date');
     if (from.getTime() > to.getTime()) {
@@ -1750,7 +1733,9 @@ export class FinanceOperationsService {
 
   private sourceFilter(value?: string): ReconciliationCheckSource | 'ALL' {
     const normalized = this.optionalText(value, 24, 'source')?.toUpperCase() ?? 'ALL';
-    if (!['ALL', 'INTERNAL_LEDGER', 'EXTERNAL_PROVIDER', 'EXTERNAL_STATEMENT'].includes(normalized)) {
+    if (
+      !['ALL', 'INTERNAL_LEDGER', 'EXTERNAL_PROVIDER', 'EXTERNAL_STATEMENT'].includes(normalized)
+    ) {
       throw new BadRequestException(
         'source must be ALL, INTERNAL_LEDGER, EXTERNAL_PROVIDER or EXTERNAL_STATEMENT',
       );
@@ -1805,4 +1790,3 @@ export class FinanceOperationsService {
     return (value instanceof Date ? value : new Date(value)).toISOString();
   }
 }
-

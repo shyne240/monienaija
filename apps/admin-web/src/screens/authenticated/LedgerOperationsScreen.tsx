@@ -14,6 +14,10 @@ import {
   type LedgerJournalSummary,
   type ReversalEligibility,
 } from '../../services/finance-operations-api';
+import {
+  resolveTransactionHistoryLink,
+  transactionHistoryLink,
+} from './transaction-history-link';
 
 interface LedgerAccount {
   id: string;
@@ -136,15 +140,12 @@ export interface LedgerOperationsScreenProps {
   initialJournalId?: string;
   /** Deep link from a transaction/reconciliation break: prefill the record search reference. */
   initialReference?: string;
-  /** Navigate to the source transaction that produced a journal. */
-  onOpenTransaction?: (source: JournalSourceLink) => void;
 }
 
 export const LedgerOperationsScreen: React.FC<LedgerOperationsScreenProps> = ({
   onLedgerGuardChange,
   initialJournalId,
   initialReference,
-  onOpenTransaction,
 }) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([
@@ -165,7 +166,6 @@ export const LedgerOperationsScreen: React.FC<LedgerOperationsScreenProps> = ({
       onLedgerGuardChange={onLedgerGuardChange}
       initialJournalId={initialJournalId}
       initialReference={initialReference}
-      onOpenTransaction={onOpenTransaction}
     />
   );
 };
@@ -174,8 +174,7 @@ const LedgerWorkspace: React.FC<{
   onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
   initialJournalId?: string;
   initialReference?: string;
-  onOpenTransaction?: (source: JournalSourceLink) => void;
-}> = ({ principal, onLedgerGuardChange, initialJournalId, initialReference, onOpenTransaction }) => {
+}> = ({ principal, onLedgerGuardChange, initialJournalId, initialReference }) => {
   const generations = useRef({ accounts: 0, journal: 0, reversal: 0 });
   useEffect(
     () => () => {
@@ -267,6 +266,11 @@ const LedgerWorkspace: React.FC<{
   const isController =
     !principal?.readOnlyPrincipal &&
     (principal?.roles.includes('FINANCE_CONTROLLER') === true || hasFn('privileged:execute'));
+
+  const canViewTransactionHistory = hasFn('transaction.view');
+  const transactionHistoryResolution = journalDetail
+    ? resolveTransactionHistoryLink(journalDetail.source, journalDetail)
+    : null;
 
   const fetchAccounts = async () => {
     if (!canViewLedger) {
@@ -1075,25 +1079,31 @@ const LedgerWorkspace: React.FC<{
                     <code>{journalDetail.source.reference || journalDetail.source.id}</code> (
                     {journalDetail.source.status})
                   </span>
-                  <button
-                    type="button"
-                    data-testid="open-source-transaction"
-                    className="mn-ledger__detail-button"
-                    disabled={!journalDetail.source.navigable || !onOpenTransaction}
-                    title={
-                      !journalDetail.source.navigable
-                        ? 'This source type has no transaction screen.'
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (journalDetail.source?.navigable && onOpenTransaction)
-                        onOpenTransaction(journalDetail.source);
-                    }}
-                  >
-                    {journalDetail.source.navigable
-                      ? 'Open source transaction'
-                      : 'No transaction screen for this source'}
-                  </button>
+                  {transactionHistoryResolution?.available && canViewTransactionHistory ? (
+                    <a
+                      href={transactionHistoryLink(
+                        transactionHistoryResolution.target.type,
+                        transactionHistoryResolution.target.id,
+                      )}
+                      data-testid="open-unified-transaction-detail"
+                      className="mn-ledger__detail-button"
+                      title={`Open ${transactionHistoryResolution.target.type} in Transaction History`}
+                    >
+                      Open unified transaction detail
+                    </a>
+                  ) : (
+                    <span
+                      data-testid="transaction-history-unavailable"
+                      style={styles.linkUnavailable}
+                    >
+                      Transaction history link unavailable
+                      {!canViewTransactionHistory
+                        ? ' — this principal lacks transaction.view.'
+                        : transactionHistoryResolution && !transactionHistoryResolution.available
+                          ? ` — ${transactionHistoryResolution.reason}`
+                          : ' — the journal context has not loaded yet.'}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -1770,6 +1780,11 @@ const styles = {
     padding: '1px 6px',
     marginLeft: '6px',
     color: 'var(--mn-text-secondary, #52655f)',
+  },
+  linkUnavailable: {
+    fontSize: '12px',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    maxWidth: '420px',
   },
   sourceLinkRow: {
     display: 'flex',

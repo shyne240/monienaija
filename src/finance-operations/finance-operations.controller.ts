@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  Req,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UnauthorizedException } from '@nestjs/common';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -115,7 +108,11 @@ export class FinanceOperationsController {
     @Query('to') to?: string,
     @Query('limit') limit?: string,
   ) {
-    const principal = await this.require(req, 'reconciliation.view', 'FINANCE_RECONCILIATION_BREAKS');
+    const principal = await this.require(
+      req,
+      'reconciliation.view',
+      'FINANCE_RECONCILIATION_BREAKS',
+    );
     return this.finance.reconciliationBreaks(principal, {
       institutionId,
       source,

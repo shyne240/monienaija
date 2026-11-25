@@ -193,7 +193,10 @@ export class LedgerController {
     if (!account.institutionId || !principal) return;
     if (this.institutionScope.hasPlatformAuthority(principal)) return;
     try {
-      await this.institutionScope.assertCanAccessInstitution(principal, account.institutionId ?? null);
+      await this.institutionScope.assertCanAccessInstitution(
+        principal,
+        account.institutionId ?? null,
+      );
     } catch {
       throw new NotFoundException('Ledger account not found');
     }
