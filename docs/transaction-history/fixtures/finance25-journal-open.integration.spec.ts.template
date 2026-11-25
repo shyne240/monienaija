@@ -503,8 +503,8 @@ describe('PR23 + PR25 real browser integration diagnostic', () => {
           acceptance:
             'PASS: both canonical round trips and authorization checks on explicitly resolved integration tree',
           diagnosticChecks: 'PASS',
-          pr23: 'bdbc7ceed188f7a9902d497fb4a5104ddb2ff370',
-          pr25: '8301fa245e686c68a2fdce611c93cc191e2106d3',
+          pr23: '1b6987e8b7f1a71390f86f4ff1b71a6797097869',
+          pr25: '4c007f007bbaa20596a16efdf154361aed7b1589',
           ...JSON.parse(readFileSync(resolve('integration-provenance.json'), 'utf8')),
           realWorkforceSignIn: true,
           fullyMigrated: true,

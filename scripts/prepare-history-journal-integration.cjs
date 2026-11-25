@@ -13,8 +13,8 @@ if (![pr23, pr25].every((sha) => /^[a-f0-9]{40}$/.test(sha || ''))) {
   );
 }
 if (
-  pr23 !== 'bdbc7ceed188f7a9902d497fb4a5104ddb2ff370' ||
-  pr25 !== '8301fa245e686c68a2fdce611c93cc191e2106d3'
+  pr23 !== '1b6987e8b7f1a71390f86f4ff1b71a6797097869' ||
+  pr25 !== '4c007f007bbaa20596a16efdf154361aed7b1589'
 ) {
   throw new Error(
     'This diagnostic template is pinned to the recorded heads; review mappings/assertions before testing newer heads',
