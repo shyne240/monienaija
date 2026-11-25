@@ -139,6 +139,14 @@ const checker: AuthorizationPrincipal = {
   assuranceLevel: 'MFA',
 };
 
+/** `newValues` of the most recent audit call, typed so lint does not see an `any` assignment. */
+function lastAuditValues(auditService: { record: jest.Mock }): Record<string, unknown> {
+  const calls = auditService.record.mock.calls as Array<[unknown, { newValues?: unknown }]>;
+  const command = calls[calls.length - 1]?.[1];
+  const values = command?.newValues;
+  return (values ?? {}) as Record<string, unknown>;
+}
+
 const createPayload = {
   productCode: 'CASH_IN',
   currency: 'NGN',
@@ -462,14 +470,13 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
     // rollback left it usable.
     expect(auditService.record).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
-        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
-        newValues: expect.objectContaining({
-          approvalRefusedNotConsumed: false,
-          approvalUsable: true,
-        }),
-      }),
+      expect.objectContaining({ action: 'GOVERNED_CHANGE_EXECUTION_FAILED' }),
     );
+    expect(lastAuditValues(auditService)).toMatchObject({
+      approvalRefusedNotConsumed: false,
+      approvalConsumed: false,
+      approvalUsable: true,
+    });
     // Consumption and write share one transaction: a failed write leaves the approval APPROVED
     // and therefore usable for the identical approved payload.
     const stored = [...approvalRepository.records.values()][0]!;
@@ -545,14 +552,13 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
 
     expect(auditService.record).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
-        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
-        newValues: expect.objectContaining({
-          approvalRefusedNotConsumed: true,
-          approvalUsable: false,
-        }),
-      }),
+      expect.objectContaining({ action: 'GOVERNED_CHANGE_EXECUTION_FAILED' }),
     );
+    expect(lastAuditValues(auditService)).toMatchObject({
+      approvalRefusedNotConsumed: true,
+      approvalConsumed: false,
+      approvalUsable: false,
+    });
   });
 
   it('maps consumption refusals to the established HTTP semantics', () => {
