@@ -1,0 +1,213 @@
+{
+  "generatedAt": "2026-11-25T14:28:05.852Z",
+  "environment": {
+    "adminWeb": "http://127.0.0.1:5173",
+    "api": "http://127.0.0.1:3000/api/v1",
+    "browser": "Chromium (serverless build) via playwright-core",
+    "note": "Real Admin Web dev server → real API → disposable local PostgreSQL with synthetic data. No response is stubbed.",
+    "apiStartup": "API started with scripts/local-dev-api-server.js: release readiness reported as error (financial_dependencies_not_ready) and NOT bypassed; bound to 127.0.0.1 only."
+  },
+  "syntheticIdentifiers": {
+    "applicantReference": "ACC-AGT-7619B944",
+    "applicationId": "091fd794-5117-466f-b937-6fc9261be379",
+    "applicationReference": "AGENT-APP-A08A673E",
+    "agentId": "16453a62-4afd-44be-a2aa-0ddcd247e076",
+    "chosenClassId": "099d7905-c494-4771-bb15-ad321bccdc66",
+    "chosenClassCode": "DEMO_ORDINARY_L1",
+    "bareClassId": "3e62098c-fd56-42a6-934d-9ef41e241248",
+    "bareClassCode": "ACC_BARE_7619B944"
+  },
+  "steps": [
+    {
+      "step": "maker session",
+      "detail": "agent-network-manager@monienaija.local roles=AGENT_NETWORK_MANAGER scopes=16"
+    },
+    {
+      "step": "maker signed in",
+      "detail": "signed in as agent-network-manager@monienaija.local; Agent Network loaded"
+    },
+    {
+      "step": "no class preselected",
+      "detail": "class selector empty; provenance states: \"No class selected — choose the class this Agent will operate under. No default is applied.\""
+    },
+    {
+      "step": "class selection required",
+      "detail": "save refused without a class (notice visible=true); POST issued=false"
+    },
+    {
+      "step": "class explicitly selected",
+      "detail": "selected Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1); provenance: \"Explicitly selected by you — Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1). That class decides which services this Agent will be permitted to perform, and which fees, commissions and limits apply.\""
+    },
+    {
+      "step": "class requirements",
+      "detail": "2 class-declared requirement field(s) rendered and filled"
+    },
+    {
+      "step": "class-required evidence",
+      "detail": "1 declared evidence reference(s) supplied"
+    },
+    {
+      "step": "draft saved",
+      "detail": "draft created for ACC-AGT-7619B944"
+    },
+    {
+      "step": "draft persisted",
+      "detail": "AGENT-APP-A08A673E status=DRAFT class=099d7905-c494-4771-bb15-ad321bccdc66"
+    },
+    {
+      "step": "submitted for review",
+      "detail": "application AGENT-APP-A08A673E status=SUBMITTED"
+    },
+    {
+      "step": "submission confirmed",
+      "detail": "status=SUBMITTED submittedAt=2026-11-25T14:27:42.027Z"
+    },
+    {
+      "step": "independent reviewer session",
+      "detail": "super-admin@monienaija.local — a different principal from the maker (5fb0c7f1 vs a5035123)"
+    },
+    {
+      "step": "separation of duties (throwaway application)",
+      "detail": "maker approve attempt -> HTTP 200; application state=APPROVED — FINDING: the submitting principal holds agent.review_application so the API accepts a self-approval; there is no maker!=checker guard in AgentApplicationService.approve() and no AGENT_APPLICATION_APPROVE maker-checker rule in the governed-action registry"
+    },
+    {
+      "step": "review",
+      "detail": "POST /review -> 200 status=UNDER_REVIEW"
+    },
+    {
+      "step": "approval",
+      "detail": "POST /approve -> 200 status=APPROVED"
+    },
+    {
+      "step": "approved awaiting activation",
+      "detail": "application AGENT-APP-A08A673E is APPROVED and awaiting activation"
+    },
+    {
+      "step": "pre activation class and services",
+      "detail": "class: \"Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1) — active\" | services: \"CASH_IN, CASH_OUT, CASH_TO_CASH, WALLET_TRANSFER, AGENT_FUNDING, AGENT_DEFUNDING\""
+    },
+    {
+      "step": "pre activation fees commissions limits",
+      "detail": "limits: \"DEMO_AGENT_CLASS_ORDINARY\tactive assignment\" | pricing: \"Product Fee Commission CASH_TO_WALLET ₦2.50 total ₦502.50 0.5% · PERCENTAGE no commission rule — nothing would accrue WALLET_TO_CASH no fee rule — charge undefined, not zero — resolved CASH_TO_CASH un\""
+    },
+    {
+      "step": "pre activation gaps",
+      "detail": "no configuration gaps for this class"
+    },
+    {
+      "step": "activated",
+      "detail": "application AGENT-APP-A08A673E → Agent ACTIVE"
+    },
+    {
+      "step": "activation receipt",
+      "detail": "applicationStatus=APPROVED agentId=16453a62-4afd-44be-a2aa-0ddcd247e076 agentStatus=ACTIVE linkedAgentStatus=ACTIVE"
+    },
+    {
+      "step": "activated agent class persisted",
+      "detail": "agents.agent_class_id = 099d7905-c494-4771-bb15-ad321bccdc66 (the chosen class), governing services: AGENT_DEFUNDING,AGENT_FUNDING,CASH_IN,CASH_OUT,CASH_TO_CASH,WALLET_TRANSFER"
+    },
+    {
+      "step": "class history",
+      "detail": "entries=0 — this surface records class SWITCHES only, and no switch has occurred; the assignment came from activation, which is verified above through agents.agent_class_id"
+    },
+    {
+      "step": "activation audit trail",
+      "detail": "CREATED_PENDING(class 099d7905) → RECEIVING_NUMBER_ALLOCATED → ACTIVATED(class 099d7905)"
+    },
+    {
+      "step": "persisted class confirmed in the database",
+      "detail": "agents row: status=ACTIVE agent_class_id=099d7905-c494-4771-bb15-ad321bccdc66"
+    },
+    {
+      "step": "bare class created",
+      "detail": "POST /agents/classes -> 201 ACC_BARE_7619B944"
+    },
+    {
+      "step": "bare class impact",
+      "detail": "canSwitch=true losses=5"
+    },
+    {
+      "step": "bare class application approved",
+      "detail": "POST /approve -> 200 status=APPROVED"
+    },
+    {
+      "step": "missing configuration what staff see",
+      "detail": "gaps rendered: \"Required configuration still missing NO_EFFECTIVE_LIMITS (LIMITS): No active limit profile is assigned to this class. Limit-governed operations cannot resolve a profile — this is NOT the same as unlimited. Missing configuration does not block activation. It do\""
+    },
+    {
+      "step": "missing configuration explained to staff",
+      "detail": "services \"CASH_IN\" | limits \"No active limit profile is assigned to this class. Limit-governed operations can\" | pricing \"Product Fee Commission CASH_TO_WALLET ₦2.50 total ₦502.50 0.5% · PERCENTAGE no commission rule — nothing would accrue\" | gaps 3 line(s)"
+    },
+    {
+      "step": "missing configuration confirmed in the database",
+      "detail": "limit assignments=0, class-scoped fee rules=0, class=ACC_BARE_7619B944 — the gaps describe genuine absence, not a failed read"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/01-maker-signed-in.png",
+      "note": "signed in as agent-network-manager@monienaija.local; Agent Network loaded"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/02-no-class-preselected.png",
+      "note": "class selector empty; provenance states: \"No class selected — choose the class this Agent will operate under. No default is applied.\""
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/03-class-selection-required.png",
+      "note": "save refused without a class (notice visible=true); POST issued=false"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/04-class-explicitly-selected.png",
+      "note": "selected Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1); provenance: \"Explicitly selected by you — Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1). That class decides which services this Agent will be permitted to perform, and which fees, commissions and limits apply.\""
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/05-class-requirements.png",
+      "note": "2 class-declared requirement field(s) rendered and filled"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/06-draft-saved.png",
+      "note": "draft created for ACC-AGT-7619B944"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/07-submitted-for-review.png",
+      "note": "application AGENT-APP-A08A673E status=SUBMITTED"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/08-approved-awaiting-activation.png",
+      "note": "application AGENT-APP-A08A673E is APPROVED and awaiting activation"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/09-pre-activation-class-and-services.png",
+      "note": "class: \"Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1) — active\" | services: \"CASH_IN, CASH_OUT, CASH_TO_CASH, WALLET_TRANSFER, AGENT_FUNDING, AGENT_DEFUNDING\""
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/10-pre-activation-fees-commissions-limits.png",
+      "note": "limits: \"DEMO_AGENT_CLASS_ORDINARY\tactive assignment\" | pricing: \"Product Fee Commission CASH_TO_WALLET ₦2.50 total ₦502.50 0.5% · PERCENTAGE no commission rule — nothing would accrue WALLET_TO_CASH no fee rule — charge undefined, not zero — resolved CASH_TO_CASH un\""
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/11-pre-activation-gaps.png",
+      "note": "no configuration gaps for this class"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/12-activated.png",
+      "note": "application AGENT-APP-A08A673E → Agent ACTIVE"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/13-activated-agent-class-persisted.png",
+      "note": "agents.agent_class_id = 099d7905-c494-4771-bb15-ad321bccdc66 (the chosen class), governing services: AGENT_DEFUNDING,AGENT_FUNDING,CASH_IN,CASH_OUT,CASH_TO_CASH,WALLET_TRANSFER"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/14-missing-configuration-what-staff-see.png",
+      "note": "gaps rendered: \"Required configuration still missing NO_EFFECTIVE_LIMITS (LIMITS): No active limit profile is assigned to this class. Limit-governed operations cannot resolve a profile — this is NOT the same as unlimited. Missing configuration does not block activation. It do\""
+    }
+  ],
+  "findings": [
+    "Self-approval is accepted: a principal holding agent.review_application can approve the application it submitted. Approval is gated by function scope only; no maker!=checker signature or governed-action rule applies. Enforced independence was NOT demonstrated."
+  ],
+  "probeApplication": {
+    "id": "ddc3857c-1c98-4c1d-8eca-210e40a111b4",
+    "state": "APPROVED",
+    "selfApproveHttpStatus": 200,
+    "note": "walked away from: self-approval accepted by the API"
+  }
+}

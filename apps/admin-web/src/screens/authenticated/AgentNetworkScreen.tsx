@@ -59,7 +59,8 @@ interface AgentClassFullOption extends AgentClassOption {
   reference?: string;
   requiredInformation?: unknown | null;
   requiredDocumentCategories?: unknown | null;
-  /** Server-assigned creation time; the computed default is the earliest ACTIVE class. */
+  /** Server-assigned creation time. Ordering is NOT approval: only a policy or configuration
+   *  record can appoint an onboarding default, so nothing here is treated as one. */
   createdAt?: string;
   applicableServices?: unknown;
 }
@@ -3428,7 +3429,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                           (!app.agentId || app.linkedAgentStatus === 'PENDING');
                         const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
                         return (
-                          <tr key={app.id}>
+                          /*
+                           * Identified per row: several applications share the page, and
+                           * "Activate agent" is per row. Without this, an automated operator (or a
+                           * support runbook) matches `.first()` and activates somebody else's
+                           * application.
+                           */
+                          <tr key={app.id} data-testid={`application-row-${app.id}`}>
                             <td style={cell}>
                               <strong>{app.reference}</strong>
                               {app.agentId && (

@@ -5,7 +5,7 @@ import { ApiClient } from './api-client';
  *
  * Every shape below is the exact response of a real endpoint on the Agent Network controller:
  *
- *   GET  /internal/agents/:id/class                     effective class + computed default
+ *   GET  /internal/agents/:id/class                     effective class + approved default (or null)
  *   GET  /internal/agents/:id/class/readiness            per-service deny reasons
  *   GET  /internal/agents/:id/class/history              audit-derived switch history
  *   GET  /internal/agents/:id/class/impact-preview       read-only delta for a target class

@@ -97,15 +97,11 @@ const readiness = (agentId: string) => ({
     isActive: true,
     applicableServices: ['CASH_IN', 'AGENT_FUNDING'],
   },
-  approvedDefault: {
-    id: ORDINARY_CLASS,
-    reference: 'CLS-ORD',
-    code: 'ORDINARY_L1',
-    name: 'Ordinary Level 1',
-    isActive: true,
-    applicableServices: ['CASH_IN', 'AGENT_FUNDING'],
-  },
-  approvedDefaultBasis: 'Computed default: the earliest-created ACTIVE Agent class.',
+  // No approved default exists unless a policy/configuration record appoints one; the oldest
+  // ACTIVE class does not qualify.
+  approvedDefault: null,
+  approvedDefaultBasis:
+    'No approved Agent class default exists: no policy or configuration record appoints one. An operator must select the class explicitly.',
   allowedServices: ['CASH_IN', 'AGENT_FUNDING'],
   deniedServices: [
     { service: 'CASH_OUT', reason: 'SERVICE_NOT_PERMITTED' },

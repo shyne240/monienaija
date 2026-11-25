@@ -104,6 +104,28 @@ async function api(pathname, { token, method = 'GET', body } = {}) {
   return { status: res.status, body: parsed };
 }
 
+/**
+ * Read-only SQL against the same disposable database the API is using. Used only to prove that
+ * what the API reported is what was actually persisted; the walkthrough itself never writes here.
+ */
+async function query(sql, params = []) {
+  const { Client } = require('pg');
+  const client = new Client({
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: Number(process.env.DB_PORT || 5432),
+    user: process.env.DB_USER || 'monienaija',
+    password: process.env.DB_PASSWORD || 'monienaija-pw',
+    database: process.env.DB_NAME || 'monienaija',
+  });
+  await client.connect();
+  try {
+    const result = await client.query(sql, params);
+    return result.rows;
+  } finally {
+    await client.end();
+  }
+}
+
 async function signIn(account) {
   const res = await api('/internal/a2/workforce/local-admin-sessions', {
     method: 'POST',
@@ -197,9 +219,18 @@ async function main() {
   page = await context.newPage();
 
   /** Screenshot + record a step. Every shot is a real render of a real response. */
-  async function shot(name, note) {
+  async function shot(name, note, target = null) {
     const file = path.join(EVIDENCE, `${String(shots.length + 1).padStart(2, '0')}-${name}.png`);
-    await page.screenshot({ path: file, fullPage: true });
+    if (target) {
+      /*
+       * Photograph the subject, not the whole page. The review queue accumulates applications from
+       * every run, so a full-page capture is a wall of neighbouring rows in which the thing being
+       * demonstrated is unreadable.
+       */
+      await target.screenshot({ path: file });
+    } else {
+      await page.screenshot({ path: file, fullPage: true });
+    }
     shots.push({ file: path.relative(ROOT, file), note });
     record(name.replace(/-/g, ' '), note);
     return file;
@@ -434,49 +465,86 @@ async function main() {
   await shot('approved-awaiting-activation', `application ${draft.reference} is APPROVED and awaiting activation`);
 
   // ---------------------------------------------------------------- 7. pre-activation review
-  const toggle = page.getByTestId('onboarding-pre-activation-toggle').first();
+  /*
+   * Everything below is scoped to this application's own row. Other applications (including the
+   * separation-of-duties probe) are listed on the same page and also carry an "Activate agent"
+   * button; matching the first one on the page activates the wrong record.
+   */
+  const row = page.getByTestId(`application-row-${draft.id}`).first();
+  await row.waitFor({ state: 'visible', timeout: 25000 });
+
+  const toggle = row.getByTestId('onboarding-pre-activation-toggle').first();
   await toggle.waitFor({ state: 'visible', timeout: 20000 });
   await toggle.click();
   await page.waitForTimeout(2500);
 
-  const preActivation = page.getByTestId('onboarding-pre-activation').first();
-  const classText = await page.getByTestId('pre-activation-class').first().innerText();
-  const servicesText = await page.getByTestId('pre-activation-services').first().innerText();
+  const classText = await row.getByTestId('pre-activation-class').first().innerText();
+  const servicesText = await row.getByTestId('pre-activation-services').first().innerText();
+  if (/not in the loaded catalogue/i.test(classText)) {
+    throw new Error(
+      `the pre-activation panel could not resolve class ${targetClass.code}: "${classText.trim()}"`,
+    );
+  }
+  if (/none/i.test(servicesText)) {
+    throw new Error(
+      `the pre-activation panel reported no eligible services for ${targetClass.code}: "${servicesText.trim()}"`,
+    );
+  }
   await shot(
     'pre-activation-class-and-services',
     `class: "${classText.trim()}" | services: "${servicesText.trim()}"`,
+    row,
   );
 
-  const pricingTable = page.getByTestId('pre-activation-pricing').first();
+  const pricingTable = row.getByTestId('pre-activation-pricing').first();
   const pricingText = (await pricingTable.count()) ? await pricingTable.innerText() : '(none)';
-  const limitsText = (await page.getByTestId('pre-activation-limits').first().count())
-    ? await page.getByTestId('pre-activation-limits').first().innerText()
+  const limitsText = (await row.getByTestId('pre-activation-limits').first().count())
+    ? await row.getByTestId('pre-activation-limits').first().innerText()
     : '(none)';
   await shot(
     'pre-activation-fees-commissions-limits',
     `limits: "${limitsText.trim().slice(0, 120)}" | pricing: "${pricingText.replace(/\s+/g, ' ').trim().slice(0, 200)}"`,
+    row,
   );
 
-  const gapsVisible = await page.getByTestId('pre-activation-gaps').count();
+  const gapsVisible = await row.getByTestId('pre-activation-gaps').count();
   await shot(
     'pre-activation-gaps',
     gapsVisible > 0
       ? 'missing configuration surfaced before activation'
       : 'no configuration gaps for this class',
+    row,
   );
 
   // ---------------------------------------------------------------- 8. activation
-  await page.getByRole('button', { name: 'Activate agent' }).first().click();
-  await page.waitForTimeout(2500);
-  await shot('activated', `application ${draft.reference} activated`);
+  await row.getByRole('button', { name: 'Activate agent' }).first().click();
 
-  const activated = await api(`/internal/agents/applications`, { token: reviewer.accessToken });
-  const activatedApp = activated.body.find((a) => a.id === draft.id);
+  /*
+   * Poll for the Agent to reach ACTIVE instead of trusting a sleep: activation allocates a
+   * receiving number and audits in the same transaction, so a screenshot taken too early shows a
+   * PENDING Agent and would be read as "activation did nothing".
+   */
+  let activatedApp = null;
+  let agentStatus = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const activated = await api('/internal/agents/applications', { token: reviewer.accessToken });
+    activatedApp = activated.body.find((a) => a.id === draft.id);
+    if (activatedApp?.agentId) {
+      const row = await api(`/internal/agents/${activatedApp.agentId}`, { token: reviewer.accessToken });
+      agentStatus = row.body?.status ?? null;
+      if (agentStatus === 'ACTIVE') break;
+    }
+    await page.waitForTimeout(500);
+  }
+  await shot('activated', `application ${draft.reference} → Agent ${agentStatus}`);
   record(
     'activation receipt',
-    `status=${activatedApp?.status} agentId=${activatedApp?.agentId} linkedAgentStatus=${activatedApp?.linkedAgentStatus}`,
+    `applicationStatus=${activatedApp?.status} agentId=${activatedApp?.agentId} agentStatus=${agentStatus} linkedAgentStatus=${activatedApp?.linkedAgentStatus}`,
   );
   if (!activatedApp?.agentId) throw new Error('activation produced no agentId');
+  if (agentStatus !== 'ACTIVE') {
+    throw new Error(`the Agent reached ${agentStatus}, not ACTIVE, after clicking Activate agent`);
+  }
 
   // ---------------------------------------------------------------- 9. persisted class governs
   const agent = await api(`/internal/agents/${activatedApp.agentId}`, { token: maker.accessToken });
@@ -506,7 +574,40 @@ async function main() {
   });
   record(
     'class history',
-    `entries=${Array.isArray(history.body) ? history.body.length : '?'} — the activation class is the assigned class, not a default`,
+    (Array.isArray(history.body) ? history.body.length : '?') === 0
+      ? 'entries=0 — this surface records class SWITCHES only, and no switch has occurred; the ' +
+        'assignment came from activation, which is verified above through agents.agent_class_id'
+      : `entries=${history.body.length} — the Agent has been moved between classes since activation`,
+  );
+
+  // The class on the Agent must also be the class the activation audit recorded, not just a match.
+  const activationAudit = await query(
+    `SELECT action, new_values->>'agentClassId' AS class_id
+       FROM audit_events
+      WHERE entity_type = 'AGENT' AND entity_id = $1
+      ORDER BY occurred_at ASC`,
+    [activatedApp.agentId],
+  );
+  record(
+    'activation audit trail',
+    activationAudit.length
+      ? activationAudit.map((row) => `${row.action}${row.class_id ? `(class ${row.class_id.slice(0, 8)})` : ''}`).join(' → ')
+      : 'no AGENT audit rows recorded for this activation',
+  );
+
+  // Confirm in the database, not only through the API projection.
+  const persistedRows = await query(
+    'SELECT agent_class_id, status FROM agents WHERE id = $1',
+    [activatedApp.agentId],
+  );
+  if (persistedRows[0]?.agent_class_id !== targetClass.id) {
+    throw new Error(
+      `agents.agent_class_id is ${persistedRows[0]?.agent_class_id}, expected ${targetClass.id}`,
+    );
+  }
+  record(
+    'persisted class confirmed in the database',
+    `agents row: status=${persistedRows[0].status} agent_class_id=${persistedRows[0].agent_class_id}`,
   );
 
   // ---------------------------------------------------------------- 10. missing configuration
@@ -546,38 +647,87 @@ async function main() {
     );
   }
 
-  const previewParams = new URLSearchParams({
-    productCode: 'CASH_TO_WALLET',
-    currency: 'NGN',
-    principalType: 'AGENT',
-    agentClassId: bare.body.id,
-    direction: 'OUTGOING',
-    amountMinor: '50000',
-  });
-  const barePreview = await api(
-    `/internal/commercial-configuration/effective-preview?${previewParams}`,
-    { token: admin.accessToken },
-  );
-  const bareLimits = await api(`/internal/limit-assignments/agent-class/${bare.body.id}`, {
-    token: admin.accessToken,
-  });
-  await page.evaluate(
-    ([token, sessionId, principal]) => {
-      localStorage.setItem('admin_workforce_token', token);
-      localStorage.setItem('admin_workforce_session_id', sessionId);
-      localStorage.setItem('admin_workforce_principal', principal);
+  /*
+   * What staff SEE, not just what the API returns. A bare class is only rendered in the review queue
+   * once an application targets it, so take one through approval and open its panel — the gaps below
+   * are the panel's own render, not a restatement of the API payload.
+   */
+  const bareApp = await api('/agents/applications', {
+    method: 'POST',
+    body: {
+      applicantReference: `ACC-BARE-${runTag}`,
+      agentClassId: bare.body.id,
+      businessName: `Bare Class Applicant ${runTag}`,
+      contactEmail: `bare-${runTag.toLowerCase()}@example.test`,
     },
-    [admin.accessToken, admin.sessionId, JSON.stringify(admin.principal)],
+  });
+  await api(`/agents/applications/${bareApp.body.id}/submit`, {
+    token: bareApp.body.applicantAccessToken,
+    method: 'POST',
+  });
+  const bareApproved = await api(`/internal/agents/applications/${bareApp.body.id}/approve`, {
+    token: admin.accessToken,
+    method: 'POST',
+  });
+  record(
+    'bare class application approved',
+    `POST /approve -> ${bareApproved.status} status=${bareApproved.body?.status}`,
   );
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2000);
+
+  await openAgentNetwork(admin);
+  const bareRow = page.getByTestId(`application-row-${bareApp.body.id}`).first();
+  await bareRow.waitFor({ state: 'visible', timeout: 25000 });
+  await bareRow.getByTestId('onboarding-pre-activation-toggle').first().click();
+  await page.waitForTimeout(3000);
+
+  const gapsText = (await bareRow.getByTestId('pre-activation-gaps').count())
+    ? await bareRow.getByTestId('pre-activation-gaps').first().innerText()
+    : '';
+  const bareServicesText = await bareRow.getByTestId('pre-activation-services').first().innerText();
+  const barePricingText = (await bareRow.getByTestId('pre-activation-pricing').count())
+    ? await bareRow.getByTestId('pre-activation-pricing').first().innerText()
+    : '';
+  const bareLimitsText = (await bareRow.getByTestId('pre-activation-limits').count())
+    ? await bareRow.getByTestId('pre-activation-limits').first().innerText()
+    : '';
   await shot(
-    'missing-configuration-backend',
-    `bare class: limit assignments=${bareLimits.body?.data?.length ?? '?'}, fee=${barePreview.body?.fee?.status}, commission=${barePreview.body?.commission?.status}`,
+    'missing-configuration-what-staff-see',
+    `gaps rendered: "${gapsText.replace(/\s+/g, ' ').trim().slice(0, 260)}"`,
+    bareRow,
+  );
+
+  if (!gapsText.trim()) {
+    throw new Error(
+      'a class with no limit assignment, no fee rule and no commission rule rendered no configuration gaps',
+    );
+  }
+  // The wording has to distinguish "absent" from "zero"/"unlimited", or an operator will read a
+  // missing rule as a free transaction.
+  if (!/(not the same as unlimited|undefined|nothing would accrue)/i.test(`${gapsText} ${barePricingText}`)) {
+    throw new Error(
+      `missing configuration is not explained as absent: "${gapsText.replace(/\s+/g, ' ').trim()}"`,
+    );
+  }
+  record(
+    'missing configuration explained to staff',
+    `services "${bareServicesText.trim()}" | limits "${bareLimitsText.replace(/\s+/g, ' ').trim().slice(0, 80)}" | ` +
+      `pricing "${barePricingText.replace(/\s+/g, ' ').trim().slice(0, 120)}" | gaps ${gapsText.split('\n').filter((l) => l.trim()).length} line(s)`,
+  );
+
+  const bareLimitsRows = await query(
+    `SELECT count(*)::int AS n FROM limit_assignments
+      WHERE subject_type = 'AGENT_CLASS' AND subject_id = $1 AND is_active = TRUE AND deleted_at IS NULL`,
+    [bare.body.id],
+  );
+  const bareFeeRules = await query(
+    `SELECT count(*)::int AS n FROM fee_rules
+      WHERE agent_class_id = $1 AND is_active = TRUE AND deleted_at IS NULL`,
+    [bare.body.id],
   );
   record(
-    'missing configuration is explicit',
-    `fee=${barePreview.body?.fee?.status} commission=${barePreview.body?.commission?.status} limitAssignments=${bareLimits.body?.data?.length ?? 0} — absent, not zero and not unlimited`,
+    'missing configuration confirmed in the database',
+    `limit assignments=${bareLimitsRows[0].n}, class-scoped fee rules=${bareFeeRules[0].n}, ` +
+      `class=${bare.body.code} — the gaps describe genuine absence, not a failed read`,
   );
 
   // ---------------------------------------------------------------- report
@@ -593,6 +743,10 @@ async function main() {
         'Real Admin Web dev server → real API → disposable local PostgreSQL with synthetic data. No response is stubbed.',
       apiStartup:
         'API started with scripts/local-dev-api-server.js: release readiness reported as error (financial_dependencies_not_ready) and NOT bypassed; bound to 127.0.0.1 only.',
+      database:
+        'Disposable local PostgreSQL, fully migrated, synthetic accounts and synthetic Agent applications only.',
+      productionGate:
+        'dist/main.js was NOT used and was NOT modified; it still refuses to start until the release-readiness blockers clear.',
     },
     syntheticIdentifiers: {
       applicantReference,

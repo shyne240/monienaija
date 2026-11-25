@@ -183,9 +183,14 @@ describe('Agent class lifecycle (real PostgreSQL + real HTTP)', () => {
       [agentId],
     );
     expect(auditRows[0]!.count).toBe('0');
-    // No `agent_classes.is_default` exists; the default is computed and labelled as such.
-    expect(response.body.approvedDefaultBasis).toMatch(/computed default/i);
-    expect(response.body.approvedDefault).not.toBeNull();
+    /*
+     * An approved default exists only when a policy or configuration record appoints one. The oldest
+     * active class is NOT a default: ordering is not approval. With no such record, the projection
+     * must offer no default and say so, forcing an explicit operator selection.
+     */
+    expect(response.body.approvedDefault).toBeNull();
+    expect(response.body.approvedDefaultBasis).toMatch(/no policy or configuration record/i);
+    expect(response.body.explicitSelectionRequired).toBe(true);
   });
 
   it('previews impact read-only and writes no audit row, class change or financial mutation', async () => {
@@ -385,6 +390,53 @@ describe('Agent class lifecycle (real PostgreSQL + real HTTP)', () => {
       [agentId],
     );
     expect(rows[0]!.agent_class_id).toBe(first.id);
+  });
+
+  /**
+   * Regression: `readiness()` joined `limit_profiles` on `a.is_active`, a column that does not exist
+   * on that table. Every Agent holding an active AGENT_CLASS limit assignment got a 500 from this
+   * projection, which the console degraded into "this class permits no services". The readiness read
+   * must survive an active assignment and report it, using the same profile predicate the
+   * LimitProfileResolverService applies (deleted_at IS NULL AND enabled AND status='ACTIVE').
+   */
+  it('reads readiness for an Agent that has an active limit assignment', async () => {
+    const created = await createClass(['CASH_IN', 'CASH_OUT']);
+    const agentId = await createActiveAgent(created.id);
+    const limitProfileCode = `ACC_LIMIT_${randomUUID().slice(0, 8).toUpperCase()}`;
+
+    await dataSource.query(
+      `INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by)
+       VALUES ($1, $1, 'AGENT', 'ACTIVE', TRUE, 'CONFIGURED', 'fixture')`,
+      [limitProfileCode],
+    );
+    await dataSource.query(
+      `INSERT INTO limit_assignments
+         (subject_type, subject_id, limit_profile_code, precedence, is_active, effective_from, created_by)
+       VALUES ('AGENT_CLASS', $1, $2, 10, TRUE, NOW(), 'fixture')`,
+      [created.id, limitProfileCode],
+    );
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/internal/agents/${agentId}/class/readiness`)
+      .set('Authorization', `Bearer ${token('OPERATOR', 'AGENT_NETWORK_MANAGER')}`)
+      .expect(200);
+
+    // The assignment resolves, so limits must NOT be reported missing.
+    expect(
+      (response.body.missingConfiguration ?? []).map((gap: { code: string }) => gap.code),
+    ).not.toContain('NO_EFFECTIVE_LIMITS');
+
+    // A disabled profile does not count as configuration even though the row exists.
+    await dataSource.query(`UPDATE limit_profiles SET enabled = FALSE WHERE code = $1`, [
+      limitProfileCode,
+    ]);
+    const disabled = await request(app.getHttpServer())
+      .get(`/api/v1/internal/agents/${agentId}/class/readiness`)
+      .set('Authorization', `Bearer ${token('OPERATOR', 'AGENT_NETWORK_MANAGER')}`)
+      .expect(200);
+    expect(
+      (disabled.body.missingConfiguration ?? []).map((gap: { code: string }) => gap.code),
+    ).toContain('NO_EFFECTIVE_LIMITS');
   });
 
   it('gates reads on agent.view (SUPPORT included), writes on agent.manage_classes, and never on the catch-all', async () => {
