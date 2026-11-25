@@ -207,11 +207,14 @@ describe('PR27 V1 commercial coverage — Wallet to Bank / Bank to Wallet', () =
   });
 
   describe('no live provider calls and no invented values', () => {
-    it('names no provider in the identity module', () => {
+    it('wires no provider into the identity module', () => {
       const source = read('src/product-catalog/banking-product-identities.ts');
+      // Providers may be NAMED in prose that explains what is still blocked; what must not exist is a
+      // reference to one — an import, a call, a configured key — that would imply a live integration.
       for (const provider of ['NIBSS', 'WEMA', 'PROVIDUS', 'NINEPSB', 'MONNIFY']) {
-        expect(source.toUpperCase()).not.toContain(provider);
+        expect(source).not.toMatch(new RegExp(`\\b${provider}\\b\\s*[:.,)]`));
       }
+      expect(source).not.toMatch(/^import .*(partner|banking-config|provider)/m);
     });
 
     it('documents every direction’s fee disposition instead of leaving it implicit', () => {

@@ -32,6 +32,17 @@
  * `AgentService.EXTERNAL_BANK_TRANSFER`), never a product — and here it is declared a *legacy limit
  * alias* of `WALLET_TO_BANK` so that limit rules already authored against it keep resolving.
  *
+ * ## Relationship to the capability registry (not a contradiction)
+ *
+ * The capability registry still lists `WALLET_TO_BANK` as `V2 / PLANNED / NOT_EXPOSED` with the
+ * blocker "V2 out-of-scope: bank/provider integration", and that is correct — it measures something
+ * different. A *capability* row describes end-to-end live execution (a real NIBSS/provider call,
+ * external settlement); neither exists here. A *product* row describes whether the commercial
+ * configuration for a route can be authored, priced and limited. The outbound route already executes
+ * through the commitment + banking dispatch path, so its commercial configuration is V1 scope; the
+ * live provider integration it would also need remains V2 and blocked. Both statements are true at
+ * once, and this module is where the difference is stated.
+ *
  * ## Why aliases rather than a data migration
  *
  * `limit_rules.product` is a free-text column with a format check and **no foreign key** to
