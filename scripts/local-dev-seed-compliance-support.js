@@ -134,6 +134,56 @@ async function main() {
         [profileId, cust.id, cust.displayName, cust.legalName, cust.firstName, cust.lastName],
       );
 
+      const phoneId = `27272727-2727-4727-8727-27272727270${idx + 1}`;
+      const phoneVal = `+234803000100${idx + 1}`;
+      await client.query(
+        `INSERT INTO customer_contact_methods (
+           id, customer_id, type, value, normalized_value, is_primary, verified_at
+         )
+         VALUES ($1::uuid, $2::uuid, 'PHONE', $3, $3, TRUE, NOW())
+         ON CONFLICT (id) DO NOTHING`,
+        [phoneId, cust.id, phoneVal],
+      );
+
+      const addrId = `28282828-2828-4828-8828-28282828280${idx + 1}`;
+      await client.query(
+        `INSERT INTO customer_addresses (
+           id, customer_id, type, line_one, city, state, country, is_primary
+         )
+         VALUES ($1::uuid, $2::uuid, 'RESIDENTIAL', $3, 'Kano', 'Kano State', 'NG', TRUE)
+         ON CONFLICT (id) DO NOTHING`,
+        [addrId, cust.id, `${10 + idx} Zoo Road`],
+      );
+
+      const docId = `29292929-2929-4929-8929-29292929290${idx + 1}`;
+      await client.query(
+        `INSERT INTO customer_identity_documents (
+           id, customer_id, type, document_number, issuing_country
+         )
+         VALUES ($1::uuid, $2::uuid, 'NIN', $3, 'NG')
+         ON CONFLICT (id) DO NOTHING`,
+        [docId, cust.id, `9900001000${idx + 1}`],
+      );
+
+      if (idx === 0) {
+        const poaId = '2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a01';
+        const poaGroupId = '2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b01';
+        await client.query(
+          `INSERT INTO customer_proof_of_address_submissions (
+             id, submission_group_id, revision_number, customer_id, residential_address_id,
+             category, document_type, review_status, document_status,
+             created_by_principal_id, created_by_role_key
+           )
+           VALUES (
+             $1::uuid, $2::uuid, 1, $3::uuid, $4::uuid,
+             'UTILITY', 'ELECTRICITY_BILL', 'PENDING', 'QUARANTINED',
+             'operations@monienaija.local', 'OPERATIONS'
+           )
+           ON CONFLICT (id) DO NOTHING`,
+          [poaId, poaGroupId, cust.id, addrId],
+        );
+      }
+
       if (cust.kycStatus !== 'NOT_STARTED') {
         const assessmentId = `26262626-2626-4626-8626-26262626260${idx + 1}`;
         await client.query(

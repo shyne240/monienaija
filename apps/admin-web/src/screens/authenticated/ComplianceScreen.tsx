@@ -833,27 +833,35 @@ const ComplianceWorkspace: React.FC<
             <div style={kpiGridStyle} data-testid="operational-kyc-kpis">
               <div style={kpiCardStyle}>
                 <span>Actionable</span>
-                <strong>{opQueueCounts.actionable}</strong>
+                <strong>
+                  {(opQueueCounts as any).actionable ?? (opQueueCounts as any).total ?? 0}
+                </strong>
               </div>
               <div style={kpiCardStyle}>
                 <span>Pending</span>
-                <strong>{opQueueCounts.pending}</strong>
+                <strong>
+                  {(opQueueCounts as any).pending ?? (opQueueCounts as any).pendingReview ?? 0}
+                </strong>
               </div>
               <div style={kpiCardStyle}>
                 <span>Rejected</span>
-                <strong>{opQueueCounts.rejected}</strong>
+                <strong>{opQueueCounts.rejected ?? 0}</strong>
               </div>
               <div style={kpiCardStyle}>
                 <span>Not Started</span>
-                <strong>{opQueueCounts.notStarted}</strong>
+                <strong>{opQueueCounts.notStarted ?? 0}</strong>
               </div>
               <div style={kpiCardStyle}>
                 <span>Approved</span>
-                <strong>{opQueueCounts.approved}</strong>
+                <strong>{opQueueCounts.approved ?? 0}</strong>
               </div>
               <div style={kpiCardStyle}>
-                <span>Automated Holds</span>
-                <strong>{opQueueCounts.tierReviewHolds}</strong>
+                <span>Manual / Auto Holds</span>
+                <strong>
+                  {(opQueueCounts as any).tierReviewHolds ??
+                    (opQueueCounts as any).manualHolds ??
+                    0}
+                </strong>
               </div>
             </div>
           )}
@@ -1901,7 +1909,7 @@ const ComplianceWorkspace: React.FC<
                             ev.identityDocuments.items
                               .map(
                                 (d: any) =>
-                                  `${d.documentType} ${d.maskedNumber} (${d.isVerified ? 'Verified' : 'Unverified'})`,
+                                  `${d.type || d.documentType} ${d.maskedDocumentNumber || d.maskedNumber}`,
                               )
                               .join(', ')
                           ) : (
@@ -1922,7 +1930,10 @@ const ComplianceWorkspace: React.FC<
                         {ev.proofOfAddress?.access === 'GRANTED' ? (
                           ev.proofOfAddress.items?.length ? (
                             ev.proofOfAddress.items
-                              .map((p: any) => `${p.documentType}: ${p.status}`)
+                              .map(
+                                (p: any) =>
+                                  `${p.documentType}: ${p.reviewStatus || p.status} (${p.documentStatus || 'SCAN_PENDING'})`,
+                              )
                               .join(', ')
                           ) : (
                             'No Proof of Address submissions'

@@ -566,7 +566,7 @@ export class SupportService {
         }
         if (recordScope.agentAffiliationsTablePresent) {
           instClauses.push(
-            `EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.institution_id = ANY($${paramIdx}::uuid[]) AND iaa.status = 'ACTIVE' AND iaa.deleted_at IS NULL)`,
+            `EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.institution_id = ANY($${paramIdx}::uuid[]) AND iaa.status = 'ACTIVE')`,
           );
         }
         scopeWhere.push(`(${instClauses.join(' OR ')})`);
@@ -579,7 +579,7 @@ export class SupportService {
       }
       if (recordScope.agentAffiliationsTablePresent) {
         scopeWhere.push(
-          `(support_tickets.agent_id IS NULL OR NOT EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.status = 'ACTIVE' AND iaa.deleted_at IS NULL))`,
+          `(support_tickets.agent_id IS NULL OR NOT EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.status = 'ACTIVE'))`,
         );
       }
     }

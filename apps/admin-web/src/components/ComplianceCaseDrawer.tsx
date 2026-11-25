@@ -99,8 +99,13 @@ export function ComplianceCaseDrawer({
 
   const isPersistedUuidCase = UUID_RE.test(record.customerId) && UUID_RE.test(record.id);
 
-  const loadSubresources = async (customerId: string, caseId: string) => {
+  const loadSubresources = async (
+    customerId: string,
+    caseId: string,
+    options?: { syncDraftFields?: boolean },
+  ) => {
     if (!UUID_RE.test(customerId) || !UUID_RE.test(caseId)) return;
+    const syncDraftFields = options?.syncDraftFields ?? true;
     const gen = ++reqGen.current;
     setSubresourceLoading(true);
     const base = `/customers/${encodeURIComponent(customerId)}/compliance-cases/${encodeURIComponent(caseId)}`;
@@ -119,16 +124,25 @@ export function ComplianceCaseDrawer({
         !Array.isArray(detailRes) &&
         (detailRes as any).id === caseId
       ) {
-        const merged = {
-          ...activeRecord,
-          ...(detailRes as CustomerComplianceCaseRow),
-          customerReference: activeRecord.customerReference,
-          customerDisplayName: activeRecord.customerDisplayName,
+        const detail = detailRes as CustomerComplianceCaseRow;
+        const mergedRecord: CustomerComplianceCaseRow = {
+          ...record,
+          ...detail,
+          customerReference: detail.customerReference ?? record.customerReference,
+          customerDisplayName: detail.customerDisplayName ?? record.customerDisplayName,
         };
-        setActiveRecord(merged);
-        setNextStatus(merged.status);
-        setResolution(merged.resolution ?? '');
-        setAssigneeInput(merged.assignedTo ?? '');
+        setActiveRecord((prev) => ({
+          ...prev,
+          ...detail,
+          customerReference: prev.customerReference ?? record.customerReference,
+          customerDisplayName: prev.customerDisplayName ?? record.customerDisplayName,
+        }));
+        onCaseUpdated?.(mergedRecord);
+        if (syncDraftFields) {
+          setNextStatus((prev) => (prev === record.status ? detail.status : prev));
+          setResolution((prev) => prev || detail.resolution || '');
+          setAssigneeInput((prev) => prev || detail.assignedTo || '');
+        }
       }
       if (Array.isArray(commentsRes)) setComments(commentsRes as CaseCommentItem[]);
       if (Array.isArray(evidenceRes)) setEvidence(evidenceRes as CaseEvidenceItem[]);
@@ -181,7 +195,8 @@ export function ComplianceCaseDrawer({
       setResolution(next.resolution ?? '');
       onCaseUpdated?.(next);
       setActionMsg(`Case updated to ${next.status}.`);
-      if (isPersistedUuidCase) void loadSubresources(next.customerId, next.id);
+      if (isPersistedUuidCase)
+        await loadSubresources(next.customerId, next.id, { syncDraftFields: false });
     } catch (err: any) {
       setActionErr(err?.message || 'Failed to update compliance case.');
     } finally {
@@ -196,14 +211,22 @@ export function ComplianceCaseDrawer({
     setActionErr('');
     setActionMsg('');
     try {
-      await ApiClient.post(`${basePath}/assignments`, {
+      await ApiClient.post(`${basePath}/assignment`, {
         assignedTo: assigneeInput.trim(),
       });
-      const next = { ...activeRecord, assignedTo: assigneeInput.trim() };
+      const next = {
+        ...activeRecord,
+        assignedTo: assigneeInput.trim(),
+        version:
+          typeof activeRecord.version === 'number' ? activeRecord.version + 1 : activeRecord.version,
+      };
       setActiveRecord(next);
       onCaseUpdated?.(next);
       setActionMsg(`Assigned case to ${assigneeInput.trim()}.`);
-      if (isPersistedUuidCase) void loadSubresources(activeRecord.customerId, activeRecord.id);
+      if (isPersistedUuidCase)
+        await loadSubresources(activeRecord.customerId, activeRecord.id, {
+          syncDraftFields: false,
+        });
     } catch (err: any) {
       setActionErr(err?.message || 'Failed to assign compliance case.');
     } finally {
@@ -223,7 +246,10 @@ export function ComplianceCaseDrawer({
       });
       setCommentText('');
       setActionMsg('Investigation comment recorded.');
-      if (isPersistedUuidCase) void loadSubresources(activeRecord.customerId, activeRecord.id);
+      if (isPersistedUuidCase)
+        await loadSubresources(activeRecord.customerId, activeRecord.id, {
+          syncDraftFields: false,
+        });
     } catch (err: any) {
       setActionErr(err?.message || 'Failed to record case comment.');
     } finally {
@@ -246,7 +272,10 @@ export function ComplianceCaseDrawer({
       setDocName('');
       setDocRef('');
       setActionMsg('Case evidence attached.');
-      if (isPersistedUuidCase) void loadSubresources(activeRecord.customerId, activeRecord.id);
+      if (isPersistedUuidCase)
+        await loadSubresources(activeRecord.customerId, activeRecord.id, {
+          syncDraftFields: false,
+        });
     } catch (err: any) {
       setActionErr(err?.message || 'Failed to attach case evidence.');
     } finally {
