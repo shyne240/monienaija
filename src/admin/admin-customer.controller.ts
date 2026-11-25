@@ -1,13 +1,16 @@
 import {
   Controller,
   Get,
+  Header,
   NotFoundException,
   Param,
   Query,
   Req,
+  Res,
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 
@@ -27,6 +30,17 @@ import { CustomerActivationReadinessService } from '../customer-onboarding/custo
 import { WalletService } from '../wallet/wallet.service';
 import { SupportService } from '../support/support.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { getRequestContext } from '../production/request-context';
+import {
+  maskWalletIdentifier,
+  parseStatementPeriod,
+  sanitizeNarration,
+} from './wallet-statement/wallet-statement.format';
+import { WalletStatementRenderService } from './wallet-statement/wallet-statement-render.service';
+import {
+  financialOrUnavailable,
+  WalletStatementService,
+} from './wallet-statement/wallet-statement.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -44,6 +58,8 @@ export class AdminCustomerController {
     private readonly supportService: SupportService,
     private readonly auth: AuthorizationService,
     private readonly activationReadiness: CustomerActivationReadinessService,
+    private readonly statementService: WalletStatementService,
+    private readonly statementRenderer: WalletStatementRenderService,
   ) {}
 
   @Get()
@@ -309,6 +325,122 @@ export class AdminCustomerController {
       balanceMinor: balance.balanceMinor,
       status: wallet.status,
     };
+  }
+
+  // ──────────────────────────────────────────────
+  // Admin Customer Investigation — wallet statement preview (same scope rules as the PDF)
+  // ──────────────────────────────────────────────
+  /**
+   * JSON preview of exactly what the PDF will contain.
+   *
+   * The screen shows this before the operator downloads, so "the statement says X" and "the PDF
+   * says X" are the same computation rather than two implementations that can drift. Balances the
+   * ledger cannot support are returned as `null` with an `Unavailable` label — never as `0`.
+   */
+  @Get(':id/wallets/:walletId/statement')
+  async getWalletStatementPreview(
+    @Param('id') id: string,
+    @Param('walletId') walletId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'customer.view_wallets');
+    this.assertUuid(id, 'id');
+    this.assertUuid(walletId, 'walletId');
+    const principal = req.authorizationPrincipal;
+    const period = parseStatementPeriod(from, to);
+
+    const customer = await this.findVisibleCustomer(id);
+    if (!customer) throw new NotFoundException('Customer not found');
+    const context = await this.statementService.loadContext(walletId);
+    if (context.customerId !== id) throw new NotFoundException('Wallet not found');
+    await this.statementRenderer.assertInstitutionScope(principal, context.institutionId);
+
+    const activity = await this.statementService.read(context, period);
+    const currency = context.currency;
+    return {
+      walletId: context.walletId,
+      walletLabel: maskWalletIdentifier(context.walletId),
+      customerId: id,
+      currency,
+      walletStatus: context.status,
+      periodFrom: period.from,
+      periodTo: period.to,
+      timeZone: 'Africa/Lagos',
+      balances: {
+        openingMinor: activity.balances.openingMinor,
+        closingMinor: activity.balances.closingMinor,
+        creditsMinor: activity.balances.creditsMinor,
+        debitsMinor: activity.balances.debitsMinor,
+        currentMinor: activity.balances.currentMinor,
+        openingLabel: financialOrUnavailable(activity.balances.openingMinor, currency),
+        closingLabel: financialOrUnavailable(activity.balances.closingMinor, currency),
+        creditsLabel: financialOrUnavailable(activity.balances.creditsMinor, currency),
+        debitsLabel: financialOrUnavailable(activity.balances.debitsMinor, currency),
+        currentLabel: financialOrUnavailable(activity.balances.currentMinor, currency),
+      },
+      rows: activity.rows.map((row) => ({
+        postedAt: row.postedAt,
+        reference: row.reference,
+        description: row.description,
+        amountMinor: row.amountMinor,
+        direction: row.direction,
+        // Signed effect on the wallet, or `null` when the normal-balance convention is unknown.
+        signedMinor: row.signedMinor,
+        runningMinor: row.runningMinor,
+        runningLabel: financialOrUnavailable(row.runningMinor, currency),
+      })),
+    };
+  }
+
+  // ──────────────────────────────────────────────
+  // Admin Customer Investigation — branded wallet statement PDF
+  // ──────────────────────────────────────────────
+  /**
+   * The printable statement.
+   *
+   * Authorization is the same as the balance read (`customer.view_wallets`, customer existence,
+   * wallet ownership) plus the wallet's institutional scope, and it is re-checked in the service on
+   * this request rather than trusted from the screen. Every attempt — success or refusal — is
+   * audited with the operator, the wallet, the period and the outcome.
+   */
+  @Get(':id/wallets/:walletId/statement.pdf')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Cache-Control', 'no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async downloadWalletStatement(
+    @Param('id') id: string,
+    @Param('walletId') walletId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'customer.view_wallets');
+    this.assertUuid(id, 'id');
+    this.assertUuid(walletId, 'walletId');
+
+    const result = await this.statementRenderer.generate({
+      customerId: id,
+      walletId,
+      from,
+      to,
+      principal: req.authorizationPrincipal,
+    });
+    const context = getRequestContext(req as unknown as FastifyRequest);
+    reply
+      .header('X-Statement-Id', result.statementId)
+      .header('X-Statement-Rows', String(result.rowCount))
+      .header('X-Statement-Pages', String(result.pageCount))
+      .header('X-Request-Id', context.requestId)
+      .header(
+        'Content-Disposition',
+        `attachment; filename="${result.fileName}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+      )
+      .send(result.pdf);
   }
 
   // ──────────────────────────────────────────────

@@ -675,9 +675,19 @@ export class GovernedFinancialFixture {
       /** Explicit control-account code (e.g. the payment settlement asset the services resolve). */
       code?: string;
       name?: string;
+      /**
+       * Account currency. Defaults to NGN, which every existing consumer expects; a suite that
+       * posts a non-NGN journal must request a matching account explicitly, because `postJournal`
+       * correctly refuses to mix currencies.
+       */
+      currency?: string;
     } = {},
   ): Promise<string> {
-    const cached = this.settlementAccounts.get(institutionId);
+    // One cached settlement account per institution AND purpose: the ledger account code is
+    // unique, so a second call for a different purpose must open a different account rather than
+    // silently return the first one.
+    const cacheKey = `${institutionId}:${options.purpose ?? 'SETTLEMENT'}:${options.currency ?? 'NGN'}`;
+    const cached = this.settlementAccounts.get(cacheKey);
     if (cached) return cached;
     const { operator } = await this.workforce();
     const suffix = randomUUID().slice(0, 8).toUpperCase();
@@ -689,13 +699,13 @@ export class GovernedFinancialFixture {
         name: options.name ?? `Governed fixture settlement ${suffix}`,
         accountType: 'ASSET',
         normalBalance: 'DEBIT',
-        currency: 'NGN',
+        currency: options.currency ?? 'NGN',
         purpose: options.purpose ?? 'SETTLEMENT',
         allowNegativeBalance: options.allowNegativeBalance ?? true,
       });
     this.assertStatus(response, 201, 'institution settlement account open');
     const accountId: string = response.body.id;
-    this.settlementAccounts.set(institutionId, accountId);
+    this.settlementAccounts.set(cacheKey, accountId);
     return accountId;
   }
 

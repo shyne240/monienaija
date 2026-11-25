@@ -11,6 +11,7 @@ import { CustomerTier3ReadinessPanel } from './CustomerTier3ReadinessPanel';
 import { CustomerRegistrationReviewPanel } from './CustomerRegistrationReviewPanel';
 import type { RegistrationReview } from './CustomerRegistrationReviewPanel';
 import { CustomerClassAssignmentPanel } from '../../components/CustomerClassAssignmentPanel';
+import { WalletStatementPanel } from './WalletStatementPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
 export interface DirectoryCustomer {
@@ -1125,6 +1126,11 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                     : 'Balance unavailable'}
                 </dd>
               </dl>
+              <WalletStatementPanel
+                customerId={customer.id}
+                walletId={selectedWallet.id}
+                currency={selectedWallet.currency}
+              />
             </div>
           </WorkspaceDrawer>
         )}

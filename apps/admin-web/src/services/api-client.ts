@@ -186,6 +186,8 @@ export interface DownloadedFile {
   /** Rows the server wrote into the file. Null when the server did not state a count. */
   rowCount: number | null;
   exportId: string | null;
+  /** Pages in a generated PDF. Null for formats that do not have pages. */
+  pageCount?: number | null;
 }
 
 function fileNameFrom(response: Response, fallback: string): string {
@@ -211,6 +213,7 @@ function fileNameFrom(response: Response, fallback: string): string {
 async function requestFile(
   endpoint: string,
   accept: string,
+  fallbackName: string,
   options: ApiRequestOptions = {},
 ): Promise<DownloadedFile> {
   assertApiBaseUrlConfigured();
@@ -227,11 +230,13 @@ async function requestFile(
       throw apiErrorFrom(response, data);
     }
     const stated = Number(response.headers.get('x-export-rows'));
+    const statedPages = Number(response.headers.get('x-statement-pages'));
     return {
       blob: await response.blob(),
-      fileName: fileNameFrom(response, 'transaction-history.csv'),
+      fileName: fileNameFrom(response, fallbackName),
       rowCount: Number.isInteger(stated) && stated >= 0 ? stated : null,
       exportId: response.headers.get('x-export-id'),
+      pageCount: Number.isInteger(statedPages) && statedPages > 0 ? statedPages : null,
     };
   } catch (error) {
     throw asNetworkError(error);
@@ -255,7 +260,11 @@ export const ApiClient = {
 
   /** Download a CSV report, keeping the server's stated row count and export id. */
   getFile: (endpoint: string, options?: ApiRequestOptions) =>
-    requestFile(endpoint, 'text/csv, application/json', options),
+    requestFile(endpoint, 'text/csv, application/json', 'transaction-history.csv', options),
+
+  /** Download a generated PDF (a wallet statement), keeping the server's stated page count. */
+  getPdf: (endpoint: string, options?: ApiRequestOptions) =>
+    requestFile(endpoint, 'application/pdf, application/json', 'statement.pdf', options),
 
   patch: <T>(
     endpoint: string,
