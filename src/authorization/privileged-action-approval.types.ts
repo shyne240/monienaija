@@ -33,6 +33,13 @@ export interface DecidePrivilegedActionCommand {
 
 export interface ListPrivilegedApprovalsQuery {
   principal: AuthorizationPrincipal;
+  /**
+   * Narrow the SAME visibility-scoped read to one approval id. Used by the single-approval read
+   * (`GET /internal/a2/workforce/approvals/:id`) so a checker can re-read one authoritative
+   * decision instead of enumerating the ledger. It never widens visibility: the id filter is
+   * applied on top of every scope/MFA/role/SUPER_ADMIN exclusion `listApprovals` already applies.
+   */
+  approvalId?: string;
   status?: PrivilegedActionApprovalStatus;
   actionType?: string;
   resourceType?: string;

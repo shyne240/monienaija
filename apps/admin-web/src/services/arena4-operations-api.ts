@@ -1,4 +1,5 @@
 import { ApiClient } from './api-client';
+import type { ApprovalRecord, ApprovalRecordPage } from '../utils/approval-evaluation';
 
 /**
  * ARENA 4 — administrative operations API adapters.
@@ -110,11 +111,22 @@ export interface WorkforcePrincipalDetail {
   principalId: string;
   principalType: string;
   accountStatus: string;
-  roles: Array<{ roleKey: string; status: string; readOnly: boolean }>;
+  roles: Array<{
+    roleKey: string;
+    status: string;
+    readOnly: boolean;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+    assignedBy?: string;
+    assignedAt?: string;
+    revokedAt?: string | null;
+  }>;
+  /** True when every held role is revoked or read-only — the projection never widens this. */
+  readOnlyPrincipal?: boolean;
   institutionScope: {
     mode: string;
     platformFunctionGranted: boolean;
-    active: Array<{ institutionId: string; institutionName: string | null }>;
+    active: Array<{ institutionId: string; institutionName: string | null; code?: string | null }>;
     revokedCount: number;
   };
   sessions: Array<{
@@ -136,6 +148,15 @@ export interface WorkforcePrincipalDetail {
   administrativeAuthorizations: Array<{ functionCode: string; domain: string; name: string }>;
   boundaries: { readOnly: true; note: string };
 }
+
+/**
+ * Governed-change approvals (B9). Both reads go through the existing
+ * `A2WorkforceAdministrationController` approval routes: the collection is already scoped to the
+ * caller's approval scope, MFA assurance and approving roles by
+ * `PrivilegedActionApprovalService.listApprovals`, and the single read re-uses that exact
+ * predicate with an id filter. There is no unscoped read helper here, by design.
+ */
+export type ApprovalInboxPage = ApprovalRecordPage;
 
 export interface AuditInspectionPage {
   data: Array<{
@@ -245,6 +266,33 @@ export const Arena4OperationsApi = {
   workforcePrincipal(principalId: string): Promise<WorkforcePrincipalDetail> {
     return ApiClient.get<WorkforcePrincipalDetail>(
       `/internal/workforce/directory/${encodeURIComponent(principalId)}`,
+    );
+  },
+
+  /**
+   * Approval inbox, as visible to the signed-in checker. `status`, `actionType` and
+   * `resourceType` are the server's own filters; nothing is filtered only in the browser.
+   */
+  approvals(filters: {
+    status?: string;
+    actionType?: string;
+    resourceType?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ApprovalInboxPage> {
+    return ApiClient.get<ApprovalInboxPage>(
+      `/internal/a2/workforce/approvals?${queryString({
+        ...filters,
+        limit: filters.limit ?? 25,
+        offset: filters.offset ?? 0,
+      })}`,
+    );
+  },
+
+  /** Authoritative re-read of ONE approval (404 when it is outside the caller's visibility). */
+  approval(id: string): Promise<ApprovalRecord> {
+    return ApiClient.get<ApprovalRecord>(
+      `/internal/a2/workforce/approvals/${encodeURIComponent(id)}`,
     );
   },
 

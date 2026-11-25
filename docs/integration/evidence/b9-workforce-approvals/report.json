@@ -1,0 +1,152 @@
+{
+  "generatedAt": "2026-11-25T11:44:52.900Z",
+  "browser": "153.0.8010.0",
+  "viewport": "1440x1000",
+  "bundle": "/tmp/b9-dist",
+  "api": {
+    "origin": "fixture (route-intercepted at the browser network layer)",
+    "note": "Client behaviour only. Server maker-checker, role, institution, MFA and recovery controls are covered by the Nest HTTP and PostgreSQL suites."
+  },
+  "totals": {
+    "checks": 27,
+    "passed": 27,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "SIGN-IN-SUPER_ADMIN",
+      "ok": true,
+      "detail": "super-admin@monienaija.local · verified=[dashboard, workforceAccess, workforceDirectory, roleGovernance, auditEvents] of 33 rendered · problems=[] · navChars=299"
+    },
+    {
+      "id": "SIGN-IN-FINANCE_PREPARER",
+      "ok": true,
+      "detail": "finance-preparer@monienaija.local · verified=[dashboard, feeRules, ledgerExplorer] of 9 rendered · problems=[] · navChars=174"
+    },
+    {
+      "id": "SIGN-IN-FINANCE_CONTROLLER",
+      "ok": true,
+      "detail": "finance-controller@monienaija.local · verified=[dashboard, approvalsInbox, feeRules, workforceDirectory] of 13 rendered · problems=[] · navChars=173"
+    },
+    {
+      "id": "SIGN-IN-FINANCE_AUDITOR",
+      "ok": true,
+      "detail": "finance-auditor@monienaija.local · verified=[dashboard, auditEvents, workforceDirectory] of 26 rendered · problems=[] · navChars=266"
+    },
+    {
+      "id": "SIGN-IN-ADMINISTRATOR",
+      "ok": true,
+      "detail": "administrator@monienaija.local · verified=[dashboard, workforceAccess, workforceDirectory, roleGovernance, superAdminRecovery] of 10 rendered · problems=[] · navChars=151"
+    },
+    {
+      "id": "SIGN-IN-OPERATIONS",
+      "ok": true,
+      "detail": "operations@monienaija.local · verified=[dashboard, customers, workforceAccess] of 13 rendered · problems=[] · navChars=182"
+    },
+    {
+      "id": "SIGN-IN-AGENT_NETWORK_MANAGER",
+      "ok": true,
+      "detail": "agent-network-manager@monienaija.local · verified=[dashboard, agents] of 6 rendered · problems=[] · navChars=136"
+    },
+    {
+      "id": "SIGN-IN-COMPLIANCE",
+      "ok": true,
+      "detail": "compliance@monienaija.local · verified=[dashboard, kycQueue] of 8 rendered · problems=[] · navChars=162"
+    },
+    {
+      "id": "SIGN-IN-RISK_FRAUD",
+      "ok": true,
+      "detail": "risk-fraud@monienaija.local · verified=[dashboard, fraudCases] of 2 rendered · problems=[] · navChars=77"
+    },
+    {
+      "id": "SIGN-IN-CUSTOMER_SERVICE",
+      "ok": true,
+      "detail": "customer-service@monienaija.local · verified=[dashboard, customers] of 4 rendered · problems=[] · navChars=107"
+    },
+    {
+      "id": "SIGN-IN-TREASURY",
+      "ok": true,
+      "detail": "treasury@monienaija.local · verified=[dashboard, reconciliation] of 3 rendered · problems=[] · navChars=89"
+    },
+    {
+      "id": "SIGN-IN-REJECTED",
+      "ok": true,
+      "detail": "a rejected credential leaves the operator on the login screen"
+    },
+    {
+      "id": "APPROVALS-INBOX-RENDERS",
+      "ok": true,
+      "detail": "rows=3"
+    },
+    {
+      "id": "APPROVALS-INBOX-PROPOSED-CHANGE",
+      "ok": true,
+      "detail": "affected record and required approving role are on the row"
+    },
+    {
+      "id": "APPROVALS-EVALUATION-DETAIL",
+      "ok": true,
+      "detail": "proposed change, affected record, required authority and decision history are shown"
+    },
+    {
+      "id": "APPROVALS-LOAD-INTO-CHECKER",
+      "ok": true,
+      "detail": "checker field value=11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "id": "APPROVALS-REVIEW-DIALOG",
+      "ok": true,
+      "detail": "confirmation dialog names the approval id before any write"
+    },
+    {
+      "id": "APPROVALS-DECISION-SUBMITTED",
+      "ok": true,
+      "detail": "POST /api/v1/internal/a2/workforce/approvals/11111111-1111-4111-8111-111111111111/approve body={\"comment\":\"Verified against the approved fee schedule.\"}"
+    },
+    {
+      "id": "APPROVALS-RECEIPT-SHOWN",
+      "ok": true,
+      "detail": "Approval recorded. The underlying action may require a separate execution step. Approval ID: 11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "id": "APPROVALS-STATE-VOCABULARY",
+      "ok": true,
+      "detail": "approved-not-applied, applied, rejected and stale are each stated"
+    },
+    {
+      "id": "APPROVALS-SELF-APPROVAL-BLOCKED",
+      "ok": true,
+      "detail": "the checker cannot load their own request for a decision"
+    },
+    {
+      "id": "DIRECTORY-IDENTITY-VISIBLE",
+      "ok": true,
+      "detail": "roles, effective permissions and institution restrictions are shown for the identity"
+    },
+    {
+      "id": "DIRECTORY-TO-GOVERNANCE-HANDOFF",
+      "ok": true,
+      "detail": "Role governance opens with the inspected principal, its current roles and institution scope"
+    },
+    {
+      "id": "GOVERNANCE-BLOCKS-DUPLICATE",
+      "ok": true,
+      "detail": "a duplicate assignment is blocked once current roles are verified"
+    },
+    {
+      "id": "GOVERNANCE-DRAFT-LEAVE-GUARD",
+      "ok": true,
+      "detail": "leaving a prepared role change required an explicit discard confirmation"
+    },
+    {
+      "id": "RECOVERY-RENDERS-WITHOUT-WRITE",
+      "ok": true,
+      "detail": "recovery workspace opened with no recovery request sent"
+    },
+    {
+      "id": "NO-UNEXPECTED-PAGE-ERRORS",
+      "ok": true,
+      "detail": "pageErrors=none · console=none"
+    }
+  ]
+}

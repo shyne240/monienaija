@@ -1,10 +1,15 @@
 import './operational-surfaces.css';
 import { Button, PageHeader } from '../../design-system/primitives';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './workforce-workspace.css';
 import './role-governance-redesign.css';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { ApiClient } from '../../services/api-client';
+import {
+  Arena4OperationsApi,
+  describeHttpError,
+  type WorkforcePrincipalDetail,
+} from '../../services/arena4-operations-api';
 import { useAuthStore } from '../../store/auth-store';
 
 type RoleDomain = 'finance' | 'operational';
@@ -31,12 +36,19 @@ const OPERATIONAL_ROLES = [
 
 export const RoleAssignmentScreen: React.FC<{
   onRoleGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ onRoleGuardChange }) => {
+  /**
+   * Set when an authorized operator picks an identity in the Workforce Directory and chooses
+   * "Govern access". The directory row is real server data, so the governance form opens with the
+   * exact principal the operator inspected instead of asking them to retype an identifier.
+   */
+  initialTargetPrincipalId?: string;
+}> = ({ onRoleGuardChange, initialTargetPrincipalId }) => {
   const { principal, sessionId } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN') === true;
   const isAdministrator = principal?.roles.includes('ADMINISTRATOR') === true;
   const canWrite = !principal?.readOnlyPrincipal;
+  const canViewDirectory = principal?.scopes.includes('workforce.role.view') ?? false;
   const canAssignFinance = canWrite && isSuperAdmin && hasFn('workforce.role.assign');
   const canRevokeFinance = canWrite && isSuperAdmin && hasFn('workforce.role.revoke');
   const canAssignOperational =
@@ -69,6 +81,8 @@ export const RoleAssignmentScreen: React.FC<{
       canRevokeFinance={canRevokeFinance}
       canAssignOperational={canAssignOperational}
       canRevokeOperational={canRevokeOperational}
+      canViewDirectory={canViewDirectory}
+      initialTargetPrincipalId={initialTargetPrincipalId}
       onRoleGuardChange={onRoleGuardChange}
     />
   );
@@ -81,6 +95,8 @@ const RoleWorkspace: React.FC<{
   canRevokeFinance: boolean;
   canAssignOperational: boolean;
   canRevokeOperational: boolean;
+  canViewDirectory: boolean;
+  initialTargetPrincipalId?: string;
   onRoleGuardChange?: (guarded: boolean, busy: boolean) => void;
 }> = ({
   principalId,
@@ -89,6 +105,8 @@ const RoleWorkspace: React.FC<{
   canRevokeFinance,
   canAssignOperational,
   canRevokeOperational,
+  canViewDirectory,
+  initialTargetPrincipalId,
   onRoleGuardChange,
 }) => {
   const requestGeneration = useRef(0);
@@ -113,7 +131,21 @@ const RoleWorkspace: React.FC<{
 
   const [domain, setDomain] = useState<RoleDomain>(initialDomain);
   const [action, setAction] = useState<RoleAction>(initialAction);
-  const [targetPrincipalId, setTargetPrincipalId] = useState('');
+  const [targetPrincipalId, setTargetPrincipalId] = useState(
+    (initialTargetPrincipalId ?? '').trim(),
+  );
+  /**
+   * Current-role view of the target, read from the authorized workforce directory
+   * (`GET /internal/workforce/directory/:principalId`). Read-only: this never grants anything, it
+   * only prevents an operator from approving a change against an identity whose actual current
+   * roles they have not seen.
+   */
+  const [identity, setIdentity] = useState<{
+    id: string;
+    loading: boolean;
+    detail: WorkforcePrincipalDetail | null;
+    problem: string;
+  }>({ id: '', loading: false, detail: null, problem: '' });
   const [roleKey, setRoleKey] = useState(
     initialDomain === 'finance' ? 'FINANCE_PREPARER' : 'OPERATIONS',
   );
@@ -164,6 +196,73 @@ const RoleWorkspace: React.FC<{
   const canRevoke = domain === 'finance' ? canRevokeFinance : canRevokeOperational;
   const roleOptions = domain === 'finance' ? FINANCE_ROLES : OPERATIONAL_ROLES;
 
+  const loadIdentity = useCallback(
+    async (id: string) => {
+      if (!id) {
+        setIdentity({
+          id: '',
+          loading: false,
+          detail: null,
+          problem: 'Enter a principal id before looking it up.',
+        });
+        return;
+      }
+      if (!canViewDirectory) {
+        setIdentity({
+          id,
+          loading: false,
+          detail: null,
+          problem:
+            'Identity lookup requires the workforce.role.view function. Enter the principal id from an authorized record; this form cannot show its current roles.',
+        });
+        return;
+      }
+      setIdentity({ id, loading: true, detail: null, problem: '' });
+      try {
+        const detail = await Arena4OperationsApi.workforcePrincipal(id);
+        setIdentity({ id, loading: false, detail, problem: '' });
+      } catch (lookupFailure: any) {
+        setIdentity({
+          id,
+          loading: false,
+          detail: null,
+          problem:
+            lookupFailure?.status === 404
+              ? 'No workforce identity in the authoritatively scoped directory matches that principal id. Confirm the identifier from an authorized record before acting.'
+              : describeHttpError(
+                  lookupFailure,
+                  'The target identity could not be read. Submit only after verifying the principal in an authorized record.',
+                ),
+        });
+      }
+    },
+    [canViewDirectory],
+  );
+
+  // A directory hand-off opens this workspace with a principal already chosen. Read that identity
+  // immediately so the operator sees current roles before entering an entitlement.
+  useEffect(() => {
+    const prefill = (initialTargetPrincipalId ?? '').trim();
+    if (prefill) void loadIdentity(prefill);
+  }, [initialTargetPrincipalId, loadIdentity]);
+
+  const verifiedIdentity =
+    identity.detail && identity.id === targetPrincipalId.trim() ? identity.detail : null;
+  const activeRoleKeys =
+    verifiedIdentity?.roles
+      .filter((role) => role.status === 'ACTIVE')
+      .map((role) => role.roleKey) ?? [];
+  /** Explains why the chosen action contradicts the target's verified current roles. */
+  const identityConflict = verifiedIdentity
+    ? action === 'assign'
+      ? activeRoleKeys.includes(roleKey)
+        ? `The target already holds an active ${roleKey} assignment. Revoke that assignment instead of assigning it again.`
+        : ''
+      : activeRoleKeys.includes(roleKey)
+        ? ''
+        : `The target holds no active ${roleKey} assignment, so there is nothing to revoke.`
+    : '';
+
   const changeDomain = (nextDomain: RoleDomain) => {
     if (
       uncertainRole ||
@@ -208,6 +307,10 @@ const RoleWorkspace: React.FC<{
     }
     if (targetPrincipalId.trim() === principalId) {
       setError('Self assignment or revocation is prohibited.');
+      return;
+    }
+    if (identityConflict) {
+      setError(identityConflict);
       return;
     }
     if (!effectiveFrom.trim() || !effectiveTo.trim()) {
@@ -348,7 +451,7 @@ const RoleWorkspace: React.FC<{
       <PageHeader
         eyebrow="Workforce and governance"
         title={title}
-        description="Use the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API."
+        description="Prepare a governed role change. The target's current roles, effective permissions and institution scope are read from the authorized workforce directory before the change is sent."
       />
 
       {uncertainRole && (
@@ -375,8 +478,9 @@ const RoleWorkspace: React.FC<{
       <div className="role-redesign__boundary" role="note">
         <strong>Governed access change</strong>
         <span>
-          Current assignments cannot be listed here. Verify the target in an authorized record; self
-          changes are prohibited.
+          Look up the target first: its current roles, effective permissions and institution scope
+          come from the authorized workforce directory. Self changes are prohibited and the server
+          remains the authority on every grant or revocation.
         </span>
       </div>
       <div className="role-redesign__workspace">
@@ -499,9 +603,10 @@ const RoleWorkspace: React.FC<{
           )}
           {domain === 'finance' && (
             <div style={styles.infoBox}>
-              Finance role changes use the existing governed workflow. Approval IDs may be required
-              by the backend for the current assignment state; this form does not create or infer
-              approvals.
+              Finance role changes use the existing governed workflow: an independent{' '}
+              <code>FINANCE_CONTROLLER</code> checks the request in Approvals, and the backend
+              requires the resulting approval IDs for the current assignment state. This form does
+              not create or infer approvals.
             </div>
           )}
 
@@ -560,9 +665,102 @@ const RoleWorkspace: React.FC<{
                     style={styles.input}
                     placeholder="e.g. https://identity.issuer:operator-sub"
                     value={targetPrincipalId}
-                    onChange={(event) => setTargetPrincipalId(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setTargetPrincipalId(value);
+                      if (value.trim() !== identity.id) {
+                        setIdentity({ id: '', loading: false, detail: null, problem: '' });
+                      }
+                    }}
                     disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)}
                   />
+                  <div style={styles.lookupRow}>
+                    <button
+                      type="button"
+                      style={styles.lookupButton}
+                      disabled={isLoading || Boolean(pendingReview) || identity.loading}
+                      onClick={() => void loadIdentity(targetPrincipalId.trim())}
+                    >
+                      {identity.loading ? 'Reading identity…' : 'Look up current access'}
+                    </button>
+                    {initialTargetPrincipalId?.trim() === targetPrincipalId.trim() &&
+                    targetPrincipalId.trim() ? (
+                      <span style={styles.lookupHint}>Prefilled from the workforce directory.</span>
+                    ) : null}
+                  </div>
+                  {identity.loading ? (
+                    <p style={styles.lookupMuted} data-testid="role-target-identity-loading">
+                      Reading roles, effective permissions, institution restrictions and sessions
+                      from the workforce directory…
+                    </p>
+                  ) : null}
+                  {identity.problem ? (
+                    <p
+                      style={styles.lookupProblem}
+                      role="note"
+                      data-testid="role-target-identity-problem"
+                    >
+                      {identity.problem}
+                    </p>
+                  ) : null}
+                  {verifiedIdentity ? (
+                    <div style={styles.identityCard} data-testid="role-target-identity">
+                      <p style={styles.identityTitle}>
+                        Verified target · {verifiedIdentity.accountStatus}
+                        {verifiedIdentity.readOnlyPrincipal ? ' · read-only principal' : ''}
+                      </p>
+                      <dl style={styles.identityGrid}>
+                        <div>
+                          <dt style={styles.identityDt}>Current roles</dt>
+                          <dd style={styles.identityDd}>
+                            {verifiedIdentity.roles.length === 0
+                              ? 'No catalogue role assignment'
+                              : verifiedIdentity.roles
+                                  .map((role) => `${role.roleKey} (${role.status})`)
+                                  .join(', ')}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt style={styles.identityDt}>Effective permissions</dt>
+                          <dd style={styles.identityDd}>
+                            {verifiedIdentity.effectivePermissions.length} total ·{' '}
+                            {verifiedIdentity.administrativeAuthorizations.length} administrative
+                          </dd>
+                        </div>
+                        <div>
+                          <dt style={styles.identityDt}>Institution restrictions</dt>
+                          <dd style={styles.identityDd}>
+                            {verifiedIdentity.institutionScope.mode === 'INSTITUTIONS'
+                              ? verifiedIdentity.institutionScope.active
+                                  .map(
+                                    (institution) =>
+                                      institution.institutionName ?? institution.institutionId,
+                                  )
+                                  .join(', ')
+                              : 'Not scoped to any institution'}
+                            {verifiedIdentity.institutionScope.revokedCount > 0
+                              ? ` · ${verifiedIdentity.institutionScope.revokedCount} revoked in history`
+                              : ''}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt style={styles.identityDt}>Active sessions</dt>
+                          <dd style={styles.identityDd}>
+                            {
+                              verifiedIdentity.sessions.filter(
+                                (session) => session.status === 'ACTIVE',
+                              ).length
+                            }
+                          </dd>
+                        </div>
+                      </dl>
+                      {identityConflict ? (
+                        <p style={styles.lookupProblem} role="alert">
+                          {identityConflict}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={styles.inputGroup}>
@@ -660,6 +858,8 @@ const RoleWorkspace: React.FC<{
                   isLoading ||
                   Boolean(pendingReview) ||
                   Boolean(uncertainRole) ||
+                  Boolean(identityConflict) ||
+                  identity.loading ||
                   (action === 'assign' ? !canAssign || !hasMfa : !canRevoke)
                 }
                 style={styles.submitBtn}
@@ -707,6 +907,18 @@ const RoleWorkspace: React.FC<{
                 </dd>
               </div>
               <div>
+                <dt>Target&apos;s current roles (verified)</dt>
+                <dd>
+                  {verifiedIdentity
+                    ? verifiedIdentity.roles.length
+                      ? verifiedIdentity.roles
+                          .map((role) => `${role.roleKey} (${role.status})`)
+                          .join(', ')
+                      : 'No catalogue role assignment'
+                    : 'Not verified in this form'}
+                </dd>
+              </div>
+              <div>
                 <dt>Effective from (UTC)</dt>
                 <dd>{pendingReview.from}</dd>
               </div>
@@ -744,7 +956,7 @@ const RoleWorkspace: React.FC<{
   );
 };
 
-const styles = {
+const styles: Record<string, React.CSSProperties> = {
   container: {
     padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -757,6 +969,41 @@ const styles = {
     margin: '0 0 6px 0',
   },
   subtitle: { fontSize: '14px', color: 'var(--mn-text-secondary, #52655f)', margin: 0 },
+  lookupRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' },
+  lookupButton: {
+    border: '1px solid #BFDBFE',
+    background: '#EFF6FF',
+    color: '#1E3A8A',
+    borderRadius: 6,
+    padding: '6px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  lookupHint: { fontSize: 12, color: '#52655F' },
+  lookupMuted: { fontSize: 12, color: '#52655F', margin: '8px 0 0' },
+  lookupProblem: { fontSize: 12, color: '#8C5600', margin: '8px 0 0' },
+  identityCard: {
+    marginTop: 10,
+    border: '1px solid #DDE7E2',
+    borderRadius: 8,
+    padding: 10,
+    background: '#F7FAF8',
+  },
+  identityTitle: { margin: 0, fontSize: 12, fontWeight: 700, color: '#132B25' },
+  identityGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: 8,
+    margin: '8px 0 0',
+  },
+  identityDt: {
+    fontSize: 10,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    color: '#52655F',
+  },
+  identityDd: { margin: '2px 0 0', fontSize: 12, color: '#132B25' },
   tabHeader: {
     display: 'flex',
     flexWrap: 'wrap' as const,

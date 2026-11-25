@@ -85,7 +85,13 @@ describe('Workforce administration request validation', () => {
   const oidc = { validate: jest.fn() };
   const sessions = { establish: jest.fn(), revoke: jest.fn() };
   const roles = { consumeBootstrap: jest.fn(), assign: jest.fn(), revoke: jest.fn() };
-  const approvals = { request: jest.fn(), approve: jest.fn(), getApproval: jest.fn() };
+  const approvals = {
+    request: jest.fn(),
+    approve: jest.fn(),
+    getApproval: jest.fn(),
+    getVisibleApproval: jest.fn(),
+    listApprovals: jest.fn(),
+  };
   const authorization = { authorize: jest.fn() };
   const limits = { consume: jest.fn() };
 
@@ -117,6 +123,8 @@ describe('Workforce administration request validation', () => {
     roles.revoke.mockResolvedValue({ roleKey: 'FINANCE_AUDITOR' });
     approvals.request.mockResolvedValue({ approved: false, reason: 'REQUESTED' });
     approvals.approve.mockResolvedValue({ approved: true, reason: 'CONSUMED' });
+    approvals.listApprovals.mockResolvedValue({ items: [], total: 0 });
+    approvals.getVisibleApproval.mockResolvedValue(null);
     approvals.getApproval.mockResolvedValue({
       id: APPROVAL_ID,
       actionType: 'FINANCE_ROLE_ASSIGN',
@@ -169,6 +177,7 @@ describe('Workforce administration request validation', () => {
     request(app.getHttpServer()).post(`/api/v1${path}`).send(body);
   const remove = (path: string, body: Record<string, unknown>) =>
     request(app.getHttpServer()).delete(`/api/v1${path}`).send(body);
+  const get = (path: string) => request(app.getHttpServer()).get(`/api/v1${path}`);
 
   describe('POST /internal/a2/workforce/sessions', () => {
     it.each([{}, { idToken: 123 }, { idToken: '' }, { idToken: { nested: true } }])(
@@ -478,6 +487,79 @@ describe('Workforce administration request validation', () => {
       expect(approvals.approve).toHaveBeenLastCalledWith(
         expect.objectContaining({ approvalId: APPROVAL_ID, comment: 'reviewed' }),
       );
+    });
+  });
+  describe('GET /internal/a2/workforce/approvals/:id', () => {
+    const view = {
+      id: APPROVAL_ID,
+      actionType: 'FINANCE_ROLE_ASSIGN',
+      resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+      resourceId: ASSIGNMENT_REFERENCE,
+      status: 'REQUESTED',
+      requesterPrincipalId: PRINCIPAL.principalId,
+      approvedBy: null,
+      approvalScope: 'privileged:approve',
+      requiredAssurance: 'MFA',
+      policy: {},
+      requestedAt: '2026-11-20T09:00:00.000Z',
+      expiresAt: '2026-11-20T09:30:00.000Z',
+      approvedAt: null,
+      rejectedAt: null,
+      cancelledAt: null,
+      consumedAt: null,
+      version: 1,
+    };
+
+    it('reads exactly one approval through the visibility-scoped read and states the decision authority', async () => {
+      approvals.getVisibleApproval.mockResolvedValue(view);
+      const response = await get(`/internal/a2/workforce/approvals/${APPROVAL_ID}`).expect(200);
+      expect(approvals.getVisibleApproval).toHaveBeenCalledWith(APPROVAL_ID, PRINCIPAL);
+      // The unscoped `getApproval(id)` cannot substitute: it applies no caller visibility filter.
+      expect(approvals.getApproval).not.toHaveBeenCalled();
+      expect(response.body).toMatchObject({
+        id: APPROVAL_ID,
+        status: 'REQUESTED',
+        authority: {
+          approvingRoles: ['FINANCE_CONTROLLER'],
+          minimumApprovals: 1,
+          selfApprovalProhibited: true,
+          minimumAssurance: 'MFA',
+        },
+      });
+    });
+
+    it("answers 404 when the approval is outside this principal's visible scope", async () => {
+      approvals.getVisibleApproval.mockResolvedValue(null);
+      const response = await get(`/internal/a2/workforce/approvals/${APPROVAL_ID}`).expect(404);
+      expect((response.body as { message?: string }).message).toBe('Approval not found');
+      expect(approvals.getApproval).not.toHaveBeenCalled();
+    });
+
+    it('never exposes a stored approval id through a malformed path', async () => {
+      approvals.getVisibleApproval.mockResolvedValue(null);
+      await get('/internal/a2/workforce/approvals/not-a-uuid').expect(404);
+      expect(approvals.getApproval).not.toHaveBeenCalled();
+    });
+
+    it('decorates each listed approval with the same authority the decision path enforces', async () => {
+      approvals.listApprovals.mockResolvedValue({ items: [view], total: 1 });
+      const response = await get('/internal/a2/workforce/approvals?status=REQUESTED').expect(200);
+      expect(approvals.listApprovals).toHaveBeenCalledTimes(1);
+      const body = response.body as { items: Array<{ authority: unknown }> };
+      expect(body.items[0]?.authority).toMatchObject({
+        approvingRoles: ['FINANCE_CONTROLLER'],
+        minimumAssurance: 'MFA',
+      });
+    });
+
+    it('reports an unresolvable action as an unresolved authority instead of inventing one', async () => {
+      approvals.listApprovals.mockResolvedValue({
+        items: [{ ...view, actionType: 'UNREGISTERED_ACTION' }],
+        total: 1,
+      });
+      const response = await get('/internal/a2/workforce/approvals').expect(200);
+      const body = response.body as { items: Array<{ authority: unknown }> };
+      expect(body.items[0]?.authority).toBeNull();
     });
   });
 });

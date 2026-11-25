@@ -61,11 +61,25 @@ const STATUS_OPTIONS = [
   { value: 'NO_CATALOGUE_GRANT', label: 'No catalogue grant' },
 ];
 
-export const WorkforceDirectoryScreen: React.FC = () => {
+const GOVERN_FUNCTIONS = [
+  'workforce.role.assign',
+  'workforce.role.assign_operational',
+  'workforce.role.revoke',
+  'workforce.role.revoke_operational',
+];
+
+export const WorkforceDirectoryScreen: React.FC<{
+  /**
+   * Hands the inspected identity to Role Governance. The directory stays read-only; the callback
+   * only navigates, and the role route remains the sole grant/revoke authority.
+   */
+  onGovernAccess?: (principalId: string) => void;
+}> = ({ onGovernAccess }) => {
   const scopes = useAuthStore((state) => state.principal?.scopes);
   const canView = scopes?.includes('workforce.role.view') ?? false;
+  const canGovern = GOVERN_FUNCTIONS.some((functionCode) => scopes?.includes(functionCode));
   return canView ? (
-    <WorkforceDirectoryWorkspace />
+    <WorkforceDirectoryWorkspace canGovern={canGovern} onGovernAccess={onGovernAccess} />
   ) : (
     <Alert tone="danger" title="Workforce directory unavailable">
       This workspace requires the <code>workforce.role.view</code> authorization function.
@@ -73,7 +87,10 @@ export const WorkforceDirectoryScreen: React.FC = () => {
   );
 };
 
-const WorkforceDirectoryWorkspace: React.FC = () => {
+const WorkforceDirectoryWorkspace: React.FC<{
+  canGovern: boolean;
+  onGovernAccess?: (principalId: string) => void;
+}> = ({ canGovern, onGovernAccess }) => {
   const [page, setPage] = useState<WorkforceDirectoryPage | null>(null);
   const [detail, setDetail] = useState<WorkforcePrincipalDetail | null>(null);
   const [search, setSearch] = useState('');
@@ -128,8 +145,12 @@ const WorkforceDirectoryWorkspace: React.FC = () => {
       />
 
       <p className="a4-ops__notice" data-testid="a4-workforce-readonly-notice">
-        Read-only. This workspace cannot grant, revoke or elevate any role or function. Grants
-        remain subject to the existing maker/checker and ADMINISTRATOR direct-execute controls.
+        Read-only. This workspace cannot grant, revoke or elevate any role or function. Supported
+        access changes are handed to Role governance, where the existing server-side maker/checker
+        and ADMINISTRATOR direct-execute controls still decide them.
+        {canGovern && onGovernAccess
+          ? ' Open an identity below to continue a governed change with its current roles already in view.'
+          : ''}
       </p>
 
       {error ? (
@@ -145,7 +166,11 @@ const WorkforceDirectoryWorkspace: React.FC = () => {
           setApplied({ search, roleKey, status });
         }}
       >
-        <Field label="Search principal" htmlFor="a4-workforce-search">
+        <Field
+          label="Search principal"
+          htmlFor="a4-workforce-search"
+          hint="Matches the workforce principal id (for example issuer:subject)."
+        >
           <input
             id="a4-workforce-search"
             type="search"
@@ -209,6 +234,23 @@ const WorkforceDirectoryWorkspace: React.FC = () => {
           <h3>
             {detail.principalId} <span className="a4-ops__pill">{detail.accountStatus}</span>
           </h3>
+          {canGovern && onGovernAccess ? (
+            <p>
+              <Button
+                variant="primary"
+                onClick={() => onGovernAccess(detail.principalId)}
+                data-testid="a4-govern-access"
+              >
+                Govern access changes
+              </Button>
+            </p>
+          ) : (
+            <p className="a4-ops__muted">
+              Viewing only: changing access requires a role-assignment function
+              (workforce.role.assign, workforce.role.assign_operational, workforce.role.revoke or
+              workforce.role.revoke_operational) plus the authorized initiator role.
+            </p>
+          )}
           <div className="a4-ops__grid">
             <div className="a4-ops__card">
               <h3>Roles</h3>
@@ -220,6 +262,11 @@ const WorkforceDirectoryWorkspace: React.FC = () => {
                     <li key={`${role.roleKey}-${role.status}`}>
                       {role.roleKey} — {role.status}
                       {role.readOnly ? ' (read-only role)' : ''}
+                      {role.effectiveFrom && role.effectiveTo
+                        ? ` · ${new Date(role.effectiveFrom).toLocaleDateString()} → ${new Date(
+                            role.effectiveTo,
+                          ).toLocaleDateString()}`
+                        : ''}
                     </li>
                   ))}
                 </ul>

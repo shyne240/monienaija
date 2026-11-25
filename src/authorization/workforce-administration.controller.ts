@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -34,6 +35,7 @@ import type {
 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import type { PrivilegedActionApprovalView } from './privileged-action-approval.types';
 import { ApprovalRejectionDto } from './approval-decision.dto';
 interface R extends FastifyRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
@@ -151,7 +153,7 @@ export class A2WorkforceAdministrationController {
     if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       throw new ForbiddenException('Workforce principal required');
     }
-    return this.approvals.listApprovals({
+    const result = await this.approvals.listApprovals({
       principal,
       status: q.status,
       actionType: q.actionType,
@@ -160,6 +162,25 @@ export class A2WorkforceAdministrationController {
       limit: q.limit,
       offset: q.offset,
     });
+    return { ...result, items: result.items.map((item) => this.withAuthority(item)) };
+  }
+  /**
+   * Authoritative single-approval read for the checker workspace (Arena B9).
+   *
+   * `listApprovals` already scopes every row to the caller (approval scope membership, MFA,
+   * SUPER_ADMIN agent-funding exclusion, per-action approving roles); this re-uses that exact
+   * predicate with an id filter so a checker can re-read ONE decision after an unconfirmed
+   * outcome. A row outside the caller's visibility is answered 404, identical to an unknown id —
+   * this route is not an enumeration or existence oracle, and it never mutates the approval.
+   */
+  @Get('approvals/:id') async getApproval(@Param('id') id: string, @Req() r: R) {
+    const principal = this.principal(r);
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
+      throw new ForbiddenException('Workforce principal required');
+    }
+    const approval = await this.approvals.getVisibleApproval(id, principal);
+    if (!approval) throw new NotFoundException('Approval not found');
+    return this.withAuthority(approval);
   }
   @Post('approvals/request') async requestApproval(
     @Body() b: RequestPrivilegedApprovalDto,
@@ -326,6 +347,40 @@ export class A2WorkforceAdministrationController {
     if (governed) return governed.approvingFunctionCodes;
     const code = ACTION_FUNCTION_CODES[action];
     return code ? [code] : [];
+  }
+  /**
+   * Decision-authority projection for the Approvals workspace (Arena B9).
+   *
+   * The screen must be able to state WHO may decide and under WHAT assurance before a checker
+   * acts. That policy already exists — it is the exact rule the approve/reject path enforces — so
+   * it is derived here from `rule()` plus the approval leg's catalogue function codes instead of
+   * being re-declared in the browser. An action whose rule cannot be resolved is returned with
+   * `authority: null` rather than a guess: the screen says the authority is unresolved, and the
+   * decide path still fails closed exactly as before.
+   */
+  private withAuthority(view: PrivilegedActionApprovalView) {
+    try {
+      const rule = this.rule(view.actionType);
+      return {
+        ...view,
+        authority: {
+          approvingRoles: [...rule.approvingRoles],
+          approvingFunctions: [...this.approvingFunctionCodes(view.actionType)],
+          minimumApprovals: rule.minimumApprovals,
+          // `decide()` refuses a requester's own decision unconditionally; a rule may only relax
+          // that by explicitly declaring BOTH `selfApprovalProhibited: false` and no separation
+          // requirement. Anything less definite is reported as prohibited (fail closed).
+          selfApprovalProhibited: !(
+            rule.selfApprovalProhibited === false && rule.separationRequired !== true
+          ),
+          minimumAssurance: rule.minimumAssurance,
+          approvalScope: governedAction(view.actionType)?.approvalScope ?? view.approvalScope,
+          governed: Boolean(governedAction(view.actionType)),
+        },
+      };
+    } catch {
+      return { ...view, authority: null };
+    }
   }
   private rateRule(category: string) {
     const rule = this.config.rateLimits.find((item) => item.category === category);
