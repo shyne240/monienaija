@@ -113,6 +113,11 @@ All commands below were run against the pushed head of this branch.
 | `scripts/finance-pr23-combined-acceptance.cjs` (temporary #25+#23 build)                                                                              | **6/6**                                                                                                                                                                                                                                  |
 | GitHub Actions on this head                                                                                                                           | Backend (lint, format, build, unit tests), Backend (isolated PostgreSQL suites), Backend (container image builds), Backend (real PostgreSQL integration), Admin Web (types, tests, build), Agent Mobile, Customer Mobile — see PR checks |
 
+Combined real-session evidence is in `docs/integration/evidence/finance25-cashin-bank/`
+(`results.json`, 8 screenshots, and the harness template used in the temporary checkout).
+Ledger-deep-link coordination for PR #23 is in
+`docs/integration/FINANCE-LEDGER-DEEPLINK-CONTRACT.md`.
+
 Evidence lives in `docs/integration/evidence/finance-operations/`:
 `finance-operations-http-acceptance.json` (25 assertions + redacted request transcript),
 `finance-operations-browser-acceptance.json`/`.png`, and
