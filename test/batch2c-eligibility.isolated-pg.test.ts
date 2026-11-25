@@ -439,9 +439,12 @@ test('misconfigured deployment (zero configured products, no usable class) block
     // No usable class: no approved tier default resolves and no usable manual class exists.
     expect(
       codes.some((c) =>
-        ['TIER_DEFAULT_MISSING', 'TIER_DEFAULT_NOT_APPROVED', 'TIER_DEFAULT_CLASS_UNUSABLE', 'MANUAL_CLASS_UNUSABLE'].includes(
-          String(c),
-        ),
+        [
+          'TIER_DEFAULT_MISSING',
+          'TIER_DEFAULT_NOT_APPROVED',
+          'TIER_DEFAULT_CLASS_UNUSABLE',
+          'MANUAL_CLASS_UNUSABLE',
+        ].includes(String(c)),
       ),
     ).toBe(true);
     expect(issues.every((i) => typeof i.message === 'string' && i.message.length > 0)).toBe(true);
