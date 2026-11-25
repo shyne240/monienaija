@@ -37,6 +37,8 @@ import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
+import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
+import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { PrivilegedActionApproval } from '../src/authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../src/authorization/privileged-action-approval.enums';
@@ -79,11 +81,135 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
+    const workforceConfig = workforceConfiguration({
+      NODE_ENV: 'development',
+      A2_WORKFORCE_ENABLED: 'true',
+      A2_WORKFORCE_OIDC_ISSUER: 'https://oidc.commercial-authoring.test',
+      A2_WORKFORCE_OIDC_JWKS_URI: 'https://oidc.commercial-authoring.test/jwks',
+      A2_WORKFORCE_OIDC_AUDIENCE: 'monienaija-workforce',
+      A2_WORKFORCE_OIDC_CLIENT_ID: 'monienaija-admin-console',
+      A2_WORKFORCE_INTERNAL_AUDIENCE: 'workforce-admin',
+      A2_WORKFORCE_SESSION_TTL_SECONDS: '900',
+      A2_BOOTSTRAP_ENABLED: 'false',
+      A2_BOOTSTRAP_ADMIN_SCOPES_JSON: JSON.stringify(['privileged:execute']),
+      A2_BOOTSTRAP_JWKS_JSON: '[]',
+      A2_FINANCE_ROLES_JSON: JSON.stringify([
+        {
+          roleKey: 'SUPER_ADMIN',
+          displayName: 'Super Administrator',
+          description: 'Privileged administration.',
+          enabled: true,
+          scopes: ['privileged:execute'],
+          applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],
+          mfaRequired: true,
+          approvalCapability: false,
+          makerEligible: true,
+          checkerEligible: false,
+          administrativeCapability: true,
+        },
+        {
+          roleKey: 'FINANCE_PREPARER',
+          displayName: 'Finance Preparer',
+          description: 'Initiates finance control changes.',
+          enabled: true,
+          scopes: ['finance:prepare'],
+          applicableActions: ['FINANCE_CONTROL_POLICY_ACTIVATE'],
+          mfaRequired: true,
+          approvalCapability: false,
+          makerEligible: true,
+          checkerEligible: false,
+          administrativeCapability: false,
+        },
+        {
+          roleKey: 'FINANCE_CONTROLLER',
+          displayName: 'Finance Controller',
+          description: 'Approves finance role/control changes.',
+          enabled: true,
+          scopes: ['privileged:approve', 'privileged:execute'],
+          applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE', 'FINANCE_CONTROL_POLICY_ACTIVATE'],
+          mfaRequired: true,
+          approvalCapability: true,
+          makerEligible: false,
+          checkerEligible: true,
+          administrativeCapability: false,
+        },
+        {
+          roleKey: 'FINANCE_AUDITOR',
+          displayName: 'Finance Auditor',
+          description: 'Read-oriented assurance role.',
+          enabled: true,
+          scopes: ['finance:audit'],
+          applicableActions: [],
+          mfaRequired: true,
+          approvalCapability: false,
+          makerEligible: false,
+          checkerEligible: false,
+          administrativeCapability: false,
+        },
+        {
+          roleKey: 'ADMINISTRATOR',
+          displayName: 'Administrator',
+          description: 'Administrative role.',
+          enabled: true,
+          scopes: [],
+          applicableActions: [],
+          mfaRequired: true,
+          approvalCapability: false,
+          makerEligible: false,
+          checkerEligible: false,
+          administrativeCapability: false,
+        },
+      ]),
+      A2_MAKER_CHECKER_RULES_JSON: JSON.stringify([
+        {
+          action: 'FINANCE_ROLE_ASSIGN',
+          initiatingRoles: ['SUPER_ADMIN'],
+          approvingRoles: ['FINANCE_CONTROLLER'],
+          minimumApprovals: 1,
+          separationRequired: true,
+          selfApprovalProhibited: true,
+          mfaRequired: true,
+          minimumAssurance: 'MFA',
+          materialityRequired: false,
+        },
+        {
+          action: 'FINANCE_ROLE_REVOKE',
+          initiatingRoles: ['SUPER_ADMIN'],
+          approvingRoles: ['FINANCE_CONTROLLER'],
+          minimumApprovals: 1,
+          separationRequired: true,
+          selfApprovalProhibited: true,
+          mfaRequired: true,
+          minimumAssurance: 'MFA',
+          materialityRequired: false,
+        },
+        {
+          action: 'FINANCE_CONTROL_POLICY_ACTIVATE',
+          initiatingRoles: ['FINANCE_PREPARER'],
+          approvingRoles: ['FINANCE_CONTROLLER'],
+          minimumApprovals: 1,
+          separationRequired: true,
+          selfApprovalProhibited: true,
+          mfaRequired: true,
+          minimumAssurance: 'MFA',
+          materialityRequired: false,
+        },
+      ]),
+      A2_WORKFORCE_RATE_LIMITS_JSON: JSON.stringify([
+        { category: 'workforce-authentication', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+        { category: 'workforce-bootstrap', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+        { category: 'finance-role-administration', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+        { category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+      ]),
+      A2_TRUSTED_PROXY_ADDRESSES_JSON: JSON.stringify(['127.0.0.1', '::1/128']),
+    });
     dataSource = await createIntegrationDataSource('a3comcfg02');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(A2_WORKFORCE_CONFIG)
+      .useValue(workforceConfig)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(kycEvidence.reader)
       .compile();
