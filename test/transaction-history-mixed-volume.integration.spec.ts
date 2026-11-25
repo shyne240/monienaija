@@ -530,8 +530,10 @@ volumeDescribe('Transaction History representative mixed-product plans', () => {
       await read('/' + type + '/' + foreign[0].id).expect(404);
       const detail = (await read('/' + type + '/' + own[0].id, 'FINANCE_AUDITOR').expect(200)).body;
       expect(detail.id).toBe(own[0].id);
-      if (type !== 'CUSTOMER_FUNDING') expect(detail.journals.filter(Boolean)).not.toHaveLength(0);
-      else expect(detail.investigation.scopeEvidenceId).toBeTruthy();
+      if (type === 'CUSTOMER_FUNDING') expect(detail.investigation.scopeEvidenceId).toBeTruthy();
+      else if (type === 'BANK_TO_WALLET')
+        expect(detail.journals.filter(Boolean)).toHaveLength(0); // Verified intake is not posted credit.
+      else expect(detail.journals.filter(Boolean)).not.toHaveLength(0);
     }
     for (const type of ['AGENT_FUNDING', 'AGENT_DEFUNDING', 'WALLET_TO_BANK']) {
       expect((await read('?type=' + type).expect(200)).body.items).toEqual([]);
