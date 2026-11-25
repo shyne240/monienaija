@@ -601,8 +601,13 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         status: 'DISABLED',
         enabled: false,
       });
-      // No tariff is invented and none can be: the product cannot carry a chargeable rule.
-      expect(body.fee.status).not.toBe('RESOLVED');
+      // No tariff is invented and none can be: the product cannot carry a chargeable rule. The
+      // preview states the DECISION ("this is not charged") rather than pretending nobody configured
+      // it — MISSING would be a lie about a deliberate commercial choice.
+      expect(body.fee.status).toBe('NOT_APPLICABLE');
+      expect(body.fee.rule).toBeNull();
+      expect(body.fee.computed).toBeNull();
+      expect(body.fee.note).toBe(BANK_TO_WALLET.feeNote);
       expect(BANK_TO_WALLET.feeDisposition).toBe('NOT_APPLICABLE_INBOUND_CREDIT');
       expect(BANK_TO_WALLET.executionBlockers.join(' ')).toContain(
         'UnavailableA7InboundExecutionAuthority',

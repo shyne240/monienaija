@@ -16,6 +16,10 @@ import {
   narrowApplicableLimitRules,
 } from '../limit-catalog/limit-rule-applicability';
 import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
+import {
+  bankingIdentityFor,
+  type BankingFeeDisposition,
+} from '../product-catalog/banking-product-identities';
 import { ProductCatalogService } from '../product-catalog/product-catalog.service';
 import { RewardRuleResolverService } from '../reward/reward-rule-resolver.service';
 import type { RewardGrantDecision, RewardResolution } from '../reward/reward.types';
@@ -262,6 +266,12 @@ export class EffectiveConfigurationPreviewService {
         agentClassId,
         institutionId,
         explanation,
+        // PR #27: a direction may carry a DECIDED fee disposition rather than an authored rule. Bank
+        // credits are the first such case: no customer service fee is charged on money the customer
+        // did not instruct us to spend. Reporting that as MISSING would be a lie ("nobody configured
+        // this") when the truth is "this is not charged, on purpose".
+        feeDisposition: bankingIdentityFor(productCode)?.feeDisposition ?? null,
+        feeDispositionNote: bankingIdentityFor(productCode)?.feeNote ?? null,
       });
 
       const commission = await this.commissionSection({
@@ -805,10 +815,31 @@ export class EffectiveConfigurationPreviewService {
     agentClassId: string | null;
     institutionId: string | null;
     explanation: PreviewExplanation[];
+    /** The direction's decided fee treatment, when it has one (`banking-product-identities.ts`). */
+    feeDisposition: BankingFeeDisposition | null;
+    feeDispositionNote: string | null;
   }): Promise<{ section: PreviewFeeSection; feeMinor: string | null }> {
     if (!input.enabled) {
       input.explanation.push(withheld('PREVIEW_SECTION_RESTRICTED', 'fee', SECTION_FUNCTIONS.fee));
       return { section: restricted(SECTION_FUNCTIONS.fee, 'fee'), feeMinor: null };
+    }
+
+    // A decided non-charge is not a missing rule. Report it as NOT_APPLICABLE with the reason, and do
+    // not fall through to the resolver: there is deliberately no rule to find.
+    if (input.feeDisposition === 'NOT_APPLICABLE_INBOUND_CREDIT') {
+      return {
+        section: {
+          status: 'NOT_APPLICABLE',
+          note: input.feeDispositionNote,
+          currency: input.currency,
+          evaluatedAt: input.evaluatedAt.toISOString(),
+          rule: null,
+          ambiguousRuleIds: null,
+          ambiguousPriority: null,
+          computed: null,
+        } as PreviewFeeSection,
+        feeMinor: null,
+      };
     }
 
     const section: {
