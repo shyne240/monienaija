@@ -1442,22 +1442,7 @@ export class CustomerService {
         ORDER BY code ASC`,
     );
 
-    // Bare/unconfigured environment: no enabled customer products and no usable tier-default/manual
-    // class assignment. Do not block activation in isolated/empty fixtures; real configured
-    // environments will have enabled products and tier-default mappings.
-    const bareUnconfiguredEnv = products.length === 0 && !effectiveClassCode && !isManual;
-    if (bareUnconfiguredEnv) {
-      for (let i = issues.length - 1; i >= 0; i--) {
-        const code = issues[i]?.code;
-        if (
-          code === 'TIER_DEFAULT_MISSING' ||
-          code === 'TIER_DEFAULT_NOT_APPROVED' ||
-          code === 'TIER_DEFAULT_CLASS_UNUSABLE'
-        ) {
-          issues.splice(i, 1);
-        }
-      }
-    } else if (products.length === 0) {
+    if (products.length === 0) {
       issues.push({
         code: 'NO_ENABLED_PRODUCTS',
         message: 'No enabled customer products are configured for activation',

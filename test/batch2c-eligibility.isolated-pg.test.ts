@@ -217,6 +217,7 @@ beforeAll(async () => {
   );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
+  await seedActivationConfig();
 }, 180_000);
 afterAll(async () => {
   if (app) await app.close();
@@ -237,6 +238,62 @@ async function setPolicy() {
     operator: { LEVEL_1: req, LEVEL_2: req },
   };
   await approveIsolatedKycTierPolicy(db, cluster, definition);
+}
+
+async function seedActivationConfig() {
+  const classId = randomUUID();
+  const classCode = 'B2C_TEST_DEFAULT';
+  await db.query(
+    `INSERT INTO customer_classes(id,reference,code,name,kind,status,enabled,configuration_status,is_default,created_by,version,created_at,updated_at)
+     VALUES($1,$2,$3,'B2C Test Default','CUSTOMER','ACTIVE',true,'CONFIGURED',false,'fixture',1,clock_timestamp(),clock_timestamp())
+     ON CONFLICT (id) DO NOTHING`,
+    [classId, `cc-${classId.slice(0, 8)}`, classCode],
+  );
+  for (const tier of ['LEVEL_1', 'LEVEL_2', 'LEVEL_3']) {
+    await db.query(
+      `INSERT INTO customer_tier_default_classes(tier,class_id,status,approved_at,approved_by,reason,created_by,updated_by,version,created_at,updated_at)
+       VALUES($1,$2,'APPROVED',clock_timestamp(),'fixture','test seed','fixture','fixture',1,clock_timestamp(),clock_timestamp())
+       ON CONFLICT (tier) DO UPDATE SET class_id=EXCLUDED.class_id,status='APPROVED',approved_at=clock_timestamp(),approved_by='fixture',updated_at=clock_timestamp()`,
+      [tier, classId],
+    );
+  }
+  const productCode = 'B2C_TEST_PRODUCT';
+  await db.query(
+    `INSERT INTO products(code,name,domain,currency,product_scope,status,enabled,configuration_status,created_by,version,created_at,updated_at)
+     VALUES($1,'B2C Test Product','CUSTOMER','NGN','V1','ACTIVE',true,'CONFIGURED','fixture',1,clock_timestamp(),clock_timestamp())
+     ON CONFLICT (code) DO UPDATE SET status='ACTIVE',enabled=true,configuration_status='CONFIGURED',updated_at=clock_timestamp()`,
+    [productCode],
+  );
+  await db.query(
+    `INSERT INTO fee_rules(id,product_code,currency,flat_fee_minor,percentage_bps,minimum_fee_minor,maximum_fee_minor,vat_bps,effective_from,effective_to,priority,is_active,created_by,version,created_at,updated_at,customer_class_code)
+     VALUES($1,$2,'NGN',0,0,0,0,0,clock_timestamp()-interval '1 day',NULL,100,true,'fixture',1,clock_timestamp(),clock_timestamp(),$3)`,
+    [randomUUID(), productCode, classCode],
+  );
+  const profileCode = 'B2C_TEST_PROFILE';
+  await db.query(
+    `INSERT INTO limit_profiles(code,name,kind,status,enabled,configuration_status,created_by,version,created_at,updated_at)
+     VALUES($1,'B2C Test Profile','CUSTOMER','ACTIVE',true,'CONFIGURED','fixture',1,clock_timestamp(),clock_timestamp())
+     ON CONFLICT (code) DO UPDATE SET status='ACTIVE',enabled=true,configuration_status='CONFIGURED',updated_at=clock_timestamp()`,
+    [profileCode],
+  );
+  for (const dim of [
+    'MAX_AMOUNT_PER_TX',
+    'DAILY_AMOUNT',
+    'WEEKLY_AMOUNT',
+    'MONTHLY_AMOUNT',
+    'WALLET_BALANCE_MAX',
+  ]) {
+    await db.query(
+      `INSERT INTO limit_rules(id,limit_profile_code,product,direction,channel,currency,dimension,limit_value_minor,limit_value_count,version,effective_from,effective_to,is_active,priority,created_by,created_at,updated_at,is_unlimited)
+       VALUES($1,$2,$3,NULL,NULL,'NGN',$4,100000000,NULL,1,clock_timestamp()-interval '1 day',NULL,true,100,'fixture',clock_timestamp(),clock_timestamp(),false)`,
+      [randomUUID(), profileCode, productCode, dim],
+    );
+  }
+  await db.query(
+    `INSERT INTO limit_assignments(id,limit_profile_code,subject_type,subject_id,segment_code,precedence,effective_from,effective_to,is_active,created_by,version,created_at,updated_at)
+     VALUES($1,$2,'SEGMENT',NULL,$3,100,clock_timestamp()-interval '1 day',NULL,true,'fixture',1,clock_timestamp(),clock_timestamp())`,
+    [randomUUID(), profileCode, classCode],
+  );
 }
 async function subject(
   level: 'LEVEL_1' | 'LEVEL_2',
@@ -322,6 +379,74 @@ test('controlled evidence gates activation and customer wallet creation, without
   ).rejects.toThrow();
   await db.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [one]);
   await expect(db.transaction((m) => gate.require(m, one))).rejects.toThrow();
+});
+
+test('misconfigured deployment (zero configured products, no usable class) blocks initial DRAFT->ACTIVE activation and explains why', async () => {
+  const customers = app.get(CustomerService);
+  const id = await subject('LEVEL_1', ['BVN']);
+  const savedDefaults = await db.query(`SELECT * FROM customer_tier_default_classes ORDER BY tier`);
+  const savedClass = await db.query(
+    `SELECT code, status, enabled, configuration_status, is_default FROM customer_classes WHERE code='B2C_TEST_DEFAULT'`,
+  );
+  try {
+    await db.query(`DELETE FROM customer_tier_default_classes`);
+    await db.query(
+      `UPDATE products SET enabled=false, configuration_status='NOT_CONFIGURED' WHERE domain='CUSTOMER'`,
+    );
+    await db.query(
+      `UPDATE customer_classes SET enabled=false, status='DISABLED', configuration_status='NOT_CONFIGURED' WHERE code='B2C_TEST_DEFAULT'`,
+    );
+    let err: any;
+    try {
+      await customers.updateStatus(id, { status: CustomerStatus.ACTIVE, actor: 'fixture' });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeTruthy();
+    const response = err?.response ?? err?.getResponse?.() ?? {};
+    expect(String(response.code ?? err?.code ?? '')).toBe('ACTIVATION_CONFIGURATION_INCOMPLETE');
+    expect(Array.isArray(response.issues)).toBe(true);
+    const codes = response.issues.map((i: any) => i.code);
+    expect(codes).toContain('NO_ENABLED_PRODUCTS');
+    // No usable class: no approved tier default resolves and no usable manual class exists.
+    expect(
+      codes.some((c: string) =>
+        ['TIER_DEFAULT_MISSING', 'TIER_DEFAULT_NOT_APPROVED', 'TIER_DEFAULT_CLASS_UNUSABLE', 'MANUAL_CLASS_UNUSABLE'].includes(c),
+      ),
+    ).toBe(true);
+    expect(response.issues.every((i: any) => typeof i.message === 'string' && i.message.length > 0)).toBe(true);
+  } finally {
+    await db.query(
+      `UPDATE products SET enabled=true, configuration_status='CONFIGURED' WHERE domain='CUSTOMER'`,
+    );
+    for (const row of savedClass) {
+      await db.query(
+        `UPDATE customer_classes SET status=$2, enabled=$3, configuration_status=$4, is_default=$5, updated_at=clock_timestamp() WHERE code=$1`,
+        [row.code, row.status, row.enabled, row.configuration_status, row.is_default],
+      );
+    }
+    await db.query(`DELETE FROM customer_tier_default_classes`);
+    for (const row of savedDefaults) {
+      await db.query(
+        `INSERT INTO customer_tier_default_classes(tier,class_id,status,approved_at,approved_by,reason,created_by,updated_by,version,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (tier) DO UPDATE SET class_id=EXCLUDED.class_id,status=EXCLUDED.status,approved_at=EXCLUDED.approved_at,approved_by=EXCLUDED.approved_by,reason=EXCLUDED.reason,updated_by=EXCLUDED.updated_by,updated_at=clock_timestamp()`,
+        [
+          row.tier,
+          row.class_id,
+          row.status,
+          row.approved_at,
+          row.approved_by,
+          row.reason,
+          row.created_by,
+          row.updated_by,
+          row.version,
+          row.created_at,
+          row.updated_at,
+        ],
+      );
+    }
+  }
 });
 
 test('unavailable, synthetic, conflicting and expired evidence or holds fail closed', async () => {

@@ -564,6 +564,7 @@ export class KycTierTransitionService {
       }
       // Do not apply CONFIGURATION_REVIEW when the environment has no enabled customer products
       // configured; that is an environment/catalog state, not a customer-tier configuration gap.
+      // Initial DRAFT->ACTIVE activation is separately guarded in CustomerService.
       incomplete = eff.products.length > 0 && issues.length > 0;
       if (incomplete)
         detail = `Tier configuration incomplete: ${issues.slice(0, 6).join(', ')}`.slice(0, 500);
