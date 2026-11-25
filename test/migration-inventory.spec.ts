@@ -65,21 +65,25 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at durable inbound identity after customer classes', () => {
+  it('ends at captured customer funding scope after durable inbound identity', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
     // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
     // dual-lane (customer/agent) A6 financial authorization + external-ops, and Arena 1 appended
     // 0805 (customer classes), followed by 0806 (durable inbound identity). The head is pinned exactly — a head-only allowance would let a
     // skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
+    });
+    expect(migrations.at(-2)).toMatchObject({
       timestamp: '1785753600806',
       name: 'DurableInboundIdentity1785753600806',
     });
-    expect(migrations.at(-2)).toMatchObject({
+    expect(migrations.at(-3)).toMatchObject({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
     });
-    expect(migrations.at(-3)).toMatchObject({
+    expect(migrations.at(-4)).toMatchObject({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
@@ -153,6 +157,7 @@ describe('migration inventory', () => {
       ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
       ['1785753600805', 'CreateCustomerClasses1785753600805'],
       ['1785753600806', 'DurableInboundIdentity1785753600806'],
+      ['1785753600807', 'CaptureCustomerFundingScope1785753600807'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -165,7 +170,7 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 170 migration identities', () => {
+  it('contains exactly 171 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
     // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
@@ -187,7 +192,7 @@ describe('migration inventory', () => {
       name: 'CreateCustomerClasses1785753600805',
       file: '1785753600805-CreateCustomerClasses.ts',
     });
-    expect(migrations.length).toBe(170);
+    expect(migrations.length).toBe(171);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

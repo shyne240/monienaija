@@ -121,6 +121,7 @@ const check = async (name, fn) => {
  CREATE TABLE inbound_funding_observations(id uuid,provider_key text,provider_reference_hash text,evidence_hash text,provider_reference text,created_at timestamptz);
  CREATE TABLE banking_inbound_payments(id uuid,environment text,provider_key text,provider_transaction_reference text,provider_payment_reference text,verification_state text,recorded_at timestamptz,credited_amount_minor bigint,provider_fee_minor bigint,currency text,institution_id uuid,ledger_transaction_id uuid,gross_amount_minor bigint,paid_at timestamptz);
  CREATE TABLE banking_inbound_float_links(payment_id uuid,float_receipt_id uuid);
+ CREATE TABLE customer_funding_scope_evidence(request_id uuid,institution_id uuid,attribution_id uuid,captured_at timestamptz);
  CREATE TABLE customer_funding_requests(id uuid,status text,reference text,created_at timestamptz,approved_at timestamptz,rejected_at timestamptz,amount_minor bigint,currency text,journal_id uuid,customer_id uuid,channel text,external_reference text,maker_id text,checker_id text,rejection_reason text);
  CREATE TABLE agent_funding_requests(id uuid,direction text,status text,reference text,created_at timestamptz,executed_at timestamptz,rejected_at timestamptz,amount_minor bigint,currency text,journal_id uuid,agent_id uuid,approval_id uuid,maker_principal_id text,checker_principal_id text,rejection_reason text);
  `);

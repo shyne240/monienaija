@@ -139,8 +139,9 @@ function History({ allowed }: { allowed: boolean }) {
         actions={<button onClick={() => setRevision((x) => x + 1)}>Refresh history</button>}
       />
       <p className="th-muted" role="note">
-        History includes posted funding and bank receipts. Funding requests without historical
-        ledger attribution and unposted inbound observations are not included.
+        Customer Funding includes pending and rejected requests with captured historical custody
+        evidence. Requests without trustworthy institution evidence remain hidden from institution
+        staff; platform funding is not institution funding.
       </p>
       <section className="th-card">
         <form

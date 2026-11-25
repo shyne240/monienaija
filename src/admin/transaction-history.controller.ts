@@ -84,13 +84,14 @@ export const HISTORY_SQL = `WITH history AS (
  FROM agent_float_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
  WHERE NOT EXISTS (SELECT 1 FROM banking_inbound_float_links identity WHERE identity.float_receipt_id=r.id)
  UNION ALL
- SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason)
- FROM customer_funding_requests r JOIN ledger_journals j ON j.id=r.journal_id
+ SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,COALESCE(scope.institution_id,j.institution_id),ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason,'scopeEvidenceId',scope.attribution_id,'scopeCapturedAt',scope.captured_at)
+ FROM customer_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
+ LEFT JOIN customer_funding_scope_evidence scope ON scope.request_id=r.id
  UNION ALL
  SELECT r.id,CASE r.direction WHEN 'FUND' THEN 'AGENT_FUNDING' ELSE 'AGENT_DEFUNDING' END,r.status,r.reference,r.created_at,COALESCE(r.executed_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
  jsonb_build_object('agentId',r.agent_id,'approvalId',r.approval_id,'makerId',r.maker_principal_id,'checkerId',r.checker_principal_id,'rejectionReason',r.rejection_reason)
- FROM agent_funding_requests r JOIN ledger_journals j ON j.id=r.journal_id
+ FROM agent_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
 ), scoped AS (SELECT * FROM history h WHERE ($1::boolean OR EXISTS (
  SELECT 1 FROM workforce_institution_assignments a WHERE a.principal_id=$2 AND a.status='ACTIVE' AND a.institution_id=h.institution_id
 )))`;
