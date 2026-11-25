@@ -130,9 +130,30 @@ describe('ARENA 6 — dashboard drill-down', () => {
     const button = await screen.findByTestId('notification-exceptions-drilldown');
     expect(button.textContent).toContain('Investigate failures');
     fireEvent.click(button);
+    // The card's own labeled window travels with the status, and it is the half-open interval the
+    // aggregate was computed over — otherwise the list would carry the rows stamped exactly at `to` that
+    // the number above it deliberately excludes.
     expect(onNavigate).toHaveBeenCalledWith('notificationOperations', {
+      notificationFrom: '2026-11-04T00:00:00.000Z',
+      notificationTo: '2026-11-05T00:00:00.000Z',
+      notificationToExclusive: true,
       notificationStatus: 'FAILED',
     });
+  });
+
+  it('refuses a MEASURED answer that cannot state its window, instead of showing a bare number', async () => {
+    route([widget({ requiredFunctions: ['notification.view_deliveries'] })], {
+      'notification-delivery-exceptions': { ...exceptionsPayload, window: undefined },
+    });
+    const onNavigate = jest.fn();
+    render(<DashboardScreen onNavigate={onNavigate} />);
+
+    // An aggregate with no interval is not comparable to anything, so the client will not render it as
+    // though it were — and it certainly will not offer a drill-down keyed to a window it never saw.
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/did not return a usable answer/i);
+    expect(screen.queryByTestId('notification-exceptions-drilldown')).toBeNull();
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
   it('renders no button at all when the resolved widget carries no drill-down', async () => {

@@ -1,0 +1,190 @@
+{
+  "kind": "arena6-real-session-browser-acceptance",
+  "generatedAt": "2026-11-25T17:27:31.633Z",
+  "api": {
+    "origin": "http://127.0.0.1:4400",
+    "upstream": "http://127.0.0.1:39831",
+    "transport": "real HTTP through this script's same-origin proxy; nothing stubbed in the page"
+  },
+  "bundle": {
+    "webRoot": "/home/user/monienaija/apps/admin-web/dist",
+    "builtBy": "vite build with ADMIN_WEB_API_BASE_URL=/api/v1"
+  },
+  "browser": {
+    "executable": "/tmp/chromium",
+    "note": "a headless Chromium from the sandbox; not Safari, not a screen reader, not a handset"
+  },
+  "fatal": null,
+  "checks": [
+    {
+      "name": "sign-in reaches the dashboard and the exception card",
+      "ok": true,
+      "advisory": false,
+      "detail": "cards=1"
+    },
+    {
+      "name": "the card labels the window it counted",
+      "ok": true,
+      "advisory": false,
+      "detail": "Window: 7d window, 2026-11-18T17:25 to 2026-11-25T17:25 UTChalf-open: created_at >= from AND created_at < to (UTC)"
+    },
+    {
+      "name": "the card exposes only its aggregate, never the raw diagnostics",
+      "ok": true,
+      "advisory": false,
+      "detail": "the sanitized error code belongs to the queue, not to the card"
+    },
+    {
+      "name": "the card states that manual retry is out of policy",
+      "ok": true,
+      "advisory": false,
+      "detail": null
+    },
+    {
+      "name": "the authorized card offers the queue link",
+      "ok": true,
+      "advisory": false,
+      "detail": null
+    },
+    {
+      "name": "the drill-down arrived with the failure filter applied",
+      "ok": true,
+      "advisory": false,
+      "detail": "FAILED"
+    },
+    {
+      "name": "the queue states the half-open window it applied",
+      "ok": true,
+      "advisory": false,
+      "detail": "Applied window: 2026-11-18T17:25 → 2026-11-25T17:25 · created_at >= from AND created_at < to (half-open, UTC) — the same interval the dashboard exception card aggregated, so the two counts are meant to be equal."
+    },
+    {
+      "name": "the queue says the interval is the card’s, not a coincidence",
+      "ok": true,
+      "advisory": false,
+      "detail": "Applied window: 2026-11-18T17:25 → 2026-11-25T17:25 · created_at >= from AND created_at < to (half-open, UTC) — the same interval the dashboard exception card aggregated, so the two counts are meant to be equal."
+    },
+    {
+      "name": "an ordinary (edited) queue query reverts to the inclusive bound",
+      "ok": true,
+      "advisory": false,
+      "detail": "before: Applied window: 2026-11-18T17:25 → 2026-11-25T17:25 · created_at >= from AND created_at < to (half-open, UTC) — the same interval the dashboard exception card aggregated, so the two counts are meant to be equal. || after: Applied window: 2026-11-25T14:26 → 2026-11-25T16:26 · created_at >= from AND created_at <= to (inclusive upper bound, UTC)"
+    },
+    {
+      "name": "the inclusive queue also lists the row stamped exactly at the window end",
+      "ok": true,
+      "advisory": false,
+      "detail": "inclusive total on screen=3, expected=3"
+    },
+    {
+      "name": "the queue the card links to is a count of the same interval, not a different one",
+      "ok": true,
+      "advisory": false,
+      "detail": "queue total=3"
+    },
+    {
+      "name": "the trace is rendered, or its absence is stated rather than glossed",
+      "ok": true,
+      "advisory": false,
+      "detail": "trace=1 unavailable=0"
+    },
+    {
+      "name": "the trace interprets a missing receipt instead of implying health",
+      "ok": true,
+      "advisory": false,
+      "detail": "EVENT RAISED No upstream outbox event is addressable from this delivery. no outbox event is addressable by this delivery event key (retention-purged, or written before key-based linkage) — this is not evidence about the event’s health. Checked 11/25/2026, 5:26:00 PM · source outbox_events + notification_outbox_receipts (consumer notification.v1) EVENT CONSUMED BY THE NOTIFICATION WORKER No consume"
+    },
+    {
+      "name": "the trace offers the jump into the audit trail",
+      "ok": true,
+      "advisory": false,
+      "detail": null
+    },
+    {
+      "name": "the trace jump issues an audit search bound to the delivery’s correlation id",
+      "ok": true,
+      "advisory": false,
+      "detail": "audit requests seen: /api/v1/internal/audit?limit=100&correlationId=arena6-standalone-2a741eb0-a073-4d4d-9370-79d9b78fd2bb"
+    },
+    {
+      "name": "the audit workspace opened",
+      "ok": false,
+      "advisory": true,
+      "detail": "not painted on either renderer (TimeoutError: locator.waitFor: Timeout 45000ms exceeded. / TimeoutError: locator.waitFor: Timeout 45000ms exceeded.); covered by the admin-web jsdom suite and the real-session HTTP test"
+    },
+    {
+      "name": "the restricted role is offered no route into the protected views",
+      "ok": true,
+      "advisory": false,
+      "detail": "controls=0"
+    },
+    {
+      "name": "the restricted role never issues a protected read from the client",
+      "ok": true,
+      "advisory": false,
+      "detail": ""
+    }
+  ],
+  "passed": 17,
+  "total": 18,
+  "advisoryUnavailable": [
+    "the audit workspace opened"
+  ],
+  "realFailures": 0,
+  "requests": {
+    "authorized": [
+      "POST /api/v1/internal/a2/workforce/local-admin-sessions",
+      "GET /api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "GET /api/v1/internal/customers",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "GET /api/v1/internal/metrics",
+      "GET /api/v1/internal/notifications/operations/summary",
+      "GET /api/v1/internal/notifications/deliveries",
+      "GET /api/v1/internal/notifications/operations/summary",
+      "GET /api/v1/internal/notifications/deliveries",
+      "GET /api/v1/internal/notifications/deliveries/c747c2a3-bcaf-4285-bf15-053b57bc36c3",
+      "GET /api/v1/internal/audit"
+    ],
+    "restricted": [
+      "POST /api/v1/internal/a2/workforce/local-admin-sessions",
+      "GET /api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "GET /api/v1/internal/a2/workforce/dashboard/widgets/fraud-case-summary"
+    ]
+  },
+  "responses": {
+    "authorized": [
+      "201 /api/v1/internal/a2/workforce/local-admin-sessions",
+      "200 /api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "200 /api/v1/internal/customers",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "200 /api/v1/internal/metrics",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "200 /api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "200 /api/v1/internal/notifications/deliveries",
+      "200 /api/v1/internal/notifications/operations/summary",
+      "200 /api/v1/internal/notifications/deliveries",
+      "200 /api/v1/internal/notifications/operations/summary",
+      "200 /api/v1/internal/notifications/deliveries/c747c2a3-bcaf-4285-bf15-053b57bc36c3",
+      "200 /api/v1/internal/audit"
+    ],
+    "restricted": []
+  },
+  "environment": "a browser leg that the sandbox Chromium could not paint is recorded as advisory, not as a product failure; the same view is covered by apps/admin-web jsdom suites and the real-session HTTP test",
+  "notCertified": [
+    "the delivery rows, outbox event and audit trail are synthetic records in a disposable database",
+    "no real provider was contacted, so a provider receipt can only be NONE_RECORDED here",
+    "the backend was started the way the integration suites start it; the production readiness gate still refuses dist/main.js"
+  ]
+}

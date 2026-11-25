@@ -66,6 +66,13 @@ export interface AdminNavigationContext {
   correlationId?: string;
   /** Delivery-queue prefilter (e.g. `FAILED`) set by the dashboard exception card. */
   notificationStatus?: string;
+  /**
+   * The card's own window, carried so the queue lists exactly what the aggregate counted rather than a
+   * list whose upper edge is inclusive and therefore has one more row than the number above it.
+   */
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 const LEGACY_VIEW_ALIASES: Partial<Record<AdminView, AdminView>> = {

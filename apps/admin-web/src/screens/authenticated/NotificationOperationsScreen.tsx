@@ -58,17 +58,38 @@ function formatStamp(value: unknown): string {
   return Number.isNaN(date.getTime()) ? 'not recorded' : date.toLocaleString();
 }
 
+/**
+ * `datetime-local` inputs hold a wall-clock string, not an instant. Converting both ways keeps the
+ * drill-down window the same moment on the wire that the card aggregated, whatever the browser's zone.
+ */
+function toLocalInput(iso: string | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toInstant(localValue: string): string {
+  if (!localValue) return '';
+  const date = new Date(localValue);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
 export const NotificationOperationsScreen: React.FC<{
   /** Queue prefilter handed over by the dashboard exception card. */
   initialStatus?: string;
+  /** The card's half-open window, carried through so the list matches the number it came from. */
+  initialWindow?: { from: string; to: string; exclusive: boolean };
   /** Correlation drill-down into the audit workspace, offered only when that view is reachable. */
   onOpenAuditSearch?: (correlationId: string) => void;
-}> = ({ initialStatus, onOpenAuditSearch }) => {
+}> = ({ initialStatus, initialWindow, onOpenAuditSearch }) => {
   const scopes = useAuthStore((state) => state.principal?.scopes);
   const canView = scopes?.includes('notification.view_deliveries') ?? false;
   return canView ? (
     <NotificationOperationsWorkspace
       initialStatus={initialStatus}
+      initialWindow={initialWindow}
       onOpenAuditSearch={onOpenAuditSearch}
     />
   ) : (
@@ -80,21 +101,33 @@ export const NotificationOperationsScreen: React.FC<{
 
 const NotificationOperationsWorkspace: React.FC<{
   initialStatus?: string;
+  initialWindow?: { from: string; to: string; exclusive: boolean };
   onOpenAuditSearch?: (correlationId: string) => void;
-}> = ({ initialStatus, onOpenAuditSearch }) => {
+}> = ({ initialStatus, initialWindow, onOpenAuditSearch }) => {
   const [summary, setSummary] = useState<NotificationOperationsSummary | null>(null);
   const [deliveries, setDeliveries] = useState<NotificationDeliveryPage | null>(null);
   const [detail, setDetail] = useState<NotificationDeliveryDetail | null>(null);
-  const initialFilters: Filters = STATUS_OPTIONS.includes(initialStatus ?? '')
-    ? { ...emptyFilters(), status: initialStatus as string }
-    : emptyFilters();
+  const initialFilters: Filters = {
+    ...(STATUS_OPTIONS.includes(initialStatus ?? '')
+      ? { ...emptyFilters(), status: initialStatus as string }
+      : emptyFilters()),
+    from: toLocalInput(initialWindow?.from),
+    to: toLocalInput(initialWindow?.to),
+  };
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [applied, setApplied] = useState<Filters>(initialFilters);
+  /**
+   * True only while the queue is answering the card's request. An operator who edits `Created to` is
+   * making an ordinary queue query, and the historical inclusive bound applies again — the flag is not a
+   * sticky mode, it is the drill-down's contract.
+   */
+  const [toExclusive, setToExclusive] = useState(initialWindow?.exclusive === true);
+  const [appliedExclusive, setAppliedExclusive] = useState(initialWindow?.exclusive === true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
 
-  const load = useCallback(async (criteria: Filters) => {
+  const load = useCallback(async (criteria: Filters, exclusiveUpperBound: boolean) => {
     setLoading(true);
     setError('');
     try {
@@ -102,6 +135,10 @@ const NotificationOperationsWorkspace: React.FC<{
         Arena4OperationsApi.notificationSummary(24),
         Arena4OperationsApi.notificationDeliveries({
           ...criteria,
+          // ISO on the wire; the exclusive bound only travels with an upper bound to exclude.
+          from: toInstant(criteria.from) || undefined,
+          to: toInstant(criteria.to) || undefined,
+          toExclusive: exclusiveUpperBound && criteria.to ? true : undefined,
           page: 1,
           limit: 20,
         }),
@@ -116,8 +153,8 @@ const NotificationOperationsWorkspace: React.FC<{
   }, []);
 
   useEffect(() => {
-    void load(applied);
-  }, [applied, load]);
+    void load(applied, appliedExclusive);
+  }, [applied, appliedExclusive, load]);
 
   /**
    * Both trace objects are read as optional even though the current contract always sends them:
@@ -164,6 +201,7 @@ const NotificationOperationsWorkspace: React.FC<{
         onSubmit={(event) => {
           event.preventDefault();
           setApplied({ ...filters });
+          setAppliedExclusive(toExclusive);
         }}
       >
         <Field label="Status" htmlFor="a4-notification-status">
@@ -212,8 +250,12 @@ const NotificationOperationsWorkspace: React.FC<{
           <input
             id="a4-notification-to"
             type="datetime-local"
+            // Editing the upper bound turns this into an ordinary queue query: the inclusive bound returns.
+            onChange={(event) => {
+              setFilters({ ...filters, to: event.target.value });
+              setToExclusive(false);
+            }}
             value={filters.to}
-            onChange={(event) => setFilters({ ...filters, to: event.target.value })}
           />
         </Field>
         <Button type="submit" variant="primary" disabled={loading}>
@@ -232,6 +274,32 @@ const NotificationOperationsWorkspace: React.FC<{
           Opened with Status = {initialFilters.status} already applied, from the record you came
           from. Clear it above to see the whole window — note that the summary counts beside it are
           window-wide and are not narrowed by this filter.
+        </p>
+      ) : null}
+
+      {applied.from || applied.to ? (
+        /*
+         * The count below is only meaningful next to the interval that produced it, and two different
+         * intervals are in play by design: the dashboard card's half-open window, and the queue's
+         * historical inclusive bound. Whichever one was applied is stated here as the server reported it,
+         * so a number on this page and a number on the dashboard can be compared honestly — and so an
+         * operator who changes a field sees the boundary description change with it.
+         */
+        <p className="a4-ops__muted" data-testid="a4-applied-window">
+          Applied window: {applied.from || 'any time'}
+          {' → '}
+          {applied.to || 'no upper bound'}
+          {' · '}
+          <code>
+            {deliveries?.window?.boundary ??
+              'the queue did not report which upper bound it used — treat this count as inclusive of the end of the window'}
+          </code>
+          {appliedExclusive && applied.to ? (
+            <span data-testid="a4-applied-window-card-match">
+              {' — the same interval the dashboard exception card aggregated, so the two counts are meant ' }
+              to be equal.
+            </span>
+          ) : null}
         </p>
       ) : null}
 

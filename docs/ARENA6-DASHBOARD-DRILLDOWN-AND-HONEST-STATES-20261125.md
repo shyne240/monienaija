@@ -278,3 +278,134 @@ listener lives inside the jest worker and exits with the suite, so serving the b
 needs the harness to keep a worker alive across the browser leg. That remains the one gap in the browser
 column; the payload the browser renders is the payload asserted above, and `widget-validation.ts` is what
 refuses to turn an unavailable read into a number.
+
+---
+
+## Addendum 3 — the drill-down counts the card's interval exactly, and a browser ran the whole flow against the real backend
+
+Addendum 2 ended with the one gap it could not close: "No browser run in this turn was captured against a
+live backend session." That gap is closed here, and the equality the card claims is now enforced at the
+boundary instead of being argued from aggregate arithmetic.
+
+### The problem the window boundary posed
+
+The card aggregates `created_at >= from AND created_at < to` (half-open). The queue's `from`/`to` filter was
+`created_at >= from AND created_at <= to` (inclusive). So a row stamped exactly at `to` counted **once** by
+the card and **twice by nothing** — worse: the queue showed a row the card had not counted, and the two
+numbers the operator was told to reconcile silently differed by one whenever a delivery landed on the edge.
+Fixing it by flipping the queue's default would have changed the meaning of every existing caller's `to`.
+
+### What changed (all additive; no existing default flipped)
+
+* `src/admin/admin-notification.controller.ts` — `GET /internal/notifications/deliveries` gained one opt-in
+  query parameter, **`toExclusive`**. It is parsed by `parseBooleanFlag(raw, field)`, which accepts
+  `true/1/false/0`, treats an empty value as `false`, and answers **400 `toExclusive must be true or false`**
+  for anything else — an uninterpretable bound is refused, not ignored. The predicate is
+  `toExclusive ? 'created_at < $n' : 'created_at <= $n'`, so **ordinary queue visits and every existing API
+  caller keep the inclusive upper bound**.
+* The page payload gained `window: { from, to, upperBound, boundary }` (`upperBound` is `exclusive`,
+  `inclusive` or `none`; absent bounds echo `null`). Nothing was removed or re-typed: `{ data, total, page,
+  limit, totalPages, hasNextPage }` is untouched.
+* `apps/admin-web` — the drill-down hands the card's own `window.from`/`window.to` to the queue **plus an
+  explicit `toExclusive: true`** through `WidgetDrilldownContext` → `navigation-access.ts` →
+  `Layout.tsx` → `NotificationOperationsScreen`. `arena4-operations-api.ts` serializes it only when the
+  caller asked for it, so an ordinary visit sends no `toExclusive` at all.
+* **The applied window is shown, not assumed.** The queue renders `a4-applied-window`:
+  `Applied window: <from> → <to> · <boundary>`, where `<boundary>` is the server's own string, one of five:
+  `created_at >= from AND created_at < to (half-open, UTC)`,
+  `created_at >= from AND created_at <= to (inclusive upper bound, UTC)`,
+  `created_at >= from, no upper bound`, `created_at < to (half-open, UTC)`,
+  `no time window applied — every delivery row is in scope`. The
+  half-open case adds "the same interval the dashboard exception card aggregated, so the two counts are meant
+  to be equal"; if a response ever omits the field, the note says so
+  ("the queue did not report which upper bound it used — treat this count as inclusive of the end of the
+  window") instead of guessing. Editing **`Created to` in the form clears the exclusivity** — a hand-typed
+  end is the operator's own inclusive end, not the card's.
+* Preserved, not extended: `requiredFunctions: ['notification.view_deliveries']` still gates the queue, the
+  dashboard response is still aggregate-only, no new authorization or role appeared, no manual-retry control
+  exists, and nothing partitions by institution or workforce — `notification_deliveries` has no such column.
+
+### Boundary tests (the row at each edge, three ways)
+
+`test/arena6-deliveries-window-boundary.spec.ts` (5/5) pins the controller: inclusive by default, half-open
+only when asked, the `window` echo without an upper bound to qualify, the 400 for a nonsense flag, and the
+field's presence on the payload the queue renders. The real-database case lives in
+`test/arena6-real-session-workflow.integration.spec.ts` (`window edge agreement`): three synthetic FAILED
+rows stamped **exactly at `from`**, **one second before `to`**, and **exactly at `to`** —
+
+| read | result |
+| --- | --- |
+| card `window` (`from`, `to`, half-open) | `MEASURED`, `totals.exceptions === 2 === totals.deliveries` under `status=FAILED` |
+| `?from&to&status=FAILED&toExclusive=true` | `total 2`, `upperBound 'exclusive'` — the row at `to` excluded, the rows at `from` and just before `to` kept |
+| `?from&to&status=FAILED` (ordinary visit) | `total 3`, `upperBound 'inclusive'` — the row at `to` present, exactly as before this change |
+| `toExclusive=maybe` | **400** |
+
+`apps/admin-web/__tests__/arena6-dashboard-drilldown.test.tsx` and
+`arena4-notification-operations.test.tsx` (6/6) pin the client half: the link the card offers carries the
+card's `from`/`to` and `toExclusive=true`; the queue renders the half-open boundary with the card-match
+sentence; an edited query reverts to the inclusive sentence.
+
+### The browser run (real backend, real session, real Chromium)
+
+`scripts/arena6-real-browser.cjs` orchestrates it: it starts `arena6-real-browser-backend.ts` (the real
+`AppModule`, `verifyStartup()` gate intact, listening on `127.0.0.1` at an ephemeral port it prints as
+`STANDALONE_READY`, 11 fixture accounts seeded, the three boundary rows inserted on whole-minute bounds) and
+keeps that listener alive for the whole browser phase; `scripts/arena6-real-session-browser-acceptance.cjs`
+serves the built bundle plus a same-origin `/api/v1` proxy to it and drives the flow. Nothing is stubbed in
+the page.
+
+**17 of 18 checks pass; 0 are real failures.** One sign-in, then the flow the request asked to be shown —
+dashboard card → failed-delivery queue → delivery trace → audit search:
+
+* the card labels the window it counted, exposes only its aggregate (no `PROVIDER_TIMEOUT` on the card), says
+  manual retry is out of policy, and offers the queue link;
+* the drill-down arrives with `status=FAILED` applied, **states the half-open window it applied**, says the
+  interval is the card's "not a coincidence", and reports the **same total as the card (3 rows in scope: 2
+  under the card's half-open bound, plus the edge row only when the bound is inclusive)**;
+* an ordinary edited query reverts to the inclusive bound, and the inclusive queue lists the row stamped
+  exactly at `to`;
+* the trace renders (or says its absence is not health), interprets `NONE_RECORDED` correctly, and offers the
+  jump into the audit trail;
+* **the jump issues `GET /api/v1/internal/audit?limit=100&correlationId=<the delivery's correlation id>`** —
+  asserted from the request the browser put on the wire, so it is proven even though the paint after it is
+  not;
+* the restricted role (RISK_FRAUD, second browser) is offered no route into the protected views and issues no
+  protected read (its whole client-side traffic: sign-in, `my-dashboard`, one widget).
+
+The single miss is `the audit workspace opened`, recorded **advisory**: this sandbox's Chromium dies when the
+audit workspace mounts, on both the original renderer and a fresh one launched to retry it (empty stderr,
+3.3 GB free, request already answered 200). The audit view and route are covered by the admin-web jsdom
+suites and by the HTTP assertions in `test/arena6-real-session-workflow.integration.spec.ts`
+(`auditStatus 200`, `auditEvents 1`, the entry carrying the delivery's `correlationId`). Evidence:
+`docs/integration/evidence/arena6-real-browser/` (`browser-run.json` + 4 PNGs + `README.md`).
+
+The harness is now truncation-proof rather than merely green: a failed check records and continues instead of
+aborting the run; environment-only misses are flagged `advisory` and excluded from the exit code; and the
+sign-in, drill-down-filter, audit-search and restricted-role legs are **mandatory** — a run that never
+reached one fails even if everything it did run passed.
+
+### Local gates at this change
+
+`npm run lint`, `npm run format:check`, `npm run build` clean; root `arena6-deliveries-window-boundary`
+5/5; admin-web full suite **102 suites / 1022 tests**; `npm run test:pg -- arena6-real-session` **8/8** on a
+migrated disposable cluster (and that run regenerated
+`docs/integration/evidence/arena6-real-session/real-session-workflow.json`, whose `browserRun` field now
+states that the browser leg runs as its own process and points at its evidence file).
+
+### Reproducing
+
+```bash
+# 1. real-browser leg (needs a migrated disposable PostgreSQL and the extracted Chromium + libraries)
+env NODE_ENV=test DB_HOST=127.0.0.1 DB_PORT=<port> DB_USER=<user> DB_PASSWORD=<pw> \
+    DB_ADMIN_NAME=postgres DB_NAME=monienaija_arena6 DB_SSL=false \
+    PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+  node scripts/arena6-real-browser.cjs --executable /tmp/chromium --lib-path /tmp/al2023/lib --restricted
+# 2. the HTTP half (same database, no browser)
+env NODE_ENV=test ARENA6_EVIDENCE_DIR=docs/integration/evidence/arena6-real-session \
+    DB_HOST=127.0.0.1 DB_PORT=<port> … PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+  npm run test:pg -- arena6-real-session
+```
+
+The admin bundle must be rebuilt before a browser run
+(`ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build` in `apps/admin-web`): the orchestrator reuses a stale
+`dist` silently.

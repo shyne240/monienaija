@@ -922,9 +922,9 @@ export const EntitlementsWidget: React.FC = () => {
  * is stated on the card rather than hidden behind a disabled control.
  */
 export const NotificationExceptionsWidget: React.FC<{
-  onOpenQueue?: () => void;
+  onOpenQueue?: (context?: WidgetDrilldownContext) => void;
   /** Deep link into the operations workspace with these failures already filtered. */
-  onOpenFailures?: () => void;
+  onOpenFailures?: (context?: WidgetDrilldownContext) => void;
 }> = ({ onOpenQueue, onOpenFailures }) => {
   const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [from, setFrom] = useState('');
@@ -970,7 +970,19 @@ export const NotificationExceptionsWidget: React.FC<{
           {data?.availability === 'MEASURED' ? (
             <WidgetDrilldownButton
               label="Investigate failures →"
-              onOpen={exceptions && exceptions > 0 ? onOpenFailures : onOpenQueue}
+              onOpen={() => {
+                // The queue is asked for the interval the number was computed over, not for "all time".
+                // Without the exclusive bound the two differ by exactly the rows stamped at `to`.
+                const windowContext: WidgetDrilldownContext | undefined =
+                  data?.window?.from && data?.window?.to
+                    ? {
+                        notificationFrom: data.window.from,
+                        notificationTo: data.window.to,
+                        notificationToExclusive: true,
+                      }
+                    : undefined;
+                (exceptions && exceptions > 0 ? onOpenFailures : onOpenQueue)?.(windowContext);
+              }}
               testId="notification-exceptions-drilldown"
             />
           ) : null}
@@ -1032,6 +1044,10 @@ export interface WidgetDrilldownContext {
   correlationId?: string;
   openAgentApplications?: boolean;
   notificationStatus?: string;
+  /** Half-open window the card aggregated, carried into the queue so the two agree. */
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 export const WidgetRenderer: React.FC<{
@@ -1127,12 +1143,16 @@ export const WidgetRenderer: React.FC<{
         <NotificationExceptionsWidget
           onOpenQueue={
             reachable('notificationOperations')
-              ? () => onOpenView!('notificationOperations')
+              ? (context) => onOpenView!('notificationOperations', context)
               : undefined
           }
           onOpenFailures={
             reachable('notificationOperations')
-              ? () => onOpenView!('notificationOperations', { notificationStatus: 'FAILED' })
+              ? (context) =>
+                  onOpenView!('notificationOperations', {
+                    ...context,
+                    notificationStatus: 'FAILED',
+                  })
               : undefined
           }
         />

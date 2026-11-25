@@ -2,7 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
@@ -142,7 +142,10 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
     restrictedRole: {},
     health: {},
     notCertified: [
-      'no browser rendering in this file (see docs/integration/evidence/arena6-drilldown/ for that leg)',
+      // Named rather than hand-waved: the browser leg in this file's own process is impossible (a worker
+      // does not flush replies to a client in another process), so it was run separately — against a real
+      // backend, not a stub — and its ledger lives beside these files.
+      'no browser rendering happens in this file; see docs/integration/evidence/arena6-real-browser/browser-run.json for the real-backend browser leg, and docs/integration/evidence/arena6-drilldown/ for the stubbed client harness',
       'no provider call was made, so no provider receipt can be FOUND here',
       'the shipped bootstrap still refuses to listen; no AR6 change alters that',
     ],
@@ -617,6 +620,120 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
     };
   });
 
+  it('holds the card and the drill-down queue in exact agreement at both edges of the window', async () => {
+    // A window this test owns outright, so "exactly at from", "one second before to" and "exactly at to"
+    // are unambiguous statements about the same three rows. `period=custom` is how the card is asked for
+    // an explicit interval at all; the default period is relative to the clock and cannot pin an edge.
+    const to = new Date(Date.now() - 60 * 60 * 1000);
+    const from = new Date(to.getTime() - 2 * 60 * 60 * 1000);
+    const edges = [
+      { label: 'exactly at from', at: from, expect: 'counted' as const },
+      { label: 'just before to', at: new Date(to.getTime() - 1000), expect: 'counted' as const },
+      { label: 'exactly at to', at: to, expect: 'excluded' as const },
+    ];
+    for (const edge of edges) {
+      await dataSource.query(
+        `INSERT INTO notification_deliveries
+           (id, event_type, event_key, recipient_type, recipient_id, channel, destination, payload,
+            status, attempts, correlation_id, created_at, updated_at, failed_at)
+         VALUES ($1,$2,$3,'CUSTOMER',$4,'SMS',$5,$6::jsonb,'FAILED',1,$7,$8,$8,$8)`,
+        [
+          randomUUID(),
+          'transfer.failed',
+          `transfer.failed:arena6-edge:${edge.label}`,
+          randomUUID(),
+          '+2348000000000',
+          JSON.stringify({ synthetic: true, edge: edge.label }),
+          fixture.correlationId,
+          edge.at,
+        ],
+      );
+    }
+
+    const session = await login(ROLE_EMAILS.authorized, passwordFor('FINANCE_AUDITOR'));
+    const card = await read(
+      `${API}/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions` +
+        `?period=custom&from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+      session.token,
+    );
+    expect(card.status).toBe(200);
+    const cardBody = asJson(card.body);
+    expect(cardBody.availability).toBe('MEASURED');
+    // Both edge rows inside the half-open window, the one stamped at `to` outside it.
+    expect(Number(asJson(cardBody.totals).exceptions)).toBe(2);
+    expect(Number(asJson(cardBody.totals).deliveries)).toBe(2);
+    expect(String(asJson(cardBody.window).boundary)).toMatch(/half-open/);
+
+    // The drill-down as the console now issues it: same from, same to, upper bound excluded.
+    const windowQuery = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+    const asDrilledDown = await read(
+      `${API}/internal/notifications/deliveries?${windowQuery}&status=FAILED&toExclusive=true&page=1&limit=20`,
+      session.token,
+    );
+    expect(asDrilledDown.status).toBe(200);
+    const drilled = asJson(asDrilledDown.body);
+    expect(Number(drilled.total)).toBe(Number(asJson(cardBody.totals).exceptions));
+    expect(String(asJson(drilled.window).boundary)).toMatch(/half-open/);
+    expect(asJson(drilled.window).upperBound).toBe('exclusive');
+
+    // ...and an ordinary queue visit, unchanged: the inclusive bound still finds the third row, which is
+    // why the drill-down has to say which bound it used instead of silently redefining the endpoint.
+    const asOrdinaryVisit = await read(
+      `${API}/internal/notifications/deliveries?${windowQuery}&status=FAILED&page=1&limit=20`,
+      session.token,
+    );
+    const ordinary = asJson(asOrdinaryVisit.body);
+    expect(Number(ordinary.total)).toBe(3);
+    expect(asJson(ordinary.window).upperBound).toBe('inclusive');
+    const idsOnOrdinaryPage = asArray(ordinary.data).map((row) => String(row.id));
+    const idsOnDrillDownPage = asArray(drilled.data).map((row) => String(row.id));
+    expect(idsOnOrdinaryPage.length).toBe(idsOnDrillDownPage.length + 1);
+    // A bad value is a bad request, never a filter quietly dropped.
+    const nonsense = await read(
+      `${API}/internal/notifications/deliveries?${windowQuery}&toExclusive=maybe`,
+      session.token,
+    );
+    expect(nonsense.status).toBe(400);
+
+    evidence.workflow.push({
+      step: 'window edge agreement',
+      window: asJson(cardBody.window),
+      cardExceptions: asJson(cardBody.totals).exceptions,
+      drillDownTotal: drilled.total,
+      ordinaryVisitTotal: ordinary.total,
+      edges: edges.map((edge) => ({ label: edge.label, expect: edge.expect })),
+      nonsenseBoundStatus: nonsense.status,
+    });
+  });
+
+  it('leaves the browser leg to its own process, and says why', () => {
+    // This suite is the only place the real request path can be exercised, so the obvious next step was to
+    // drive a browser from here against the same listening app. It cannot work, and the reason matters:
+    // a server created inside a jest worker answers requests from its own process, but a request that
+    // arrives from another process is never flushed back — the reply is produced and then sits unwritten.
+    // (Reproduce it by spawning any HTTP client from `beforeAll`: the app's own logs show "request
+    // completed" while the client waits forever.) So the browser phase lives in `scripts/arena6-real-browser
+    // .cjs`, which boots `arena6-real-browser-backend.ts` as its own process — the same real AppModule,
+    // the same guards, the same disposable PostgreSQL — and the two are reported side by side.
+    // What this pins here: the harness exists, and the production startup gate is not bypassed by it.
+    const harness = join(__dirname, '..', 'scripts', 'arena6-real-browser.cjs');
+    const backend = join(__dirname, '..', 'scripts', 'arena6-real-browser-backend.ts');
+    expect(existsSync(harness)).toBe(true);
+    expect(existsSync(backend)).toBe(true);
+    const backendSource = readFileSync(backend, 'utf8');
+    expect(backendSource).toContain('verifyStartup');
+    expect(readFileSync(harness, 'utf8')).toContain('arena6-real-browser-backend.ts');
+    evidence.browserRun = {
+      ranHere: false,
+      reason:
+        'this suite leaves the browser leg to its own process, because a jest worker does not flush replies ' +
+        'to a browser in another process — so the browser run is recorded separately, not implied here',
+      runWith: 'node scripts/arena6-real-browser.cjs --executable <chromium> --lib-path <library>',
+      evidence: 'docs/integration/evidence/arena6-real-browser/browser-run.json',
+      readinessGateAssertedByBackend: true,
+    };
+  });
+
   it('writes an evidence document that states what it does and does not certify', async () => {
     await dataSource.query('DELETE FROM notification_deliveries WHERE correlation_id = $1', [
       fixture.correlationId,
@@ -639,6 +756,13 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
     const json = JSON.stringify(evidence);
     expect(json).toContain('arena6-real-session-workflow');
     expect(json).toContain('notCertified');
+    // The evidence file says where the browser leg lives rather than implying it ran here, so the record
+    // cannot be over-read by whoever picks it up next.
+    expect(json).toContain('leaves the browser leg to its own process');
+    // Naming the file the browser evidence lives in is the other half of the claim: a reader who finds
+    // "not run here" without a path would otherwise conclude the leg was never run at all.
+    expect(json).toContain('arena6-real-browser/browser-run.json');
+    expect(asJson(evidence.browserRun).ranHere).toBe(false);
     expect(asArray(evidence.workflow).length).toBeGreaterThanOrEqual(2);
   });
 });

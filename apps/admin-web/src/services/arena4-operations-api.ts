@@ -47,6 +47,17 @@ export interface NotificationDeliveryPage {
   page: number;
   limit: number;
   totalPages: number;
+  /**
+   * The interval the server actually applied, with the bound it used. `toExclusive` is how a drill-down
+   * from the dashboard asks for the card's own half-open window; an ordinary visit keeps the historical
+   * inclusive bound, and this field is what lets the screen say which of the two produced the count.
+   */
+  window?: {
+    from: string | null;
+    to: string | null;
+    upperBound: 'exclusive' | 'inclusive' | 'none';
+    boundary: string;
+  };
 }
 
 /**
@@ -279,11 +290,20 @@ export const Arena4OperationsApi = {
     search?: string;
     from?: string;
     to?: string;
+    /** Use `created_at < to` instead of the historical `<=`, to match a half-open aggregate. */
+    toExclusive?: boolean;
     page?: number;
     limit?: number;
   }): Promise<NotificationDeliveryPage> {
+    // The bound flag is a query string, so it is spelled out rather than relying on a boolean coercing.
+    const { toExclusive, ...rest } = filters;
     return ApiClient.get<NotificationDeliveryPage>(
-      `/internal/notifications/deliveries?${queryString({ ...filters, page: filters.page ?? 1, limit: filters.limit ?? 20 })}`,
+      `/internal/notifications/deliveries?${queryString({
+        ...rest,
+        ...(toExclusive ? { toExclusive: 'true' } : {}),
+        page: filters.page ?? 1,
+        limit: filters.limit ?? 20,
+      })}`,
     );
   },
 

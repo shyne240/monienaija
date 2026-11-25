@@ -59,6 +59,9 @@ interface NavContext {
   auditEntityType?: string;
   correlationId?: string;
   notificationStatus?: string;
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -799,6 +802,15 @@ export const Layout: React.FC = () => {
         return (
           <NotificationOperationsScreen
             initialStatus={navContext.notificationStatus}
+            initialWindow={
+              navContext.notificationFrom || navContext.notificationTo
+                ? {
+                    from: navContext.notificationFrom ?? '',
+                    to: navContext.notificationTo ?? '',
+                    exclusive: navContext.notificationToExclusive === true,
+                  }
+                : undefined
+            }
             onOpenAuditSearch={
               isVisible('auditEvents')
                 ? (correlationId: string) => handleNav('auditEvents', { correlationId })
