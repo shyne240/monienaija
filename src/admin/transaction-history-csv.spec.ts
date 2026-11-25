@@ -110,9 +110,7 @@ describe('Transaction history CSV serialisation', () => {
       { ...base, feeMinor: null },
       { ...base, id: '22222222-2222-4222-8222-222222222222', feeMinor: '0' },
     ]);
-    const [header = '', unrecorded = '', zero = ''] = csv
-      .replace(/^\uFEFF/, '')
-      .split('\r\n');
+    const [header = '', unrecorded = '', zero = ''] = csv.replace(/^\uFEFF/, '').split('\r\n');
     expect(header).toContain('fee,fee_recorded');
     // fee cell empty, fee_recorded=false
     expect(unrecorded.split(',')).toContain('');

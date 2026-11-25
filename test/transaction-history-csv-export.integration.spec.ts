@@ -394,15 +394,16 @@ describe('Transaction history CSV export (real migrations, PostgreSQL, workforce
       ]),
     );
     // Values that are not formula triggers are left exactly as the operator typed them.
-    expect(references).toEqual(
-      expect.arrayContaining(['COMMA,AND"QUOTE', 'LINE\nBREAK']),
-    );
+    expect(references).toEqual(expect.arrayContaining(['COMMA,AND"QUOTE', 'LINE\nBREAK']));
     // No exported cell still begins a formula.
     for (const reference of references) expect(reference).not.toMatch(/^[=+@]/);
     // The embedded comma/quote/newline did not create extra rows or columns.
     expect(table.every((row) => row.length === CSV_COLUMNS.length)).toBe(true);
     // No data line begins a formula.
-    for (const line of response.text.replace(/^\uFEFF/, '').split('\r\n').slice(1))
+    for (const line of response.text
+      .replace(/^\uFEFF/, '')
+      .split('\r\n')
+      .slice(1))
       expect(line).not.toMatch(/^[=+@]/);
     // An institution-restricted reader does not see platform-scoped requests at all.
     expect((await exportCsv('?type=CUSTOMER_FUNDING', ops).expect(200)).text).not.toContain(
@@ -427,8 +428,12 @@ describe('Transaction history CSV export (real migrations, PostgreSQL, workforce
      * from measured capacity in deployment). The real default is asserted separately below.
      */
     expect(MAX_EXPORT_ROWS).toBe(50_000);
-    const { TransactionHistoryExportService } = require('../src/admin/transaction-history-export.service');
-    const controller = app.get(require('../src/admin/transaction-history.controller').TransactionHistoryController);
+    const {
+      TransactionHistoryExportService,
+    } = require('../src/admin/transaction-history-export.service');
+    const controller = app.get(
+      require('../src/admin/transaction-history.controller').TransactionHistoryController,
+    );
     const lowCeiling = new TransactionHistoryExportService(ds, audit, { maxRows: 10 });
     // Reuse the real controller's own reader by calling the real endpoint's dependencies.
     const principal = {
@@ -456,7 +461,10 @@ describe('Transaction history CSV export (real migrations, PostgreSQL, workforce
       `SELECT new_values FROM audit_events WHERE entity_type='TRANSACTION_HISTORY_EXPORT' AND new_values->>'outcome'='REFUSED_SIZE_LIMIT' ORDER BY occurred_at DESC LIMIT 1`,
     );
     expect(refusal).toHaveLength(1);
-    expect(refusal[0].new_values).toMatchObject({ rowCount: 0, filters: { type: 'BANK_TO_WALLET' } });
+    expect(refusal[0].new_values).toMatchObject({
+      rowCount: 0,
+      filters: { type: 'BANK_TO_WALLET' },
+    });
   }, 120_000);
 
   it('revocation removes the rows from the very next export', async () => {

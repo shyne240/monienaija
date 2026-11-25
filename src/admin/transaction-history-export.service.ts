@@ -68,7 +68,10 @@ export interface HistoryListPage {
 }
 
 export interface HistoryListReader {
-  list(request: { authorizationPrincipal?: AuthorizationPrincipal }, query: Record<string, string>): Promise<HistoryListPage>;
+  list(
+    request: { authorizationPrincipal?: AuthorizationPrincipal },
+    query: Record<string, string>,
+  ): Promise<HistoryListPage>;
 }
 
 /**
@@ -144,7 +147,8 @@ export class TransactionHistoryExportService {
     filters: TransactionHistoryExportQuery,
   ): Promise<TransactionHistoryExport> {
     const actor = request.authorizationPrincipal?.principalId;
-    if (!actor) throw new BadRequestException('An export must name the principal that requested it');
+    if (!actor)
+      throw new BadRequestException('An export must name the principal that requested it');
     const applied = TransactionHistoryExportService.appliedFilters(filters);
     try {
       return await this.run(reader, request, applied, actor);

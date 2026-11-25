@@ -140,7 +140,9 @@ describe('Transaction history CSV export service', () => {
     expect(result.rowCount).toBe(3);
     expect(result.duplicateSuppressed).toBe(1);
     expect(result.body.replace(/^\uFEFF/, '').split('\r\n')).toHaveLength(4);
-    expect(only(audit).newValues as Record<string, unknown>).toMatchObject({ duplicateSuppressed: 1 });
+    expect(only(audit).newValues as Record<string, unknown>).toMatchObject({
+      duplicateSuppressed: 1,
+    });
   });
 
   test('a cursor that never advances fails instead of looping forever', async () => {
@@ -222,14 +224,16 @@ describe('Transaction history CSV export service', () => {
     const reader: HistoryListReader = {
       list: jest.fn().mockRejectedValue(new Error('Authorization denied: FUNCTION_MISSING')),
     };
-    await expect(service(audit).export(reader, request, {})).rejects.toThrow(/Authorization denied/);
+    await expect(service(audit).export(reader, request, {})).rejects.toThrow(
+      /Authorization denied/,
+    );
     expect(only(audit).newValues as Record<string, unknown>).toMatchObject({ rowCount: 0 });
   });
 
   test('an export with no principal cannot be claimed by anyone', async () => {
-    await expect(
-      service().export({ list: jest.fn() }, {}, {}),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service().export({ list: jest.fn() }, {}, {})).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   test('the row ceiling is configurable for measured capacity, but not removable', () => {
@@ -239,9 +243,9 @@ describe('Transaction history CSV export service', () => {
 
   test('a lowered ceiling refuses a matching result instead of truncating it', async () => {
     const audit: Array<Record<string, unknown>> = [];
-    await expect(service(audit, { maxRows: 4 }).export(readerOf(5, 5), request, {})).rejects.toThrow(
-      /more than 4 transactions/,
-    );
+    await expect(
+      service(audit, { maxRows: 4 }).export(readerOf(5, 5), request, {}),
+    ).rejects.toThrow(/more than 4 transactions/);
     expect((only(audit).newValues as Record<string, unknown>).outcome).toBe('REFUSED_SIZE_LIMIT');
   });
 
