@@ -3,8 +3,12 @@
 **Status: draft, unmerged.** One button, labelled **Export CSV**, on the unified Transaction History
 page. Scope is CSV only.
 
-- Base for this work: PR #23 at **`46e9ff703884dff6aa4d9b520a1b6817c8c5b705`** (the last reviewed
-  head), itself branched from `41edf587c262edafbd3eb2cc1b3042c614a9730e`.
+- Exact base SHA: PR #23 head **`96bda49166e27add2d51799eda47f9be374a7bfe`**, branched from
+  `41edf587c262edafbd3eb2cc1b3042c614a9730e`. (The earlier reviewed head `46e9ff70` was superseded
+  by three upstream commits during this work; this branch was rebased onto the newest head so the
+  diff contains only export work.)
+- The export drains `HISTORY_LIST_SQL`, the lighter list projection introduced upstream in
+  `9f358af`, so it inherits that optimisation rather than regressing to the detail-only JSON.
 - This PR targets PR #23's branch (`arena/19545571-monienaija`) so the diff contains only export
   work. Once #23 merges, retarget to `arena/5-main-web-integration`.
 - Out of scope, deliberately: PDF, native Excel workbooks, mobile apps, and any change to the
@@ -137,7 +141,8 @@ Exact tested commit and full command list: [evidence/test-results.md](evidence/t
   real audit sink. 7 tests.
 - `scripts/transaction-history-csv-export-acceptance.cjs --browser` — the same, driven through
   Chromium: signs in, applies filters, moves to page 2, clicks **Export CSV**, saves the real
-  download and reconciles it row for row. 12 checks.
+  download and reconciles it row for row. 12 checks. The code commit the regenerated evidence was
+  produced against is recorded in `evidence/acceptance.json`.
 - `src/admin/transaction-history-csv.spec.ts` (19 tests) and
   `src/admin/transaction-history-export.service.spec.ts` (14 tests) cover escaping, formula
   protection, fee-vs-zero, exact minor-unit conversion, paging, duplicates, the size limit and audit

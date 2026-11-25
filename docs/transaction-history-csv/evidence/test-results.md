@@ -1,14 +1,16 @@
 # Test results — CSV export
 
-Real-PostgreSQL evidence for the transaction history CSV export. Environment: disposable
-PostgreSQL 18 (`embedded-postgres`, port 55440/55441), fully migrated schema, real `AppModule`,
-real local workforce email/password sign-in.
+Real-PostgreSQL evidence for the transaction history CSV export, regenerated on PR #23 head
+`96bda49166e27add2d51799eda47f9be374a7bfe` after the export branch was rebased onto it.
+Environment: disposable PostgreSQL 18 (`embedded-postgres`, port 55440/55441), fully migrated
+schema, real `AppModule`, real local workforce email/password sign-in. The code commit these runs
+were made against is recorded as `commit` in `acceptance.json`; it is an ancestor of this PR's head.
 
 | Command | Result |
 | --- | --- |
 | `npx jest --config jest.integration.config.js --runInBand test/transaction-history-csv-export.integration.spec.ts` | **7 tests passed.** |
 | `LD_LIBRARY_PATH=… node scripts/transaction-history-csv-export-acceptance.cjs --browser` | **12 checks passed**, Chromium download reconciled. |
-| `npx jest --config jest.config.js src/admin` | **5 suites, 64 tests passed.** |
+| `npx jest --config jest.config.js src/admin` | **5 suites, 65 tests passed.** |
 | `npm test --prefix apps/admin-web` | **99 suites, 1007 tests passed.** |
 | `npm run build` (Nest) and `npm run build --prefix apps/admin-web` | PASS. |
 | `npm run ts:check --prefix apps/admin-web`, `npx tsc --noEmit` | PASS. |
