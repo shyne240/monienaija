@@ -106,10 +106,10 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations
         ORDER BY timestamp DESC LIMIT 1`,
     );
-    // The customer-class migration follows the Arena 5 dual-lane migrations.
+    // The platform-funds migration is appended after the customer-class migration by PR #33.
     expect(rows[0]).toEqual({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600813',
+      name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
   });
 

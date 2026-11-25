@@ -85,10 +85,10 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       const positions = ordered.map((id) => position.get(id)!);
       expect(positions.every((value) => value !== undefined)).toBe(true);
       expect(positions).toEqual([...positions].sort((left, right) => left - right));
-      // The customer-class migration follows the Arena 5 dual-lane migrations.
+      // The platform-funds migration is appended after the customer-class migration by PR #33.
       expect(rows.at(-1)).toEqual({
-        timestamp: '1785753600805',
-        name: 'CreateCustomerClasses1785753600805',
+        timestamp: '1785753600813',
+        name: 'CreatePlatformFundsBankComparisons1785753600813',
       });
     });
 
