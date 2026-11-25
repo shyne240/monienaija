@@ -126,7 +126,11 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
           description: 'Approves finance role/control changes.',
           enabled: true,
           scopes: ['privileged:approve', 'privileged:execute'],
-          applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE', 'FINANCE_CONTROL_POLICY_ACTIVATE'],
+          applicableActions: [
+            'FINANCE_ROLE_ASSIGN',
+            'FINANCE_ROLE_REVOKE',
+            'FINANCE_CONTROL_POLICY_ACTIVATE',
+          ],
           mfaRequired: true,
           approvalCapability: true,
           makerEligible: false,
@@ -196,10 +200,30 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
         },
       ]),
       A2_WORKFORCE_RATE_LIMITS_JSON: JSON.stringify([
-        { category: 'workforce-authentication', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
-        { category: 'workforce-bootstrap', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
-        { category: 'finance-role-administration', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
-        { category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+        {
+          category: 'workforce-authentication',
+          capacity: 1000,
+          refillRatePerSecond: 1000,
+          enabled: true,
+        },
+        {
+          category: 'workforce-bootstrap',
+          capacity: 1000,
+          refillRatePerSecond: 1000,
+          enabled: true,
+        },
+        {
+          category: 'finance-role-administration',
+          capacity: 1000,
+          refillRatePerSecond: 1000,
+          enabled: true,
+        },
+        {
+          category: 'privileged-approval',
+          capacity: 1000,
+          refillRatePerSecond: 1000,
+          enabled: true,
+        },
       ]),
       A2_TRUSTED_PROXY_ADDRESSES_JSON: JSON.stringify(['127.0.0.1', '::1/128']),
     });
@@ -1566,7 +1590,10 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
       ...overrides,
     });
 
-    async function proposeFee(preparer: { token: string }, overrides: Record<string, unknown> = {}) {
+    async function proposeFee(
+      preparer: { token: string },
+      overrides: Record<string, unknown> = {},
+    ) {
       const body = feeBody(overrides);
       const res = await request(app.getHttpServer())
         .post('/api/v1/internal/fee-rules')
