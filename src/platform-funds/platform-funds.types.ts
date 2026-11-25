@@ -73,6 +73,8 @@ export interface PlatformFundsAccountEvidence {
   /** credits − debits. Every account in the universe contributes exactly this once. */
   contributionMinor: string;
   lineCount: number;
+  /** Sub-line grouping within the bucket (e.g. suspense vs withdrawal reserve vs unclaimed). */
+  subLine: string;
 }
 
 export interface PlatformFundsBucketLine {

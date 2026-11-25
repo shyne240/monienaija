@@ -452,6 +452,9 @@ export class PlatformFundsService {
     };
 
     // ---- totals, gap and blockers --------------------------------------------------------------
+    const subLineByAccountId = new Map(
+      classified.assignments.map((assignment) => [assignment.accountId, assignment.subLine]),
+    );
     const toEvidence = (row: RawAccountRow) => ({
       accountId: row.accountId,
       code: row.code,
@@ -468,6 +471,7 @@ export class PlatformFundsService {
         : row.credits - row.debits).toString(),
       contributionMinor: (row.credits - row.debits).toString(),
       lineCount: row.lineCount,
+      subLine: subLineByAccountId.get(row.accountId) ?? 'UNMAPPED',
     });
 
     const lines = classified.lines.map((line) => ({
@@ -1390,6 +1394,9 @@ export class PlatformFundsService {
           message:
             'Sign-off is blocked: the ledger mapping is incomplete or ambiguous. Resolve the listed blockers, then submit again.',
           blockers: breakdown.blockers,
+          // ApiError surfaces `errors` as validationErrors — kept so the client can render the
+          // structured blocker list without a re-fetch.
+          errors: breakdown.blockers,
         });
       }
 
