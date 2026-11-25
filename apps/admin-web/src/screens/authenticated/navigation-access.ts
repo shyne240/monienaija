@@ -58,6 +58,9 @@ export interface AdminNavigationContext {
 }
 
 const LEGACY_VIEW_ALIASES: Partial<Record<AdminView, AdminView>> = {
+  cashIn: 'transfers',
+  cashOut: 'transfers',
+  cashToCashOps: 'transfers',
   ledger: 'ledgerExplorer',
   transactions: 'transfers',
   commercial: 'feeRules',

@@ -82,6 +82,8 @@ export class AgentCashToCashOperationsController {
       throw new BadRequestException('reference must be at most 255 characters');
     }
 
+    // Legacy read path remains callable by older clients. Apply the same request-time
+    // institution boundary as unified history; hiding a navigation item is not security.
     const filters: string[] = [];
     const values: unknown[] = [];
     const addFilter = (column: string, value: unknown) => {
@@ -92,6 +94,12 @@ export class AgentCashToCashOperationsController {
     if (agentId) addFilter('t.agent_id', agentId);
     if (transferId) addFilter('t.id', transferId);
     if (reference) addFilter('t.reference', reference);
+    if (!req.authorizationPrincipal?.scopes.includes('institution.attribution.view')) {
+      values.push(req.authorizationPrincipal!.principalId);
+      filters.push(`EXISTS (SELECT 1 FROM ledger_journals scope_j
+        JOIN workforce_institution_assignments scope_a ON scope_a.institution_id=scope_j.institution_id
+        WHERE scope_j.id=t.journal_id AND scope_a.principal_id=$${values.length} AND scope_a.status='ACTIVE')`);
+    }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const countRows: Array<{ total: string }> = await this.dataSource.query(

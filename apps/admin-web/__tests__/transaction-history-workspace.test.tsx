@@ -1,0 +1,101 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  TransactionHistoryScreen,
+  transactionDetailLink,
+} from '../src/screens/authenticated/TransactionHistoryScreen';
+import { ApiClient } from '../src/services/api-client';
+import { useAuthStore } from '../src/store/auth-store';
+import {
+  canonicalAdminView,
+  canAccessAdminView,
+} from '../src/screens/authenticated/navigation-access';
+jest.mock('../src/services/api-client', () => ({ ApiClient: { get: jest.fn() } }));
+const get = ApiClient.get as jest.Mock;
+const row = {
+  id: '11111111-1111-4111-8111-111111111111',
+  reference: 'SYN-C2C',
+  type: 'CASH_TO_CASH',
+  status: 'CLAIMED',
+  createdAt: '2026-11-24T12:00:00Z',
+  amountMinor: '500000',
+  feeMinor: '100',
+  currency: 'NGN',
+};
+beforeEach(() => {
+  window.location.hash = '';
+  get.mockReset();
+  useAuthStore.setState({
+    sessionId: 'synthetic',
+    principal: {
+      type: 'OPERATOR',
+      principalId: 'synthetic',
+      sessionId: 'synthetic',
+      audience: 'workforce-admin',
+      roles: ['OPERATIONS'],
+      scopes: ['transaction.view'],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    },
+  });
+});
+test('legacy money movement routes converge under the same guard', () => {
+  for (const alias of ['cashIn', 'cashOut', 'cashToCashOps', 'transactions'] as const) {
+    expect(canonicalAdminView(alias)).toBe('transfers');
+    expect(canAccessAdminView(alias, [], [])).toBe(false);
+    expect(canAccessAdminView(alias, ['transaction.view'], [])).toBe(true);
+  }
+  expect(transactionDetailLink(row.type, row.id)).toBe(
+    `#transaction-history/${row.type}/${row.id}`,
+  );
+});
+test('combines filters server side and resets pagination', async () => {
+  get.mockResolvedValue({ items: [row], nextCursor: 'cursor-2' });
+  render(<TransactionHistoryScreen />);
+  await screen.findByText('SYN-C2C');
+  expect(screen.queryByRole('option', { name: 'Deposit' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith(expect.stringContaining('cursor=cursor-2')),
+  );
+  fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2026-11-24' } });
+  fireEvent.change(screen.getByLabelText('To date'), { target: { value: '2026-11-24' } });
+  fireEvent.change(screen.getByLabelText('Transaction type'), {
+    target: { value: 'CASH_TO_CASH' },
+  });
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'CLAIMED' } });
+  fireEvent.change(screen.getByLabelText('Exact reference'), { target: { value: 'SYN-C2C' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        'from=2026-11-24&to=2026-11-24&type=CASH_TO_CASH&status=CLAIMED&reference=SYN-C2C&limit=20&cursor=',
+      ),
+    ),
+  );
+});
+test('empty and failure states are explicit', async () => {
+  get
+    .mockResolvedValueOnce({ items: [], nextCursor: null })
+    .mockRejectedValueOnce(new Error('Forbidden: institution permission'));
+  render(<TransactionHistoryScreen />);
+  await screen.findByText('No matching transactions');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh history' }));
+  await screen.findByRole('alert');
+  expect(screen.getByText('Forbidden: institution permission')).toBeTruthy();
+});
+test('no permission means no requests', () => {
+  useAuthStore.setState({ principal: null });
+  render(<TransactionHistoryScreen />);
+  expect(screen.getByRole('alert')).toBeTruthy();
+  expect(get).not.toHaveBeenCalled();
+});
+test('late list responses from a previous principal cannot leak', async () => {
+  let resolve!: (v: unknown) => void;
+  get.mockReturnValue(new Promise((r) => (resolve = r)));
+  const view = render(<TransactionHistoryScreen />);
+  act(() => useAuthStore.setState({ principal: null }));
+  view.rerender(<TransactionHistoryScreen />);
+  resolve({ items: [row], nextCursor: null });
+  await waitFor(() => expect(screen.queryByText('SYN-C2C')).toBeNull());
+});

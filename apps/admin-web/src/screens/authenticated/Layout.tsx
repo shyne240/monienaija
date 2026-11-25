@@ -16,7 +16,7 @@ import { ReconciliationObservabilityScreen } from './ReconciliationObservability
 import { BankingOperationsScreen } from './BankingOperationsScreen';
 import { AgentNetworkScreen } from './AgentNetworkScreen';
 import { AgentClassesScreen } from './AgentClassesScreen';
-import { CashToCashOperationsScreen } from './CashToCashOperationsScreen';
+import { TransactionHistoryScreen } from './TransactionHistoryScreen';
 import { SupportTicketsScreen } from './SupportTicketsScreen';
 import { ComplianceScreen } from './ComplianceScreen';
 import { KycProviderManagementScreen } from './KycProviderManagementScreen';
@@ -49,6 +49,7 @@ import './one-shell.css';
 type View = AdminView;
 
 interface NavContext {
+  transactionKey?: string;
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
@@ -65,7 +66,18 @@ function getFocusable(root: HTMLElement | null): HTMLElement[] {
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>(
+    window.location.hash.startsWith('#transaction-history/') ? 'transfers' : 'dashboard',
+  );
+  const transactionNavigation = useRef<(key: string) => void>(() => {});
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash.startsWith('#transaction-history/'))
+        transactionNavigation.current(window.location.hash);
+    };
+    window.addEventListener('hashchange', open);
+    return () => window.removeEventListener('hashchange', open);
+  }, []);
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -357,14 +369,7 @@ export const Layout: React.FC = () => {
       id: 'money',
       title: 'Transactions',
       items: [
-        { key: 'transfers' as View, label: 'Transfers', visible: isVisible('transfers') },
-        { key: 'cashIn' as View, label: 'Deposits', visible: isVisible('transfers') },
-        { key: 'cashOut' as View, label: 'Withdrawals', visible: isVisible('transfers') },
-        {
-          key: 'cashToCashOps' as View,
-          label: 'Cash to cash',
-          visible: isVisible('cashToCashOps'),
-        },
+        { key: 'transfers' as View, label: 'Transaction History', visible: isVisible('transfers') },
       ],
     },
     {
@@ -519,6 +524,8 @@ export const Layout: React.FC = () => {
     setNotificationGuard(false);
     setNotificationBusy(false);
     setNavigationQuery('');
+    if (!context?.transactionKey && window.location.hash.startsWith('#transaction-history/'))
+      window.location.hash = '';
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -565,6 +572,7 @@ export const Layout: React.FC = () => {
     }
     performNav(view, context);
   };
+  transactionNavigation.current = (transactionKey) => handleNav('transfers', { transactionKey });
   const requestLogout = () => {
     if (
       (customerGuard && canonicalAdminView(currentView) === 'customers') ||
@@ -647,8 +655,6 @@ export const Layout: React.FC = () => {
         );
       case 'agentClasses':
         return <AgentClassesScreen onClassGuardChange={reportClassGuard} />;
-      case 'cashToCashOps':
-        return <CashToCashOperationsScreen />;
       case 'support':
         return (
           <SupportTicketsScreen
@@ -663,6 +669,7 @@ export const Layout: React.FC = () => {
           />
         );
       case 'transfers':
+        if (!navContext.customerId) return <TransactionHistoryScreen />;
         return (
           <TransactionObservabilityScreen
             initialType="TRANSFER"
@@ -672,20 +679,6 @@ export const Layout: React.FC = () => {
                 ? () => handleNav('customers', { customerId: navContext.customerId })
                 : undefined
             }
-          />
-        );
-      case 'cashIn':
-        return (
-          <TransactionObservabilityScreen
-            initialType="DEPOSIT"
-            initialCustomerId={navContext.customerId}
-          />
-        );
-      case 'cashOut':
-        return (
-          <TransactionObservabilityScreen
-            initialType="WITHDRAWAL"
-            initialCustomerId={navContext.customerId}
           />
         );
       case 'ledgerExplorer':

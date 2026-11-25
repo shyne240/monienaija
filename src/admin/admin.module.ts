@@ -1,3 +1,4 @@
+import { TransactionHistoryController } from './transaction-history.controller';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -49,6 +50,7 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     AuthorizationModule,
   ],
   controllers: [
+    TransactionHistoryController,
     AdminAgentController,
     AdminCustomerController,
     AdminAggregatorController,
