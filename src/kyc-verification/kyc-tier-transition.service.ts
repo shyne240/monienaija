@@ -288,8 +288,8 @@ export class KycTierTransitionService {
         await m.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [customerId]);
       }
       let assessmentId: string | null = null,
-        newLevel: string | null = null;
-      let candidate =
+        newLevel: TierLevel | null = null;
+      let candidate: TierLevel | null =
         plan.action === 'PROPOSE_TRANSITION'
           ? plan.newTier
           : plan.action === 'NO_CHANGE' && decision.status === 'ELIGIBLE'
