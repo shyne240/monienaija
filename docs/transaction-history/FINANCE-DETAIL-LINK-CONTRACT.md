@@ -1,6 +1,20 @@
 # Finance → Transaction History detail-link contract
 
-Status: published for review; combined real-session acceptance is **blocked**, not complete. The [Finance25 round-trip diagnostic](FINANCE25-ROUNDTRIP.md) combines PR23 `3c7f5c98fee27cb7164ee27f75605aeb58226c51` and Finance #25 `891a1c1777855b9e921cfc50c962f2626d7eecf8` without merging either PR. Real-session browser checks prove the wallet journal return and both-record permission/scope denials, but History has no forward journal link and Finance has no posted Bank to Wallet source/return mapping. Its original adapter supports only the original four types. The older mocked Finance harness is not the evidence for this diagnostic.
+**Current update:** [Journal navigation and combined acceptance](JOURNAL-NAVIGATION.md).
+
+Historical diagnostic (superseded for forward navigation and these two products by the update above): published for review; combined real-session acceptance is **blocked**, not complete. The [Finance25 round-trip diagnostic](FINANCE25-ROUNDTRIP.md) combines PR23 `3c7f5c98fee27cb7164ee27f75605aeb58226c51` and Finance #25 `891a1c1777855b9e921cfc50c962f2626d7eecf8` without merging either PR. Real-session browser checks prove the wallet journal return and both-record permission/scope denials, but History has no forward journal link and Finance has no posted Bank to Wallet source/return mapping. Its original adapter supports only the original four types. The older mocked Finance harness is not the evidence for this diagnostic.
+
+## History → journal (implemented)
+
+PR23's unified detail uses `onOpenJournal(journalId)` → guarded
+`handleNav('ledgerExplorer', { journalId })` → Ledger `initialJournalId`.
+The action requires an exposed journal ID and ledger.view. This is Finance's
+shell-context contract, **not** a new journal URL hash. Absent journals and
+permission-restricted projections remain distinct. See
+[JOURNAL-NAVIGATION.md](JOURNAL-NAVIGATION.md) for the PR23-owned Layout resolution,
+explicit Finance loader compatibility patch and exact combined browser evidence.
+Both wallet and Bank to Wallet round trips pass on the documented resolved tree
+using Finance head `8301fa245e686c68a2fdce611c93cc191e2106d3`; PR23 remains draft.
 
 ## Link
 

@@ -1,6 +1,6 @@
 # PR23 + Finance PR25 real-session integration diagnostic
 
-**Acceptance: BLOCKED. Do not check off the Finance round-trip gate.**
+**Historical inputs: BLOCKED.** The [new journal navigation evidence](JOURNAL-NAVIGATION.md) supersedes the forward-action and two-product return findings using newer exact heads and an explicit integration resolution. This file remains the unchanged-in-substance record of the original blocked run.
 
 ## Exact tested inputs
 

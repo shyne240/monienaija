@@ -26,6 +26,8 @@ Filters (`type`, `status`, exact `reference`, Lagos `from`/`to`) are ANDed befor
 
 ## Latest local validation
 
+**Latest journal navigation update:** [JOURNAL-NAVIGATION.md](JOURNAL-NAVIGATION.md) records the implemented Open journal action, PR23-owned Layout resolution and successful real-session wallet + Bank to Wallet round trips with Finance `8301fa2` on the explicitly resolved tree. Integration adoption and eventual-head rerun still required; merge held. The older diagnostic below is historical, not current forward-link status.
+
 Finance #25 combined real-session browser diagnostic: **BLOCKED**, with exact PR heads, tree provenance and fresh screenshots in [FINANCE25-ROUNDTRIP.md](FINANCE25-ROUNDTRIP.md). Wallet journal return and both-record denial checks pass, but missing History → journal navigation and Finance Bank to Wallet source mapping prevent the requested two-product round trip. Do not close that gate. The separate five-product browser acceptance is documented in [BROWSER-ACCEPTANCE.md](BROWSER-ACCEPTANCE.md).
 
 
