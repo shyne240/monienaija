@@ -422,9 +422,12 @@ describe('Agent class lifecycle (real PostgreSQL + real HTTP)', () => {
       .expect(200);
 
     // The assignment resolves, so limits must NOT be reported missing.
-    expect(
-      (response.body.missingConfiguration ?? []).map((gap: { code: string }) => gap.code),
-    ).not.toContain('NO_EFFECTIVE_LIMITS');
+    const gapCodes = (body: unknown): string[] => {
+      const gaps = (body as { missingConfiguration?: Array<{ code?: unknown }> })
+        .missingConfiguration;
+      return Array.isArray(gaps) ? gaps.map((gap) => String(gap?.code)) : [];
+    };
+    expect(gapCodes(response.body)).not.toContain('NO_EFFECTIVE_LIMITS');
 
     // A disabled profile does not count as configuration even though the row exists.
     await dataSource.query(`UPDATE limit_profiles SET enabled = FALSE WHERE code = $1`, [
@@ -434,9 +437,7 @@ describe('Agent class lifecycle (real PostgreSQL + real HTTP)', () => {
       .get(`/api/v1/internal/agents/${agentId}/class/readiness`)
       .set('Authorization', `Bearer ${token('OPERATOR', 'AGENT_NETWORK_MANAGER')}`)
       .expect(200);
-    expect(
-      (disabled.body.missingConfiguration ?? []).map((gap: { code: string }) => gap.code),
-    ).toContain('NO_EFFECTIVE_LIMITS');
+    expect(gapCodes(disabled.body)).toContain('NO_EFFECTIVE_LIMITS');
   });
 
   it('gates reads on agent.view (SUPPORT included), writes on agent.manage_classes, and never on the catch-all', async () => {
