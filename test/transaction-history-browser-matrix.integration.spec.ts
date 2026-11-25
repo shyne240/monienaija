@@ -478,7 +478,13 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
           .getByRole('combobox', { name: 'Status', exact: true })
           .selectOption(entry.status);
         await page.getByPlaceholder('Enter a transaction reference').fill(entry.reference);
+        // Applying filters refetches the list and clears the table while it loads. Wait for that
+        // response before reading rows, otherwise a row seen before the reload can disappear.
+        const listLoaded = page.waitForResponse(
+          (r) => r.url().includes('/internal/admin/transaction-history?') && r.ok(),
+        );
         await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+        await listLoaded;
         const row = page
           .getByRole('row')
           .filter({ has: page.getByText(entry.reference, { exact: true }) });
