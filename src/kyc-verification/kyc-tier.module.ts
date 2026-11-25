@@ -14,10 +14,7 @@ import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
-import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
-import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
-import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
 import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
 import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import {

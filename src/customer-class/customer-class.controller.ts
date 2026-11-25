@@ -19,9 +19,7 @@ import {
   CreateCustomerClassDto,
   UpdateCustomerClassDto,
 } from './dto/customer-class.dto';
-import {
-  ConfigureTierDefaultClassesDto,
-} from './dto/tier-default-class.dto';
+import { ConfigureTierDefaultClassesDto } from './dto/tier-default-class.dto';
 import { CustomerTierDefaultClassService } from './customer-tier-default-class.service';
 import { CustomerClassAssignmentService } from './customer-class-assignment.service';
 import { CustomerClassService } from './customer-class.service';

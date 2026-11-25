@@ -88,21 +88,36 @@ export const CustomerClassesScreen: React.FC = () => {
   const [tierReason, setTierReason] = useState('');
   const [tierApprovalId, setTierApprovalId] = useState('');
   const [tierMessage, setTierMessage] = useState('');
+  const normalizeTierDefaults = (value: unknown): TierDefaultsView | null => {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as Partial<TierDefaultsView>;
+    const mappings = Array.isArray(v.mappings) ? v.mappings : [];
+    return {
+      mappings,
+      globalDefault: v.globalDefault && typeof v.globalDefault === 'object' ? v.globalDefault as TierDefaultsView['globalDefault'] : null,
+      allApproved: Boolean(v.allApproved),
+      pendingApprovalCount: typeof v.pendingApprovalCount === 'number' ? v.pendingApprovalCount : 0,
+    };
+  };
+
   const loadTierDefaults = useCallback(async () => {
     const result = await ApiClient.get<TierDefaultsView>('/internal/customer-classes/tier-defaults');
-    setTierDefaults(result);
-    setTierDraft((prev) => ({
-      LEVEL_1: prev.LEVEL_1 || result.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
-      LEVEL_2: prev.LEVEL_2 || result.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
-      LEVEL_3: prev.LEVEL_3 || result.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
-    }));
+    const safe = normalizeTierDefaults(result);
+    setTierDefaults(safe);
+    if (safe) {
+      setTierDraft((prev) => ({
+        LEVEL_1: prev.LEVEL_1 || safe.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
+        LEVEL_2: prev.LEVEL_2 || safe.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
+        LEVEL_3: prev.LEVEL_3 || safe.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
+      }));
+    }
   }, []);
   const load = useCallback(async () => {
     const [result] = await Promise.all([
       ApiClient.get<CustomerClass[]>('/internal/customer-classes'),
       loadTierDefaults().catch(() => undefined),
     ]);
-    setClasses(result);
+    setClasses(Array.isArray(result) ? result : []);
     setLoaded(true);
     setError('');
   }, [loadTierDefaults]);
@@ -110,25 +125,30 @@ export const CustomerClassesScreen: React.FC = () => {
     let mounted = true;
     if (canView)
       Promise.all([
-        ApiClient.get<CustomerClass[]>('/internal/customer-classes'),
+        ApiClient.get<CustomerClass[]>('/internal/customer-classes').catch(() => []),
         ApiClient.get<TierDefaultsView>('/internal/customer-classes/tier-defaults').catch(() => null),
       ])
         .then(([result, defaults]) => {
           if (mounted) {
-            setClasses(result);
-            setTierDefaults(defaults);
-            if (defaults) {
+            setClasses(Array.isArray(result) ? result : []);
+            const safe = normalizeTierDefaults(defaults);
+            setTierDefaults(safe);
+            if (safe) {
               setTierDraft({
-                LEVEL_1: defaults.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
-                LEVEL_2: defaults.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
-                LEVEL_3: defaults.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
+                LEVEL_1: safe.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
+                LEVEL_2: safe.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
+                LEVEL_3: safe.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
               });
             }
             setLoaded(true);
           }
         })
         .catch(() => {
-          if (mounted) setError('Customer classes are unavailable.');
+          if (mounted) {
+            setClasses([]);
+            setTierDefaults(null);
+            setError('Customer classes are unavailable.');
+          }
         });
     return () => {
       mounted = false;
@@ -253,7 +273,7 @@ export const CustomerClassesScreen: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {tierDefaults.mappings.map((m) => (
+                {(Array.isArray(tierDefaults.mappings) ? tierDefaults.mappings : []).map((m) => (
                   <tr key={m.tier}>
                     <td>{m.tier}</td>
                     <td>{m.classCode ? `${m.classCode} — ${m.className ?? ''}` : '—'}{m.classUsable ? '' : ' (not usable)'}</td>

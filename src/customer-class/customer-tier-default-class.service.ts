@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import {
   BadRequestException,
   ConflictException,
@@ -143,11 +141,17 @@ export class CustomerTierDefaultClassService {
       });
       if (!decision.approved) {
         if (
-          ['ROLE_MISSING', 'FUNCTION_MISSING', 'PRINCIPAL_TYPE_DENIED', 'MFA_REQUIRED', 'SUPER_ADMIN_NOT_ALLOWED'].includes(
-            decision.reason ?? '',
-          )
+          [
+            'ROLE_MISSING',
+            'FUNCTION_MISSING',
+            'PRINCIPAL_TYPE_DENIED',
+            'MFA_REQUIRED',
+            'SUPER_ADMIN_NOT_ALLOWED',
+          ].includes(decision.reason ?? '')
         ) {
-          throw new ForbiddenException(`Tier default approval execution denied: ${decision.reason}`);
+          throw new ForbiddenException(
+            `Tier default approval execution denied: ${decision.reason}`,
+          );
         }
         throw governedChangeConsumptionError(decision.reason, decision.approval?.status);
       }
@@ -198,7 +202,13 @@ export class CustomerTierDefaultClassService {
               approvalId: prev.approval_id,
               version: prev.version,
             },
-            newValues: { tier, classId, status: 'APPROVED', approvalId, version: Number(prev.version ?? 1) + 1 },
+            newValues: {
+              tier,
+              classId,
+              status: 'APPROVED',
+              approvalId,
+              version: Number(prev.version ?? 1) + 1,
+            },
           });
         }
         if (existing.length === 0) {
@@ -220,9 +230,13 @@ export class CustomerTierDefaultClassService {
           approvedBy: actor,
           approvalId,
           reason: payload.reason as string,
-          globalDefaultClassCodeAtMigration: (existing[0]?.global_default_class_code_at_migration as string | null) ?? null,
+          globalDefaultClassCodeAtMigration:
+            (existing[0]?.global_default_class_code_at_migration as string | null) ?? null,
           classUsable: true,
-          version: existing.length === 0 ? 1 : Number((existing[0] as Record<string, unknown>).version ?? 1) + 1,
+          version:
+            existing.length === 0
+              ? 1
+              : Number((existing[0] as Record<string, unknown>).version ?? 1) + 1,
         });
       }
 
@@ -237,7 +251,12 @@ export class CustomerTierDefaultClassService {
   async getApprovedDefaultForTier(
     manager: EntityManager,
     tier: string,
-  ): Promise<{ tier: CustomerKycTier; classId: string; classCode: string; className: string } | null> {
+  ): Promise<{
+    tier: CustomerKycTier;
+    classId: string;
+    classCode: string;
+    className: string;
+  } | null> {
     if (!CUSTOMER_KYC_TIERS.includes(tier as CustomerKycTier)) return null;
     const rows = await manager.query<MappingRow[]>(
       `SELECT m.*, c.code AS class_code, c.name AS class_name, c.status AS class_status,
@@ -378,7 +397,8 @@ export class CustomerTierDefaultClassService {
 
   private normalizeClassRow(row: CustomerClass): CustomerClass {
     const raw = row as unknown as Record<string, unknown>;
-    if (typeof raw.configuration_status === 'string') row.configurationStatus = raw.configuration_status;
+    if (typeof raw.configuration_status === 'string')
+      row.configurationStatus = raw.configuration_status;
     if (typeof raw.is_default === 'boolean') row.isDefault = raw.is_default;
     if (raw.deleted_at !== undefined) row.deletedAt = (raw.deleted_at as Date | null) ?? null;
     if (raw.created_at instanceof Date) row.createdAt = raw.created_at;

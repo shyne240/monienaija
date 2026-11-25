@@ -192,7 +192,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA2C_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
-              ...THIS_BRANCH_ONLY,
+        ...THIS_BRANCH_ONLY,
       ]) {
         expect(historicalNames).not.toContain(name);
       }
@@ -206,7 +206,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA2C_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
-              ...THIS_BRANCH_ONLY,
+        ...THIS_BRANCH_ONLY,
       ]);
 
       // Idempotent replay: nothing remains pending and nothing is re-applied.
@@ -257,7 +257,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA3D_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
-              ...THIS_BRANCH_ONLY,
+        ...THIS_BRANCH_ONLY,
       ]) {
         expect(historicalNames).not.toContain(name);
       }
@@ -270,7 +270,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA3D_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
-              ...THIS_BRANCH_ONLY,
+        ...THIS_BRANCH_ONLY,
       ]);
 
       await expect(ds.showMigrations()).resolves.toBe(false);

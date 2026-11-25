@@ -506,9 +506,13 @@ export class LimitCatalogService {
       }
       if (!isAmount && !isCount) throw new BadRequestException(`unknown dimension ${dim}`);
       if (minor !== null && minor !== undefined)
-        throw new BadRequestException(`dimension ${dim} unlimited rules must not have limitValueMinor`);
+        throw new BadRequestException(
+          `dimension ${dim} unlimited rules must not have limitValueMinor`,
+        );
       if (count !== null && count !== undefined)
-        throw new BadRequestException(`dimension ${dim} unlimited rules must not have limitValueCount`);
+        throw new BadRequestException(
+          `dimension ${dim} unlimited rules must not have limitValueCount`,
+        );
       return;
     }
     if (isAmount) {
@@ -611,7 +615,11 @@ export class LimitCatalogService {
       dimension: row.dimension,
       limitValueMinor: row.limitValueMinor ?? null,
       limitValueCount: row.limitValueCount ?? null,
-      isUnlimited: Boolean((row as unknown as { isUnlimited?: boolean; is_unlimited?: boolean }).isUnlimited ?? (row as unknown as { is_unlimited?: boolean }).is_unlimited ?? false),
+      isUnlimited: Boolean(
+        (row as unknown as { isUnlimited?: boolean; is_unlimited?: boolean }).isUnlimited ??
+          (row as unknown as { is_unlimited?: boolean }).is_unlimited ??
+          false,
+      ),
       version: row.version,
       effectiveFrom: row.effectiveFrom,
       effectiveTo: row.effectiveTo ?? null,

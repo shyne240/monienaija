@@ -1,10 +1,10 @@
-import { Injectable, Optional } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import { DataSource } from 'typeorm';
+import { Inject, Injectable, Optional, forwardRef } from '@nestjs/common';
+import { DataSource, type EntityManager } from 'typeorm';
 
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { InstitutionKycLimitPolicyService } from '../limit-catalog/institution-kyc-limit-policy.service';
 import {
   fetchApplicableLimitRuleCandidates,
@@ -84,28 +84,18 @@ export class CustomerEffectiveConfigurationService {
     private readonly feeResolver: FeeRuleResolverService,
     private readonly feeCalculator: FeeRuleCalculatorService,
     private readonly limitProfileResolver: LimitProfileResolverService,
-    private readonly moduleRef: ModuleRef,
     @Optional() private readonly tierLimitPolicies?: InstitutionKycLimitPolicyService,
+    @Optional()
+    @Inject(forwardRef(() => CustomerFinancialEligibilityService))
+    private readonly customerEligibility?: CustomerFinancialEligibilityService,
   ) {}
-
-  private get customerEligibility():
-    | import('../kyc-verification/customer-financial-eligibility.service').CustomerFinancialEligibilityService
-    | undefined {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { CustomerFinancialEligibilityService } = require('../kyc-verification/customer-financial-eligibility.service');
-      return this.moduleRef.get(CustomerFinancialEligibilityService, { strict: false });
-    } catch {
-      return undefined;
-    }
-  }
 
   async evaluate(customerId: string): Promise<CustomerEffectiveConfiguration> {
     return this.dataSource.transaction((manager) => this.evaluateInManager(manager, customerId));
   }
 
   async evaluateInManager(
-    manager: import('typeorm').EntityManager,
+    manager: EntityManager,
     customerId: string,
   ): Promise<CustomerEffectiveConfiguration> {
     const [customerRows, products, classResolution] = await Promise.all([
@@ -327,7 +317,11 @@ export class CustomerEffectiveConfigurationService {
             selected = rule;
             selectedMinor = minor;
             selectedCount = count;
-          } else if (minor === null && count !== null && (selectedCount === null || count < selectedCount)) {
+          } else if (
+            minor === null &&
+            count !== null &&
+            (selectedCount === null || count < selectedCount)
+          ) {
             selected = rule;
             selectedCount = count;
           }
@@ -346,7 +340,9 @@ export class CustomerEffectiveConfigurationService {
           ruleId: selected.id,
           profileCode: selected.limit_profile_code,
           source,
-          effectiveFrom: selected.effective_from ? new Date(selected.effective_from).toISOString() : null,
+          effectiveFrom: selected.effective_from
+            ? new Date(selected.effective_from).toISOString()
+            : null,
           effectiveTo: selected.effective_to ? new Date(selected.effective_to).toISOString() : null,
           isUnlimited: selectedUnlimited,
         };

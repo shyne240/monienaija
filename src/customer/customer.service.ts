@@ -1344,7 +1344,12 @@ export class CustomerService {
     verifiedTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3',
     actor: string,
   ): Promise<Record<string, unknown>> {
-    const issues: Array<{ code: string; message: string; productCode?: string; dimension?: string }> = [];
+    const issues: Array<{
+      code: string;
+      message: string;
+      productCode?: string;
+      dimension?: string;
+    }> = [];
 
     // Resolve approved default class for the verified tier.
     const tierDefault = await this.tierDefaults?.getApprovedDefaultForTier(manager, verifiedTier);
@@ -1381,8 +1386,10 @@ export class CustomerService {
     }
 
     // Determine effective class: preserve approved manual/switch assignment; else use tier default.
-    const currentAssignment = await this.classAssignments?.effectiveOuter
-      ? await manager.query<Array<{ id: string; class_id: string; source: string; version: number }>>(
+    const currentAssignment = this.classAssignments
+      ? await manager.query<
+          Array<{ id: string; class_id: string; source: string; version: number }>
+        >(
           `SELECT a.id, a.class_id, a.source, a.version
              FROM customer_class_assignments a
             WHERE a.customer_id = $1 AND a.is_active = TRUE AND a.deleted_at IS NULL
@@ -1392,7 +1399,6 @@ export class CustomerService {
       : [];
     const liveAssignment = currentAssignment[0] ?? null;
     const isManual = liveAssignment && ['MANUAL', 'SWITCH'].includes(String(liveAssignment.source));
-    let effectiveClassId: string | null = null;
     let effectiveClassCode: string | null = null;
     let effectiveClassName: string | null = null;
     let assignmentResult: { assignmentId: string; classCode: string; source: string } | null = null;
@@ -1412,15 +1418,13 @@ export class CustomerService {
       if (!usable) {
         issues.push({
           code: 'MANUAL_CLASS_UNUSABLE',
-          message: `Manual class assignment ${String(cls?.code ?? liveAssignment.class_id)} is inactive or not configured`,
+          message: `Manual class assignment ${String((cls?.code as string | undefined) ?? liveAssignment.class_id)} is inactive or not configured`,
         });
       } else {
-        effectiveClassId = String(cls.id);
         effectiveClassCode = String(cls.code);
         effectiveClassName = String(cls.name);
       }
     } else if (tierDefault) {
-      effectiveClassId = tierDefault.classId;
       effectiveClassCode = tierDefault.classCode;
       effectiveClassName = tierDefault.className;
     }
@@ -1469,7 +1473,7 @@ export class CustomerService {
               productCode,
             });
           }
-        } catch (e) {
+        } catch {
           issues.push({
             code: 'FEE_RESOLUTION_ERROR',
             message: `Fee resolution failed for ${productCode}`,

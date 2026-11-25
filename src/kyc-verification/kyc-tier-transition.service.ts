@@ -394,13 +394,7 @@ export class KycTierTransitionService {
         });
       }
       if (newLevel && newLevel !== c.kyc_level) {
-        await this.handleTierChangeInManager(
-          m,
-          customerId,
-          c.kyc_level as TierLevel,
-          newLevel as TierLevel,
-          context.actor,
-        );
+        await this.handleTierChangeInManager(m, customerId, c.kyc_level, newLevel, context.actor);
       }
       await m.query(
         `INSERT INTO kyc_tier_evaluations(id,customer_id,revision,policy_version,outcome,reason,old_level,new_level,evidence_ids,assessment_id,actor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid[],$10,$11)`,
@@ -570,7 +564,8 @@ export class KycTierTransitionService {
         }
       }
       incomplete = issues.length > 0;
-      if (incomplete) detail = `Tier configuration incomplete: ${issues.slice(0, 6).join(', ')}`.slice(0, 500);
+      if (incomplete)
+        detail = `Tier configuration incomplete: ${issues.slice(0, 6).join(', ')}`.slice(0, 500);
     } catch {
       incomplete = true;
       detail = 'Tier configuration evaluation failed';
