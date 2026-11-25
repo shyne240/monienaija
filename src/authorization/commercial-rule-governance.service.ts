@@ -155,6 +155,12 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'dimension',
   'limitValueMinor',
   'limitValueCount',
+  'tierDefaults',
+  'mappings',
+  'tier',
+  'classCode',
+  'classId',
+  'globalDefaultClassCode',
 ]);
 
 export function sanitizeCommercialRequestDetails(

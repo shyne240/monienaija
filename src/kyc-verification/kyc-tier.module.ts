@@ -10,6 +10,16 @@ import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
+import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
+import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
+import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import {
   MonnifyVerificationProvider,
   monnifyOptionsFromEnvironment,
@@ -118,6 +128,10 @@ function providerRuntimeFromConfig(
     forwardRef(() => AuthorizationModule),
     forwardRef(() => OperationsModule),
     forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(() => CustomerClassModule),
+    forwardRef(() => FeeRulesModule),
+    forwardRef(() => LimitCatalogModule),
+    forwardRef(() => ProductCatalogModule),
   ],
   controllers: [KycTierPolicyController, KycTierReviewController, PremblyCredentialController],
   providers: [
@@ -247,6 +261,7 @@ function providerRuntimeFromConfig(
           reader,
         ),
     },
+    CustomerEffectiveConfigurationService,
     {
       provide: KycTierTransitionService,
       inject: [
@@ -256,6 +271,9 @@ function providerRuntimeFromConfig(
         AuditService,
         AuthorizationService,
         AuthenticationSessionService,
+        CustomerClassResolverService,
+        CustomerTierDefaultClassService,
+        CustomerEffectiveConfigurationService,
       ],
       useFactory: (
         db: DataSource,
@@ -264,7 +282,21 @@ function providerRuntimeFromConfig(
         audit: AuditService,
         auth: AuthorizationService,
         sessions: AuthenticationSessionService,
-      ) => new KycTierTransitionService(db, policies, reader, audit, auth, sessions),
+        classResolver: CustomerClassResolverService,
+        tierDefaults: CustomerTierDefaultClassService,
+        effectiveConfig: CustomerEffectiveConfigurationService,
+      ) =>
+        new KycTierTransitionService(
+          db,
+          policies,
+          reader,
+          audit,
+          auth,
+          sessions,
+          classResolver,
+          tierDefaults,
+          effectiveConfig,
+        ),
     },
     {
       provide: KycTierWorker,
@@ -287,6 +319,7 @@ function providerRuntimeFromConfig(
     KycTierEvidenceReader,
     KycProviderGovernanceService,
     KycCustomerVerificationService,
+    CustomerEffectiveConfigurationService,
   ],
 })
 export class KycTierModule {}

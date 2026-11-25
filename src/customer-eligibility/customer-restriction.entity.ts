@@ -20,7 +20,7 @@ import { CustomerRestrictionType } from './customer-eligibility.enums';
 @Index('idx_customer_restrictions_customer_active', ['customerId', 'isActive'])
 @Check(
   'chk_customer_restrictions_type',
-  "type IN ('NONE', 'LIMITED', 'MANUAL_REVIEW', 'FROZEN', 'BLACKLISTED')",
+  "type IN ('NONE', 'LIMITED', 'MANUAL_REVIEW', 'FROZEN', 'BLACKLISTED', 'CONFIGURATION_REVIEW')",
 )
 @Check('chk_customer_restrictions_version', 'version > 0')
 export class CustomerRestriction {

@@ -19,6 +19,10 @@ import {
   CreateCustomerClassDto,
   UpdateCustomerClassDto,
 } from './dto/customer-class.dto';
+import {
+  ConfigureTierDefaultClassesDto,
+} from './dto/tier-default-class.dto';
+import { CustomerTierDefaultClassService } from './customer-tier-default-class.service';
 import { CustomerClassAssignmentService } from './customer-class-assignment.service';
 import { CustomerClassService } from './customer-class.service';
 import { CustomerClassResolverService } from './customer-class-resolver.service';
@@ -56,6 +60,7 @@ export class CustomerClassController {
   constructor(
     private readonly classes: CustomerClassService,
     private readonly authorizationService: AuthorizationService,
+    private readonly tierDefaults: CustomerTierDefaultClassService,
   ) {}
 
   @Post()
@@ -79,6 +84,49 @@ export class CustomerClassController {
   async list(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'customer.view');
     return this.classes.list();
+  }
+
+  @Get('tier-defaults')
+  async getTierDefaults(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'customer.view');
+    return this.tierDefaults.list();
+  }
+
+  @Post('tier-defaults/proposals')
+  @HttpCode(201)
+  async proposeTierDefaults(
+    @Body() dto: ConfigureTierDefaultClassesDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireFunction(req, 'customer.manage_classes');
+    if (req.authorizationPrincipal?.readOnlyPrincipal) {
+      throw new ForbiddenException('Read-only principal cannot modify customer classes');
+    }
+    if (!req.authorizationPrincipal) throw new BadRequestException('Authentication required');
+    const decision = await this.tierDefaults.propose(req.authorizationPrincipal, {
+      tierDefaults: dto.tierDefaults,
+      reason: dto.reason,
+    });
+    return { ...decision, actor };
+  }
+
+  @Post('tier-defaults/proposals/:approvalId/execute')
+  @HttpCode(200)
+  async executeTierDefaults(
+    @Param('approvalId') approvalId: string,
+    @Body() dto: ConfigureTierDefaultClassesDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireFunction(req, 'customer.manage_classes');
+    if (req.authorizationPrincipal?.readOnlyPrincipal) {
+      throw new ForbiddenException('Read-only principal cannot modify customer classes');
+    }
+    if (!req.authorizationPrincipal) throw new BadRequestException('Authentication required');
+    const result = await this.tierDefaults.execute(req.authorizationPrincipal, approvalId, {
+      tierDefaults: dto.tierDefaults,
+      reason: dto.reason,
+    });
+    return { ...result, actor };
   }
 
   @Get(':id')

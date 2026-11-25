@@ -14,6 +14,15 @@ import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } 
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { CustomerClassAssignmentService } from '../customer-class/customer-class-assignment.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
+import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import {
+  fetchApplicableLimitRuleCandidates,
+  narrowApplicableLimitRules,
+} from '../limit-catalog/limit-rule-applicability';
+import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
+import { ProductCatalogService } from '../product-catalog/product-catalog.service';
 import { AuditService } from '../operations/audit.service';
 import { consumePhoneVerificationToken } from '../customer-registration/phone-verification-token';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
@@ -82,6 +91,16 @@ export class CustomerService {
     private readonly sessionService?: AuthenticationSessionService,
     @Optional()
     private readonly classAssignments?: CustomerClassAssignmentService,
+    @Optional()
+    private readonly tierDefaults?: CustomerTierDefaultClassService,
+    @Optional()
+    private readonly productCatalog?: ProductCatalogService,
+    @Optional()
+    private readonly feeResolver?: FeeRuleResolverService,
+    @Optional()
+    private readonly limitProfileResolver?: LimitProfileResolverService,
+    @Optional()
+    private readonly classResolver?: CustomerClassResolverService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -171,27 +190,34 @@ export class CustomerService {
       // HARD EVIDENCE GATE — DRAFT/SUSPENDED -> ACTIVE.
       //
       // Activation is the point at which a customer gains financial access, so it must be proved
-      // from authoritative state, not asserted by the caller. Three independent gates run inside
-      // this transaction, after the `customers` row lock:
+      // from authoritative state, not asserted by the caller. Gates run inside this transaction,
+      // after the `customers` row lock:
       //   1. synthetic fixtures can never be activated;
       //   2. exactly one verified primary phone must exist;
-      //   3. the financial-eligibility gate must pass with `requireActive = false` — an APPROVED,
-      //      current, unexpired assessment at the customer's tier, live non-synthetic trusted
-      //      evidence bound to the current identity revision, an approved tier policy in force, no
-      //      manual hold, no identity-ownership conflict, no active FROZEN/BLACKLISTED restriction.
-      // The gate result is recorded on the audit event so a reviewer can see *which* evidence was
-      // proven at the moment of activation, rather than only that a status column changed.
+      //   3. the financial-eligibility gate must pass with `requireActive = false` — verified KYC
+      //      evidence and published policy derive the tier;
+      //   4. approved tier default class is resolved (or approved manual class preserved) and the
+      //      customer has effective fees and limits for each product they will be enabled to use.
+      // Any missing/ambiguous/inactive configuration keeps the customer in DRAFT and reports
+      // exactly what needs fixing. Assignment and activation commit together.
       let activationGate: Record<string, unknown> | undefined;
       if (command.status === CustomerStatus.ACTIVE) {
         if (customer.isSynthetic)
           throw new ConflictException('Synthetic customers cannot be activated');
         await this.assertVerifiedPrimaryPhone(manager, id);
         const tier = await this.financialEligibility.require(manager, id, false);
+        const activationConfig = await this.assertActivationConfigurationInManager(
+          manager,
+          id,
+          tier,
+          actor,
+        );
         activationGate = {
           verifiedPrimaryPhone: true,
           financialEligibility: 'ELIGIBLE',
           verifiedTier: tier,
           evidenceSource: 'TRUSTED_KYC_EVIDENCE',
+          activationConfiguration: activationConfig,
         };
       }
       const previous = this.auditCustomer(customer);
@@ -1310,6 +1336,242 @@ export class CustomerService {
     const normalizedValue =
       phone.country === 'NG' ? normalizeNigerianPhone(phone.e164).canonical : phone.e164;
     return { value: phone.e164, normalizedValue };
+  }
+
+  private async assertActivationConfigurationInManager(
+    manager: EntityManager,
+    customerId: string,
+    verifiedTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3',
+    actor: string,
+  ): Promise<Record<string, unknown>> {
+    const issues: Array<{ code: string; message: string; productCode?: string; dimension?: string }> = [];
+
+    // Resolve approved default class for the verified tier.
+    const tierDefault = await this.tierDefaults?.getApprovedDefaultForTier(manager, verifiedTier);
+    if (!this.tierDefaults) {
+      issues.push({
+        code: 'TIER_DEFAULT_SERVICE_UNAVAILABLE',
+        message: 'Tier default class configuration service is unavailable',
+      });
+    } else if (!tierDefault) {
+      // Distinguish pending approval vs missing.
+      const mappings = await this.tierDefaults.listInManager(manager);
+      const mapping = mappings.mappings.find((m) => m.tier === verifiedTier);
+      if (!mapping) {
+        issues.push({
+          code: 'TIER_DEFAULT_MISSING',
+          message: `No tier default class mapping exists for ${verifiedTier}`,
+        });
+      } else if (mapping.status !== 'APPROVED') {
+        issues.push({
+          code: 'TIER_DEFAULT_NOT_APPROVED',
+          message: `Tier default class mapping for ${verifiedTier} is pending approval`,
+        });
+      } else if (!mapping.classUsable) {
+        issues.push({
+          code: 'TIER_DEFAULT_CLASS_UNUSABLE',
+          message: `Tier default class ${mapping.classCode ?? mapping.classId ?? ''} for ${verifiedTier} is inactive or not configured`,
+        });
+      } else {
+        issues.push({
+          code: 'TIER_DEFAULT_MISSING',
+          message: `Approved tier default class for ${verifiedTier} could not be resolved`,
+        });
+      }
+    }
+
+    // Determine effective class: preserve approved manual/switch assignment; else use tier default.
+    const currentAssignment = await this.classAssignments?.effectiveOuter
+      ? await manager.query<Array<{ id: string; class_id: string; source: string; version: number }>>(
+          `SELECT a.id, a.class_id, a.source, a.version
+             FROM customer_class_assignments a
+            WHERE a.customer_id = $1 AND a.is_active = TRUE AND a.deleted_at IS NULL
+            FOR UPDATE OF a`,
+          [customerId],
+        )
+      : [];
+    const liveAssignment = currentAssignment[0] ?? null;
+    const isManual = liveAssignment && ['MANUAL', 'SWITCH'].includes(String(liveAssignment.source));
+    let effectiveClassId: string | null = null;
+    let effectiveClassCode: string | null = null;
+    let effectiveClassName: string | null = null;
+    let assignmentResult: { assignmentId: string; classCode: string; source: string } | null = null;
+
+    if (isManual) {
+      const classRows = await manager.query<Array<Record<string, unknown>>>(
+        `SELECT id, code, name, enabled, status, configuration_status, deleted_at FROM customer_classes WHERE id = $1`,
+        [liveAssignment.class_id],
+      );
+      const cls = classRows[0];
+      const usable =
+        cls &&
+        cls.deleted_at == null &&
+        cls.enabled === true &&
+        cls.status === 'ACTIVE' &&
+        cls.configuration_status === 'CONFIGURED';
+      if (!usable) {
+        issues.push({
+          code: 'MANUAL_CLASS_UNUSABLE',
+          message: `Manual class assignment ${String(cls?.code ?? liveAssignment.class_id)} is inactive or not configured`,
+        });
+      } else {
+        effectiveClassId = String(cls.id);
+        effectiveClassCode = String(cls.code);
+        effectiveClassName = String(cls.name);
+      }
+    } else if (tierDefault) {
+      effectiveClassId = tierDefault.classId;
+      effectiveClassCode = tierDefault.classCode;
+      effectiveClassName = tierDefault.className;
+    }
+
+    // Verify effective fees and limits for each enabled customer product.
+    const products = await manager.query<Array<{ code: string; name: string }>>(
+      `SELECT code, name FROM products
+        WHERE domain = 'CUSTOMER' AND status = 'ACTIVE' AND enabled = TRUE
+          AND configuration_status = 'CONFIGURED' AND product_scope = 'V1' AND deleted_at IS NULL
+        ORDER BY code ASC`,
+    );
+
+    if (products.length === 0) {
+      issues.push({
+        code: 'NO_ENABLED_PRODUCTS',
+        message: 'No enabled customer products are configured for activation',
+      });
+    }
+
+    for (const product of products) {
+      const productCode = String(product.code).toUpperCase();
+      // Fee rule check
+      if (!this.feeResolver) {
+        issues.push({
+          code: 'FEE_RESOLVER_UNAVAILABLE',
+          message: 'Fee resolver is unavailable',
+          productCode,
+        });
+      } else {
+        try {
+          const fee = await this.feeResolver.resolveWithManager(manager, {
+            productCode,
+            currency: 'NGN',
+            customerClassCode: effectiveClassCode ?? undefined,
+          });
+          if (fee.status === 'NOT_CONFIGURED') {
+            issues.push({
+              code: 'FEE_NOT_CONFIGURED',
+              message: `No fee rule configured for ${productCode}`,
+              productCode,
+            });
+          } else if (fee.status === 'AMBIGUOUS') {
+            issues.push({
+              code: 'FEE_AMBIGUOUS',
+              message: `Ambiguous fee rules for ${productCode}`,
+              productCode,
+            });
+          }
+        } catch (e) {
+          issues.push({
+            code: 'FEE_RESOLUTION_ERROR',
+            message: `Fee resolution failed for ${productCode}`,
+            productCode,
+          });
+        }
+      }
+
+      // Limit rules check: max per tx, daily, weekly, monthly, wallet balance max
+      if (!this.limitProfileResolver) {
+        issues.push({
+          code: 'LIMIT_RESOLVER_UNAVAILABLE',
+          message: 'Limit resolver is unavailable',
+          productCode,
+        });
+      } else {
+        const requiredDimensions = [
+          'MAX_AMOUNT_PER_TX',
+          'DAILY_AMOUNT',
+          'WEEKLY_AMOUNT',
+          'MONTHLY_AMOUNT',
+          'WALLET_BALANCE_MAX',
+        ];
+        const resolved = await this.limitProfileResolver.resolve(manager, {
+          principalType: 'CUSTOMER',
+          principalId: customerId,
+          segmentCodes: effectiveClassCode ? [effectiveClassCode] : [],
+        });
+        const profileCodes = resolved ? [resolved.limitProfileCode] : [];
+        if (profileCodes.length === 0) {
+          issues.push({
+            code: 'LIMIT_PROFILE_MISSING',
+            message: `No limit profile assigned for ${productCode}`,
+            productCode,
+          });
+        } else {
+          const candidates = await fetchApplicableLimitRuleCandidates(manager, {
+            profileCodes,
+            product: productCode,
+            currency: 'NGN',
+            now: new Date(),
+          });
+          const applicable = narrowApplicableLimitRules(candidates, {
+            direction: 'OUTGOING',
+            channel: null,
+          });
+          for (const dim of requiredDimensions) {
+            const has = applicable.some((r) => String(r.dimension).toUpperCase() === dim);
+            if (!has) {
+              issues.push({
+                code: 'LIMIT_RULE_MISSING',
+                message: `Missing ${dim} limit for ${productCode}`,
+                productCode,
+                dimension: dim,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (issues.length > 0) {
+      throw new ConflictException({
+        message: 'Customer activation blocked: configuration is incomplete',
+        code: 'ACTIVATION_CONFIGURATION_INCOMPLETE',
+        verifiedTier,
+        effectiveClassCode,
+        issues,
+      });
+    }
+
+    // Commit assignment (tier default) if no manual assignment exists. Idempotent/retry-safe.
+    if (!isManual && tierDefault && this.classAssignments) {
+      const assignResult = await this.classAssignments.assignInManager(manager, {
+        customerId,
+        classId: tierDefault.classId,
+        source: 'TIER_DEFAULT' as never,
+        reason: `Tier ${verifiedTier} default class applied at activation`,
+        actor,
+        expectedAssignmentVersion: liveAssignment ? Number(liveAssignment.version) : undefined,
+      });
+      assignmentResult = {
+        assignmentId: assignResult.assignment.assignmentId,
+        classCode: assignResult.assignment.classCode,
+        source: assignResult.assignment.source,
+      };
+    } else if (isManual && liveAssignment) {
+      assignmentResult = {
+        assignmentId: String(liveAssignment.id),
+        classCode: effectiveClassCode ?? '',
+        source: String(liveAssignment.source),
+      };
+    }
+
+    return {
+      verifiedTier,
+      tierDefaultClassCode: tierDefault?.classCode ?? null,
+      effectiveClassCode,
+      effectiveClassName,
+      assignment: assignmentResult,
+      productsChecked: products.map((p) => p.code),
+    };
   }
 
   private serializableValues(value: object): Record<string, unknown> {

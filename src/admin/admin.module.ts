@@ -28,6 +28,11 @@ import { AdminSupportCredentialsController } from './admin-support-credentials.c
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
+import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 
 @Module({
   imports: [
@@ -43,6 +48,10 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     // The registration-review read reuses the shared activation-readiness projection so the
     // administrator and the customer see the same outstanding requirements.
     CustomerWalletModule,
+    CustomerClassModule,
+    FeeRulesModule,
+    LimitCatalogModule,
+    ProductCatalogModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
@@ -60,6 +69,10 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     AdminNotificationProviderController,
     NotificationOperationsController,
   ],
-  providers: [CustomerTransactionHistoryService, NotificationOperationsService],
+  providers: [
+    CustomerTransactionHistoryService,
+    NotificationOperationsService,
+    CustomerEffectiveConfigurationService,
+  ],
 })
 export class AdminModule {}

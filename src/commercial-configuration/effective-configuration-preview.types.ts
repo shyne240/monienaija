@@ -139,6 +139,7 @@ export interface PreviewLimitRule {
   currency: string;
   limitValueMinor: string | null;
   limitValueCount: number | null;
+  isUnlimited: boolean;
   priority: number;
   effectiveFrom: string;
   effectiveTo: string | null;

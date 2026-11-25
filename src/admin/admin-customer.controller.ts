@@ -24,6 +24,7 @@ import { CustomerDirectoryQueryDto } from './dto/customer-directory-query.dto';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { CustomerActivationReadinessService } from '../customer-onboarding/customer-activation-readiness.service';
+import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import { WalletService } from '../wallet/wallet.service';
 import { SupportService } from '../support/support.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
@@ -44,6 +45,7 @@ export class AdminCustomerController {
     private readonly supportService: SupportService,
     private readonly auth: AuthorizationService,
     private readonly activationReadiness: CustomerActivationReadinessService,
+    private readonly effectiveConfiguration: CustomerEffectiveConfigurationService,
   ) {}
 
   @Get()
@@ -385,19 +387,33 @@ export class AdminCustomerController {
    * never be shown two different requirement lists. It exposes masked references and status codes
    * only — never document numbers, credentials, PINs or provider payloads.
    */
+  @Get(':id/effective-configuration')
+  async getEffectiveConfiguration(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'customer.view');
+    this.assertUuid(id, 'id');
+    await this.findVisibleCustomer(id);
+    return this.effectiveConfiguration.evaluate(id);
+  }
+
   @Get(':id/registration-review')
   async getRegistrationReview(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view');
     this.assertUuid(id, 'id');
     const customer = await this.findVisibleCustomer(id);
-    const snapshot = await this.activationReadiness.evaluateOuter(id);
+    const [snapshot, effectiveConfiguration] = await Promise.all([
+      this.activationReadiness.evaluateOuter(id),
+      this.effectiveConfiguration.evaluate(id).catch(() => null),
+    ]);
     return {
       customerId: snapshot.customerId,
       reference: maskCustomerReference((customer as unknown as Customer).reference),
       customerType: snapshot.customerType,
       customerStatus: snapshot.customerStatus,
       isSynthetic: snapshot.isSynthetic,
+      verifiedTier: snapshot.kyc.level,
+      assignedClass: snapshot.customerClass,
       defaults: {
         customerClass: snapshot.customerClass,
         kyc: snapshot.kyc,
@@ -417,6 +433,7 @@ export class AdminCustomerController {
       requirements: snapshot.requirements,
       outstanding: snapshot.outstanding,
       activatable: snapshot.activatable,
+      effectiveConfiguration,
       // Activation stays on the governed lifecycle route; this projection deliberately does not
       // offer an alternate mutation path.
       activationRoute: 'PATCH /api/v1/customers/:id',
