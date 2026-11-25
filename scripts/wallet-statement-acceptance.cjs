@@ -636,11 +636,24 @@ async function renderPages(pdfPath, prefix) {
         await page.getByPlaceholder('Workforce email').fill(seedInfo.emailFor('OPERATIONS'));
         await page.getByPlaceholder('••••••••••••').fill(seedInfo.passwordFor('OPERATIONS'));
         await page.getByRole('button', { name: 'Sign in', exact: false }).click();
-        await page.getByTestId('desktop-section-servicing').click();
-        await page.getByTestId('desktop-nav-customers').click();
-        await page.getByPlaceholder('Name, reference or authorized contact').fill('mn-8031234567');
-        await page.getByText('mn-••••4567').first().click();
+        // The desktop navigation rail renders unprefixed test ids (`section-*` / `nav-*`); the
+        // mobile drawer is the `mobile-` variant.
+        await page.getByTestId('section-servicing').click();
+        await page.getByTestId('nav-customers').click();
+        /*
+         * Search by NAME, not by reference: the directory deliberately excludes phone-derived
+         * references (`mn-<digits>`) from search, so a reference search returns nothing by design.
+         */
+        await page
+          .getByPlaceholder('Name, reference or authorized contact')
+          .fill('Chinedu Adeyemi');
+        // Open the customer through the directory's own accessible action, then the wallet drawer.
+        await page
+          .getByRole('button', { name: /Open Customer 360° for Chinedu Adeyemi Okafor/ })
+          .click();
+        await page.getByRole('button', { name: /View NGN wallet details/ }).waitFor();
         await page.getByRole('button', { name: /View NGN wallet details/ }).click();
+        await page.getByLabel('From (Lagos)').waitFor();
         await page.getByLabel('From (Lagos)').fill('2026-10-01');
         await page.getByLabel('To (Lagos)').fill('2026-10-31');
         await page.getByRole('button', { name: 'Preview statement' }).click();

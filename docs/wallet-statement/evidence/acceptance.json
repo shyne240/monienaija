@@ -1,8 +1,8 @@
 {
-  "date": "2026-11-25T18:38:07.654Z",
-  "commit": "938ccdb044beaa8765e60a42573fb10e40b6cd40",
+  "date": "2026-11-25T18:48:55.103Z",
+  "commit": "6954fc55405bbfb3c1eba83a9bddd9ffa5e94893",
   "scope": "Fully migrated disposable PostgreSQL, real AppModule, real workforce email/password sign-in, real Chromium download. Synthetic customers and postings; not a production record.",
-  "browser": false,
+  "browser": true,
   "statement": {
     "pages": 2,
     "rows": 64,
@@ -52,7 +52,7 @@
       "result": "PASS",
       "detail": {
         "pages": 2,
-        "bytes": 214136
+        "bytes": 214403
       }
     },
     {
@@ -76,6 +76,22 @@
     },
     {
       "name": "every page rendered for visual review",
+      "result": "PASS",
+      "detail": {
+        "pages": 2
+      }
+    },
+    {
+      "name": "real browser: sign-in, Customer 360 → wallet → statement, multi-page PDF downloaded and reopened",
+      "result": "PASS",
+      "detail": {
+        "suggestedFilename": "monienaija-wallet-statement-6483-2026-10-01_2026-10-31.pdf",
+        "pages": 2,
+        "foreignRequestStatus": 404
+      }
+    },
+    {
+      "name": "the downloaded file rendered page by page",
       "result": "PASS",
       "detail": {
         "pages": 2
