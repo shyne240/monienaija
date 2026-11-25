@@ -50,8 +50,8 @@ function hashPin(pin: string): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(pin, salt, 10000, 32, 'sha256').toString('base64url')}`;
 }
 
-// Explicitly opt in; normal PG runs still exercise fixture setup and HTTP acceptance, but
-// browser execution requires Vite plus the supplied Chromium binary. No synthetic auth adapter.
+// Explicit performance opt-in: normal PG batches report this entire suite as skipped.
+// HISTORY_MIXED_VOLUME=yes builds/measures the corpus; existing evidence remains versioned.
 volumeDescribe('Transaction History representative mixed-product plans', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
