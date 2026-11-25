@@ -279,6 +279,11 @@ LD_LIBRARY_PATH=/tmp/al2023/lib node scripts/b9-real-session-browser.cjs \
   --executable /tmp/chromium
 ```
 
+Both B9 specs derive the seed script's `LOCAL_DEV_SEED_CONFIRM` from an explicit
+`PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes` declaration, so CI's real-PostgreSQL job needs only the
+declaration it already sets; without it the run still fails closed. The commands above pass both
+variables for clarity.
+
 The fixture run writes `report.md`, `report.json` and four 1440×1000 screenshots into
 `docs/integration/evidence/b9-workforce-approvals/`; the real-session run writes the same plus six
 screenshots into `docs/integration/evidence/b9-real-session/`. The real-session script deletes and

@@ -99,6 +99,13 @@ describe('B9 configurable workforce roles (real PostgreSQL + real HTTP)', () => 
   }
 
   beforeAll(async () => {
+    // The seed script gates itself on LOCAL_DEV_SEED_CONFIRM. CI declares the cluster disposable
+    // (PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes) but does not export this second variable, so derive it
+    // from that declaration rather than demanding a duplicate in CI. Without the declaration this
+    // still fails closed.
+    if (process.env.PG_TEST_CONFIRM_DISPOSABLE_CLUSTER === 'yes') {
+      process.env.LOCAL_DEV_SEED_CONFIRM ??= 'disposable-local-database';
+    }
     dataSource = await createIntegrationDataSource('b9custom');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
