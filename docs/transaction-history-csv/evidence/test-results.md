@@ -24,18 +24,16 @@ unmodified base commit (two are `consolidated-matrix.spec.ts`, which asserts a r
 is in history and cannot hold in this checkout; the other two are Jest workers SIGKILLed under this
 sandbox's memory pressure and pass when run individually). No new failure was introduced.
 
-### One pre-existing integration failure, not caused by this branch
+### The previously inherited C2C integration failure is fixed upstream
 
-CI's `Backend (real PostgreSQL integration)` job reports **1 failed of 199**:
-`test/v1-agent-cash-to-cash-operations.integration.spec.ts:143` expects the legacy
-`/internal/admin/cash-to-cash/transfers` route to return `total: 1` and gets `total: 0`.
+At base `96bda49`, `test/v1-agent-cash-to-cash-operations.integration.spec.ts:143` failed
+(`total: 0` instead of `1`) because its fixture journal was deliberately unattributed while the
+principal held only `transaction.view`. That failure reproduced on the base commit with none of
+this branch's changes, so it was recorded as inherited rather than patched inside an export PR.
 
-This was reproduced **on the base commit `96bda49` with none of this branch's changes present**,
-and it fails identically there and here. The route under test is the legacy C2C operations endpoint,
-which this branch does not touch; the export reads `HISTORY_LIST_SQL` through the transaction
-history controller on a different path. It is recorded here as an inherited failure, not a
-regression, and is left for PR #23's own line of work rather than silently patched inside an
-export PR.
+PR #23 has since fixed it on its own line of work (`f341d0e test: align legacy cash-to-cash
+fixture with historical scope`). This branch is now rebased onto that head, so the failure is
+gone; nothing in this PR was needed to fix it.
 
 ## What the integration suite proves
 
