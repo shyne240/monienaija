@@ -161,7 +161,9 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(Array.isArray(res.body.products)).toBe(true);
-    expect(res.body.products.length).toBe(5);
+    // PR #27 added the two bank directions: WALLET_TO_BANK is a live customer money movement whose
+    // limit is enforced at commitment, and BANK_TO_WALLET is the credit that can be limited.
+    expect(res.body.products.length).toBe(7);
     for (const p of res.body.products) {
       expect(p.configured).toBe(false);
       expect(p.windows).toEqual([]);
@@ -173,9 +175,11 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       .sort();
     expect(names).toEqual(
       [
+        'BANK_TO_WALLET',
         'CASH_TO_CASH',
         'CASH_TO_WALLET',
         'CUSTOMER_FUNDING',
+        'WALLET_TO_BANK',
         'WALLET_TO_CASH',
         'WALLET_TRANSFER',
       ].sort(),

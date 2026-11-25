@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-11-25T18:13:53.145Z",
+  "branch": "arena/41dde913-monienaija",
+  "database": "monienaija",
+  "note": "Preview-vs-runtime parity per banking direction. All reads; zero journals.",
+  "directions": {
+    "WALLET_TO_BANK": {
+      "canonicalProduct": "WALLET_TO_BANK",
+      "authoritativeRecord": "financial_commitments.id",
+      "limitAliasesExercised": ["WITHDRAWAL", "EXTERNAL_BANK_TRANSFER"],
+      "fee": {
+        "previewStatus": "RESOLVED",
+        "previewComputed": {
+          "status": "APPLIED",
+          "feeMinor": "100",
+          "vatMinor": "0",
+          "totalMinor": "250100",
+          "calculationModel": "FLAT_PLUS_PERCENTAGE",
+          "postsJournalLegs": false
+        },
+        "runtimeRuleId": "4717463e-2110-43c5-bf34-291afa06e2ae",
+        "sameRuleRow": true
+      },
+      "limits": {
+        "previewStatus": "RESOLVED",
+        "previewRuleIds": ["3dd3dcd1-e372-4f8c-ad10-9c68887b7899"],
+        "runtimeAllowed": true,
+        "runtimeRuleIds": ["3dd3dcd1-e372-4f8c-ad10-9c68887b7899"],
+        "rulesMatch": true
+      }
+    },
+    "BANK_TO_WALLET": {
+      "canonicalProduct": "BANK_TO_WALLET",
+      "authoritativeRecord": "inbound_funding_receipts.id (bank intake UUID)",
+      "feeDisposition": "NOT_APPLICABLE_INBOUND_CREDIT",
+      "executionBlockers": [
+        "A7_INBOUND_EXECUTION_AUTHORITY is bound to UnavailableA7InboundExecutionAuthority in production, so no bank credit can be posted until an approved execution authority is implemented and registered.",
+        "INBOUND_SUSPENSE_POLICY is deliberately unavailable: there is no approved accounting treatment for received funds that cannot be credited."
+      ],
+      "limits": {
+        "previewStatus": "RESOLVED",
+        "previewRuleIds": ["eee073f4-d299-43bd-a2a4-334ef7e49298"],
+        "runtimeKind": "SYNTHETIC (no live credit execution authority)",
+        "runtimeAllowed": true,
+        "runtimeRuleIds": ["eee073f4-d299-43bd-a2a4-334ef7e49298"],
+        "rulesMatch": true
+      }
+    }
+  },
+  "journalsPosted": "0"
+}

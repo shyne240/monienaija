@@ -161,7 +161,10 @@ describe('V1-AGENT-LIMITS-VIEW-01 Agent Limits View (real PostgreSQL)', () => {
     ['WALLET_TRANSFER', 'INCOMING'],
     ['AGENT_FUNDING', 'INCOMING'],
     ['AGENT_DEFUNDING', 'OUTGOING'],
-    ['EXTERNAL_BANK_TRANSFER', 'OUTGOING'],
+    // PR #27: the agent wallet→bank route is reported under the canonical catalogue product. The
+    // seeded rules below still carry the legacy `EXTERNAL_BANK_TRANSFER` alias, so this pair is also
+    // the live proof that alias matching works end to end.
+    ['WALLET_TO_BANK', 'OUTGOING'],
   ] as const;
 
   it('1. Unauthenticated request is rejected (401) — backend remains authoritative, not client-trusted', async () => {
@@ -293,7 +296,9 @@ describe('V1-AGENT-LIMITS-VIEW-01 Agent Limits View (real PostgreSQL)', () => {
         principalType: 'AGENT',
         principalId: agentId,
         agentClassId: classId,
-        product: 'EXTERNAL_BANK_TRANSFER',
+        // The canonical product the runtime passes; the rule rows above are stored under the
+        // legacy alias and must still be selected.
+        product: 'WALLET_TO_BANK',
         currency: 'NGN',
         direction: 'OUTGOING',
         channel: null,
@@ -309,8 +314,9 @@ describe('V1-AGENT-LIMITS-VIEW-01 Agent Limits View (real PostgreSQL)', () => {
       .get('/api/v1/agents/me/limits')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
+    // Reported under the canonical product, resolved from rules stored under the legacy alias.
     const bank = (res.body.products as AgentLimitProductView[]).find(
-      (p) => p.product === 'EXTERNAL_BANK_TRANSFER',
+      (p) => p.product === 'WALLET_TO_BANK',
     )!;
     const dailyAmount = bank.windows.find(
       (w: AgentLimitWindowView) => w.dimension === 'DAILY_AMOUNT',
@@ -336,7 +342,9 @@ describe('V1-AGENT-LIMITS-VIEW-01 Agent Limits View (real PostgreSQL)', () => {
         principalType: 'AGENT',
         principalId: agentId,
         agentClassId: classId,
-        product: 'EXTERNAL_BANK_TRANSFER',
+        // The canonical product the runtime passes; the rule rows above are stored under the
+        // legacy alias and must still be selected.
+        product: 'WALLET_TO_BANK',
         currency: 'NGN',
         direction: 'OUTGOING',
         channel: null,
@@ -351,8 +359,9 @@ describe('V1-AGENT-LIMITS-VIEW-01 Agent Limits View (real PostgreSQL)', () => {
       .get('/api/v1/agents/me/limits')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
+    // Reported under the canonical product, resolved from rules stored under the legacy alias.
     const bank = (res.body.products as AgentLimitProductView[]).find(
-      (p) => p.product === 'EXTERNAL_BANK_TRANSFER',
+      (p) => p.product === 'WALLET_TO_BANK',
     )!;
     const dailyAmount = bank.windows.find(
       (w: AgentLimitWindowView) => w.dimension === 'DAILY_AMOUNT',

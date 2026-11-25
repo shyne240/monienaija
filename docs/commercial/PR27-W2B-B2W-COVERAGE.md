@@ -1,83 +1,126 @@
 # PR #27 — Wallet to Bank / Bank to Wallet commercial coverage
 
-Status: **draft evidence**, branch `arena/41dde913-monienaija`, base
+Status: **implemented this turn**, branch `arena/41dde913-monienaija`, base
 `arena/5-main-web-integration@41edf587c262edafbd3eb2cc1b3042c614a9730e`.
 
-Pinned to code by `test/v1-commercial-bank-direction-coverage.spec.ts` (9 cases). If any of the
-statements below stop being true, that suite fails.
+Pinned to code by two suites:
 
-## Why this document exists
+- `test/v1-commercial-bank-direction-coverage.spec.ts` — the static coverage contract (19 cases).
+- `test/v1-bank-direction-preview-runtime-parity.integration.spec.ts` — preview vs runtime parity on
+  disposable PostgreSQL with real workforce sessions (8 cases).
 
-The bank directions must be named explicitly rather than implied by "the catalogue covers
-transfers". Each row therefore states the product code, whether a fee preview exists, whether a
-limit preview exists, whether a runtime decision exists, and — where an answer is "no" — the
-specific missing integration.
+Machine-readable result: `docs/commercial/evidence/pr27-bank-direction-parity.json`.
 
-## The coverage table
+## The decision this turn took
 
-| Direction | Product code that prices it | Fee preview | Limit preview | Runtime fee decision | Runtime limit decision |
-|---|---|---|---|---|---|
-| Wallet → Bank (outbound) | **None authoritative.** `WALLET_TO_BANK` exists only as a V2/PLANNED capability and in the seed out-of-scope guard list. Runtime prices against **whichever single fee rule is active for the currency** (product-agnostic). | **Yes, with a caveat** — `GET customers/me/banking/bank-transfer-preview` and `GET agents/me/banking/bank-transfer-preview` return `pricingSource: APPROVED_RULE` with `feeRuleId` + `productCode`, or `AMBIGUOUS_PRICING` with zero fee when more than one product has a live rule. | **No direction-specific preview.** No preview endpoint reads the limit catalogue for bank transfer; the admin effective-configuration preview only resolves limit profiles for the product codes you ask about, and no bank product code exists to ask about. | **Yes** — `FinancialCommitmentService` calls `BankingFeeBindingService.bindForCommittedOperationInTransaction()` inside the authorization transaction and refuses when the bound total ≠ the authorized debit. | **Yes** — but under the limit products `WITHDRAWAL` (customer) and `EXTERNAL_BANK_TRANSFER` (agent), enforced through `LimitEnforcementService.enforceWithManager` with `requireConfiguration: true`. |
-| Bank → Wallet (inbound) | **None.** `BANK_TO_WALLET` is neither seeded, nor a capability row, nor referenced by runtime code. | **No** — `BankingInboundService` has no fee-rule read at all. | **No** — the inbound posting path never calls `LimitEnforcementService`. | **No** — the only "fee" inbound understands is `provider_fee_minor` (the bank/provider's own charge), stored as immutable receipt evidence. There is no platform fee decision. | **No** — no limit read, no reservation, no usage diagnostic on this path. |
+The previous revision of this document recorded four gaps. All four had the same root cause: **no
+canonical product for either bank direction.** They are now closed by naming one product per
+direction, once, and making every surface read it.
 
-### The four gaps, stated concretely
+| Direction                | Canonical product                                              | Authoritative record (PR #23)                    | Fee                                                                                                  | Limit                                                                                                                                 |
+| ------------------------ | -------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet → Bank (outbound) | `WALLET_TO_BANK` — ACTIVE, enabled, for **customer and agent** | `financial_commitments.id`                       | `fee_rules` in force for `WALLET_TO_BANK`; bound at commitment, previewed at `bank-transfer-preview` | Enforced for both lanes at commitment under `WALLET_TO_BANK`; legacy `WITHDRAWAL` / `EXTERNAL_BANK_TRANSFER` rules resolve as aliases |
+| Bank → Wallet (inbound)  | `BANK_TO_WALLET` — seeded **DISABLED**                         | `inbound_funding_receipts.id` (bank intake UUID) | `NOT_APPLICABLE_INBOUND_CREDIT` — no customer service fee, by decision                               | Enforced on the credit path when a credit posts; previewable now                                                                      |
 
-1. **Wallet → Bank has no product identity.** `OUT_OF_SCOPE_PRODUCT_CODES` in
-   `src/product-catalog/product-catalog.seed.ts` carries `WALLET_TO_BANK`, and the capability
-   registry marks it `V2 / PLANNED / NOT_EXPOSED` with the blocker
-   "V2 out-of-scope: bank/provider integration". Meanwhile the runtime prices the direction from
-   whatever single product happens to have a live rule for the currency. So the fee an Admin Web
-   authoring screen would need to scope cannot be scoped today: **there is no approved mapping from
-   "wallet → bank" to a fee-rule `product_code`.** Adding that mapping is a commercial decision, not
-   a test change.
-2. **Wallet → Bank has no direction-specific limit preview.** Enforcement is real but keyed on
-   `WITHDRAWAL` / `EXTERNAL_BANK_TRANSFER`, neither of which is a catalogue product code. An
-   operator authoring a limit profile cannot see which of those two keys applies to a bank transfer,
-   so preview and enforcement are joined only inside the runtime service.
-3. **Bank → Wallet has no commercial surface at all.** No fee rule, no limit rule, no preview. Its
-   product identifier is absent from the catalogue and from the capability registry, so there is
-   nothing even to author against. The provider fee is evidence, not policy.
-4. **Bank → Wallet identity work exists elsewhere.** Inbound receipt identity, float links and
-   duplicate-credit protection are covered by PR #23 (`docs/transaction-history/INBOUND-IDENTITY.md`,
-   `evidence/inbound-identity-results.json`). That work is payment-evidence and reconciliation
-   scope; it deliberately does **not** create a fee or limit decision, and this PR does not claim it
-   does.
+Both identities live in `src/product-catalog/banking-product-identities.ts` with their fee
+disposition, principal types, execution entry point and execution blockers, so the catalogue, the
+resolvers, the preview and Admin Web cannot disagree about what a direction _is_.
 
-### Is the seed exclusion a release-scope decision?
+## Why one product, not one per principal type
 
-**No, and it is recorded here as a carry-over.** `OUT_OF_SCOPE_PRODUCT_CODES` is a foundation-era
-guard list ("must NEVER be enabled by this foundation") with a comment about the seed, not a
-product-owner statement that V1 excludes bank transfers. Two independent sources say the directions
-are intended work:
+A customer wallet→bank transfer and an agent wallet→bank transfer are the same commercial route:
+same wallet debit, same dispatch, same settlement. PR #23 already records both under the single
+transaction-history type `WALLET_TO_BANK`, keyed by `financial_commitments.id`, and states there is
+**no second agent-external-bank-transfer type**. Adding an `AGENT_BANK_TRANSFER` product purely to
+mirror the legacy `EXTERNAL_BANK_TRANSFER` limit string would duplicate a product identity and split
+one tariff across two codes. So:
 
-- the capability registry lists `WALLET_TO_BANK` with `owner: 'Wallet'` and a real implementation
-  reference (`src/partner/partner.service.ts`), and `NIBSS_INTEGRATION` declares
-  `dependencies: ['WALLET_TO_BANK']` — i.e. the capability graph expects it;
-- the runtime already charges and limits the outbound direction (see the table), so the *behaviour*
-  exists without the *catalogue identity*.
+- `EXTERNAL_BANK_TRANSFER` remains what it always was — an **agent capability/service code**
+  (`AgentService.EXTERNAL_BANK_TRANSFER`), never a catalogue product;
+- it is declared a **legacy limit alias** of `WALLET_TO_BANK`, alongside `WITHDRAWAL`;
+- the alias is honoured at **read time** in the one shared applicability module
+  (`limit-catalog/limit-rule-applicability.ts`). No approved rule was rewritten: changing the meaning
+  of an approved limit rule in place would be a governed change, not a code deploy.
 
-The honest V1 position is therefore: **outbound has runtime behaviour but no governable product
-identity; inbound has neither.** Both stay on the V1 checklist below.
+## What changed, surface by surface
 
-## What this turn proved for the bank direction (and what it did not)
+| Surface                          | Before                                                                                                                              | Now                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Catalogue seed                   | `WALLET_TO_BANK` / `BANK_TO_WALLET` in the _out-of-scope guard list_                                                                | Both seeded; outbound ACTIVE, inbound DISABLED. Guard list carries neither        |
+| Commitment limit (customer lane) | `product: 'WITHDRAWAL'`                                                                                                             | `WALLET_TO_BANK.productCode`                                                      |
+| Commitment limit (agent lane)    | `product: 'EXTERNAL_BANK_TRANSFER'`                                                                                                 | `WALLET_TO_BANK.productCode` (same product)                                       |
+| Customer limit view              | 5 product pairs, **no bank pair** — a customer could be refused by a limit they could not see                                       | 7 pairs incl. `WALLET_TO_BANK` OUT and `BANK_TO_WALLET` IN                        |
+| Agent limit view                 | `EXTERNAL_BANK_TRANSFER` OUT                                                                                                        | `WALLET_TO_BANK` OUT; legacy rules still resolve                                  |
+| Limit usage lookup (both views)  | `product = <canonical>` — reported **zero consumption** for rules authored under the alias                                          | sums every key of the route; two spellings are one allowance                      |
+| Fee binding at commitment        | "whichever single product in the currency has a live rule", else refuse — configuring a second product made bank transfers unpriced | selects only `WALLET_TO_BANK` rules                                               |
+| Fee preview endpoint             | selected `r.payment_type`, **a column `fee_rules` does not have** — the endpoint failed with a SQL error for every call             | shares one selector with the binding; payment type is a constant of the route     |
+| Inbound credit                   | no fee and **no limit decision**                                                                                                    | canonical `BANK_TO_WALLET` limit enforced inside the posting transaction          |
+| Effective-configuration preview  | no bank product to ask about                                                                                                        | resolves both; reports inbound fee as not applicable rather than `NOT_CONFIGURED` |
 
-The fee demonstration in PR #27 is on **Wallet Transfer** (`WALLET_TRANSFER`), not a bank direction.
-That was deliberate: `WALLET_TRANSFER` has a complete, seedable synthetic execution path
-(real customer session → `TransferQuoteService.create()` → serializable pricing), so the applied fee
-can be compared to an actual runtime quote. Wallet → Bank has no equivalent synthetic end-to-end
-execution available in this sandbox: it needs an approved provider/bank integration and an external
-operation, and `BankingFeeBindingService` refuses to pick a product when the currency has more than
-one live rule. Using it for the maker/checker/executor demonstration would prove the governance
-wrapper, not the fee.
+Two defects were found and fixed while wiring this, both worth calling out because they were
+invisible:
 
-## V1 checklist (unchanged priorities, now with owners for the gaps)
+1. **The bank-transfer fee preview never worked.** `banking-transfer-pricing.controller.ts` selected
+   `r.payment_type`, which does not exist on `fee_rules`. Every request errored. That is why the
+   product-agnostic pricing never surfaced as a customer-visible inconsistency: nobody could reach
+   it. The selector now lives in `banking/banking-fee-rule-selection.ts` and is shared with the
+   binding.
+2. **Limit consumption was invisible under the alias.** `limit_usages` rows are keyed by the product
+   **spelling on the rule that created them**. Once the runtime passed the canonical code, a rule
+   authored as `EXTERNAL_BANK_TRANSFER` consumed a row the view never looked at, so a spent limit
+   displayed as untouched. Both views now aggregate across every key of the route.
 
-- [ ] Approve the fee-rule `product_code` that governs Wallet → Bank (commercial decision), and
-      replace the product-agnostic single-rule check with that explicit mapping.
-- [ ] Approve the limit product keys for bank transfer (`WITHDRAWAL` for customers,
-      `EXTERNAL_BANK_TRANSFER` for agents) as reviewable catalogue identity, so a limit preview can
-      show them.
-- [ ] Decide whether Bank → Wallet carries a platform fee and/or a limit; without that decision
-      there is nothing to author, preview, or enforce.
-- [ ] Keep provider/bank integration, NIBSS and inbound identity out of this PR's scope; they are
-      tracked in PR #23 and the capability registry.
+## Bank → Wallet: why the fee is "not applicable", not "not configured"
+
+A bank credit is money the customer did not instruct us to spend. Charging a service fee on it is a
+commercial decision nobody has taken, so none is seeded and none is invented — and the product is
+seeded **DISABLED**, which is what keeps that visible in the catalogue rather than silently free. The
+only fee evidence the inbound path carries is `provider_fee_minor` on the receipt: the provider's own
+charge, which is external cost, not revenue.
+
+The **limit** is different: a limit on a credit is a real control, so `BANK_TO_WALLET` rules are
+enforced on the credit path. `InboundFundingService.enforceInboundLimit` evaluates the canonical
+product inside the same SERIALIZABLE transaction that posts the credit, using the same
+`LimitEnforcementService`. It uses `requireConfiguration: true` (evidence is pinned) but not
+`strictConfiguredRules`: a bank credit cannot be refused at the till the way a customer-initiated
+debit can, because the money has already arrived, and the suspense policy that would hold it is
+deliberately unavailable. If a rule _is_ configured and the credit breaches it, the rule's own
+refusal stands and the ledger credit rolls back with it.
+
+## Supported vs unavailable — stated explicitly
+
+| Execution path                   | State                                                                                     | What it needs                                                                                                                                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet → Bank (customer + agent) | **Supported.** Commitment → fee binding → limit → dispatch intent, all in one transaction | —                                                                                                                                                                                                        |
+| Bank → Wallet credit execution   | **Unavailable by design.** Preview and rules exist; no credit can post                    | An approved `A7_INBOUND_EXECUTION_AUTHORITY` implementation registered in place of `UnavailableA7InboundExecutionAuthority`, and an approved `INBOUND_SUSPENSE_POLICY` for funds that cannot be credited |
+| Live provider calls (NIBSS etc.) | **Not enabled**                                                                           | Provider registration, credentials and operational readiness; none exist in this repository state                                                                                                        |
+
+No provider is named in the identity module, no rate is invented, and no regulatory ceiling is
+asserted — synthetic values are used only in tests.
+
+## Demonstration (this turn)
+
+`test/v1-bank-direction-preview-runtime-parity.integration.spec.ts`, 8/8:
+
+- **Wallet → Bank fee**: preview `RESOLVED`, computed `fee 100 / vat 0 / total 250100`; the runtime
+  selector returns the **same `fee_rule` row id**; 0 journals.
+- **Wallet → Bank limit**: preview rule ids equal the runtime `ruleRefs` id for the within-limit case;
+  a breach is refused by both.
+- **Legacy alias**: a rule stored as `WITHDRAWAL` previews and decides identically to one stored as
+  `WALLET_TO_BANK` — the compatibility guarantee.
+- **Agent lane**: same product, legacy `EXTERNAL_BANK_TRANSFER` rule; no agent-specific catalogue
+  product exists (asserted against `products`).
+- **Bank → Wallet limit**: preview rule ids equal the **synthetic runtime** decision the credit path
+  makes (documented as synthetic because no execution authority exists); a breach is refused.
+- **Bank → Wallet fee**: product reported DISABLED, fee section not `RESOLVED`, blockers listed.
+
+## Still open in PR #27 (draft)
+
+- [ ] Limit-profile authoring screens in Admin Web (this turn wires resolution, not authoring UI).
+- [ ] Browser verification — no Playwright/browser binaries in the sandbox; blocked, recorded in PR.
+- [ ] PR #24 tier-ceiling alignment: the institution KYC tier path still resolves product mappings by
+      product code, so a `WALLET_TO_BANK` tier mapping is authorable but has not been reconciled with
+      that PR's ceiling model.
+- [ ] Agent commission preview + missing/ambiguous-rule demonstration (commission rules are governed
+      but not yet exercised for a bank direction).
+- [ ] Inbound execution authority + suspense policy: the two blockers above.

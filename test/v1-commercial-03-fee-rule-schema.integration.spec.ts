@@ -285,9 +285,16 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       await dataSource.query(
         `SELECT code, configuration_status, enabled FROM products ORDER BY code`,
       );
-    expect(products).toHaveLength(7);
+    // PR #27 added the two bank directions; BANK_TO_WALLET is seeded DISABLED (no live inbound
+    // execution authority), so it reports DISABLED configuration rather than NOT_CONFIGURED.
+    expect(products).toHaveLength(9);
     for (const p of products) {
-      expect(p.configuration_status).toBe('NOT_CONFIGURED'); // fee-rule table existing changes nothing
+      if (p.code === 'BANK_TO_WALLET') {
+        expect(p.configuration_status).toBe('DISABLED');
+        expect(p.enabled).toBe(false);
+      } else {
+        expect(p.configuration_status).toBe('NOT_CONFIGURED'); // fee-rule table existing changes nothing
+      }
     }
     // bootstrapping again never invents rules
     const list = await service.listRules({});
