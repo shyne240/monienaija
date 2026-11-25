@@ -19,12 +19,14 @@ import { ConsumeWorkforceBootstrapDto } from './dto/consume-workforce-bootstrap.
 import { DecidePrivilegedApprovalDto } from './dto/decide-privileged-approval.dto';
 import { EstablishWorkforceSessionDto } from './dto/establish-workforce-session.dto';
 import { ListPrivilegedApprovalsDto } from './dto/list-privileged-approvals.dto';
+import { PrepareRoleChangeApprovalDto } from './dto/prepare-role-change-approval.dto';
 import { RequestPrivilegedApprovalDto } from './dto/request-privileged-approval.dto';
 import { RevokeWorkforceRoleDto } from './dto/revoke-workforce-role.dto';
 import { RevokeWorkforceSessionDto } from './dto/revoke-workforce-session.dto';
 import {
   ADMINISTRATOR_OPERATIONAL_ROLE_KEYS,
   A2FinanceRoleAdministrationService,
+  financeRoleAssignmentReference,
 } from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
@@ -147,6 +149,71 @@ export class A2WorkforceAdministrationController {
       principal: p,
       correlationId: r.requestContext?.correlationId ?? 'unknown',
     });
+  }
+  /**
+   * Prepares the governed approval for a role change (Arena B9, configurable workforce roles).
+   *
+   * Before this route the only way to obtain the approval a Finance-role or custom-role change
+   * consumes was to compute the service's SHA-256 fingerprint out of band and POST it by hand,
+   * which is why the Admin Web asked operators to paste approval IDs they could not have derived.
+   * This route performs exactly the authorization the assignment route performs, then creates the
+   * approval with the server-computed fingerprint and the assignment reference as its resource, so
+   * the approval a checker decides is provably the one the assignment will verify.
+   */
+  @Post('roles/approval-requests') async prepareRoleChangeApproval(
+    @Body() b: PrepareRoleChangeApprovalDto,
+    @Req() r: R,
+  ) {
+    const p = this.principal(r),
+      action = b.operation === 'REVOKE' ? 'FINANCE_ROLE_REVOKE' : 'FINANCE_ROLE_ASSIGN';
+    await this.authorize(p, action, 'A2_FINANCE_ROLE_ASSIGNMENT');
+    await this.limits.consume(
+      this.rateRule('finance-role-administration'),
+      [p.principalId, p.sessionId ?? 'none', `${action}_APPROVAL_REQUEST`],
+      r.requestContext?.correlationId ?? 'unknown',
+    );
+    const command = {
+      targetPrincipalId: b.targetPrincipalId,
+      roleKey: b.roleKey,
+      effectiveFrom: b.effectiveFrom,
+      effectiveTo: b.effectiveTo,
+      ...(b.expectedVersion === undefined ? {} : { expectedVersion: b.expectedVersion }),
+    };
+    const actionFingerprint = this.roles.fingerprint(action, command as never);
+    const resourceId = financeRoleAssignmentReference(
+      b.targetPrincipalId,
+      b.roleKey,
+      this.config.environment,
+    );
+    const rule = this.rule(action);
+    const initiatingFunctionCodes = this.initiatingFunctionCodes(action);
+    const decision = await this.approvals.request({
+      principal: p,
+      policy: {
+        resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+        action,
+        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+        requiredRoles: rule.initiatingRoles,
+        ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
+        minimumAssurance: rule.minimumAssurance,
+        customerAccess: 'NONE',
+      },
+      resource: { type: 'A2_FINANCE_ROLE_ASSIGNMENT', id: resourceId },
+      actionFingerprint,
+      reason: b.reason,
+      ...(b.approvalScope === undefined ? {} : { approvalScope: b.approvalScope }),
+    });
+    if (!decision.approval)
+      throw new ForbiddenException(`Approval request denied: ${decision.reason}`);
+    return {
+      approvalId: decision.approval.id,
+      action,
+      status: decision.approval.status,
+      actionFingerprint,
+      resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+      resourceId,
+      expiresAt: decision.approval.expiresAt,
+    };
   }
   @Get('approvals') async listApprovals(@Query() q: ListPrivilegedApprovalsDto, @Req() r: R) {
     const principal = this.principal(r);

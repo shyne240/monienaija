@@ -10,6 +10,7 @@ import {
 import { DataSource } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
 import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
+import { AuthorizationRole } from '../authorization-catalogue/authorization-role.entity';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { ProtectedAuthorityService } from './protected-authority.service';
 import type { AuthorizationPrincipal } from './authorization.types';
@@ -320,6 +321,20 @@ export class A2FinanceRoleAdministrationService {
       (await this.ds
         .getRepository(A2FinanceRoleAssignment)
         .count({ where: { roleKey: c.roleKey, status: 'ACTIVE' } })) === 0;
+    /**
+     * V1 configurable workforce roles (Arena B9): a role DEFINED through
+     * `RoleDefinitionGovernanceService` is a catalogue role that is not one of the eleven seeded
+     * roles. Its first assignment must never take the bootstrap path — that path exists so the
+     * very first Finance/ADMINISTRATOR grant can be made before any role exists, and it trusts the
+     * bootstrap allow-list. A custom role instead always needs an independent checker, exactly
+     * like every later grant of a seeded role. The role must already exist and be active in the
+     * catalogue, which is what `apply()` on an approved CREATE proposal produces.
+     */
+    const customRole = await this.isCustomCatalogueRole(c.roleKey);
+    if (customRole) {
+      await this.consumeApprovals('FINANCE_ROLE_ASSIGN', c);
+      return this.persist(c, 'FINANCE_ROLE_ASSIGN', c.approvalIds ?? [], 'SUPER_ADMIN_SCOPE');
+    }
     if (first) {
       if (
         !c.principal.roles.includes('SUPER_ADMIN') ||
@@ -537,6 +552,17 @@ export class A2FinanceRoleAdministrationService {
    * `GOVERNANCE-01`/`GOVERNANCE-DECISIONS-01` both call "the single most important invariant not
    * to regress while implementing" ADMINISTRATOR's new initiator path.
    */
+  /**
+   * True only for a catalogue role DEFINED through the governed role-definition workflow:
+   * it exists, is active, and is not one of the eleven seeded roles. Seeded roles keep their
+   * existing (unchanged) bootstrap and maker/checker handling above.
+   */
+  private async isCustomCatalogueRole(roleKey: string): Promise<boolean> {
+    const row = await this.ds
+      .getRepository(AuthorizationRole)
+      .findOne({ where: { roleKey } as never });
+    return Boolean(row && row.isActive && row.isSystemSeeded === false);
+  }
   private async validateCommand(c: A2RoleAssignmentCommandV1) {
     if (c.roleKey === 'SUPER_ADMIN') throw new ForbiddenException('Role not allowed');
     const legacyDef = this.config.roles.find((r) => r.roleKey === c.roleKey && r.enabled);
