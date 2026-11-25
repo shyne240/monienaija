@@ -16,11 +16,26 @@ were made against is recorded as `commit` in `acceptance.json`; it is an ancesto
 | `npm run ts:check --prefix apps/admin-web`, `npx tsc --noEmit` | PASS. |
 | `npx eslint src/admin test/transaction-history-csv-export.integration.spec.ts` | PASS. |
 | `git diff --check` | PASS. |
+| `npm run lint`, `npm run format:check` (repo-wide, as CI runs them) | PASS. |
+| GitHub Actions on `62a37f3` | Admin Web, Backend (lint/format/build/unit), Backend (isolated PostgreSQL), Backend (container build), Agent Mobile, Customer Mobile all **pass**. |
 
 Full backend unit suite (`npm test`): **302 suites passed, 4 failed** — the same four fail on the
 unmodified base commit (two are `consolidated-matrix.spec.ts`, which asserts a recorded run's commit
 is in history and cannot hold in this checkout; the other two are Jest workers SIGKILLed under this
 sandbox's memory pressure and pass when run individually). No new failure was introduced.
+
+### One pre-existing integration failure, not caused by this branch
+
+CI's `Backend (real PostgreSQL integration)` job reports **1 failed of 199**:
+`test/v1-agent-cash-to-cash-operations.integration.spec.ts:143` expects the legacy
+`/internal/admin/cash-to-cash/transfers` route to return `total: 1` and gets `total: 0`.
+
+This was reproduced **on the base commit `96bda49` with none of this branch's changes present**,
+and it fails identically there and here. The route under test is the legacy C2C operations endpoint,
+which this branch does not touch; the export reads `HISTORY_LIST_SQL` through the transaction
+history controller on a different path. It is recorded here as an inherited failure, not a
+regression, and is left for PR #23's own line of work rather than silently patched inside an
+export PR.
 
 ## What the integration suite proves
 
