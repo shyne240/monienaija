@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-25T11:44:52.900Z",
+  "generatedAt": "2026-11-25T12:38:36.271Z",
   "browser": "153.0.8010.0",
   "viewport": "1440x1000",
   "bundle": "/tmp/b9-dist",
@@ -8,8 +8,8 @@
     "note": "Client behaviour only. Server maker-checker, role, institution, MFA and recovery controls are covered by the Nest HTTP and PostgreSQL suites."
   },
   "totals": {
-    "checks": 27,
-    "passed": 27,
+    "checks": 33,
+    "passed": 33,
     "failed": 0
   },
   "results": [
@@ -67,6 +67,36 @@
       "id": "SIGN-IN-TREASURY",
       "ok": true,
       "detail": "treasury@monienaija.local · verified=[dashboard, reconciliation] of 3 rendered · problems=[] · navChars=89"
+    },
+    {
+      "id": "CUSTOM-ROLE-MENU",
+      "ok": true,
+      "detail": "soc-analyst@monienaija.local · nav=[auditEvents, dashboard, feeRules]"
+    },
+    {
+      "id": "CUSTOM-ROLE-DENIED-PAGES",
+      "ok": true,
+      "detail": "denied menu entries that appeared: []"
+    },
+    {
+      "id": "CUSTOM-ROLE-GRANTED-PAGE",
+      "ok": true,
+      "detail": "Fee rules rendered for the custom role and issued 1 authorized read(s)"
+    },
+    {
+      "id": "ROLE-DEFINITION-CATALOGUE",
+      "ok": true,
+      "detail": "function options=4 (server catalogue, not a fixed list)"
+    },
+    {
+      "id": "ROLE-DEFINITION-SUBMITTED",
+      "ok": true,
+      "detail": "POST role-definitions/proposals body={\"proposalType\":\"CREATE\",\"roleKey\":\"SOC_ANALYST\",\"displayName\":\"SOC Analyst\",\"description\":\"Read-only commercial and audit visibility for the security operations centre.\",\"readOnly\":true,\"functionGrants\":[{\"functionCode\""
+    },
+    {
+      "id": "ROLE-DEFINITION-AWAITS-CHECKER",
+      "ok": true,
+      "detail": "SOC_ANALYST Awaiting independent approval SOC Analyst · CREATE · read-only Functions: fee_rule.view (VIEW), audit.search (VIEW) Requested 2026-11-25T10:00:00.000Z · expires 2026-11-25T11:00:00.000Z Aw"
     },
     {
       "id": "SIGN-IN-REJECTED",

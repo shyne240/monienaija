@@ -11,6 +11,7 @@ import {
   type WorkforcePrincipalDetail,
 } from '../../services/arena4-operations-api';
 import { useAuthStore } from '../../store/auth-store';
+import { RoleDefinitionsPanel } from '../../components/RoleDefinitionsPanel';
 
 type RoleDomain = 'finance' | 'operational';
 type RoleAction = 'assign' | 'revoke';
@@ -51,6 +52,10 @@ export const RoleAssignmentScreen: React.FC<{
   const canViewDirectory = principal?.scopes.includes('workforce.role.view') ?? false;
   const canAssignFinance = canWrite && isSuperAdmin && hasFn('workforce.role.assign');
   const canRevokeFinance = canWrite && isSuperAdmin && hasFn('workforce.role.revoke');
+  const isChecker = principal?.roles.includes('FINANCE_CONTROLLER') === true;
+  const canDefineRoles = canWrite && isSuperAdmin && hasFn('workforce.role.create');
+  const canDecideDefinitions = canWrite && isChecker && hasFn('workforce.role.create');
+  const canApplyDefinitions = canWrite && isSuperAdmin && hasFn('workforce.role.create');
   const canAssignOperational =
     canWrite && (isAdministrator || isSuperAdmin) && hasFn('workforce.role.assign_operational');
   const canRevokeOperational =
@@ -71,6 +76,9 @@ export const RoleAssignmentScreen: React.FC<{
     canRevokeFinance,
     canAssignOperational,
     canRevokeOperational,
+    canDefineRoles,
+    canDecideDefinitions,
+    canApplyDefinitions,
   ]);
   return (
     <RoleWorkspace
@@ -82,6 +90,9 @@ export const RoleAssignmentScreen: React.FC<{
       canAssignOperational={canAssignOperational}
       canRevokeOperational={canRevokeOperational}
       canViewDirectory={canViewDirectory}
+      canDefineRoles={canDefineRoles}
+      canDecideDefinitions={canDecideDefinitions}
+      canApplyDefinitions={canApplyDefinitions}
       initialTargetPrincipalId={initialTargetPrincipalId}
       onRoleGuardChange={onRoleGuardChange}
     />
@@ -96,6 +107,9 @@ const RoleWorkspace: React.FC<{
   canAssignOperational: boolean;
   canRevokeOperational: boolean;
   canViewDirectory: boolean;
+  canDefineRoles: boolean;
+  canDecideDefinitions: boolean;
+  canApplyDefinitions: boolean;
   initialTargetPrincipalId?: string;
   onRoleGuardChange?: (guarded: boolean, busy: boolean) => void;
 }> = ({
@@ -106,6 +120,9 @@ const RoleWorkspace: React.FC<{
   canAssignOperational,
   canRevokeOperational,
   canViewDirectory,
+  canDefineRoles,
+  canDecideDefinitions,
+  canApplyDefinitions,
   initialTargetPrincipalId,
   onRoleGuardChange,
 }) => {
@@ -152,6 +169,9 @@ const RoleWorkspace: React.FC<{
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
   const [approvalIds, setApprovalIds] = useState('');
+  const [customRoleKey, setCustomRoleKey] = useState('');
+  const [approvalNotice, setApprovalNotice] = useState('');
+  const [approvalBusy, setApprovalBusy] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -195,6 +215,13 @@ const RoleWorkspace: React.FC<{
   const canAssign = domain === 'finance' ? canAssignFinance : canAssignOperational;
   const canRevoke = domain === 'finance' ? canRevokeFinance : canRevokeOperational;
   const roleOptions = domain === 'finance' ? FINANCE_ROLES : OPERATIONAL_ROLES;
+  /**
+   * ARENA B9: an applied custom role is not in the fixed lists above, so an operator may name it
+   * directly. The server still decides whether the role exists, is active, and whether the change
+   * carries the approval it consumes.
+   */
+  const effectiveRole =
+    domain === 'finance' && customRoleKey.trim() ? customRoleKey.trim() : roleKey;
 
   const loadIdentity = useCallback(
     async (id: string) => {
@@ -255,12 +282,12 @@ const RoleWorkspace: React.FC<{
   /** Explains why the chosen action contradicts the target's verified current roles. */
   const identityConflict = verifiedIdentity
     ? action === 'assign'
-      ? activeRoleKeys.includes(roleKey)
-        ? `The target already holds an active ${roleKey} assignment. Revoke that assignment instead of assigning it again.`
+      ? activeRoleKeys.includes(effectiveRole)
+        ? `The target already holds an active ${effectiveRole} assignment. Revoke that assignment instead of assigning it again.`
         : ''
-      : activeRoleKeys.includes(roleKey)
+      : activeRoleKeys.includes(effectiveRole)
         ? ''
-        : `The target holds no active ${roleKey} assignment, so there is nothing to revoke.`
+        : `The target holds no active ${effectiveRole} assignment, so there is nothing to revoke.`
     : '';
 
   const changeDomain = (nextDomain: RoleDomain) => {
@@ -327,7 +354,7 @@ const RoleWorkspace: React.FC<{
       domain,
       action,
       target: targetPrincipalId.trim(),
-      role: roleKey,
+      role: effectiveRole,
       from: start.toISOString(),
       to: end.toISOString(),
       approvals:
@@ -483,6 +510,11 @@ const RoleWorkspace: React.FC<{
           remains the authority on every grant or revocation.
         </span>
       </div>
+      <RoleDefinitionsPanel
+        canDefine={canDefineRoles}
+        canDecide={canDecideDefinitions}
+        canApply={canApplyDefinitions}
+      />
       <div className="role-redesign__workspace">
         <section className="role-redesign__selectors" aria-label="Role change context">
           <p className="role-redesign__eyebrow">SELECT CONTEXT</p>
@@ -565,7 +597,7 @@ const RoleWorkspace: React.FC<{
               <div>
                 <dt>Role</dt>
                 <dd>
-                  <code>{roleKey}</code>
+                  <code>{effectiveRole}</code>
                 </dd>
               </div>
               <div>
@@ -784,6 +816,26 @@ const RoleWorkspace: React.FC<{
                     ))}
                   </select>
                 </div>
+                {domain === 'finance' && (
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label} htmlFor="role-custom-key">
+                      Custom role key (optional — for an applied configurable role)
+                    </label>
+                    <input
+                      id="role-custom-key"
+                      type="text"
+                      style={styles.input}
+                      placeholder="e.g. SOC_ANALYST"
+                      value={customRoleKey}
+                      onChange={(event) => setCustomRoleKey(event.target.value.toUpperCase())}
+                      disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)}
+                    />
+                    <p style={styles.hint ?? undefined}>
+                      Overrides the selection above. The role must already be applied in the role
+                      definition catalogue and still needs an independent approval.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="role-redesign__form-section">
                 <div className="role-redesign__section-title">
@@ -848,6 +900,73 @@ const RoleWorkspace: React.FC<{
                       disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)}
                     />
                   </div>
+                  <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={
+                        approvalBusy ||
+                        isLoading ||
+                        Boolean(pendingReview) ||
+                        Boolean(uncertainRole) ||
+                        !targetPrincipalId.trim()
+                      }
+                      data-testid="request-role-approval"
+                      onClick={async () => {
+                        setApprovalNotice('');
+                        setError('');
+                        const start = new Date(effectiveFrom);
+                        const end = new Date(effectiveTo);
+                        if (
+                          !Number.isFinite(start.getTime()) ||
+                          !Number.isFinite(end.getTime()) ||
+                          end <= start
+                        ) {
+                          setError('Enter a valid effective window before requesting an approval.');
+                          return;
+                        }
+                        setApprovalBusy(true);
+                        try {
+                          const prepared = await Arena4OperationsApi.prepareRoleChangeApproval({
+                            operation: action === 'assign' ? 'ASSIGN' : 'REVOKE',
+                            targetPrincipalId: targetPrincipalId.trim(),
+                            roleKey: effectiveRole,
+                            effectiveFrom: start.toISOString(),
+                            effectiveTo: end.toISOString(),
+                            reason:
+                              'Prepared from Admin Web role governance for an independent checker.',
+                          });
+                          setApprovalIds(prepared.approvalId);
+                          setApprovalNotice(
+                            `Approval ${prepared.approvalId} prepared (${prepared.action}) for ${prepared.resourceId}. An independent checker must decide it before this change can be applied.`,
+                          );
+                        } catch (requestError) {
+                          setError(
+                            describeHttpError(
+                              requestError,
+                              'The approval could not be prepared by the server.',
+                            ),
+                          );
+                        } finally {
+                          setApprovalBusy(false);
+                        }
+                      }}
+                    >
+                      {approvalBusy ? 'Preparing approval…' : 'Prepare approval on the server'}
+                    </Button>
+                    <span style={styles.mutedText ?? undefined}>
+                      The server computes the fingerprint the assignment will verify.
+                    </span>
+                  </div>
+                  {approvalNotice ? (
+                    <p
+                      style={styles.lookupProblem}
+                      role="status"
+                      data-testid="role-approval-notice"
+                    >
+                      {approvalNotice}
+                    </p>
+                  ) : null}
                 </div>
               )}
 

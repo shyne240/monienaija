@@ -807,6 +807,28 @@ const ROLE_PRINCIPALS = {
   },
 };
 
+/** The eleven documented local accounts — the regression matrix. */
+const ELEVEN_ROLES = Object.keys(ROLE_PRINCIPALS);
+
+/**
+ * A role that does not exist in the eleven-account fixture: it is what an operator obtains after
+ * defining a role in the catalogue, having it independently approved, applying it and assigning it.
+ * Its grants are exactly what the server-side acceptance suite granted SOC_ANALYST.
+ */
+const CUSTOM_ROLE = 'SOC_ANALYST';
+ROLE_PRINCIPALS[CUSTOM_ROLE] = {
+  type: 'OPERATOR',
+  scopes: ['audit.search', 'fee_rule.view'],
+  views: ['auditEvents', 'feeRules'],
+  denied: [
+    'approvalsInbox',
+    'roleGovernance',
+    'superAdminRecovery',
+    'workforceAccess',
+    'workforceDirectory',
+  ],
+};
+
 /**
  * Views whose content is actually clicked and verified per role.
  *
@@ -1073,6 +1095,35 @@ const sessionFor = (role, email, overrides = {}) => ({
   },
 });
 
+// Configurable-role fixtures: the catalogue the editor may choose from is the same list the
+// server-side acceptance suite granted SOC_ANALYST.
+const ROLE_DEFINITION_FUNCTIONS = [
+  {
+    functionCode: 'fee_rule.view',
+    name: 'View fee rules',
+    domain: 'commercial',
+    sensitivity: 'READ',
+    v1Status: 'IMPLEMENTED',
+    financeClassRestricted: false,
+  },
+  {
+    functionCode: 'audit.search',
+    name: 'Search audit events',
+    domain: 'audit',
+    sensitivity: 'READ',
+    v1Status: 'IMPLEMENTED',
+    financeClassRestricted: false,
+  },
+  {
+    functionCode: 'customer.view',
+    name: 'View customers',
+    domain: 'customer',
+    sensitivity: 'READ',
+    v1Status: 'IMPLEMENTED',
+    financeClassRestricted: false,
+  },
+];
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const probeMode = process.env.B9_PROBE === '1';
@@ -1108,6 +1159,9 @@ async function main() {
   });
 
   const requests = [];
+  const roleDefinitionProposals = [];
+  const feeRuleReads = [];
+  const definitionSubmissions = [];
   const consoleErrors = [];
   const pageErrors = [];
   let mode = 'role';
@@ -1180,6 +1234,59 @@ async function main() {
       return json(DIRECTORY_DETAIL);
     }
 
+    if (url.pathname.endsWith('/internal/a2/workforce/role-definitions/functions')) {
+      return json(ROLE_DEFINITION_FUNCTIONS);
+    }
+    if (
+      url.pathname.endsWith('/internal/a2/workforce/role-definitions/proposals') &&
+      request.method() === 'GET'
+    ) {
+      return json(roleDefinitionProposals);
+    }
+    if (
+      url.pathname.endsWith('/internal/a2/workforce/role-definitions/proposals') &&
+      request.method() === 'POST'
+    ) {
+      const body = JSON.parse(request.postData() ?? '{}');
+      definitionSubmissions.push(body);
+      const proposal = {
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        proposalType: body.proposalType,
+        targetRoleKey: body.roleKey,
+        proposedDisplayName: body.displayName,
+        proposedDescription: body.description,
+        proposedReadOnly: body.readOnly === true,
+        proposedFunctionGrants: body.functionGrants,
+        deactivate: false,
+        status: 'REQUESTED',
+        approvalId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        appliedRoleId: null,
+        reason: body.reason,
+        decisionReason: null,
+        requestedAt: '2026-11-25T10:00:00.000Z',
+        expiresAt: '2026-11-25T11:00:00.000Z',
+      };
+      roleDefinitionProposals.unshift(proposal);
+      return json({ success: true, proposal }, 201);
+    }
+    if (url.pathname.endsWith('/internal/a2/workforce/roles/approval-requests')) {
+      return json(
+        {
+          approvalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          action: 'FINANCE_ROLE_ASSIGN',
+          status: 'REQUESTED',
+          actionFingerprint: 'a'.repeat(64),
+          resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+          resourceId: 'a2-fin-role-fixture',
+          expiresAt: '2026-11-25T11:00:00.000Z',
+        },
+        201,
+      );
+    }
+    if (url.pathname.endsWith('/internal/fee-rules')) {
+      feeRuleReads.push(request.headers()['authorization'] ?? '');
+      return json({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+    }
     // Anything this harness does not model is a 404 — the same answer the real API gives for an
     // unimplemented route. Returning a generic empty object instead makes screens that expect an
     // array throw, which would be a fixture artefact rather than a product observation.
@@ -1250,7 +1357,7 @@ async function main() {
     return [...new Set(ids)].sort();
   };
 
-  for (const role of Object.keys(ROLE_PRINCIPALS)) {
+  for (const role of ELEVEN_ROLES) {
     const email = await signIn(role);
     await expandAllSections();
     const navText = (await page.locator('[data-testid="desktop-nav"]').innerText()).toLowerCase();
@@ -1320,6 +1427,86 @@ async function main() {
         `problems=[${denied.join(', ')}] · navChars=${navText.length}`,
     );
   }
+  // --------------------------------------------------------------------------------------
+  // 1b. A configurable role: only its grants are reachable, and its granted page works.
+  // --------------------------------------------------------------------------------------
+  await signIn(CUSTOM_ROLE);
+  await expandAllSections();
+  const customNav = await visibleNavViews();
+  record(
+    'CUSTOM-ROLE-MENU',
+    JSON.stringify(customNav) === JSON.stringify(['auditEvents', 'dashboard', 'feeRules']),
+    `soc-analyst@monienaija.local · nav=[${customNav.join(', ')}]`,
+  );
+  const forbiddenViews = [
+    'approvalsInbox',
+    'roleGovernance',
+    'superAdminRecovery',
+    'workforceAccess',
+    'workforceDirectory',
+  ].filter((view) => customNav.includes(view));
+  record(
+    'CUSTOM-ROLE-DENIED-PAGES',
+    forbiddenViews.length === 0,
+    `denied menu entries that appeared: [${forbiddenViews.join(', ')}]`,
+  );
+  await openNav('feeRules');
+  await page.waitForTimeout(400);
+  const grantedText = await page.locator('[data-testid="main-content"]').innerText();
+  const grantedReads = feeRuleReads.filter((entry) =>
+    String(entry).includes(`fixture-token-${CUSTOM_ROLE}`),
+  );
+  record(
+    'CUSTOM-ROLE-GRANTED-PAGE',
+    /Commercial Rule Registries/i.test(grantedText) && grantedReads.length > 0,
+    `Fee rules rendered for the custom role and issued ${grantedReads.length} authorized read(s)`,
+  );
+
+  // --------------------------------------------------------------------------------------
+  // 1c. Defining a configurable role: catalogue, function selection, governed submission.
+  // --------------------------------------------------------------------------------------
+  await signIn('SUPER_ADMIN');
+  await openNav('roleGovernance');
+  await page.waitForSelector('[data-testid="role-definitions-panel"]', { timeout: 15000 });
+  await page.click('[data-testid="rd-open"]');
+  await page.waitForSelector('[data-testid="rd-function-fee_rule.view"]', { timeout: 15000 });
+  record(
+    'ROLE-DEFINITION-CATALOGUE',
+    (await page.locator('[data-testid^="rd-function-"]').count()) >= 3,
+    `function options=${await page.locator('[data-testid^="rd-function-"]').count()} (server catalogue, not a fixed list)`,
+  );
+  await page.fill('#rd-role-key', 'SOC_ANALYST');
+  await page.fill('#rd-display-name', 'SOC Analyst');
+  await page.fill(
+    '#rd-description',
+    'Read-only commercial and audit visibility for the security operations centre.',
+  );
+  await page.locator('[data-testid="rd-function-fee_rule.view"] input').check();
+  await page.locator('[data-testid="rd-function-audit.search"] input').check();
+  await page.fill('#rd-reason', 'B9 browser acceptance: define a read-only analyst role');
+  await page.click('[data-testid="rd-submit"]');
+  await page.waitForSelector('[data-testid="rd-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd"]', {
+    timeout: 15000,
+  });
+  const submitted = definitionSubmissions[0] ?? {};
+  record(
+    'ROLE-DEFINITION-SUBMITTED',
+    submitted.roleKey === 'SOC_ANALYST' &&
+      Array.isArray(submitted.functionGrants) &&
+      submitted.functionGrants.length === 2 &&
+      submitted.functionGrants.every((grant) => grant.accessType === 'VIEW'),
+    `POST role-definitions/proposals body=${JSON.stringify(submitted).slice(0, 220)}`,
+  );
+  const proposalCard = await page
+    .locator('[data-testid="rd-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd"]')
+    .innerText();
+  record(
+    'ROLE-DEFINITION-AWAITS-CHECKER',
+    proposalCard.includes('Awaiting independent approval') &&
+      proposalCard.includes('fee_rule.view'),
+    proposalCard.replace(/\s+/g, ' ').slice(0, 200),
+  );
+
   if (probeMode) {
     console.log('B9_PROBE ' + JSON.stringify(probe));
     await browser.close();

@@ -1,10 +1,10 @@
 # Arena B9 — Workforce & Approvals browser acceptance
 
-Generated: 2026-11-25T11:44:52.900Z
+Generated: 2026-11-25T12:38:36.271Z
 Browser: 153.0.8010.0 · viewport 1440x1000
 API: fixture (route-intercepted at the browser network layer)
 
-27/27 checks passed.
+33/33 checks passed.
 
 | Check | Result | Evidence |
 | --- | --- | --- |
@@ -19,6 +19,12 @@ API: fixture (route-intercepted at the browser network layer)
 | `SIGN-IN-RISK_FRAUD` | PASS | risk-fraud@monienaija.local · verified=[dashboard, fraudCases] of 2 rendered · problems=[] · navChars=77 |
 | `SIGN-IN-CUSTOMER_SERVICE` | PASS | customer-service@monienaija.local · verified=[dashboard, customers] of 4 rendered · problems=[] · navChars=107 |
 | `SIGN-IN-TREASURY` | PASS | treasury@monienaija.local · verified=[dashboard, reconciliation] of 3 rendered · problems=[] · navChars=89 |
+| `CUSTOM-ROLE-MENU` | PASS | soc-analyst@monienaija.local · nav=[auditEvents, dashboard, feeRules] |
+| `CUSTOM-ROLE-DENIED-PAGES` | PASS | denied menu entries that appeared: [] |
+| `CUSTOM-ROLE-GRANTED-PAGE` | PASS | Fee rules rendered for the custom role and issued 1 authorized read(s) |
+| `ROLE-DEFINITION-CATALOGUE` | PASS | function options=4 (server catalogue, not a fixed list) |
+| `ROLE-DEFINITION-SUBMITTED` | PASS | POST role-definitions/proposals body={"proposalType":"CREATE","roleKey":"SOC_ANALYST","displayName":"SOC Analyst","description":"Read-only commercial and audit visibility for the security operations centre.","readOnly":true,"functionGrants":[{"functionCode" |
+| `ROLE-DEFINITION-AWAITS-CHECKER` | PASS | SOC_ANALYST Awaiting independent approval SOC Analyst · CREATE · read-only Functions: fee_rule.view (VIEW), audit.search (VIEW) Requested 2026-11-25T10:00:00.000Z · expires 2026-11-25T11:00:00.000Z Aw |
 | `SIGN-IN-REJECTED` | PASS | a rejected credential leaves the operator on the login screen |
 | `APPROVALS-INBOX-RENDERS` | PASS | rows=3 |
 | `APPROVALS-INBOX-PROPOSED-CHANGE` | PASS | affected record and required approving role are on the row |

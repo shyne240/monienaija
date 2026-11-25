@@ -223,6 +223,44 @@ const queryString = (params: Record<string, string | number | undefined>): strin
   return query.toString();
 };
 
+/** ARENA B9 — configurable workforce roles (governed role definitions). */
+export interface RoleDefinitionFunctionOption {
+  functionCode: string;
+  name: string;
+  domain: string;
+  sensitivity: string;
+  v1Status: string;
+  financeClassRestricted: boolean;
+}
+
+export interface RoleDefinitionProposal {
+  id: string;
+  proposalType: 'CREATE' | 'MODIFY';
+  targetRoleKey: string;
+  proposedDisplayName: string;
+  proposedDescription: string;
+  proposedReadOnly: boolean;
+  proposedFunctionGrants: Array<{ functionCode: string; accessType: string }>;
+  deactivate: boolean;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'APPLIED' | 'EXPIRED' | 'FAILED';
+  approvalId: string | null;
+  appliedRoleId: string | null;
+  reason: string;
+  decisionReason: string | null;
+  requestedAt: string;
+  expiresAt: string;
+}
+
+export interface RoleChangeApproval {
+  approvalId: string;
+  action: 'FINANCE_ROLE_ASSIGN' | 'FINANCE_ROLE_REVOKE';
+  status: string;
+  actionFingerprint: string;
+  resourceType: string;
+  resourceId: string;
+  expiresAt: string;
+}
+
 export const Arena4OperationsApi = {
   notificationSummary(hours = 24): Promise<NotificationOperationsSummary> {
     return ApiClient.get<NotificationOperationsSummary>(
@@ -247,6 +285,75 @@ export const Arena4OperationsApi = {
   notificationDelivery(id: string): Promise<NotificationDeliveryDetail> {
     return ApiClient.get<NotificationDeliveryDetail>(
       `/internal/notifications/deliveries/${encodeURIComponent(id)}`,
+    );
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // ARENA B9 — configurable workforce roles.
+  //
+  // `roleDefinitionFunctions` returns exactly the catalogue functions the apply path accepts, so
+  // the editor cannot offer a grant the server will refuse. `prepareRoleChangeApproval` asks the
+  // server for the approval a governed role change consumes — the fingerprint is computed there,
+  // so an operator never types an approval id they could not have derived.
+  // ---------------------------------------------------------------------------------------
+  roleDefinitionFunctions(): Promise<RoleDefinitionFunctionOption[]> {
+    return ApiClient.get<RoleDefinitionFunctionOption[]>(
+      '/internal/a2/workforce/role-definitions/functions',
+    );
+  },
+
+  roleDefinitionProposals(
+    filters: { status?: string; roleKey?: string } = {},
+  ): Promise<RoleDefinitionProposal[]> {
+    return ApiClient.get<RoleDefinitionProposal[]>(
+      `/internal/a2/workforce/role-definitions/proposals?${queryString(filters)}`,
+    );
+  },
+
+  submitRoleDefinition(body: {
+    proposalType: 'CREATE' | 'MODIFY';
+    roleKey: string;
+    displayName: string;
+    description: string;
+    readOnly?: boolean;
+    functionGrants: Array<{ functionCode: string; accessType: string }>;
+    expectedDefinitionVersion?: number;
+    reason: string;
+  }): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post('/internal/a2/workforce/role-definitions/proposals', body);
+  },
+
+  decideRoleDefinition(
+    id: string,
+    decision: 'approve' | 'reject',
+    comment?: string,
+  ): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post(
+      `/internal/a2/workforce/role-definitions/proposals/${encodeURIComponent(id)}/${decision}`,
+      comment ? { comment } : {},
+    );
+  },
+
+  applyRoleDefinition(
+    id: string,
+  ): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post(
+      `/internal/a2/workforce/role-definitions/proposals/${encodeURIComponent(id)}/apply`,
+    );
+  },
+
+  prepareRoleChangeApproval(body: {
+    operation: 'ASSIGN' | 'REVOKE';
+    targetPrincipalId: string;
+    roleKey: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+    expectedVersion?: number;
+    reason: string;
+  }): Promise<RoleChangeApproval> {
+    return ApiClient.post<RoleChangeApproval>(
+      '/internal/a2/workforce/roles/approval-requests',
+      body,
     );
   },
 
