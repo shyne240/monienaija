@@ -25,7 +25,7 @@ import {
  *  2. upgrade from an Arena 2C database (chain applied through 0802) — the combined application must
  *     apply exactly 0506, 0507, 0606–0614 and then 0803–0805 on top of it, in order, and nothing else;
  *  3. a full fresh install plus idempotent replay, with the applied ledger compared identity-for-identity
- *     against the migration files on disk — 170 timestamp/name pairs, unique, head 1785753600806.
+ *     against the migration files on disk — 170 timestamp/name pairs, unique, head 1785753600809.
  *
  * No migration is renumbered, rewritten or skipped anywhere in this suite; the only variable is which
  * subset of the real configured chain a database has already applied.
@@ -63,8 +63,8 @@ const PREMBLY_GOVERNANCE = 'PremblyKycCredentialGovernance1785753600507';
 // Arena 1 appended the customer-class model (0805). Published identity; never renumber.
 const ARENA1_ONLY = ['CreateCustomerClasses1785753600805'] as const;
 
-const COMBINED_HEAD_TIMESTAMP = 1785753600806;
-const COMBINED_HEAD_NAME = 'AgentApplicationSubmitterAttribution1785753600806';
+const COMBINED_HEAD_TIMESTAMP = 1785753600809;
+const COMBINED_HEAD_NAME = 'AgentApplicationSubmitterAttribution1785753600809';
 
 interface MigrationFile {
   timestamp: number;
@@ -109,7 +109,7 @@ async function migrationNames(ds: DataSource): Promise<string[]> {
 
 describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
   it('contains the 170 identities from both frozen predecessors and later migration additions', () => {
-    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 0806 = 170.
+    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 0809 = 170.
     const onDisk = filesystemMigrations();
     expect(onDisk).toHaveLength(170);
     const names = onDisk.map((m) => m.name);
@@ -142,7 +142,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
     expect(onDisk[onDisk.length - 1]!.name).toBe(COMBINED_HEAD_NAME);
   });
 
-  it('upgrades an Arena 3D database to the combined head by applying exactly 0506, 0507, 0800–0805 and 0806', async () => {
+  it('upgrades an Arena 3D database to the combined head by applying exactly 0506, 0507, 0800–0805 and 0809', async () => {
     const ds = await createEmptyIntegrationDataSource('ar5up3d');
     try {
       await ds.initialize();
@@ -205,7 +205,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
     }
   }, 180_000);
 
-  it('upgrades an Arena 2C database to the combined head by applying exactly 0506, 0507, 0606–0614, 0803–0805 and 0806', async () => {
+  it('upgrades an Arena 2C database to the combined head by applying exactly 0506, 0507, 0606–0614, 0803–0805 and 0809', async () => {
     const ds = await createEmptyIntegrationDataSource('ar5up2c');
     try {
       await ds.initialize();
@@ -227,7 +227,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         }),
       );
       const firstLeg = await ds.runMigrations({ transaction: 'all' });
-      // 152 shared identities + the three 2C additions. The 0806 attribution migration is applied on
+      // 152 shared identities + the three 2C additions. The 0809 attribution migration is applied on
       // the second leg with the rest of the later additions, so the historical leg is unchanged.
       expect(firstLeg).toHaveLength(156);
       const historicalNames = await migrationNames(ds);

@@ -34,7 +34,7 @@
  *   node scripts/agent-onboarding-acceptance.cjs \
  *     --executable /tmp/chromium --lib-path /tmp/al2023/lib \
  *     --admin-web http://127.0.0.1:5173 --api http://127.0.0.1:3000/api/v1 \
- *     --out apps/admin-web/acceptance-evidence/agent-onboarding
+ *     --out docs/agent-onboarding/evidence/acceptance-20261125
  */
 'use strict';
 
@@ -50,7 +50,7 @@ function parseArgs(argv) {
     'lib-path': '/tmp/al2023/lib',
     'admin-web': 'http://127.0.0.1:5173',
     api: 'http://127.0.0.1:3000/api/v1',
-    out: 'apps/admin-web/acceptance-evidence/agent-onboarding',
+    out: 'docs/agent-onboarding/evidence/acceptance-20261125',
   };
   for (let i = 0; i < argv.length; i += 1) {
     if (!argv[i].startsWith('--')) continue;

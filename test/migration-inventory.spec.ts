@@ -73,8 +73,8 @@ describe('migration inventory', () => {
     // independence can be enforced. The head is pinned exactly — a head-only allowance would let a
     // skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600806',
-      name: 'AgentApplicationSubmitterAttribution1785753600806',
+      timestamp: '1785753600809',
+      name: 'AgentApplicationSubmitterAttribution1785753600809',
     });
     expect(migrations.at(-2)).toMatchObject({
       timestamp: '1785753600805',
@@ -188,9 +188,9 @@ describe('migration inventory', () => {
       file: '1785753600805-CreateCustomerClasses.ts',
     });
     expect(migrations).toContainEqual({
-      timestamp: '1785753600806',
-      name: 'AgentApplicationSubmitterAttribution1785753600806',
-      file: '1785753600806-AgentApplicationSubmitterAttribution.ts',
+      timestamp: '1785753600809',
+      name: 'AgentApplicationSubmitterAttribution1785753600809',
+      file: '1785753600809-AgentApplicationSubmitterAttribution.ts',
     });
     expect(migrations.length).toBe(170);
   });

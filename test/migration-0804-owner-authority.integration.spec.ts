@@ -85,8 +85,8 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 3`,
     );
     expect(rows[0]).toEqual({
-      timestamp: '1785753600806',
-      name: 'AgentApplicationSubmitterAttribution1785753600806',
+      timestamp: '1785753600809',
+      name: 'AgentApplicationSubmitterAttribution1785753600809',
     });
     expect(rows[1]).toEqual({
       timestamp: '1785753600805',

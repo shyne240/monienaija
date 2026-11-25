@@ -342,15 +342,26 @@ export class AgentApplicationService {
     if (submitter === null) {
       /*
        * Legacy / genuinely-public rows have no recorded submitter (see the entity comment and
-       * migration 1785753600806): `created_by` holds `agent-application:<id>` because workforce
+       * migration 1785753600809): `created_by` holds `agent-application:<id>` because workforce
        * drafts are created through the public applicant endpoint. Independence cannot be verified,
        * and guessing one from `created_by` would manufacture the very evidence being checked, so
        * the approval is refused. The remedy is the documented re-attribution path, not a bypass.
        */
+      /*
+       * There is deliberately no "approve anyway" branch and no in-place attribution repair: an
+       * unverified approval is indistinguishable from a self-approval, and writing a submitter onto
+       * the row now would manufacture the evidence this guard exists to check.
+       *
+       * The message names a remedy that actually exists. There is no withdraw operation in this
+       * product — `reject` is the only terminal transition available to staff, and a re-created
+       * application carries attribution honestly because it is submitted by an authenticated
+       * principal. Saying "withdraw and resubmit" would send staff looking for a button that does
+       * not exist.
+       */
       throw new ConflictException(
-        'This application predates submitter attribution, so approval independence cannot be verified. ' +
-          'Re-attribution requires the original submitting operator to withdraw and resubmit the ' +
-          'application; it cannot be approved until then.',
+        'This application predates submitter attribution, so approval independence cannot be verified ' +
+          'and it cannot be approved. A different operator must reject it with a reason, and a new ' +
+          'application must be submitted by an authenticated principal so its submitter is recorded.',
       );
     }
     if (submitter === normalizedActor) {

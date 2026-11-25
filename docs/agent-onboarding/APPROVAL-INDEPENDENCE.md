@@ -29,7 +29,7 @@ applicant endpoint (`POST /agents/applications`), which attributes the row to th
 (`agent-application:<id>`) because the console has no field to declare a submitter. Every
 pre-existing row is therefore unattributed with respect to review.
 
-Migration `1785753600806-AgentApplicationSubmitterAttribution` adds `submitted_by`:
+Migration `1785753600809-AgentApplicationSubmitterAttribution` adds `submitted_by`:
 
 - Written on submission from the authenticated principal.
 - **Immutable** after first write — a database trigger rejects any later change, so a self-approval
@@ -43,23 +43,32 @@ Migration `1785753600806-AgentApplicationSubmitterAttribution` adds `submitted_b
 A row submitted before this migration has `submitted_by IS NULL`. Independence cannot be verified
 for it, and the API refuses approval with **409**:
 
-> This application predates submitter attribution, so approval independence cannot be verified.
-> Re-attribution requires the original submitting operator to withdraw and resubmit the
-> application; it cannot be approved until then.
+> This application predates submitter attribution, so approval independence cannot be verified and
+> it cannot be approved. A different operator must reject it with a reason, and a new application
+> must be submitted by an authenticated principal so its submitter is recorded.
 
 Why refuse instead of allowing it through: an unverified approval is indistinguishable from a
 self-approval, and there is no signal in the historical row that would tell the two apart.
 
-**Safe handling path, in order of preference:**
+**Safe handling path — reject, then recreate.** There is no withdraw or resubmit operation on an
+Agent application; the statuses are `DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, and
+`reject` is the only transition out of an in-flight application. So:
 
-1. **Withdraw and resubmit.** The original submitting operator re-submits the application, which
-   records `submitted_by` on the new submission. The old row is left in place for the audit trail.
-2. **If the original operator is unavailable**, the application is re-created by whoever is now
-   responsible and submitted by them — again recording attribution honestly. Do not hand-write
-   `submitted_by` for a historical row: the trigger allows a first write, and doing so would forge
-   the attribution rather than establish it.
+1. A different operator **rejects** the unattributed application with a reason. The row stays in
+   place as the audit trail, with the reason on it.
+2. The responsible operator **creates a new application and submits it** while signed in. That
+   submission records `submitted_by` from the authenticated principal.
+3. A checker other than that submitter approves it.
 
-Both paths are operational. Neither requires a code change, a bypass flag, or a widened grant.
+An application already in `APPROVED` needs nothing: the blocker only blocks the *transition* to
+approved, and `DRAFT` rows are exempt until submitted. Do **not** hand-write `submitted_by` for a
+historical row: the trigger allows a first write, so doing so would forge the attribution rather
+than establish it — which is exactly what this feature exists to prevent.
+
+Step-by-step operator runbook, including the find query and the verification query:
+[`UNATTRIBUTED-APPLICATIONS-RUNBOOK.md`](./UNATTRIBUTED-APPLICATIONS-RUNBOOK.md).
+
+Neither path requires a code change, a bypass flag, or a widened grant.
 
 **Deployment note:** check for unattributed applications before relying on approvals after upgrade:
 
@@ -67,6 +76,13 @@ Both paths are operational. Neither requires a code change, a bypass flag, or a 
 SELECT id, reference, status FROM agent_applications
  WHERE status IN ('SUBMITTED','UNDER_REVIEW') AND submitted_by IS NULL;
 ```
+
+## Migration identity
+
+This feature's migration ships as `1785753600809-AgentApplicationSubmitterAttribution`. It originally
+claimed `1785753600806`, which a concurrent PR also claimed; the coordination record — including the
+upgrade path for a database that already applied the superseded identity — is
+[`../migrations/MIGRATION-IDENTITY-COORDINATION.md`](../migrations/MIGRATION-IDENTITY-COORDINATION.md).
 
 ## Tests
 
@@ -80,7 +96,7 @@ real 11 local role accounts (7 tests):
 | refuses the same operator from a different session | distinct session id, same principal, 403 |
 | lets an independent checker approve the same application | submitter 403 → `SUPER_ADMIN` 200 → `APPROVED`, persisted `submitted_by` is the maker's |
 | applies to the privileged account too | `SUPER_ADMIN` cannot approve an application `SUPER_ADMIN` submitted — the rule is about the principal, not the role |
-| refuses an unattributed legacy row | 409, message names submitter attribution and the withdraw/resubmit path |
+| refuses an unattributed legacy row | 409, message names submitter attribution and the reject-then-recreate path |
 | attribution cannot be rewritten | direct `UPDATE submitted_by` is rejected by the trigger |
 
 Admin Web: `__tests__/agent-application-separation-of-duties.test.tsx` — the console explains the

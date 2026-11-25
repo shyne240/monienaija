@@ -14,7 +14,25 @@ node scripts/agent-onboarding-acceptance.cjs \
   --admin-web http://127.0.0.1:5173 --api http://127.0.0.1:3000/api/v1
 ```
 
-Evidence (screenshots + `report.json`) lives in `evidence/acceptance-20261125/`.
+Evidence (screenshots + `report.json`) is written to `evidence/acceptance-20261125/`, which is the
+script's default `--out`, so the run above rewrites exactly the committed set.
+
+## This run, and the migration renumber
+
+The evidence in `evidence/acceptance-20261125/` was regenerated on the coordinated migration head —
+after this PR's migration moved from `1785753600806` to `1785753600809` (see
+[`../migrations/MIGRATION-IDENTITY-COORDINATION.md`](../migrations/MIGRATION-IDENTITY-COORDINATION.md))
+and after the disposable database was upgraded through the real `npm run migration:run` path. The
+run was not repeated against the old identity, so the screenshots and the `report.json` in that
+directory all come from one database state: schema head `1785753600809`, `submitted_by` present,
+attribution trigger armed.
+
+Server state for this run, as recorded by the harness in `report.json.environment`:
+
+- API: `scripts/local-dev-api-server.js`, release readiness reported as `error`
+  (`financial_dependencies_not_ready`) and **not bypassed**, bound to `127.0.0.1` only.
+- `dist/main.js` neither used nor modified; it still refuses to start.
+- Database: disposable local PostgreSQL, fully migrated, synthetic rows only.
 
 ## What the walkthrough proves
 
@@ -25,7 +43,7 @@ Evidence (screenshots + `report.json`) lives in `evidence/acceptance-20261125/`.
 | Explicit selection | `DEMO_ORDINARY_L1`, provenance reads "Explicitly selected by you" |
 | Class-declared requirements | 2 info fields + 1 evidence reference rendered and supplied |
 | Draft | Persisted as `DRAFT` against the chosen class |
-| Submission | Reaches `SUBMITTED` with a `submittedAt` |
+| Submission | Reaches `SUBMITTED`, with `submittedAt` set **and** `submittedBy` recorded (reported by the harness as `submittedBy=recorded`) |
 | Submitter cannot approve | Own row shows *"You submitted this application, so you cannot approve it"* and offers no Approve button |
 | Self-approval refused | Submitter's own `POST /approve` → 403, application stays `SUBMITTED` |
 | Independent checker | Same application approved by a different principal → 200, `APPROVED` |
@@ -34,6 +52,7 @@ Evidence (screenshots + `report.json`) lives in `evidence/acceptance-20261125/`.
 | Activation | Application remains `APPROVED`; the canonical Agent reaches `ACTIVE` |
 | Class governs the Agent | `agents.agent_class_id` equals the chosen class (checked in SQL, not only via the API) |
 | Activation audit | `CREATED_PENDING(class …) → RECEIVING_NUMBER_ALLOCATED → ACTIVATED(class …)` |
+| Class history | Empty (0 entries) and *correctly* so: that surface records class **switches**, and activation is not a switch. The class assignment is proved instead from `agents.agent_class_id` in SQL. |
 | Missing configuration | A class with no limit profile renders its gaps *before* activation, worded as absent — not zero, not unlimited |
 
 ## Accounts used
@@ -61,10 +80,12 @@ Verified in this walkthrough (throwaway application, 34/34 steps):
 | --- | --- |
 | Submitting operator approves their own application | `403` *"Separation of duties: the operator who submitted this application cannot approve it."* — application remains `SUBMITTED` |
 | Different principal approves the same application | `200` → `APPROVED` |
-| Same operator, second session | Still the same submitter |
+| Same operator, second session | Still the same submitter — a second, distinct session id for the same principal is refused identically |
 
 The walkthrough's own approval is therefore an enforced separation, not a procedural one. See
-`APPROVAL-INDEPENDENCE.md` for the rule, the legacy-attribution blocker, and the safe handling path.
+`APPROVAL-INDEPENDENCE.md` for the rule, the legacy-attribution blocker
+([`UNATTRIBUTED-APPLICATIONS-RUNBOOK.md`](./UNATTRIBUTED-APPLICATIONS-RUNBOOK.md) for the operator
+procedure), and the safe handling path.
 
 ## Two defects found and fixed while producing this evidence
 

@@ -264,7 +264,7 @@ describe('Agent application approval independence (real PostgreSQL + real HTTP)'
 
   it('refuses approval when the submitter was never recorded, instead of guessing one', async () => {
     const checker = await signIn(CHECKER_ROLE);
-    // A pre-attribution row: submitted before migration 1785753600806 existed.
+    // A pre-attribution row: submitted before migration 1785753600809 existed.
     const rows: Array<{ id: string }> = await ds.query(
       `INSERT INTO agent_applications
          (id, reference, agent_class_id, status, applicant_reference, created_by, submitted_at)
@@ -275,7 +275,7 @@ describe('Agent application approval independence (real PostgreSQL + real HTTP)'
     const res = await approve(checker.accessToken, rows[0]!.id);
     expect(res.status).toBe(409);
     expect(String(payload(res).message)).toMatch(/submitter attribution/i);
-    expect(String(payload(res).message)).toMatch(/withdraw and resubmit/i);
+    expect(String(payload(res).message)).toMatch(/must reject it with a reason/i);
   });
 
   it('does not let the submitter rewrite their own attribution to dodge the guard', async () => {
