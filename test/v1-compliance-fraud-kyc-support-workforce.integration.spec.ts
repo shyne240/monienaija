@@ -67,7 +67,9 @@ describe('V1 Compliance, Fraud, KYC Review, and Support Workforce Integration (r
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-  async function seedRolePrincipal(...roles: string[]): Promise<{ token: string; principalId: string }> {
+  async function seedRolePrincipal(
+    ...roles: string[]
+  ): Promise<{ token: string; principalId: string }> {
     const principalId = `cfks:${roles.join('+')}:${randomUUID()}`.slice(0, 160);
     const now = new Date();
     for (const roleKey of roles) {
