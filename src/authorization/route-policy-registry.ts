@@ -1028,6 +1028,46 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // V1-AGENT-CLASS-LIFECYCLE-01 — governed Agent class lifecycle.
+    //
+    // MUST precede three separate generic branches further down this method:
+    //   1. the agents-detail GET branch (`/internal/agents/:id`), which would otherwise treat
+    //      `/internal/agents/<uuid>/class` as a detail read;
+    //   2. `/internal/agents/classes` (the class CATALOGUE), which any `:id`-less `classes`
+    //      pattern could otherwise absorb;
+    //   3. the catch-all `/api/v1/internal/` fallback, which allows SUPPORT/OPERATOR/SERVICE/
+    //      PRIVILEGED with NO required function — a governed reclassification must never be
+    //      reachable without `agent.manage_classes`.
+    //
+    // Reads (readiness, history, impact preview, current class) are investigations: `agent.view`
+    // with SUPPORT included. The switch is a mutation and requires `agent.manage_classes`; the
+    // controller additionally refuses a read-only principal. `auditDeniedWorkforceFunction` records
+    // guard-level denials, matching the customer-class branch.
+    if (
+      /^\/api\/v1\/internal\/agents\/[^/]+\/class(?:\/(?:history|readiness|impact-preview))?$/.test(
+        path,
+      )
+    ) {
+      const read = lookedUpMethod === 'GET';
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-class-transition',
+        auditDeniedWorkforceFunction: true,
+        policy: {
+          resourceType: 'agent-class-transition',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: read
+            ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
+            : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [read ? 'agent.view' : 'agent.manage_classes'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Customer class governance is distinct from generic customer inspection routes.
     // auditDeniedWorkforceFunction ensures guard-level 403 denials record an audit event.
     if (

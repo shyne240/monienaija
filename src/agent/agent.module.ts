@@ -29,6 +29,8 @@ import { AgentCashInService } from './agent-cash-in.service';
 import { AgentApplicationAdminController } from './agent-application-admin.controller';
 import { AgentApplicationPublicController } from './agent-application-public.controller';
 import { AgentClassController } from './agent-class.controller';
+import { AgentClassTransitionController } from './agent-class-transition.controller';
+import { AgentClassTransitionService } from './agent-class-transition.service';
 import { AgentLifecycleController } from './agent-lifecycle.controller';
 import { AgentCashInController } from './agent-cash-in.controller';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
@@ -125,6 +127,9 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentApplicationPublicController,
     AgentApplicationAdminController,
     AgentClassController,
+    // V1-AGENT-CLASS-LIFECYCLE-01 — registered before the shared `internal/agents` prefix so
+    // `:id/class*` is never shadowed by the generic detail surface.
+    AgentClassTransitionController,
     AgentLifecycleController,
     AgentReceivingNumberController,
     AgentReceivingNumberInternalController,
@@ -157,6 +162,9 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentLimitViewService, // Agent limits view — read-only projection of the authoritative limit catalogue
     RecipientResolutionService,
     AgentServiceCapabilityService,
+    // V1-AGENT-CLASS-LIFECYCLE-01 — readiness, impact preview, governed switch and audit-derived
+    // history for a live Agent's class. No new table, no new migration.
+    AgentClassTransitionService,
     AgentTransactionAuthorizationService,
     AgentFinancialExecutionService,
     AgentCashInService,
@@ -180,6 +188,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   ],
   exports: [
     AgentClassService,
+    AgentClassTransitionService,
     AgentApplicationService,
     AgentLifecycleService,
     AgentReceivingNumberService,

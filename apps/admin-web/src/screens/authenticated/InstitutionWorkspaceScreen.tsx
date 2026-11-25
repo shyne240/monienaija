@@ -31,6 +31,7 @@ import {
   shortId,
 } from './institution-console-support';
 import { useConsoleData } from './institution-console-hooks';
+import { institutionLifecycleGuidance } from './InstitutionDirectoryScreen';
 import {
   InstitutionAccountsTab,
   InstitutionAgentsTab,
@@ -489,6 +490,19 @@ const LifecycleTab: React.FC<{
     (item) => item.actionType === 'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
   );
 
+  /**
+   * What this status means for AUTHORITY and who must act next.
+   *
+   * The single most consequential confusion in this console is treating "registered" or
+   * "evidence submitted" as if it granted anything, or assuming the operator who registered an
+   * institution may also approve it. Both are stated here, per status, from one shared helper.
+   */
+  const guidance = institutionLifecycleGuidance(institution.status);
+  const authorityNote =
+    institution.operationalAuthority === (guidance.authority === 'GRANTED')
+      ? null
+      : `The recorded status and the operational-authority flag disagree (status ${institution.status}, operationalAuthority ${String(institution.operationalAuthority)}). Treat the institution as holding NO authority and investigate before acting.`;
+
   const submitEvidence = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage || evidenceBusy) return;
@@ -619,6 +633,44 @@ const LifecycleTab: React.FC<{
 
   return (
     <div className="mn-inst__stack">
+      {/* Status → authority → next action, in that order. An operator should never have to infer
+          from a badge whether this institution can transact right now. */}
+      <section
+        className="mn-inst__panel"
+        aria-labelledby="mn-inst-lifecycle-guidance"
+        data-testid="institution-lifecycle-guidance"
+      >
+        <h2 id="mn-inst-lifecycle-guidance" className="mn-inst__panel-title">
+          What this status means
+        </h2>
+        <p className="mn-inst__panel-note">
+          <StatusBadge tone={STATUS_TONES[institution.status]}>
+            {institution.status.replace(/_/g, ' ')}
+          </StatusBadge>{' '}
+          {guidance.summary}
+        </p>
+        <p className="mn-inst__hint" data-testid="institution-next-action">
+          <strong>Next:</strong> {guidance.nextAction}
+        </p>
+        <p className="mn-inst__hint">
+          <strong>Financial authority:</strong>{' '}
+          {guidance.authority === 'GRANTED'
+            ? 'held — this institution may be attributed to wallets and affiliations.'
+            : 'not held — nothing may be attributed to this institution yet.'}
+        </p>
+        {authorityNote ? (
+          <Alert tone="warning" title="Authority flag disagrees with status">
+            {authorityNote}
+          </Alert>
+        ) : null}
+        {institution.status !== 'APPROVED' && canRequest ? (
+          <p className="mn-inst__hint">
+            Approval is a governed change: request it here, then a principal other than you must
+            decide it. Your own request can never be self-approved.
+          </p>
+        ) : null}
+      </section>
+
       <section className="mn-inst__panel" aria-labelledby="mn-inst-pending">
         <div className="mn-inst__list-head">
           <h2 id="mn-inst-pending" className="mn-inst__panel-title">

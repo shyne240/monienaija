@@ -31,6 +31,12 @@ describe('Mission 15A declared Agent route policies', () => {
     ['GET', `/api/v1/internal/agents/${id}`, 'agent.view'],
     ['HEAD', `/api/v1/internal/agents/${id}/financial-position`, 'agent.view'],
     ['GET', '/api/v1/internal/admin/cash-to-cash/transfers', 'transaction.view'],
+    // V1-AGENT-CLASS-LIFECYCLE-01 — reads are investigations, the switch is governed.
+    ['GET', `/api/v1/internal/agents/${id}/class`, 'agent.view'],
+    ['GET', `/api/v1/internal/agents/${id}/class/readiness`, 'agent.view'],
+    ['GET', `/api/v1/internal/agents/${id}/class/history`, 'agent.view'],
+    ['GET', `/api/v1/internal/agents/${id}/class/impact-preview`, 'agent.view'],
+    ['POST', `/api/v1/internal/agents/${id}/class`, 'agent.manage_classes'],
     ['HEAD', '/api/v1/internal/admin/cash-to-cash/expiry-status', 'transaction.view'],
   ])('%s %s declares %s', (method, url, functionCode) => {
     const resolution = registry.resolve({ method, url: `${url}?page=1` });
@@ -38,6 +44,41 @@ describe('Mission 15A declared Agent route policies', () => {
     expect(resolution.authenticationMode).toBe('WORKFORCE_SESSION');
     expect(resolution.policy?.requiredFunctions).toEqual([functionCode]);
     expect(resolution.policy?.action).toBe(`${method}:${url}`);
+  });
+
+  it('resolves the Agent class lifecycle branches before the agents detail, catalogue and catch-all policies', () => {
+    const readiness = registry.resolve({
+      method: 'GET',
+      url: `/api/v1/internal/agents/${id}/class/readiness`,
+    });
+    // The generic detail policy would report `internal-agents` with the legacy 401 precedence and
+    // a SUPPORT-allowing principal set; the catch-all would carry NO catalogue function at all.
+    expect(readiness.resourceType).toBe('agent-class-transition');
+    expect(readiness.auditDeniedWorkforceFunction).toBe(true);
+    expect(readiness.rejectNonWorkforcePrincipalWith401).toBeUndefined();
+    expect(readiness.policy?.allowedPrincipalTypes).toEqual([
+      'SUPPORT',
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
+    const write = registry.resolve({
+      method: 'POST',
+      url: `/api/v1/internal/agents/${id}/class`,
+    });
+    expect(write.resourceType).toBe('agent-class-transition');
+    expect(write.policy?.requiredFunctions).toEqual(['agent.manage_classes']);
+    expect(write.policy?.allowedPrincipalTypes).toEqual(['OPERATOR', 'SERVICE', 'PRIVILEGED']);
+    // The class CATALOGUE keeps its own policy and must not be captured by the lifecycle branch.
+    const catalogue = registry.resolve({
+      method: 'POST',
+      url: '/api/v1/internal/agents/classes',
+    });
+    expect(catalogue.resourceType).toBe('agent-class');
+    // Adjacent unscoped `:id` paths keep falling through to their existing policies.
+    expect(
+      registry.resolve({ method: 'GET', url: `/api/v1/internal/agents/${id}` }).resourceType,
+    ).toBe('internal-agents');
   });
 
   it('limits legacy non-workforce 401 precedence to Agent directory/detail/financial-position reads', () => {

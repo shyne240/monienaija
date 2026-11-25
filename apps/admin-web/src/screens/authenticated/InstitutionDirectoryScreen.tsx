@@ -41,6 +41,64 @@ interface InstitutionDirectoryScreenProps {
   onOpenInstitution: (institutionId: string) => void;
 }
 
+/**
+ * The ONE place that explains what an institution status means for authority and what has to happen
+ * next. Used by the directory rows, the post-registration notice and the workspace banner so the
+ * console cannot tell an operator two different stories about the same lifecycle.
+ *
+ * `nextAction` deliberately names WHO must act, because the single most common misunderstanding is
+ * that the registering operator can approve their own institution — self-approval is refused by the
+ * governed action definition, not merely discouraged by copy.
+ */
+export function institutionLifecycleGuidance(status: InstitutionStatus): {
+  authority: 'NONE' | 'GRANTED' | 'WITHDRAWN';
+  summary: string;
+  nextAction: string;
+} {
+  switch (status) {
+    case 'REGISTERED':
+      return {
+        authority: 'NONE',
+        summary: 'Registered only. No financial authority and no operational surface.',
+        nextAction:
+          'Record regulatory evidence (licence reference / regulator record), then request an APPROVED lifecycle change for an independent checker to decide.',
+      };
+    case 'EVIDENCE_SUBMITTED':
+      return {
+        authority: 'NONE',
+        summary: 'Evidence recorded. Still no financial authority until the lifecycle is approved.',
+        nextAction:
+          'Request an APPROVED lifecycle change. A principal other than the requester must decide it before authority exists.',
+      };
+    case 'APPROVED':
+      return {
+        authority: 'GRANTED',
+        summary: 'Approved. The institution holds operational authority.',
+        nextAction:
+          'Affiliations, enrolments and attribution can now be used. Any suspension or closure is again a governed change.',
+      };
+    case 'SUSPENDED':
+      return {
+        authority: 'WITHDRAWN',
+        summary: 'Suspended. Operational authority is withdrawn while the record is retained.',
+        nextAction:
+          'A governed REACTIVATE/APPROVED change decided by an independent checker restores authority.',
+      };
+    case 'CLOSED':
+      return {
+        authority: 'WITHDRAWN',
+        summary: 'Closed. The record is retained for history; nothing may be attributed to it.',
+        nextAction: 'No further lifecycle transition is available from CLOSED.',
+      };
+    default:
+      return {
+        authority: 'NONE',
+        summary: `Unrecognised status ${String(status)} — treated as NO authority.`,
+        nextAction: 'Investigate the institution record before taking any action.',
+      };
+  }
+}
+
 const STATUS_FILTERS: Array<{ value: 'ALL' | InstitutionStatus; label: string }> = [
   { value: 'ALL', label: 'All statuses' },
   { value: 'REGISTERED', label: 'Registered (no authority)' },
@@ -176,8 +234,9 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
       });
       setForm({ ...EMPTY_FORM });
       setFormOpen(false);
+      const guidance = institutionLifecycleGuidance(created.status);
       setFormNotice(
-        `Registered ${created.reference}. The institution holds no financial authority until an independent checker approves its lifecycle.`,
+        `Registered ${created.reference}. ${guidance.summary} Next: ${guidance.nextAction}`,
       );
       await load();
     } catch (error) {
@@ -226,7 +285,7 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
       </Alert>
 
       {formNotice ? (
-        <Alert tone="success" title="Registered">
+        <Alert tone="success" title="Registered — no financial authority yet">
           {formNotice}
         </Alert>
       ) : null}
@@ -503,6 +562,12 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
                         {row.evidenceReference
                           ? `Evidence: ${row.evidenceReference}`
                           : 'No evidence reference recorded'}
+                      </span>
+                      <span
+                        className="mn-inst__secondary"
+                        data-testid={`inst-next-action-${row.reference}`}
+                      >
+                        Next: {institutionLifecycleGuidance(row.status).nextAction}
                       </span>
                     </td>
                     <td className="mn-inst__mono">{formatTimestamp(row.updatedAt)}</td>

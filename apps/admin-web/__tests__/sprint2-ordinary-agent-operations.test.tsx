@@ -374,10 +374,12 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       expect(ApiClient.get).toHaveBeenCalledWith('/internal/agents/agent-100/financial-position'),
     );
 
-    fireEvent.click(view.getByRole('button', { name: 'Resolve class name' }));
+    // Opening the drawer now resolves the class catalogue itself, so the drawer renders the class
+    // name immediately instead of forcing a manual "Resolve class name" click first.
     expect((await view.findAllByText(/Ordinary Tier 1 \(ORD_T1\)/)).length).toBeGreaterThanOrEqual(
       2,
     );
+    expect(view.queryByRole('button', { name: 'Resolve class name' })).toBeNull();
 
     fireEvent.click(view.getByRole('button', { name: 'Load agent limits' }));
     await view.findByText(/No limit assignments on this page/i);

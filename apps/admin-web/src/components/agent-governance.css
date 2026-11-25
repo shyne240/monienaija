@@ -16,3 +16,5 @@
 .agent-governance__hint{font-size:13px;line-height:1.5;color:#52655f;margin:14px 0 0}
 .agent-governance__badge{display:inline-block;padding:3px 9px;border:1px solid #cbd5d0;border-radius:99px;background:#f4f6f5;color:#344a40;font-size:11px;font-weight:700}
 .agent-governance__badge--locked{border-color:#e5aaa2;background:#fff5f4;color:#7d241d}
+.agent-governance__list{margin:8px 0 0;padding-left:18px;display:grid;gap:4px;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.agent-governance__acknowledgement{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.5;color:#5e481b}

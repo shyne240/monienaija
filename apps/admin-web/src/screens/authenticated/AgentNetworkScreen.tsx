@@ -20,6 +20,15 @@ import {
   AgentClassAssignmentPanel,
   type AgentClassOption,
 } from '../../components/AgentClassAssignmentPanel';
+import {
+  type AgentClassHistoryEntry,
+  type AgentClassImpact,
+  type AgentClassReadiness,
+  fetchAgentClassHistory,
+  fetchAgentClassReadiness,
+  previewAgentClassImpact,
+  switchAgentClass,
+} from '../../services/agent-class-lifecycle-api';
 import { AgentUnifiedHistoryPanel } from '../../components/AgentUnifiedHistoryPanel';
 import { AgentTransactionPinSupportPanel } from '../../components/AgentTransactionPinSupportPanel';
 
@@ -31,6 +40,12 @@ interface Agent {
   originApplicationId?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Optimistic-lock version, returned by GET /internal/agents/:id. Optional because older mocks and
+   * fixtures may omit it; when absent the switch simply omits `expectedVersion` and the server
+   * still serializes concurrent switches on the Agent row lock.
+   */
+  version?: number;
 }
 
 const DIRECTORY_PAGE_SIZE = 20;
@@ -41,6 +56,9 @@ interface AgentClassFullOption extends AgentClassOption {
   reference?: string;
   requiredInformation?: unknown | null;
   requiredDocumentCategories?: unknown | null;
+  /** Server-assigned creation time; the computed default is the earliest ACTIVE class. */
+  createdAt?: string;
+  applicableServices?: unknown;
 }
 
 interface AgentFinancialPosition {
@@ -776,6 +794,25 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   // On-demand catalogs & transaction observability
   const [classCatalog, setClassCatalog] = useState<AgentClassFullOption[]>([]);
+  /**
+   * Catalogue read failure, kept LOCAL to the class section. It must not reuse `actionErr`: a
+   * catalogue read is a supporting lookup, and a failed lookup must not look like a failed Agent
+   * action (or overwrite an unrelated lifecycle message).
+   */
+  const [classCatalogError, setClassCatalogError] = useState('');
+  // V1-AGENT-CLASS-LIFECYCLE-01 — readiness/impact/history for the inspected Agent. Kept separate
+  // from `classCatalog` (the catalogue) so a failed projection never blanks out class names.
+  const [classReadiness, setClassReadiness] = useState<AgentClassReadiness | null>(null);
+  const [classImpact, setClassImpact] = useState<AgentClassImpact | null>(null);
+  const [classImpactError, setClassImpactError] = useState('');
+  const [classImpactLoading, setClassImpactLoading] = useState(false);
+  const [classHistory, setClassHistory] = useState<AgentClassHistoryEntry[] | null>(null);
+  const [classHistoryError, setClassHistoryError] = useState('');
+  const [classHistoryLoading, setClassHistoryLoading] = useState(false);
+  const [classReadinessError, setClassReadinessError] = useState('');
+  const classReadGeneration = useRef(0);
+  const classImpactGeneration = useRef(0);
+  const classHistoryGeneration = useRef(0);
   const [classCatalogLoading, setClassCatalogLoading] = useState(false);
   const [limitCatalog, setLimitCatalog] = useState<LimitCatalogOption[]>([]);
   const [limitCatalogLoading, setLimitCatalogLoading] = useState(false);
@@ -840,6 +877,132 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
+  /**
+   * Readiness for the CURRENT class, from the live capability gate.
+   *
+   * Deliberately silent about *why* a request failed beyond surfacing the message: an unreadable
+   * projection must never be presented as "everything is permitted".
+   */
+  const loadClassReadiness = async (agentId: string) => {
+    const generation = ++classReadGeneration.current;
+    setClassReadinessError('');
+    try {
+      const readiness = await fetchAgentClassReadiness(agentId);
+      if (
+        generation !== classReadGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      if (!readiness || readiness.agentId !== agentId || !Array.isArray(readiness.deniedServices))
+        throw new Error('Class readiness response could not be verified.');
+      setClassReadiness(readiness);
+    } catch (e: any) {
+      if (
+        generation !== classReadGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      setClassReadiness(null);
+      setClassReadinessError(e?.message || 'Unable to read Agent class readiness.');
+    }
+  };
+
+  /** Audit-derived switch history. A null result means "not read yet", never "no changes". */
+  const loadClassHistory = async (agentId: string) => {
+    const generation = ++classHistoryGeneration.current;
+    setClassHistoryLoading(true);
+    setClassHistoryError('');
+    try {
+      const rows = await fetchAgentClassHistory(agentId);
+      if (
+        generation !== classHistoryGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      if (!Array.isArray(rows)) throw new Error('Class history response could not be verified.');
+      setClassHistory(rows);
+    } catch (e: any) {
+      if (
+        generation !== classHistoryGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      setClassHistory(null);
+      setClassHistoryError(e?.message || 'Unable to read Agent class history.');
+    } finally {
+      if (generation === classHistoryGeneration.current && mountedRef.current)
+        setClassHistoryLoading(false);
+    }
+  };
+
+  /** Read-only impact preview for a candidate target class. */
+  const loadClassImpact = async (agentId: string, targetClassId: string) => {
+    const generation = ++classImpactGeneration.current;
+    setClassImpactLoading(true);
+    setClassImpactError('');
+    setClassImpact(null);
+    try {
+      const impact = await previewAgentClassImpact(agentId, targetClassId);
+      if (
+        generation !== classImpactGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      if (!impact || impact.agentId !== agentId || impact.targetClass?.id !== targetClassId)
+        throw new Error('Impact preview did not match the selected Agent and class.');
+      setClassImpact(impact);
+    } catch (e: any) {
+      if (
+        generation !== classImpactGeneration.current ||
+        selectedAgentId.current !== agentId ||
+        !mountedRef.current
+      )
+        return;
+      setClassImpact(null);
+      setClassImpactError(e?.message || 'Unable to preview the impact of this class change.');
+    } finally {
+      if (generation === classImpactGeneration.current && mountedRef.current)
+        setClassImpactLoading(false);
+    }
+  };
+
+  /**
+   * Governed switch. The server is the authority: on success the drawer adopts the returned class
+   * and version, then readiness/history are re-read so the operator sees the NEW truth rather than
+   * a locally optimistic guess. A failure is surfaced verbatim (409 stale version included).
+   */
+  const reclassifyAgent = async (agentId: string, targetClassId: string, reason: string) => {
+    if (!canManageClasses) throw new Error('Reclassification requires agent.manage_classes.');
+    if (selectedAgentId.current !== agentId) throw new Error('The inspected Agent has changed.');
+    const current = agents.find((row) => row.id === agentId) ?? selected;
+    const result = await switchAgentClass(agentId, {
+      targetClassId,
+      reason,
+      ...(typeof current?.version === 'number' && current.version > 0
+        ? { expectedVersion: current.version }
+        : {}),
+    });
+    if (!mountedRef.current || selectedAgentId.current !== agentId)
+      throw new Error('The inspected Agent changed before the switch completed.');
+    if (!result || result.agentId !== agentId || result.currentClassId !== targetClassId)
+      throw new Error('Reclassification receipt did not match the requested Agent and class.');
+    setSelected((row) =>
+      row && row.id === agentId ? { ...row, agentClassId: result.currentClassId } : row,
+    );
+    setClassImpact(null);
+    classImpactGeneration.current += 1;
+    await Promise.all([
+      loadClassReadiness(agentId),
+      loadClassHistory(agentId),
+      refreshDirectory.current(),
+    ]);
+  };
+
   const openDetail = async (a: Agent) => {
     if (
       !canView ||
@@ -900,7 +1063,27 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setAgentHistoryError('');
     setWalletTransfers([]);
     setAgentC2CRows([]);
+    // A different Agent means every class projection is stale; bump each generation so a late
+    // response for the previous Agent cannot land on the new drawer.
+    classReadGeneration.current += 1;
+    classImpactGeneration.current += 1;
+    classHistoryGeneration.current += 1;
+    setClassReadiness(null);
+    setClassReadinessError('');
+    setClassImpact(null);
+    setClassImpactError('');
+    setClassImpactLoading(false);
+    setClassHistory(null);
+    setClassHistoryError('');
+    setClassHistoryLoading(false);
     await loadPosition(a.id);
+    if (canView) {
+      // Class names, the readiness panel and any class switch all need the catalogue. Resolving it
+      // once per drawer open removes the "click Resolve class name first" dead end; the loader is
+      // a no-op while a read is in flight.
+      if (classCatalog.length === 0) void loadClassCatalog();
+      void loadClassReadiness(a.id);
+    }
   };
 
   const openCurrentDetail = useRef(openDetail);
@@ -1017,12 +1200,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const loadClassCatalog = async () => {
     if (!canView || classCatalogLoading) return;
     setClassCatalogLoading(true);
+    setClassCatalogError('');
     try {
       const res: any = await ApiClient.get('/internal/agents/classes');
       const rows = Array.isArray(res) ? res : res?.data || [];
-      setClassCatalog(rows);
+      setClassCatalog(Array.isArray(rows) ? rows : []);
     } catch (e: any) {
-      setActionErr(e?.message || 'Failed to load Agent class catalog');
+      setClassCatalogError(e?.message || 'Failed to load Agent class catalog');
     } finally {
       setClassCatalogLoading(false);
     }
@@ -1100,7 +1284,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setOnboardingError('');
     setApplicationsError('');
     setApplicationsMsg('');
-    const activeClasses = classCatalog.filter((c) => c.isActive !== false);
+    // The class decides which services the applicant's Agent may ever perform, so the default is
+    // the same deterministic "approved default" the backend computes (earliest-created ACTIVE
+    // class) and the form says so. It is never an invisible first-row pick.
+    const activeClasses = classCatalog
+      .filter((c) => c.isActive !== false)
+      .slice()
+      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
     const initial = { ...EMPTY_APPLICATION_FORM, agentClassId: activeClasses[0]?.id ?? '' };
     applicationBaseline.current = initial;
     setApplicationForm(initial);
@@ -1161,7 +1351,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   useEffect(() => {
     if (!onboardingOpen || editingDraftId) return;
     if (applicationForm.agentClassId) return;
-    const firstActive = classCatalog.find((c) => c.isActive !== false);
+    const firstActive = classCatalog
+      .filter((c) => c.isActive !== false)
+      .slice()
+      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))[0];
     if (firstActive) {
       applicationBaseline.current = {
         ...applicationBaseline.current,
@@ -1171,6 +1364,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   }, [onboardingOpen, editingDraftId, classCatalog, applicationForm.agentClassId]);
 
+  /**
+   * The same deterministic default the backend calls the "approved default": the earliest-created
+   * ACTIVE class. Labelled as computed in the UI because there is no stored default flag.
+   */
+  const computedDefaultClassId =
+    classCatalog
+      .filter((c) => c.isActive !== false)
+      .slice()
+      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))[0]?.id ??
+    '';
   const selectedOnboardingClass = classCatalog.find((c) => c.id === applicationForm.agentClassId);
   const requiredInfoKeys = extractClassRequirementKeys(
     selectedOnboardingClass?.requiredInformation,
@@ -2813,22 +3016,33 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   <label style={formFieldLabel}>
                     Agent Class
                     {activeClassOptions.length > 0 ? (
-                      <select
-                        aria-label="Application Agent class"
-                        value={applicationForm.agentClassId}
-                        onChange={(e) =>
-                          setApplicationForm((cur) => ({ ...cur, agentClassId: e.target.value }))
-                        }
-                        style={inlineInput}
-                        disabled={onboardingBusy}
-                      >
-                        <option value="">Select active Agent Class…</option>
-                        {activeClassOptions.map((cls) => (
-                          <option key={cls.id} value={cls.id}>
-                            {cls.name} ({cls.code})
-                          </option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          aria-label="Application Agent class"
+                          value={applicationForm.agentClassId}
+                          onChange={(e) =>
+                            setApplicationForm((cur) => ({ ...cur, agentClassId: e.target.value }))
+                          }
+                          style={inlineInput}
+                          disabled={onboardingBusy}
+                        >
+                          <option value="">Select active Agent Class…</option>
+                          {activeClassOptions.map((cls) => (
+                            <option key={cls.id} value={cls.id}>
+                              {cls.name} ({cls.code})
+                              {cls.id === computedDefaultClassId ? ' — approved default' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <span style={smallMuted} data-testid="onboarding-class-provenance">
+                          {applicationForm.agentClassId === computedDefaultClassId
+                            ? 'Pre-filled with the approved default class'
+                            : 'Explicitly selected'}
+                          {applicationForm.agentClassId
+                            ? ` — ${selectedOnboardingClass ? `${selectedOnboardingClass.name} (${selectedOnboardingClass.code})` : applicationForm.agentClassId}. That class decides which services this Agent will be permitted to perform.`
+                            : ' — choose the class this Agent will operate under.'}
+                        </span>
+                      </>
                     ) : (
                       <input
                         aria-label="Application Agent class reference"
@@ -3505,7 +3719,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   <td style={cell}>
                     <span style={badge(a.status)}>{a.status}</span>
                   </td>
-                  <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
+                  <td style={cell}>
+                    {(() => {
+                      if (!a.agentClassId) return '—';
+                      const matched = classCatalog.find((c) => c.id === a.agentClassId);
+                      if (matched)
+                        return (
+                          <span data-testid={`agent-class-name-${a.id}`}>
+                            {matched.name} ({matched.code})
+                          </span>
+                        );
+                      // Unresolved on purpose: showing a name we cannot verify would be a guess.
+                      return <code data-testid={`agent-class-id-${a.id}`}>{a.agentClassId}</code>;
+                    })()}
+                  </td>
                   <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
                   <td style={cell}>
                     <button
@@ -3598,6 +3825,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
             <div>
               <strong>ID:</strong> <code>{selected.id}</code>
             </div>
+            {classCatalogError ? (
+              <div style={errBox} role="status" data-testid="agent-class-catalog-error">
+                Agent class catalogue could not be read: {classCatalogError} Class names and target
+                choices may be incomplete.
+              </div>
+            ) : null}
             <div>
               <strong>Class:</strong>{' '}
               {(() => {
@@ -3623,12 +3856,88 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     : 'Resolve class name'}
               </button>
             </div>
+            {classReadinessError ? (
+              <div style={errBox} role="alert" data-testid="agent-class-readiness-error">
+                Class readiness could not be read: {classReadinessError} Nothing is assumed to be
+                permitted.
+              </div>
+            ) : null}
             <AgentClassAssignmentPanel
               agentId={selected.id}
               currentClassId={selected.agentClassId}
               availableClasses={classCatalog}
               canManageClasses={canManageClasses}
+              onReclassify={canManageClasses ? reclassifyAgent : undefined}
+              readiness={classReadiness}
+              impactPreview={classImpact}
+              impactPreviewError={classImpactError}
+              impactPreviewLoading={classImpactLoading}
+              agentVersion={selected.version}
+              onPreviewTargetClass={
+                canView
+                  ? (targetClassId: string) => {
+                      if (targetClassId && targetClassId !== selected.agentClassId)
+                        void loadClassImpact(selected.id, targetClassId);
+                      else {
+                        classImpactGeneration.current += 1;
+                        setClassImpact(null);
+                        setClassImpactError('');
+                        setClassImpactLoading(false);
+                      }
+                    }
+                  : undefined
+              }
             />
+
+            <div style={card} data-testid="agent-class-history">
+              <div style={sectionHead}>
+                <strong>Class change history</strong>
+                <button
+                  type="button"
+                  style={smallBtn}
+                  disabled={classHistoryLoading}
+                  onClick={() => void loadClassHistory(selected.id)}
+                >
+                  {classHistoryLoading
+                    ? 'Loading…'
+                    : classHistory === null
+                      ? 'Load class history'
+                      : 'Refresh class history'}
+                </button>
+              </div>
+              {classHistoryError ? (
+                <div style={errBox} role="alert">
+                  {classHistoryError}
+                </div>
+              ) : classHistory === null ? (
+                <p style={smallMuted}>
+                  Not read yet. History is projected from the Agent audit trail, so it can only show
+                  reclassifications that were actually recorded.
+                </p>
+              ) : classHistory.length === 0 ? (
+                <p style={smallMuted}>
+                  No governed reclassification has been recorded for this Agent. Its class is still
+                  the one assigned when its application was approved.
+                </p>
+              ) : (
+                <ul style={compactList} data-testid="agent-class-history-rows">
+                  {classHistory.map((entry, index) => (
+                    <li key={`${entry.occurredAt}-${index}`} style={compactListItem}>
+                      <span>
+                        <code>
+                          {entry.previousClass?.code ?? entry.previousClassId ?? '—'} →{' '}
+                          {entry.newClass?.code ?? entry.newClassId ?? '—'}
+                        </code>{' '}
+                        · {new Date(entry.occurredAt).toLocaleString()}
+                      </span>
+                      <span>
+                        {entry.reason ?? 'No reason recorded'} · {entry.actor}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             {detailError && (
               <div style={errBox} role="alert">

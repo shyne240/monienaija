@@ -45,6 +45,9 @@ export class AgentApplicationService {
     private readonly classRepository: Repository<AgentClass>,
     @InjectRepository(Agent)
     private readonly agentRepository: Repository<Agent>,
+    // Undecorated: `@InjectRepository` only carries meaning when Nest constructs this class.
+    // Trusted in-process scripts (scripts/local-dev-*.js) build it by hand, where a parameter
+    // decorator on a missing metadata key would throw at class definition time.
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
   ) {}

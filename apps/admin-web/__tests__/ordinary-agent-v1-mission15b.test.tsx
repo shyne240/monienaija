@@ -936,15 +936,16 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       'Applicant reference AGT-DUP-01 already exists',
     );
 
-    // Open Agent drawer: verify D5 (reclassification) and D6 (PIN unlock) remain policy-blocked
+    // Open Agent drawer. Reclassification is now a governed capability: this principal holds
+    // `agent.manage_classes`, so the switch form is available instead of a blocked button.
     fireEvent.click(shell.getByRole('button', { name: 'View' }));
+    expect(await shell.findByLabelText('Target Agent class')).toBeTruthy();
+    expect(shell.queryByRole('button', { name: 'Reclassify Agent (Policy blocked)' })).toBeNull();
+    // The submit button stays disabled until a DIFFERENT class and a reason are supplied.
     expect(
-      (
-        (await shell.findByRole('button', {
-          name: 'Reclassify Agent (Policy blocked)',
-        })) as HTMLButtonElement
-      ).disabled,
+      (shell.getByRole('button', { name: 'Reclassify Agent' }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    // D6 (PIN unlock) remains genuinely policy-blocked — no unlock action exists in V1.
     expect(
       (
         shell.getByRole('button', {
