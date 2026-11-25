@@ -661,9 +661,8 @@ export const PlatformFundsScreen: React.FC = () => {
       {listError ? <div className="mn-platform-funds__error">{listError}</div> : null}
       {scopeView?.mode === 'NONE' ? (
         <p style={{ fontSize: 13 }}>
-          No platform-funds authority is assigned to your workforce session. Platform comparisons
-          require the platform function; institution comparisons require an active assignment to the
-          institution.
+          No institution is assigned to your workforce session. Platform comparisons remain
+          visible; institution comparisons require an active assignment to the institution.
         </p>
       ) : null}
       {listLoading ? <p style={{ fontSize: 13 }}>Loading comparisons…</p> : null}

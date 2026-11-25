@@ -129,8 +129,9 @@ interface TimingItemRow {
  *
  * Scope rules (enforced here, never in the screen):
  *
- * - PLATFORM comparisons (against an unattributed/platform-designated settlement account) are the
- *   platform bank's comparison and are visible to the finance audience (`ledger.view`).
+ * - PLATFORM comparisons (against an unattributed/settlement-asset settlement account) are the
+ *   platform bank's comparison and are visible to the whole finance audience (`ledger.view`),
+ *   mirroring the treatment of legacy unattributed journals in Finance Operations.
  * - INSTITUTION comparisons (against an institution's own SETTLEMENT account) require platform
  *   authority (`institution.attribution.view`) or an ACTIVE
  *   `workforce_institution_assignments` row for that institution — read on every request.
@@ -975,17 +976,20 @@ export class PlatformFundsService {
       conditions.push(condition.replace('?', `$${params.length}`));
     };
 
-    if (scopeView.mode === 'NONE') {
-      return { items: [], total: 0, limit, offset, scope: scopeView };
-    }
+    // Platform comparisons are the platform bank's comparison and stay visible to the whole
+    // finance audience (ledger.view), mirroring unattributed journal visibility in Finance
+    // Operations. Institution comparisons require an active assignment (or platform authority).
     if (scopeView.mode === 'PLATFORM') {
       if (query.scope) push('c.scope = ?', query.scope);
-    } else {
-      // Institution-assigned workforce: institution visibility is OR'ed with platform-scope rows,
-      // never wider than the ACTIVE assignment list.
+    } else if (scopeView.institutionIds.length > 0) {
       params.push(scopeView.institutionIds);
       conditions.push(`(c.scope = 'PLATFORM' OR c.institution_id = ANY($${params.length}::uuid[]))`);
       if (query.scope) push('c.scope = ?', query.scope);
+    } else {
+      if (query.scope === 'INSTITUTION') {
+        return { items: [], total: 0, limit, offset, scope: scopeView };
+      }
+      push('c.scope = ?', 'PLATFORM');
     }
     if (query.institutionId) {
       if (!UUID_PATTERN.test(query.institutionId)) {
