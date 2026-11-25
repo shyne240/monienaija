@@ -13,6 +13,7 @@ import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600
 import { KycTierPolicy1785753600110 } from '../src/migrations/1785753600110-KycTierPolicy';
 import { KycGovernanceProtectedAuthority1785753600300 } from '../src/migrations/1785753600300-KycGovernanceProtectedAuthority';
 import { InstitutionKycTierLimitGovernance1785753600504 } from '../src/migrations/1785753600504-InstitutionKycTierLimitGovernance';
+import { LimitRuleUnlimited1785753600811 } from '../src/migrations/1785753600811-LimitRuleUnlimited';
 import { CreateLimitProfileCatalogue1785753600067 } from '../src/migrations/1785753600067-CreateLimitProfileCatalogue';
 import { CreateLimitAssignments1785753600068 } from '../src/migrations/1785753600068-CreateLimitAssignments';
 import { CreateLimitUsages1785753600069 } from '../src/migrations/1785753600069-CreateLimitUsages';
@@ -395,6 +396,7 @@ beforeAll(async () => {
   await new KycTierPolicy1785753600110().up(runner);
   await new KycGovernanceProtectedAuthority1785753600300().up(runner);
   await new InstitutionKycTierLimitGovernance1785753600504().up(runner);
+  await new LimitRuleUnlimited1785753600811().up(runner);
   await runner.release();
 
   // `resolveWithManager` requires an APPROVED institution, not merely an existing one.

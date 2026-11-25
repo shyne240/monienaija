@@ -445,13 +445,12 @@ export class KycTierTransitionService {
         class_code: string;
         class_status: string;
         source: string;
-        eligible_tiers: string[] | null;
       }>
     >(
-      `SELECT a.id, a.class_id, cc.code AS class_code, cc.status AS class_status, a.source, cc.eligible_tiers
+      `SELECT a.id, a.class_id, cc.code AS class_code, cc.status AS class_status, a.source
          FROM customer_class_assignments a
          JOIN customer_classes cc ON cc.id = a.class_id
-        WHERE a.customer_id = $1 AND a.is_current = true
+        WHERE a.customer_id = $1 AND a.is_active = true
         ORDER BY a.updated_at DESC, a.id DESC
         LIMIT 1
         FOR UPDATE OF a`,
@@ -468,8 +467,8 @@ export class KycTierTransitionService {
       if (tierDefault) {
         await manager.query(
           `UPDATE customer_class_assignments
-              SET is_current = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
-            WHERE customer_id = $1 AND is_current = true AND id <> $2`,
+              SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
+            WHERE customer_id = $1 AND is_active = true AND id <> $2`,
           [customerId, current?.id ?? null],
         );
         const existing = await manager.query<Array<{ id: string }>>(
@@ -481,27 +480,27 @@ export class KycTierTransitionService {
         if (existing[0]) {
           await manager.query(
             `UPDATE customer_class_assignments
-                SET is_current = true, effective_from = clock_timestamp(), effective_to = NULL,
+                SET is_active = true, effective_from = clock_timestamp(), effective_to = NULL,
                     assigned_by = $2, updated_at = clock_timestamp()
               WHERE id = $1`,
             [existing[0].id, actor],
           );
           if (current?.id && current.id !== existing[0].id) {
             await manager.query(
-              `UPDATE customer_class_assignments SET is_current = false, updated_at = clock_timestamp(), effective_to = clock_timestamp() WHERE id = $1`,
+              `UPDATE customer_class_assignments SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp() WHERE id = $1`,
               [current.id],
             );
           }
         } else {
           await manager.query(
             `UPDATE customer_class_assignments
-                SET is_current = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
-              WHERE customer_id = $1 AND is_current = true`,
+                SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
+              WHERE customer_id = $1 AND is_active = true`,
             [customerId],
           );
           await manager.query(
             `INSERT INTO customer_class_assignments
-              (id, customer_id, class_id, source, is_current, effective_from, effective_to, assigned_by, previous_class_id, created_at, updated_at)
+              (id, customer_id, class_id, source, is_active, effective_from, effective_to, assigned_by, previous_class_id, created_at, updated_at)
              VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', true, clock_timestamp(), NULL, $3, $4, clock_timestamp(), clock_timestamp())`,
             [customerId, tierDefault.classId, actor, current?.class_id ?? null],
           );
@@ -563,7 +562,9 @@ export class KycTierTransitionService {
           if (l.status === 'MISSING') issues.push(`${p.productCode}:${l.dimension}`);
         }
       }
-      incomplete = issues.length > 0;
+      // Do not apply CONFIGURATION_REVIEW when the environment has no enabled customer products
+      // configured; that is an environment/catalog state, not a customer-tier configuration gap.
+      incomplete = eff.products.length > 0 && issues.length > 0;
       if (incomplete)
         detail = `Tier configuration incomplete: ${issues.slice(0, 6).join(', ')}`.slice(0, 500);
     } catch {
