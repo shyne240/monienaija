@@ -21,8 +21,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * decided comparison (APPROVED/REJECTED) can never be mutated again. The trigger below refuses
  * those transitions in the database, independent of application code.
  */
-export class CreatePlatformFundsBankComparisons1785753600810 implements MigrationInterface {
-  name = 'CreatePlatformFundsBankComparisons1785753600810';
+export class CreatePlatformFundsBankComparisons1785753600813 implements MigrationInterface {
+  name = 'CreatePlatformFundsBankComparisons1785753600813';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

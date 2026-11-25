@@ -119,7 +119,7 @@ CR fee revenue (and CR VAT payable if applicable). The wallet contribution falls
   (sha256 of the canonical evidence core), append-only, and written at CREATED / UPDATED /
   SUBMITTED / REVIEW_APPROVED / REVIEW_REJECTED. Timing items are mutable only while the parent
   comparison is `DRAFT`; decided comparisons are immutable in the database (triggers in migration
-  `1785753600810-CreatePlatformFundsBankComparisons.ts`).
+  `1785753600813-CreatePlatformFundsBankComparisons.ts`).
 - The fingerprint of the governed approval binds: selected account, currency/unit, both cutoffs,
   statement reference, bank balance, expected/difference/timing totals, the full timing-item set,
   and the evidence hash. If the ledger evidence drifts between submit and approve (a posted

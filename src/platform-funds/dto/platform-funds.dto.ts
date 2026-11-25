@@ -98,7 +98,9 @@ export class AddTimingItemDto {
    */
   @IsString()
   @Transform(({ value }) => trim(value))
-  @Matches(/^-?\d{1,18}$/, { message: 'amountMinor must be a signed integer string of minor units' })
+  @Matches(/^-?\d{1,18}$/, {
+    message: 'amountMinor must be a signed integer string of minor units',
+  })
   amountMinor!: string;
 }
 

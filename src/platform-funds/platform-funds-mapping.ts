@@ -30,7 +30,11 @@
  */
 
 export type WalletOwnerClass = 'CUSTOMER' | 'AGENT' | 'REVIEW';
-export type FamilyRole = 'FEE_REVENUE' | 'VAT_PAYABLE' | 'COMMISSION_EXPENSE' | 'COMMISSION_PAYABLE';
+export type FamilyRole =
+  | 'FEE_REVENUE'
+  | 'VAT_PAYABLE'
+  | 'COMMISSION_EXPENSE'
+  | 'COMMISSION_PAYABLE';
 
 export interface RawAccountRow {
   accountId: string;
@@ -99,7 +103,13 @@ export interface ClassificationResult {
     ok: boolean;
     accountCount: number;
   };
-  blockers: Array<{ code: string; message: string; needed: string; accountCode?: string | null; accountId?: string | null }>;
+  blockers: Array<{
+    code: string;
+    message: string;
+    needed: string;
+    accountCode?: string | null;
+    accountId?: string | null;
+  }>;
   /** Σ of every line contribution INCLUDING unmapped rows. */
   breakdownTotal: bigint;
   /** Σ of every line contribution EXCLUDING unmapped rows. */
@@ -108,14 +118,78 @@ export interface ClassificationResult {
   notes: string[];
 }
 
-const CODE_PATTERNS: Array<{ pattern: RegExp; subLine: string; bucket: PlatformFundsBucketKey; kind: PlatformFundsLineKind; group: string; label: string; note: string }> = [
-  { pattern: /^PAYMENT-SETTLEMENT_CLEARING-/, subLine: 'SETTLEMENT_CLEARING', bucket: 'SETTLEMENT_CLEARING', kind: 'IN_TRANSIT', group: 'SETTLEMENT_CLEARING', label: 'Settlement clearing (in transit)', note: 'Provider settlement clearing: funds in transit, not yet in the bank.' },
-  { pattern: /^PAYMENT-SYSTEM_SUSPENSE-/, subLine: 'UNALLOCATED_FUNDS', bucket: 'OTHER_HELD', kind: 'UNALLOCATED', group: 'UNALLOCATED_FUNDS', label: 'Unallocated funds (system suspense)', note: 'Verified inbound funds pending review; not yet attributable.' },
-  { pattern: /^PAYMENT-WITHDRAWAL_RESERVE-/, subLine: 'WITHDRAWAL_RESERVE', bucket: 'OTHER_HELD', kind: 'PAYMENT_OBLIGATION', group: 'WITHDRAWAL_RESERVE', label: 'Withdrawals reserved', note: 'Customer withdrawals reserved, awaiting settlement rail completion.' },
-  { pattern: /^CASH_TO_CASH-UNCLAIMED-/, subLine: 'UNCLAIMED_TRANSFERS', bucket: 'OTHER_HELD', kind: 'UNALLOCATED', group: 'UNCLAIMED_TRANSFERS', label: 'Unclaimed cash-to-cash transfers', note: 'Cash collected for recipients who have not claimed (legacy platform-wide obligation account).' },
-  { pattern: /^C2C-UNCLAIMED-/, subLine: 'UNCLAIMED_TRANSFERS', bucket: 'OTHER_HELD', kind: 'UNALLOCATED', group: 'UNCLAIMED_TRANSFERS', label: 'Unclaimed cash-to-cash transfers', note: 'Cash collected for recipients who have not claimed (institution suspense obligation account).' },
-  { pattern: /^AGENT_FUNDING_POOL-/, subLine: 'AGENT_FUNDING_POOL', bucket: 'OTHER_HELD', kind: 'PAYMENT_OBLIGATION', group: 'AGENT_FUNDING_POOL', label: 'Agent funding pool (internal)', note: 'Internal platform funding pool; not a CBN/NIBSS regulatory or bank account.' },
-  { pattern: /^FINANCE-ACCOUNTS_RECEIVABLE-/, subLine: 'AR_CONTROL', bucket: 'SECONDARY_SETTLEMENT_ASSETS', kind: 'ASSET', group: 'AR_CONTROL', label: 'Accounts receivable (control)', note: 'Control receivable: owed to MonieNaija but not yet collected; reduces the expected bank.' },
+const CODE_PATTERNS: Array<{
+  pattern: RegExp;
+  subLine: string;
+  bucket: PlatformFundsBucketKey;
+  kind: PlatformFundsLineKind;
+  group: string;
+  label: string;
+  note: string;
+}> = [
+  {
+    pattern: /^PAYMENT-SETTLEMENT_CLEARING-/,
+    subLine: 'SETTLEMENT_CLEARING',
+    bucket: 'SETTLEMENT_CLEARING',
+    kind: 'IN_TRANSIT',
+    group: 'SETTLEMENT_CLEARING',
+    label: 'Settlement clearing (in transit)',
+    note: 'Provider settlement clearing: funds in transit, not yet in the bank.',
+  },
+  {
+    pattern: /^PAYMENT-SYSTEM_SUSPENSE-/,
+    subLine: 'UNALLOCATED_FUNDS',
+    bucket: 'OTHER_HELD',
+    kind: 'UNALLOCATED',
+    group: 'UNALLOCATED_FUNDS',
+    label: 'Unallocated funds (system suspense)',
+    note: 'Verified inbound funds pending review; not yet attributable.',
+  },
+  {
+    pattern: /^PAYMENT-WITHDRAWAL_RESERVE-/,
+    subLine: 'WITHDRAWAL_RESERVE',
+    bucket: 'OTHER_HELD',
+    kind: 'PAYMENT_OBLIGATION',
+    group: 'WITHDRAWAL_RESERVE',
+    label: 'Withdrawals reserved',
+    note: 'Customer withdrawals reserved, awaiting settlement rail completion.',
+  },
+  {
+    pattern: /^CASH_TO_CASH-UNCLAIMED-/,
+    subLine: 'UNCLAIMED_TRANSFERS',
+    bucket: 'OTHER_HELD',
+    kind: 'UNALLOCATED',
+    group: 'UNCLAIMED_TRANSFERS',
+    label: 'Unclaimed cash-to-cash transfers',
+    note: 'Cash collected for recipients who have not claimed (legacy platform-wide obligation account).',
+  },
+  {
+    pattern: /^C2C-UNCLAIMED-/,
+    subLine: 'UNCLAIMED_TRANSFERS',
+    bucket: 'OTHER_HELD',
+    kind: 'UNALLOCATED',
+    group: 'UNCLAIMED_TRANSFERS',
+    label: 'Unclaimed cash-to-cash transfers',
+    note: 'Cash collected for recipients who have not claimed (institution suspense obligation account).',
+  },
+  {
+    pattern: /^AGENT_FUNDING_POOL-/,
+    subLine: 'AGENT_FUNDING_POOL',
+    bucket: 'OTHER_HELD',
+    kind: 'PAYMENT_OBLIGATION',
+    group: 'AGENT_FUNDING_POOL',
+    label: 'Agent funding pool (internal)',
+    note: 'Internal platform funding pool; not a CBN/NIBSS regulatory or bank account.',
+  },
+  {
+    pattern: /^FINANCE-ACCOUNTS_RECEIVABLE-/,
+    subLine: 'AR_CONTROL',
+    bucket: 'SECONDARY_SETTLEMENT_ASSETS',
+    kind: 'ASSET',
+    group: 'AR_CONTROL',
+    label: 'Accounts receivable (control)',
+    note: 'Control receivable: owed to MonieNaija but not yet collected; reduces the expected bank.',
+  },
 ];
 
 /**
@@ -142,14 +216,62 @@ export function classifyAccounts(input: {
     group: string;
     note: string;
   }> = [
-    { key: 'CUSTOMER_WALLETS', label: 'Customer wallets', kind: 'CUSTOMER_FUNDS', group: 'CUSTOMER_FUNDS', note: 'Ledger liability of customer-owned wallet accounts.' },
-    { key: 'AGENT_FLOAT', label: 'Agent float and commissions already paid into agent wallets', kind: 'CUSTOMER_FUNDS', group: 'AGENT_FUNDS', note: 'Agent wallet liabilities. Commissions already credited to agent wallets are included here exactly once.' },
-    { key: 'UNPAID_AGENT_COMMISSIONS', label: 'Unpaid agent commissions', kind: 'AGENT_COMMISSION_ACCRUAL', group: 'AGENT_COMMISSIONS', note: 'Accrued commission payable, not yet settled or netted into an agent wallet.' },
-    { key: 'PLATFORM_EARNINGS_HELD', label: 'Platform earnings still held', kind: 'PLATFORM_REVENUE', group: 'PLATFORM_EARNINGS', note: 'Fee revenue recognized but not yet remitted. Accrued commission expense is deducted once.' },
-    { key: 'OTHER_HELD', label: 'Other amounts held', kind: 'PAYMENT_OBLIGATION', group: 'OTHER_HELD', note: 'Charges awaiting remittance, unallocated funds and similar obligations held with the bank funds.' },
-    { key: 'SETTLEMENT_CLEARING', label: 'Settlement clearing (in transit)', kind: 'IN_TRANSIT', group: 'SETTLEMENT_CLEARING', note: 'Funds in transit through provider settlement clearing; not yet in the bank.' },
-    { key: 'SECONDARY_SETTLEMENT_ASSETS', label: 'Other settlement assets and receivables', kind: 'ASSET', group: 'OTHER_ASSETS', note: 'Other asset accounts in the same books; each reduces the expected bank.' },
-    { key: 'UNMAPPED', label: 'Unmapped accounts (mapping incomplete)', kind: 'UNALLOCATED', group: 'UNMAPPED', note: 'Accounts with no approved bucket mapping. Sign-off is blocked until Finance resolves them.' },
+    {
+      key: 'CUSTOMER_WALLETS',
+      label: 'Customer wallets',
+      kind: 'CUSTOMER_FUNDS',
+      group: 'CUSTOMER_FUNDS',
+      note: 'Ledger liability of customer-owned wallet accounts.',
+    },
+    {
+      key: 'AGENT_FLOAT',
+      label: 'Agent float and commissions already paid into agent wallets',
+      kind: 'CUSTOMER_FUNDS',
+      group: 'AGENT_FUNDS',
+      note: 'Agent wallet liabilities. Commissions already credited to agent wallets are included here exactly once.',
+    },
+    {
+      key: 'UNPAID_AGENT_COMMISSIONS',
+      label: 'Unpaid agent commissions',
+      kind: 'AGENT_COMMISSION_ACCRUAL',
+      group: 'AGENT_COMMISSIONS',
+      note: 'Accrued commission payable, not yet settled or netted into an agent wallet.',
+    },
+    {
+      key: 'PLATFORM_EARNINGS_HELD',
+      label: 'Platform earnings still held',
+      kind: 'PLATFORM_REVENUE',
+      group: 'PLATFORM_EARNINGS',
+      note: 'Fee revenue recognized but not yet remitted. Accrued commission expense is deducted once.',
+    },
+    {
+      key: 'OTHER_HELD',
+      label: 'Other amounts held',
+      kind: 'PAYMENT_OBLIGATION',
+      group: 'OTHER_HELD',
+      note: 'Charges awaiting remittance, unallocated funds and similar obligations held with the bank funds.',
+    },
+    {
+      key: 'SETTLEMENT_CLEARING',
+      label: 'Settlement clearing (in transit)',
+      kind: 'IN_TRANSIT',
+      group: 'SETTLEMENT_CLEARING',
+      note: 'Funds in transit through provider settlement clearing; not yet in the bank.',
+    },
+    {
+      key: 'SECONDARY_SETTLEMENT_ASSETS',
+      label: 'Other settlement assets and receivables',
+      kind: 'ASSET',
+      group: 'OTHER_ASSETS',
+      note: 'Other asset accounts in the same books; each reduces the expected bank.',
+    },
+    {
+      key: 'UNMAPPED',
+      label: 'Unmapped accounts (mapping incomplete)',
+      kind: 'UNALLOCATED',
+      group: 'UNMAPPED',
+      note: 'Accounts with no approved bucket mapping. Sign-off is blocked until Finance resolves them.',
+    },
   ];
 
   const assignments: AccountAssignment[] = [];
@@ -181,9 +303,13 @@ export function classifyAccounts(input: {
 
     let subLine = 'UNMAPPED';
     if (row.walletOwnerClass) {
-      if (row.walletOwnerClass === 'CUSTOMER') { bucket = 'CUSTOMER_WALLETS'; subLine = 'CUSTOMER_WALLETS'; }
-      else if (row.walletOwnerClass === 'AGENT') { bucket = 'AGENT_FLOAT'; subLine = 'AGENT_FLOAT'; }
-      else
+      if (row.walletOwnerClass === 'CUSTOMER') {
+        bucket = 'CUSTOMER_WALLETS';
+        subLine = 'CUSTOMER_WALLETS';
+      } else if (row.walletOwnerClass === 'AGENT') {
+        bucket = 'AGENT_FLOAT';
+        subLine = 'AGENT_FLOAT';
+      } else
         blockers.push({
           code: 'WALLET_OWNER_AMBIGUOUS',
           message: `Wallet-linked ledger account ${row.code} has owner class REVIEW; its owner cannot be attributed to a customer or an agent from the ledger.`,
@@ -192,16 +318,36 @@ export function classifyAccounts(input: {
           accountCode: row.code,
           accountId: row.accountId,
         });
-    } else if (row.familyRole === 'COMMISSION_PAYABLE') { bucket = 'UNPAID_AGENT_COMMISSIONS'; subLine = 'COMMISSION_PAYABLE'; }
-    else if (row.familyRole === 'FEE_REVENUE') { bucket = 'PLATFORM_EARNINGS_HELD'; subLine = 'FEE_REVENUE'; }
-    else if (row.familyRole === 'VAT_PAYABLE') { bucket = 'OTHER_HELD'; subLine = 'CHARGES_AWAITING_REMITTANCE'; }
-    else if (row.familyRole === 'COMMISSION_EXPENSE') { bucket = 'PLATFORM_EARNINGS_HELD'; subLine = 'COMMISSION_EXPENSE'; }
-    else if (row.institutionalPurpose === 'CLEARING') { bucket = 'SETTLEMENT_CLEARING'; subLine = 'SETTLEMENT_CLEARING'; }
-    else if (row.institutionalPurpose === 'SUSPENSE') { bucket = 'OTHER_HELD'; subLine = row.code.startsWith('C2C-UNCLAIMED-') || row.code.startsWith('CASH_TO_CASH-UNCLAIMED-') ? 'UNCLAIMED_TRANSFERS' : 'UNALLOCATED_FUNDS'; }
-    else if (row.institutionalPurpose === 'SETTLEMENT') { bucket = 'SECONDARY_SETTLEMENT_ASSETS'; subLine = 'OTHER_SETTLEMENT_ASSETS'; }
-    else {
+    } else if (row.familyRole === 'COMMISSION_PAYABLE') {
+      bucket = 'UNPAID_AGENT_COMMISSIONS';
+      subLine = 'COMMISSION_PAYABLE';
+    } else if (row.familyRole === 'FEE_REVENUE') {
+      bucket = 'PLATFORM_EARNINGS_HELD';
+      subLine = 'FEE_REVENUE';
+    } else if (row.familyRole === 'VAT_PAYABLE') {
+      bucket = 'OTHER_HELD';
+      subLine = 'CHARGES_AWAITING_REMITTANCE';
+    } else if (row.familyRole === 'COMMISSION_EXPENSE') {
+      bucket = 'PLATFORM_EARNINGS_HELD';
+      subLine = 'COMMISSION_EXPENSE';
+    } else if (row.institutionalPurpose === 'CLEARING') {
+      bucket = 'SETTLEMENT_CLEARING';
+      subLine = 'SETTLEMENT_CLEARING';
+    } else if (row.institutionalPurpose === 'SUSPENSE') {
+      bucket = 'OTHER_HELD';
+      subLine =
+        row.code.startsWith('C2C-UNCLAIMED-') || row.code.startsWith('CASH_TO_CASH-UNCLAIMED-')
+          ? 'UNCLAIMED_TRANSFERS'
+          : 'UNALLOCATED_FUNDS';
+    } else if (row.institutionalPurpose === 'SETTLEMENT') {
+      bucket = 'SECONDARY_SETTLEMENT_ASSETS';
+      subLine = 'OTHER_SETTLEMENT_ASSETS';
+    } else {
       const hit = CODE_PATTERNS.find((entry) => entry.pattern.test(row.code));
-      if (hit) { bucket = hit.bucket; subLine = hit.subLine; }
+      if (hit) {
+        bucket = hit.bucket;
+        subLine = hit.subLine;
+      }
     }
 
     if (row.scope === 'PLATFORM') {
@@ -238,14 +384,22 @@ export function classifyAccounts(input: {
 
     push(row, bucket ?? 'UNMAPPED');
     void contribution;
-    assignments.push({ accountId: row.accountId, accountCode: row.code, bucket: bucket ?? 'UNMAPPED', subLine });
+    assignments.push({
+      accountId: row.accountId,
+      accountCode: row.code,
+      bucket: bucket ?? 'UNMAPPED',
+      subLine,
+    });
   }
 
   // ---- control line over the other books -------------------------------------------------
   const controlOk = controlContribution === 0n;
   if (!controlOk) {
     blockers.push({
-      code: scope === 'PLATFORM' ? 'INSTITUTION_SUBLEDGER_NOT_CONSERVED' : 'PLATFORM_BOOKS_NOT_CONSERVED',
+      code:
+        scope === 'PLATFORM'
+          ? 'INSTITUTION_SUBLEDGER_NOT_CONSERVED'
+          : 'PLATFORM_BOOKS_NOT_CONSERVED',
       message:
         scope === 'PLATFORM'
           ? 'The institution sub-ledgers do not net to zero. Every institutional journal must be internal to its institution; a non-zero net means the institutional guard or the ledger is broken.'

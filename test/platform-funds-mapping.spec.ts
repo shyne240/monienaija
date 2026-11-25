@@ -7,11 +7,7 @@
  * accounting contract: commission-counted-once, fee-revenue-never-increases-expected-bank, and
  * sign-off blocked on any ambiguous mapping.
  */
-import {
-  classifyAccounts,
-  type RawAccountRow,
-  type WalletOwnerClass,
-} from '../src/platform-funds/platform-funds-mapping';
+import { classifyAccounts, type RawAccountRow } from '../src/platform-funds/platform-funds-mapping';
 
 function row(overrides: Partial<RawAccountRow> & Pick<RawAccountRow, 'code'>): RawAccountRow {
   return {
@@ -26,7 +22,7 @@ function row(overrides: Partial<RawAccountRow> & Pick<RawAccountRow, 'code'>): R
     debits: overrides.debits ?? 0n,
     credits: overrides.credits ?? 0n,
     lineCount: overrides.lineCount ?? 0,
-    walletOwnerClass: (overrides.walletOwnerClass ?? null) as WalletOwnerClass | null,
+    walletOwnerClass: overrides.walletOwnerClass ?? null,
     familyRole: overrides.familyRole ?? null,
   };
 }
@@ -37,23 +33,70 @@ describe('classifyAccounts (platform funds vs bank)', () => {
   it('buckets provisioned accounts into exactly one line each and conserves the books', () => {
     const universe: RawAccountRow[] = [
       // Customer wallet liability: bank holds 1,000,000 (1000.00 in kobo-ish minor units).
-      row({ code: 'WALLET-CUSTOMER-1-NGN', debits: 0n, credits: 1_000_000n, walletOwnerClass: 'CUSTOMER', lineCount: 40 }),
+      row({
+        code: 'WALLET-CUSTOMER-1-NGN',
+        debits: 0n,
+        credits: 1_000_000n,
+        walletOwnerClass: 'CUSTOMER',
+        lineCount: 40,
+      }),
       // Agent wallet liability: includes 300,000 of commissions already paid into the wallet.
-      row({ code: 'WALLET-AGENT-1-NGN', debits: 0n, credits: 800_000n, walletOwnerClass: 'AGENT', lineCount: 12 }),
+      row({
+        code: 'WALLET-AGENT-1-NGN',
+        debits: 0n,
+        credits: 800_000n,
+        walletOwnerClass: 'AGENT',
+        lineCount: 12,
+      }),
       // Accrued, unpaid commissions: 50,000.
-      row({ code: 'FINANCE-COMMISSION_PAYABLE-NGN', credits: 50_000n, familyRole: 'COMMISSION_PAYABLE', lineCount: 3 }),
+      row({
+        code: 'FINANCE-COMMISSION_PAYABLE-NGN',
+        credits: 50_000n,
+        familyRole: 'COMMISSION_PAYABLE',
+        lineCount: 3,
+      }),
       // Fee revenue recognised but not yet remitted: 120,000 (includes VAT contained in V1 fees?
       // No: VAT is a separate family account; FEE_REVENUE here is the net fee).
-      row({ code: 'FINANCE-FEE_REVENUE-NGN', credits: 100_000n, familyRole: 'FEE_REVENUE', lineCount: 9 }),
-      row({ code: 'FINANCE-VAT_PAYABLE-NGN', credits: 20_000n, familyRole: 'VAT_PAYABLE', lineCount: 9 }),
+      row({
+        code: 'FINANCE-FEE_REVENUE-NGN',
+        credits: 100_000n,
+        familyRole: 'FEE_REVENUE',
+        lineCount: 9,
+      }),
+      row({
+        code: 'FINANCE-VAT_PAYABLE-NGN',
+        credits: 20_000n,
+        familyRole: 'VAT_PAYABLE',
+        lineCount: 9,
+      }),
       // Commission expense accrued against the earnings: 30,000 (a debit-normal expense).
-      row({ code: 'FINANCE-COMMISSION_EXPENSE-NGN', debits: 30_000n, credits: 0n, familyRole: 'COMMISSION_EXPENSE', accountType: 'EXPENSE', ...DEBIT_NORMAL, lineCount: 3 }),
+      row({
+        code: 'FINANCE-COMMISSION_EXPENSE-NGN',
+        debits: 30_000n,
+        credits: 0n,
+        familyRole: 'COMMISSION_EXPENSE',
+        accountType: 'EXPENSE',
+        ...DEBIT_NORMAL,
+        lineCount: 3,
+      }),
       // System suspense: 15,000 verified inbound pending review.
       row({ code: 'PAYMENT-SYSTEM_SUSPENSE-NGN', credits: 15_000n, lineCount: 1 }),
       // Withdrawal reserve: 40,000.
-      row({ code: 'PAYMENT-WITHDRAWAL_RESERVE-NGN', credits: 40_000n, accountType: 'LIABILITY', lineCount: 2 }),
+      row({
+        code: 'PAYMENT-WITHDRAWAL_RESERVE-NGN',
+        credits: 40_000n,
+        accountType: 'LIABILITY',
+        lineCount: 2,
+      }),
       // Accounts receivable control: 25,000 owed to MonieNaija, not yet collected (debit-normal asset).
-      row({ code: 'FINANCE-ACCOUNTS_RECEIVABLE-NGN', debits: 25_000n, credits: 0n, accountType: 'ASSET', ...DEBIT_NORMAL, lineCount: 2 }),
+      row({
+        code: 'FINANCE-ACCOUNTS_RECEIVABLE-NGN',
+        debits: 25_000n,
+        credits: 0n,
+        accountType: 'ASSET',
+        ...DEBIT_NORMAL,
+        lineCount: 2,
+      }),
       // Fee payable? Not provisioned — deliberately absent.
     ];
     const result = classifyAccounts({
@@ -78,7 +121,12 @@ describe('classifyAccounts (platform funds vs bank)', () => {
 
     // Conservation: the breakdown must reproduce the expected bank exactly.
     const expectedBank =
-      1_000_000n + 800_000n + 50_000n + (100_000n - 30_000n) + (20_000n + 15_000n + 40_000n) - 25_000n;
+      1_000_000n +
+      800_000n +
+      50_000n +
+      (100_000n - 30_000n) +
+      (20_000n + 15_000n + 40_000n) -
+      25_000n;
     expect(result.breakdownTotal).toBe(expectedBank);
 
     // Every account assigned exactly once.
@@ -142,7 +190,9 @@ describe('classifyAccounts (platform funds vs bank)', () => {
     expect(unmapped.contribution).toBe(42_000n);
     expect(result.blockers.some((b) => b.code === 'ACCOUNT_NOT_MAPPED')).toBe(true);
     expect(result.mappingComplete).toBe(false);
-    expect(result.assignments.find((a) => a.accountCode === 'MYSTERY-LEDGER-NGN')!.bucket).toBe('UNMAPPED');
+    expect(result.assignments.find((a) => a.accountCode === 'MYSTERY-LEDGER-NGN')!.bucket).toBe(
+      'UNMAPPED',
+    );
   });
 
   it('blocks sign-off on a PLATFORM-designated account with no approved mapping', () => {
@@ -191,7 +241,9 @@ describe('classifyAccounts (platform funds vs bank)', () => {
     });
     expect(result.controlLine.ok).toBe(false);
     expect(result.controlLine.netContribution).toBe(5_000n);
-    expect(result.blockers.some((b) => b.code === 'INSTITUTION_SUBLEDGER_NOT_CONSERVED')).toBe(true);
+    expect(result.blockers.some((b) => b.code === 'INSTITUTION_SUBLEDGER_NOT_CONSERVED')).toBe(
+      true,
+    );
     expect(result.mappingComplete).toBe(false);
     // The control failure is carried inside the conservation total (the books really are broken).
     expect(result.breakdownTotal).toBe(105_000n);

@@ -138,7 +138,7 @@ class TinyLedger {
     return (Object.keys(ACCOUNTS) as AccountKey[])
       .filter((key) => this.totals.has(key))
       .map((key) => {
-        const def = ACCOUNTS[key]!;
+        const def = ACCOUNTS[key];
         const totals = this.totals.get(key)!;
         return {
           accountId: `acct-${key}`,
@@ -173,10 +173,8 @@ const classify = (ledger: TinyLedger) =>
     scope: 'PLATFORM',
   });
 
-const contributionOf = (
-  result: ReturnType<typeof classify>,
-  key: string,
-): bigint => result.lines.find((line) => line.key === key)!.contribution;
+const contributionOf = (result: ReturnType<typeof classify>, key: string): bigint =>
+  result.lines.find((line) => line.key === key)!.contribution;
 
 /** A realistic, conserved opening book built from the journals that fund it. */
 const fundedLedger = (): TinyLedger => {

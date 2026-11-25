@@ -80,15 +80,21 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('migration 0804 is applied immediately beneath the 0805 customer-class head', async () => {
+  // The full chain on this branch now head-pins 0813 (platform funds) via the integration
+  // harness, so the 0804/0805/0813 ordering is asserted against the three most recent rows.
+  it('migration 0804 is applied beneath the 0805 customer-class head, under the 0813 platform-funds head', async () => {
     const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(
-      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 2`,
+      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 3`,
     );
     expect(rows[0]).toEqual({
+      timestamp: '1785753600813',
+      name: 'CreatePlatformFundsBankComparisons1785753600813',
+    });
+    expect(rows[1]).toEqual({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
     });
-    expect(rows[1]).toEqual({
+    expect(rows[2]).toEqual({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });

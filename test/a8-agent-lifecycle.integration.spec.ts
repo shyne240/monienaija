@@ -595,8 +595,8 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600813',
+      name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
   });
 });

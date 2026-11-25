@@ -234,7 +234,9 @@ export class PlatformFundsService {
     const items = rows.filter((row) => {
       if (row.institutional_scope !== 'INSTITUTION') return true;
       if (platformAuthority) return true;
-      return assigned !== null && row.institution_id !== null && assigned.includes(row.institution_id);
+      return (
+        assigned !== null && row.institution_id !== null && assigned.includes(row.institution_id)
+      );
     });
     return {
       items: items.map((row) => ({
@@ -316,8 +318,7 @@ export class PlatformFundsService {
     selected: SettlementAccountRow,
     ledgerCutoff: Date,
   ): Promise<PlatformFundsBreakdown> {
-    const q = (sql: string, params: unknown[]) =>
-      queryable.query(sql, params) as Promise<unknown>;
+    const q = (sql: string, params: unknown[]) => queryable.query(sql, params);
     const currency = selected.currency;
     const scope: PlatformFundsComparisonScope =
       selected.institutional_scope === 'INSTITUTION' ? 'INSTITUTION' : 'PLATFORM';
@@ -360,11 +361,10 @@ export class PlatformFundsService {
     const controlAccountCount = Number(controlRows[0]?.account_count ?? '0');
 
     // ---- wallet enrichment (owner class per wallet-linked account) ----------------------------
-    const walletPredicate = (
+    const walletPredicate =
       scope === 'PLATFORM'
         ? `la.institutional_scope IN ('UNATTRIBUTED', 'PLATFORM')`
-        : `la.institutional_scope = 'INSTITUTION' AND la.institution_id = $2`
-    );
+        : `la.institutional_scope = 'INSTITUTION' AND la.institution_id = $2`;
     const walletRows = (await q(
       `SELECT la.id::text AS account_id, w.owner_class
          FROM wallet_accounts w
@@ -407,10 +407,11 @@ export class PlatformFundsService {
     const notes = [...familyAccounts.notes, ...classified.notes];
 
     // ---- selected account evidence -------------------------------------------------------------
-    const selectedRows = (await q(
-      `${this.aggregateSelect}a.id = $3 GROUP BY a.id`,
-      [currency, ledgerCutoff, selected.id],
-    )) as AggregateRow[];
+    const selectedRows = (await q(`${this.aggregateSelect}a.id = $3 GROUP BY a.id`, [
+      currency,
+      ledgerCutoff,
+      selected.id,
+    ])) as AggregateRow[];
     const sel = selectedRows[0];
     const selDebits = BigInt(sel?.debits ?? '0');
     const selCredits = BigInt(sel?.credits ?? '0');
@@ -469,7 +470,8 @@ export class PlatformFundsService {
       creditMinor: row.credits.toString(),
       balanceMinor: (row.normalBalance === 'DEBIT'
         ? row.debits - row.credits
-        : row.credits - row.debits).toString(),
+        : row.credits - row.debits
+      ).toString(),
       contributionMinor: (row.credits - row.debits).toString(),
       lineCount: row.lineCount,
       subLine: subLineByAccountId.get(row.accountId) ?? 'UNMAPPED',
@@ -599,7 +601,9 @@ export class PlatformFundsService {
     } catch {
       registryRows = []; // registry missing (pre-commercial deployments) — fall back to well-known codes
     }
-    const registryByFamily = new Map(registryRows.map((row) => [row.family_code, row.account_code]));
+    const registryByFamily = new Map(
+      registryRows.map((row) => [row.family_code, row.account_code]),
+    );
 
     for (const role of [
       'FEE_REVENUE',
@@ -718,14 +722,11 @@ export class PlatformFundsService {
     return items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n);
   }
 
-  private async lockComparison(
-    manager: EntityManager,
-    id: string,
-  ): Promise<ComparisonRow> {
-    const rows = (await manager.query(
+  private async lockComparison(manager: EntityManager, id: string): Promise<ComparisonRow> {
+    const rows = await manager.query<ComparisonRow[]>(
       `${this.rowSelect} WHERE c.id = $1 FOR UPDATE OF c`,
       [id],
-    )) as ComparisonRow[];
+    );
     const row = rows[0];
     if (!row) throw new NotFoundException('Comparison not found');
     return row;
@@ -737,7 +738,12 @@ export class PlatformFundsService {
       comparisonId: string;
       reason: 'CREATED' | 'UPDATED' | 'SUBMITTED' | 'REVIEW_APPROVED' | 'REVIEW_REJECTED';
       breakdown: PlatformFundsBreakdown;
-      row: { ledgerCutoff: Date; bankCutoff: Date; statementReference: string; bankBalanceMinor: string };
+      row: {
+        ledgerCutoff: Date;
+        bankCutoff: Date;
+        statementReference: string;
+        bankBalanceMinor: string;
+      };
       timingItems: PlatformFundsTimingItem[];
       differenceMinor: bigint;
       unexplainedMinor: bigint;
@@ -748,10 +754,10 @@ export class PlatformFundsService {
     const id = randomUUID();
     // The caller holds a FOR UPDATE lock on the comparison row, so no concurrent snapshot
     // writer exists for this comparison: read-then-insert is race-free.
-    const versionRows = (await manager.query(
+    const versionRows = await manager.query<Array<{ next: string }>>(
       `SELECT COALESCE(MAX(version), 0) + 1 AS next FROM platform_funds_comparison_snapshots WHERE comparison_id = $1`,
       [input.comparisonId],
-    )) as Array<{ next: string }>;
+    );
     const version = Number(versionRows[0]?.next ?? '1');
     const snapshotJson = {
       ...input.breakdown,
@@ -891,10 +897,14 @@ export class PlatformFundsService {
       blockingReasons.push(...breakdown.blockers.map((blocker) => blocker.message));
     }
     if (row.status === 'SUBMITTED' && selfApprovalDenied) {
-      blockingReasons.push('You submitted this comparison; a different FINANCE_CONTROLLER must review it.');
+      blockingReasons.push(
+        'You submitted this comparison; a different FINANCE_CONTROLLER must review it.',
+      );
     }
     if (approval && approval.status === 'EXPIRED') {
-      blockingReasons.push('The governed approval expired before review; the comparison must be resubmitted.');
+      blockingReasons.push(
+        'The governed approval expired before review; the comparison must be resubmitted.',
+      );
     }
 
     const canSubmit = row.status === 'DRAFT' && breakdown.mappingComplete;
@@ -952,7 +962,11 @@ export class PlatformFundsService {
       dto.settlementAccountId,
       this.dataSource,
     );
-    return this.buildBreakdown(this.dataSource, selected, this.parseCutoff(dto.ledgerCutoff, 'ledgerCutoff'));
+    return this.buildBreakdown(
+      this.dataSource,
+      selected,
+      this.parseCutoff(dto.ledgerCutoff, 'ledgerCutoff'),
+    );
   }
 
   async list(
@@ -983,7 +997,9 @@ export class PlatformFundsService {
       if (query.scope) push('c.scope = ?', query.scope);
     } else if (scopeView.institutionIds.length > 0) {
       params.push(scopeView.institutionIds);
-      conditions.push(`(c.scope = 'PLATFORM' OR c.institution_id = ANY($${params.length}::uuid[]))`);
+      conditions.push(
+        `(c.scope = 'PLATFORM' OR c.institution_id = ANY($${params.length}::uuid[]))`,
+      );
       if (query.scope) push('c.scope = ?', query.scope);
     } else {
       if (query.scope === 'INSTITUTION') {
@@ -1001,14 +1017,14 @@ export class PlatformFundsService {
     if (query.status) push('c.status = ?', query.status);
 
     const where = conditions.join(' AND ');
-    const totalRows = (await this.dataSource.query(
+    const totalRows = await this.dataSource.query<Array<{ count: string }>>(
       `SELECT COUNT(*)::text AS count FROM platform_funds_comparisons c WHERE ${where}`,
       params,
-    )) as Array<{ count: string }>;
-    const rows = (await this.dataSource.query(
+    );
+    const rows = await this.dataSource.query<ComparisonRow[]>(
       `${this.rowSelect} WHERE ${where} ORDER BY c.created_at DESC, c.id ASC LIMIT ${limit} OFFSET ${offset}`,
       params,
-    )) as ComparisonRow[];
+    );
     return {
       items: rows.map((row) => this.serializeSummary(row)),
       total: Number(totalRows[0]?.count ?? '0'),
@@ -1020,34 +1036,31 @@ export class PlatformFundsService {
 
   async get(principal: AuthorizationPrincipal, id: string): Promise<PlatformFundsComparisonDetail> {
     if (!UUID_PATTERN.test(id)) throw new NotFoundException('Comparison not found');
-    const rows = (await this.dataSource.query(`${this.rowSelect} WHERE c.id = $1`, [
+    const rows = await this.dataSource.query<ComparisonRow[]>(`${this.rowSelect} WHERE c.id = $1`, [
       id,
-    ])) as ComparisonRow[];
+    ]);
     const row = rows[0];
     if (!row) throw new NotFoundException('Comparison not found');
     await this.assertVisible(principal, row);
     return this.buildDetail(principal, row);
   }
 
-  async snapshots(
-    principal: AuthorizationPrincipal,
-    id: string,
-  ): Promise<{ items: unknown[] }> {
+  async snapshots(principal: AuthorizationPrincipal, id: string): Promise<{ items: unknown[] }> {
     if (!UUID_PATTERN.test(id)) throw new NotFoundException('Comparison not found');
-    const rows = (await this.dataSource.query(`${this.rowSelect} WHERE c.id = $1`, [
+    const rows = await this.dataSource.query<ComparisonRow[]>(`${this.rowSelect} WHERE c.id = $1`, [
       id,
-    ])) as ComparisonRow[];
+    ]);
     const row = rows[0];
     if (!row) throw new NotFoundException('Comparison not found');
     await this.assertVisible(principal, row);
-    const snapshotRows = (await this.dataSource.query(
+    const snapshotRows = await this.dataSource.query<Array<Record<string, unknown>>>(
       `SELECT id::text AS id, comparison_id::text AS "comparisonId", version, reason,
               snapshot, evidence_hash AS "evidenceHash", created_by AS "createdBy", created_at AS "createdAt"
          FROM platform_funds_comparison_snapshots
         WHERE comparison_id = $1
         ORDER BY version ASC`,
       [id],
-    )) as Array<Record<string, unknown>>;
+    );
     return {
       items: snapshotRows.map((snapshot) => ({
         ...snapshot,
@@ -1293,18 +1306,28 @@ export class PlatformFundsService {
       if (row.status !== 'DRAFT') {
         throw new ConflictException('Timing items can only change while the comparison is a DRAFT');
       }
-      const countRows = (await manager.query(
+      const countRows = await manager.query<Array<{ count: string }>>(
         `SELECT COUNT(*)::text AS count FROM platform_funds_timing_items WHERE comparison_id = $1`,
         [row.id],
-      )) as Array<{ count: string }>;
+      );
       if (Number(countRows[0]?.count ?? '0') >= MAX_TIMING_ITEMS) {
-        throw new BadRequestException(`A comparison may hold at most ${MAX_TIMING_ITEMS} timing items`);
+        throw new BadRequestException(
+          `A comparison may hold at most ${MAX_TIMING_ITEMS} timing items`,
+        );
       }
       await manager.query(
         `INSERT INTO platform_funds_timing_items
            (id, comparison_id, title, reference, explanation, amount_minor, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [randomUUID(), row.id, title, reference, explanation, amount.toString(), principal.principalId],
+        [
+          randomUUID(),
+          row.id,
+          title,
+          reference,
+          explanation,
+          amount.toString(),
+          principal.principalId,
+        ],
       );
       const timingItems = await this.timingItemsFor(manager, row.id);
       const selected = await this.getSettlementRow(manager, row.settlement_account_id);
@@ -1342,10 +1365,12 @@ export class PlatformFundsService {
       if (row.status !== 'DRAFT') {
         throw new ConflictException('Timing items can only change while the comparison is a DRAFT');
       }
-      const deleted = (await manager.query(
+      const deleted = await manager.query<
+        Array<{ id: string; title: string; reference: string; amount_minor: string }>
+      >(
         `DELETE FROM platform_funds_timing_items WHERE id = $1 AND comparison_id = $2 RETURNING id::text AS id, title, reference, amount_minor::text AS amount_minor`,
         [itemId, row.id],
-      )) as Array<{ id: string; title: string; reference: string; amount_minor: string }>;
+      );
       if (!deleted[0]) throw new NotFoundException('Timing item not found');
       const timingItems = await this.timingItemsFor(manager, row.id);
       const selected = await this.getSettlementRow(manager, row.settlement_account_id);
@@ -1388,7 +1413,11 @@ export class PlatformFundsService {
         throw new ConflictException('Only a DRAFT comparison can be submitted for review');
       }
       const selected = await this.getSettlementRow(manager, row.settlement_account_id);
-      const breakdown = await this.buildBreakdown(manager, selected, this.isoDate(row.ledger_cutoff));
+      const breakdown = await this.buildBreakdown(
+        manager,
+        selected,
+        this.isoDate(row.ledger_cutoff),
+      );
       const timingItems = await this.timingItemsFor(manager, row.id);
       const bankBalance = BigInt(row.bank_balance_minor);
       const { difference, timingTotal, unexplained } = await this.refreshDerived(
@@ -1539,15 +1568,19 @@ export class PlatformFundsService {
         throw new ConflictException('The comparison has no governed approval linked');
       }
 
-      const submittedSnapshot = (await manager.query(
+      const submittedSnapshot = await manager.query<Array<{ evidence_hash: string }>>(
         `SELECT evidence_hash FROM platform_funds_comparison_snapshots
           WHERE comparison_id = $1 AND reason = 'SUBMITTED'
           ORDER BY version DESC LIMIT 1`,
         [row.id],
-      )) as Array<{ evidence_hash: string }>;
+      );
 
       const selected = await this.getSettlementRow(manager, row.settlement_account_id);
-      const breakdown = await this.buildBreakdown(manager, selected, this.isoDate(row.ledger_cutoff));
+      const breakdown = await this.buildBreakdown(
+        manager,
+        selected,
+        this.isoDate(row.ledger_cutoff),
+      );
       const timingItems = await this.timingItemsFor(manager, row.id);
       const submittedHash = submittedSnapshot[0]?.evidence_hash ?? null;
       const evidenceDrift = submittedHash !== null && submittedHash !== breakdown.evidenceHash;
@@ -1580,13 +1613,7 @@ export class PlatformFundsService {
         `UPDATE platform_funds_comparisons
             SET status = $2, reviewed_by = $3, reviewed_at = $4, decision_reason = $5, updated_at = now()
           WHERE id = $1`,
-        [
-          row.id,
-          approve ? 'APPROVED' : 'REJECTED',
-          principal.principalId,
-          reviewedAt,
-          reason,
-        ],
+        [row.id, approve ? 'APPROVED' : 'REJECTED', principal.principalId, reviewedAt, reason],
       );
 
       await this.insertSnapshot(manager, {
@@ -1623,7 +1650,8 @@ export class PlatformFundsService {
         id: approvalView?.id ?? row.approval_id,
         status: approvalView?.status ?? expectedReason,
         actionType: approvalView?.actionType ?? ACTION,
-        requestedBy: approvalView?.requesterPrincipalId ?? row.submitted_by ?? principal.principalId,
+        requestedBy:
+          approvalView?.requesterPrincipalId ?? row.submitted_by ?? principal.principalId,
         approvedBy: approvalView?.approvedBy ?? (approve ? principal.principalId : null),
         requestedAt: this.iso(approvalView?.requestedAt ?? row.created_at),
         expiresAt: this.iso(approvalView?.expiresAt ?? reviewedAt),

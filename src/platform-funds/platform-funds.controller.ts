@@ -64,25 +64,14 @@ export class PlatformFundsController {
   }
 
   @Get('comparisons')
-  async comparisons(
-    @Req() req: AuthenticatedRequest,
-    @Query() query: ListComparisonsQueryDto,
-  ) {
-    const principal = await this.require(
-      req,
-      'ledger.view',
-      'FINANCE_PLATFORM_FUNDS_COMPARISONS',
-    );
+  async comparisons(@Req() req: AuthenticatedRequest, @Query() query: ListComparisonsQueryDto) {
+    const principal = await this.require(req, 'ledger.view', 'FINANCE_PLATFORM_FUNDS_COMPARISONS');
     return this.platformFunds.list(principal, query);
   }
 
   @Post('comparisons/preview')
   async preview(@Req() req: AuthenticatedRequest, @Body() dto: PreviewComparisonDto) {
-    const principal = await this.require(
-      req,
-      'ledger.view',
-      'FINANCE_PLATFORM_FUNDS_PREVIEW',
-    );
+    const principal = await this.require(req, 'ledger.view', 'FINANCE_PLATFORM_FUNDS_PREVIEW');
     return this.platformFunds.preview(principal, dto);
   }
 
@@ -97,15 +86,8 @@ export class PlatformFundsController {
   }
 
   @Get('comparisons/:comparisonId')
-  async detail(
-    @Req() req: AuthenticatedRequest,
-    @Param('comparisonId') comparisonId: string,
-  ) {
-    const principal = await this.require(
-      req,
-      'ledger.view',
-      'FINANCE_PLATFORM_FUNDS_COMPARISON',
-    );
+  async detail(@Req() req: AuthenticatedRequest, @Param('comparisonId') comparisonId: string) {
+    const principal = await this.require(req, 'ledger.view', 'FINANCE_PLATFORM_FUNDS_COMPARISON');
     return this.platformFunds.get(principal, comparisonId);
   }
 
@@ -180,15 +162,8 @@ export class PlatformFundsController {
   }
 
   @Get('comparisons/:comparisonId/snapshots')
-  async snapshots(
-    @Req() req: AuthenticatedRequest,
-    @Param('comparisonId') comparisonId: string,
-  ) {
-    const principal = await this.require(
-      req,
-      'ledger.view',
-      'FINANCE_PLATFORM_FUNDS_SNAPSHOTS',
-    );
+  async snapshots(@Req() req: AuthenticatedRequest, @Param('comparisonId') comparisonId: string) {
+    const principal = await this.require(req, 'ledger.view', 'FINANCE_PLATFORM_FUNDS_SNAPSHOTS');
     return this.platformFunds.snapshots(principal, comparisonId);
   }
 

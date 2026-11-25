@@ -380,43 +380,50 @@ const PLATFORM_FUNDS_ROUTE_POLICIES: readonly Readonly<{
   },
   {
     method: 'GET',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
     resourceType: 'finance-platform-funds-comparison',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'PATCH',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
     resourceType: 'finance-platform-funds-comparison-update',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'POST',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items$/i,
     resourceType: 'finance-platform-funds-timing-item-add',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items\/[0-9a-f-]{36}$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items\/[0-9a-f-]{36}$/i,
     resourceType: 'finance-platform-funds-timing-item-remove',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'POST',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/submit$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/submit$/i,
     resourceType: 'finance-platform-funds-comparison-submit',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'POST',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/review$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/review$/i,
     resourceType: 'finance-platform-funds-comparison-review',
     requiredFunctions: ['ledger.view'],
   },
   {
     method: 'GET',
-    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/snapshots$/i,
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/snapshots$/i,
     resourceType: 'finance-platform-funds-snapshots',
     requiredFunctions: ['ledger.view'],
   },
