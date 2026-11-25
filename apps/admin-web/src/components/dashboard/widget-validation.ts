@@ -212,37 +212,26 @@ export function isWorkforceOverview(value: unknown): boolean {
  */
 export function isNotificationExceptions(value: unknown): boolean {
   if (!object(value)) return false;
+  // Unreadable source: it must carry a reason and must NOT carry a fabricated zero.
   if (value.availability === 'UNAVAILABLE') {
-    return text(value.reason) && timestamp(value.checkedAt);
+    return text(value.reason) && timestamp(value.checkedAt) && value.totals?.exceptions == null;
   }
   if (value.availability !== 'MEASURED') return false;
   const totals = value.totals;
-  const provider = value.provider;
+  const window = value.window;
   return Boolean(
     timestamp(value.checkedAt) &&
       object(totals) &&
       count(totals.deliveries) &&
       count(totals.exceptions) &&
-      Array.isArray(totals.byStatus) &&
-      totals.byStatus.every(
-        (row: unknown) => object(row) && text(row.status) && count(row.count),
-      ) &&
-      Array.isArray(value.errorCodes) &&
-      value.errorCodes.every(
-        (row: unknown) =>
-          object(row) &&
-          text(row.errorCode) &&
-          count(row.count) &&
-          (row.lastSeenAt === null || timestamp(row.lastSeenAt)),
-      ) &&
-      object(provider) &&
-      ['CHECKED', 'UNKNOWN'].includes(provider.availability) &&
-      Array.isArray(provider.channels) &&
-      provider.channels.every(
-        (row: unknown) => object(row) && text(row.channel) && typeof row.available === 'boolean',
-      ) &&
-      (value.configuration === undefined ||
-        ['CONFIGURED', 'NO_TRANSPORT_CONFIGURED', 'UNKNOWN'].includes(value.configuration)),
+      // A number without its interval is not an aggregate anyone can verify against the queue.
+      object(window) &&
+      text(window.from) &&
+      text(window.to) &&
+      text(window.label) &&
+      // Retry is a policy statement, not a control: the card may only ever say it is unsupported.
+      (value.policy === undefined ||
+        (object(value.policy) && value.policy.manualRetrySupported === false)),
   );
 }
 

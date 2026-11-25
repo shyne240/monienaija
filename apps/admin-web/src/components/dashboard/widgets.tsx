@@ -98,9 +98,7 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
  * revenue and success rate are each labelled and defined explicitly; no "profit" figure is shown
  * anywhere — the backend does not compute or expose one (see `feeRevenueNote`/`commissionNote`).
  */
-export const TransactionSummaryWidget: React.FC<{ actions?: React.ReactNode }> = ({
-  actions,
-}) => {
+export const TransactionSummaryWidget: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -355,9 +353,7 @@ export const TransactionTrendWidget: React.FC<{ actions?: React.ReactNode }> = (
 };
 
 /** 4A. Recent transaction activity (Defects #3/#4 fixed: UNION ALL syntax + wrong completed-at column for cash-to-cash). */
-export const RecentTransactionsWidget: React.FC<{ actions?: React.ReactNode }> = ({
-  actions,
-}) => {
+export const RecentTransactionsWidget: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
   const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`);
     if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.');
@@ -945,21 +941,18 @@ export const NotificationExceptionsWidget: React.FC<{
   }, [period, from, to]);
 
   const unavailable = !error && data?.availability === 'UNAVAILABLE' ? data.reason : undefined;
-  const exceptions = data?.availability === 'MEASURED' ? data.totals.exceptions : undefined;
+  const exceptions = data?.availability === 'MEASURED' ? (data.totals.exceptions ?? 0) : undefined;
+  const windowLabel = data?.window?.label ?? `${data?.from ?? ''} to ${data?.to ?? ''}`;
   const noTransport = data?.configuration === 'NO_TRANSPORT_CONFIGURED';
-  const statusRow = (status: string) =>
-    data?.totals.byStatus.find((row) => row.status === status)?.count ?? 0;
 
   return (
     <WidgetCard
       title="Notification Delivery Exceptions"
-      description="Failed, dead and outcome-unknown notifications in the selected period, with sanitized provider error codes."
+      description="Failed, dead and outcome-unknown notifications in the labeled window, as one aggregate. The delivery list and its provider error codes are in the queue."
       loading={loading}
       error={error}
       unavailable={unavailable}
-      notConfigured={
-        noTransport && data?.configurationNote ? data.configurationNote : undefined
-      }
+      notConfigured={noTransport && data?.configurationNote ? data.configurationNote : undefined}
       empty={data?.availability === 'MEASURED' && (exceptions ?? 0) === 0 && !noTransport}
       emptyLabel="Measured zero — the delivery log was read for this period and nothing failed."
       checkedAt={data?.checkedAt}
@@ -989,50 +982,27 @@ export const NotificationExceptionsWidget: React.FC<{
           <div style={styles.kpiRow}>
             <KpiTile
               label="Exceptions"
-              value={String(data.totals.exceptions)}
+              value={String(data.totals.exceptions ?? 0)}
               caption="FAILED + DEAD + UNKNOWN"
             />
-            <KpiTile label="Failed" value={String(statusRow('FAILED'))} />
-            <KpiTile label="Dead lettered" value={String(statusRow('DEAD'))} />
-            <KpiTile label="Outcome unknown" value={String(statusRow('UNKNOWN'))} />
             <KpiTile
               label="Deliveries in window"
-              value={String(data.totals.deliveries)}
+              value={String(data.totals.deliveries ?? 0)}
               caption="All statuses"
             />
           </div>
-          <div style={styles.kpiRow}>
-            <KpiTile
-              label="Awaiting automatic retry"
-              value={String(data.retry.failedAwaitingRetry ?? 0)}
-              caption={
-                data.retry.nextScheduledRetryAt
-                  ? `Next retry ${formatDate(data.retry.nextScheduledRetryAt)}`
-                  : 'No retry scheduled'
-              }
-            />
-          </div>
-          {data.errorCodes.length > 0 ? (
-            <ul style={styles.list}>
-              {data.errorCodes.slice(0, 5).map((row) => (
-                <li key={row.errorCode} style={styles.listItem}>
-                  <code style={styles.code}>{row.errorCode}</code>
-                  <strong style={{ marginLeft: 6 }}>{row.count}</strong>
-                  <span style={{ marginLeft: 6, color: colors.textFaint }}>
-                    last seen {formatDate(row.lastSeenAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p style={styles.note}>No sanitized provider error codes were recorded in this window.</p>
-          )}
+          <p style={styles.note} data-testid="notification-exceptions-window">
+            Window: {windowLabel}
+            {data.window?.boundary ? (
+              <span style={{ marginLeft: 6 }}>{data.window.boundary}</span>
+            ) : null}
+          </p>
           <p style={styles.note} data-testid="notification-exceptions-policy">
             Read-only surface: manual retry is not part of the approved delivery policy
-            {data.retry.policyReference ? (
+            {data.policy?.policyReference ? (
               <>
                 {' '}
-                (<code style={styles.code}>{data.retry.policyReference}</code>)
+                (<code style={styles.code}>{data.policy.policyReference}</code>)
               </>
             ) : null}
             . Recovery is the worker&rsquo;s bounded automatic retry.
@@ -1101,13 +1071,14 @@ export const WidgetRenderer: React.FC<{
         ...(context ?? {}),
       });
   };
-  const drilldownActions = widget.drilldown && reachable(widget.drilldown.view) ? (
-    <WidgetDrilldownButton
-      label={widget.drilldown.label}
-      onOpen={openFor()}
-      testId={`widget-drilldown-${widget.widgetKey}`}
-    />
-  ) : undefined;
+  const drilldownActions =
+    widget.drilldown && reachable(widget.drilldown.view) ? (
+      <WidgetDrilldownButton
+        label={widget.drilldown.label}
+        onOpen={openFor()}
+        testId={`widget-drilldown-${widget.widgetKey}`}
+      />
+    ) : undefined;
 
   if (!widget.authorized) {
     return (
@@ -1139,9 +1110,7 @@ export const WidgetRenderer: React.FC<{
       return (
         <AuditTrailWidget
           actions={drilldownActions}
-          onOpenSearch={
-            reachable('auditEvents') ? () => onOpenView!('auditEvents') : undefined
-          }
+          onOpenSearch={reachable('auditEvents') ? () => onOpenView!('auditEvents') : undefined}
           onOpenRecord={
             reachable('auditEvents')
               ? (entityId, entityType) =>
@@ -1163,8 +1132,7 @@ export const WidgetRenderer: React.FC<{
           }
           onOpenFailures={
             reachable('notificationOperations')
-              ? () =>
-                  onOpenView!('notificationOperations', { notificationStatus: 'FAILED' })
+              ? () => onOpenView!('notificationOperations', { notificationStatus: 'FAILED' })
               : undefined
           }
         />

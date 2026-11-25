@@ -9,7 +9,7 @@ import { DataSource } from 'typeorm';
 import { NON_FRAUD_CASE_CATEGORIES } from '../customer-compliance/customer-compliance-access';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { AuditService } from '../operations/audit.service';
-import type { NotificationOperationsService } from '../admin/notification-operations.service';
+import { NotificationOperationsService } from '../admin/notification-operations.service';
 
 export type DashboardPeriod = 'today' | '7d' | '30d' | 'custom';
 
@@ -493,34 +493,52 @@ export class DashboardWidgetDataService {
   async notificationDeliveryExceptions(range: PeriodRange) {
     const checkedAt = new Date().toISOString();
     const source = 'NotificationOperationsService.summary() over notification_deliveries';
-    const windowMeta = {
-      period: range.period,
-      from: range.from.toISOString(),
-      to: range.to.toISOString(),
-    };
-    if (!this.notificationOperations) {
-      return {
-        ...windowMeta,
-        availability: 'UNAVAILABLE',
-        configuration: 'UNKNOWN',
-        reason: 'the notification operations projection is not wired in this deployment',
-        totals: { deliveries: 0, exceptions: 0, byStatus: [] },
-        errorCodes: [],
-        retry: { manualRetrySupported: false },
-        provider: { availability: 'UNKNOWN', channels: [] },
-        checkedAt,
-        source,
-      };
-    }
-
-    const windowHours = Math.max(
+    const from = range.from.toISOString();
+    const to = range.to.toISOString();
+    const hours = Math.max(
       1,
       Math.min(168, Math.round((range.to.getTime() - range.from.getTime()) / 3_600_000)),
     );
+    // The window is stated on the card in the same terms the queue filters by, so a reader can prove
+    // the number and the list describe the same interval: created_at >= from AND created_at < to.
+    const window = {
+      hours,
+      from,
+      to,
+      boundary: 'half-open: created_at >= from AND created_at < to (UTC)',
+      label: `${range.period} window, ${from.slice(0, 16)} to ${to.slice(0, 16)} UTC`,
+    };
+    /** Only an aggregate is exposed: per-status, error-code and backlog detail stays in the queue. */
+    const unavailable = (reason: string) => ({
+      period: range.period,
+      from,
+      to,
+      window,
+      availability: 'UNAVAILABLE' as const,
+      configuration: 'UNKNOWN' as const,
+      reason,
+      totals: { deliveries: null, exceptions: null },
+      policy: { manualRetrySupported: false as const },
+      definition:
+        'Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window. This read could not be completed, so no number is reported — the absence is not a zero. Read-only: recovery is the worker\u0027s bounded automatic retry, and no retry control exists on this card.',
+      checkedAt,
+      source,
+    });
+
+    const operations = this.notificationOperations;
+    if (!operations) {
+      return unavailable(
+        'the notification operations projection is not wired in this deployment, so the delivery log was never read',
+      );
+    }
+
     let summary: Awaited<ReturnType<NotificationOperationsService['summary']>>;
     try {
-      summary = await this.notificationOperations.summary({
-        hours: windowHours,
+      // Same service, same scope, same window as the queue the card links to: `notification.view_deliveries`
+      // is what gates both, and neither read partitions by institution or workforce because
+      // `notification_deliveries` carries no such column to partition on.
+      summary = await operations.summary({
+        hours,
         from: range.from,
         to: range.to,
         includeProviderIdentity: false,
@@ -533,30 +551,20 @@ export class DashboardWidgetDataService {
       );
     }
 
-    const byStatus = summary.totals.byStatus.map((row) => ({
-      status: row.status,
-      count: row.count,
-    }));
-    const countOf = (status: string) => byStatus.find((row) => row.status === status)?.count ?? 0;
+    const countOf = (status: string) =>
+      summary.totals.byStatus.find((row) => row.status === status)?.count ?? 0;
     const exceptions = countOf('FAILED') + countOf('DEAD') + countOf('UNKNOWN');
-    const channels = summary.provider.channels.map((channel) => ({
-      channel: channel.channel,
-      available: channel.available,
-    }));
+    const channels = summary.provider.channels;
     const anyTransport = channels.some((channel) => channel.available);
     const noTransportReported =
       channels.length > 0 && channels.every((channel) => channel.available === false);
 
     return {
-      ...windowMeta,
-      window: {
-        hours: summary.window.hours,
-        from:
-          summary.window.from instanceof Date
-            ? summary.window.from.toISOString()
-            : String(summary.window.from),
-        to: summary.window.to instanceof Date ? summary.window.to.toISOString() : undefined,
-      },
+      period: range.period,
+      from,
+      to,
+      window,
+      // A successful read with no matches reports 0; an unreadable source reports UNAVAILABLE above.
       availability: 'MEASURED' as const,
       configuration: noTransportReported
         ? 'NO_TRANSPORT_CONFIGURED'
@@ -564,39 +572,18 @@ export class DashboardWidgetDataService {
           ? 'CONFIGURED'
           : 'UNKNOWN',
       configurationNote: noTransportReported
-        ? 'No notification channel currently has a usable transport, so an empty delivery log in this window means nothing could be attempted — not that nothing failed.'
+        ? 'No notification channel currently has a usable transport, so an empty delivery log in this window means nothing could be attempted \u2014 not that nothing failed.'
         : undefined,
       totals: {
         deliveries: summary.totals.deliveries,
         exceptions,
-        byStatus,
       },
-      errorCodes: summary.failureDiagnostics.map((row) => ({
-        errorCode: row.errorCode,
-        count: row.count,
-        lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt).toISOString() : null,
-      })),
-      retry: {
-        pending: summary.retryBacklog.pending,
-        failedAwaitingRetry: summary.retryBacklog.failedAwaitingRetry,
-        dead: summary.retryBacklog.dead,
-        unknown: summary.retryBacklog.unknown,
-        oldestPendingAt: summary.retryBacklog.oldestPendingAt
-          ? new Date(summary.retryBacklog.oldestPendingAt).toISOString()
-          : null,
-        nextScheduledRetryAt: summary.retryBacklog.nextScheduledRetryAt
-          ? new Date(summary.retryBacklog.nextScheduledRetryAt).toISOString()
-          : null,
-        manualRetrySupported: false,
+      policy: {
+        manualRetrySupported: false as const,
         policyReference: summary.retryPolicy.manualRetryPolicyReference,
       },
-      provider: {
-        availability: 'CHECKED' as const,
-        projectionScope: summary.provider.projectionScope,
-        channels,
-      },
       definition:
-        "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated over the same read-only delivery log the notification operations workspace shows. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        'Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker\u0027s bounded automatic retry, and no retry control exists on this card.',
       checkedAt,
       source,
     };

@@ -48,7 +48,6 @@ const exceptionsPayload = {
   to: '2026-11-05T00:00:00.000Z',
   availability: 'MEASURED',
   configuration: 'CONFIGURED',
-  window: { from: '2026-10-29T00:00:00.000Z', to: '2026-11-05T00:00:00.000Z' },
   totals: {
     deliveries: 12,
     exceptions: 3,
@@ -59,6 +58,19 @@ const exceptionsPayload = {
     ],
   },
   errorCodes: [{ errorCode: 'PROVIDER_TIMEOUT', count: 2, lastSeenAt: '2026-11-04T00:00:00.000Z' }],
+  // ARENA 6 follow-up: the dashboard carries only the aggregate, its labeled window and the policy
+  // statement. The fields above are kept in the fixture to prove the tile ignores them.
+  window: {
+    hours: 24,
+    from: '2026-11-04T00:00:00.000Z',
+    to: '2026-11-05T00:00:00.000Z',
+    label: '7d window, 2026-11-04T00:00 to 2026-11-05T00:00 UTC',
+    boundary: 'half-open: created_at >= from AND created_at < to (UTC)',
+  },
+  policy: {
+    manualRetrySupported: false,
+    policyReference: 'docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md',
+  },
   retry: {
     pending: 1,
     failedAwaitingRetry: 1,
@@ -93,10 +105,7 @@ const widget = (overrides: Partial<ResolvedWidget>): ResolvedWidget =>
   }) as ResolvedWidget;
 
 /** The dashboard config is the first call; every widget read is matched on its own path. */
-const route = (
-  dashboard: unknown[],
-  widgetResponses: Record<string, unknown> = {},
-) =>
+const route = (dashboard: unknown[], widgetResponses: Record<string, unknown> = {}) =>
   calls.mockImplementation(async (path: string) => {
     if (path.endsWith('/my-dashboard')) return configuration(dashboard);
     for (const [needle, value] of Object.entries(widgetResponses)) {

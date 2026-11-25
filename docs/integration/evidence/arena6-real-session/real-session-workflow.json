@@ -1,6 +1,6 @@
 {
   "kind": "arena6-real-session-workflow",
-  "generatedAt": "2026-11-25T13:11:34.438Z",
+  "generatedAt": "2026-11-25T13:35:47.091Z",
   "environment": {
     "nodeEnv": "test",
     "database": "disposable, created + migrated by test/support/pg-harness.ts for this run only",
@@ -19,24 +19,26 @@
       "cardPayload": {
         "period": "today",
         "from": "2026-11-25T00:00:00.000Z",
-        "to": "2026-11-25T13:11:34.180Z",
-        "availability": "UNAVAILABLE",
-        "configuration": "UNKNOWN",
-        "reason": "the notification operations projection is not wired in this deployment",
+        "to": "2026-11-25T13:35:46.779Z",
+        "window": {
+          "hours": 14,
+          "from": "2026-11-25T00:00:00.000Z",
+          "to": "2026-11-25T13:35:46.779Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "today window, 2026-11-25T00:00 to 2026-11-25T13:35 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
         "totals": {
-          "deliveries": 0,
-          "exceptions": 0,
-          "byStatus": []
+          "deliveries": 2,
+          "exceptions": 1
         },
-        "errorCodes": [],
-        "retry": {
-          "manualRetrySupported": false
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
         },
-        "provider": {
-          "availability": "UNKNOWN",
-          "channels": []
-        },
-        "checkedAt": "2026-11-25T13:11:34.180Z",
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-25T13:35:46.779Z",
         "source": "NotificationOperationsService.summary() over notification_deliveries"
       }
     },
@@ -48,7 +50,7 @@
       "traceStatus": 200,
       "relatedEvent": {
         "availability": "FOUND",
-        "id": "e3ff1605-8b9f-4e3d-98ab-379da2f70236"
+        "id": "8de58822-8da2-42ad-8054-d1338621d913"
       },
       "providerReceipts": {
         "availability": "NONE_RECORDED",
@@ -60,8 +62,12 @@
       "auditEvents": 1,
       "auditFirst": {
         "action": "ARENA6_SYNTHETIC_DELIVERY_RECORDED",
-        "correlationId": "arena6-real-6bc9d4d1-409d-4427-be61-11e570b13ea2"
+        "correlationId": "arena6-real-0b716c67-04df-4188-8934-fbc4240c6b9d"
       }
+    },
+    {
+      "step": "measured zero on an empty window",
+      "status": 200
     }
   ],
   "restrictedRole": {
@@ -81,12 +87,12 @@
         "bodyBytes": 89
       },
       {
-        "path": "/api/v1/internal/notifications/deliveries/86d36b8b-3d5b-46b2-99ab-84dc37bcd3d6",
+        "path": "/api/v1/internal/notifications/deliveries/af9cae90-e898-4db3-abcd-6cbdbf73a4c1",
         "status": 403,
         "bodyBytes": 89
       },
       {
-        "path": "/api/v1/internal/audit/inspection?correlationId=arena6-real-6bc9d4d1-409d-4427-be61-11e570b13ea2",
+        "path": "/api/v1/internal/audit/inspection?correlationId=arena6-real-0b716c67-04df-4188-8934-fbc4240c6b9d",
         "status": 403,
         "bodyBytes": 89
       },
@@ -106,35 +112,35 @@
         "state": "ok",
         "availability": "CHECKED",
         "reason": null,
-        "checkedAt": "2026-11-25T13:11:34.306Z"
+        "checkedAt": "2026-11-25T13:35:46.959Z"
       },
       {
         "key": "migrations",
         "state": "ok",
         "availability": "CHECKED",
         "reason": null,
-        "checkedAt": "2026-11-25T13:11:34.307Z"
+        "checkedAt": "2026-11-25T13:35:46.959Z"
       },
       {
         "key": "reconciliation",
         "state": "ok",
         "availability": "CHECKED",
         "reason": null,
-        "checkedAt": "2026-11-25T13:11:34.322Z"
+        "checkedAt": "2026-11-25T13:35:46.974Z"
       },
       {
         "key": "outbox",
         "state": "ok",
         "availability": "CHECKED",
         "reason": null,
-        "checkedAt": "2026-11-25T13:11:34.307Z"
+        "checkedAt": "2026-11-25T13:35:46.960Z"
       },
       {
         "key": "workers",
         "state": "unknown",
         "availability": "UNAVAILABLE",
         "reason": "no completed tick observed in this process; disabled workers are never measured by design",
-        "checkedAt": "2026-11-25T13:11:34.323Z"
+        "checkedAt": "2026-11-25T13:35:46.974Z"
       }
     ]
   },

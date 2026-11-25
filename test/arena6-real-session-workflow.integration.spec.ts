@@ -292,7 +292,7 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
           fixture.correlationId,
           `cause-${fixture.correlationId.slice(0, 8)}`,
           'PROVIDER_TIMEOUT',
-          now,
+          new Date(now.getTime() - 60_000),
         ],
       );
       await manager.query(
@@ -404,35 +404,49 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
     const cardRead = await read(`${API}${dataPath}`, session.token);
     expect(cardRead.status).toBe(200);
 
-    // A proxy-served card answers with `definition`/`retry`; a direct-endpoint card answers with the
-    // summary's own `retryPolicy`. Both must name where their number came from and both must say manual
-    // retry is out of scope, which is the only property this suite cares about.
-    const payload = asJson(cardRead.body).data
-      ? asJson(asJson(cardRead.body).data)
-      : asJson(cardRead.body);
+    const payload = asJson(cardRead.body);
     const provenance = [payload.definition, payload.source].find(
       (value) => typeof value === 'string' && value.trim().length > 0,
     );
     expect(typeof provenance).toBe('string');
-    expect(asJson(payload.retry ?? payload.retryPolicy).manualRetrySupported).toBe(false);
-    expect(asJson(payload.window).hours ?? payload.period).toBeDefined();
-    expect(String(payload.availability)).toMatch(
-      /AVAILABLE|DEGRADED|CONFIGURATION_REQUIRED|UNAVAILABLE/,
+    expect(asJson(payload.policy).manualRetrySupported).toBe(false);
+    // ---- THE AGREEMENT THE CARD PROMISES -----------------------------------------------------
+    // `MEASURED` is itself a result here: it means the card resolved the same
+    // NotificationOperationsService.summary() the queue is served from. `UNAVAILABLE` would mean the
+    // projection is not wired in the container, which is the defect this test exists to catch.
+    expect(payload.availability).toBe('MEASURED');
+    const window = asJson(payload.window);
+    expect(String(window.label).length).toBeGreaterThan(0);
+    expect(String(window.boundary)).toMatch(/half-open/);
+    expect(typeof window.from).toBe('string');
+    expect(typeof window.to).toBe('string');
+    // Only the aggregate crosses to the dashboard.
+    expect(asJson(payload.totals).byStatus).toBeUndefined();
+    expect(payload.errorCodes).toBeUndefined();
+    expect(payload.retry).toBeUndefined();
+    // Same window, same table, same function gate: the card's delivery count is the queue's unfiltered
+    // `total`, and its exception count is the queue's total for FAILED + DEAD + UNKNOWN summed.
+    const queueWindow = `from=${encodeURIComponent(String(window.from))}&to=${encodeURIComponent(String(window.to))}`;
+    const all = await read(
+      `${API}/internal/notifications/deliveries?${queueWindow}&page=1&limit=1`,
+      session.token,
     );
-    expect(asJson(payload.provider).availability).toBeDefined();
-    // The synthetic failure is inside the window the card counts, so a payload reporting only zeros
-    // would be a lie. The exact key differs between the proxy payload and the operations summary, so
-    // the assertion is on "some counted bucket is non-zero" and the full payload goes into the evidence.
-    expect(['AVAILABLE', 'DEGRADED', 'UNAVAILABLE', 'CONFIGURATION_REQUIRED']).toContain(
-      String(payload.availability),
-    );
-    if (String(payload.availability) !== 'AVAILABLE') {
-      // A card that cannot consult its source has to name the reason; a silent zero is the failure mode
-      // the whole availability contract exists to prevent.
-      expect(String(payload.reason ?? payload.configurationNote).length).toBeGreaterThan(10);
-      expect(asJson(payload.totals).deliveries).toBe(0);
+    expect(all.status).toBe(200);
+    expect(Number(asJson(all.body).total)).toBe(Number(asJson(payload.totals).deliveries));
+    let exceptionSum = 0;
+    for (const status of ['FAILED', 'DEAD', 'UNKNOWN']) {
+      const scoped = await read(
+        `${API}/internal/notifications/deliveries?${queueWindow}&status=${status}&page=1&limit=1`,
+        session.token,
+      );
+      expect(scoped.status).toBe(200);
+      exceptionSum += Number(asJson(scoped.body).total);
     }
+    expect(Number(asJson(payload.totals).exceptions)).toBe(exceptionSum);
+    expect(Number(asJson(payload.totals).exceptions)).toBeGreaterThanOrEqual(1);
+    expect(asJson(payload.totals).exceptions).toBe(1);
 
+    // A client cannot forge its way past the card's own gate
     // A client cannot forge its way past the card's own gate: the same read with no session at all is
     // refused by the server rather than answered from a cache.
     const anonymous = await read(`${API}${dataPath}`, null);
@@ -604,10 +618,23 @@ describe('ARENA 6 — real-session drill-down chain (real PostgreSQL + real HTTP
   });
 
   it('writes an evidence document that states what it does and does not certify', async () => {
+    await dataSource.query('DELETE FROM notification_deliveries WHERE correlation_id = $1', [
+      fixture.correlationId,
+    ]);
     const session = await login(ROLE_EMAILS.authorized, passwordFor('FINANCE_AUDITOR'));
     const unauthenticated = await read(`${API}/internal/notifications/deliveries`, null);
     expect([401, 403]).toContain(unauthenticated.status);
     expect(session.status).toBe(201);
+
+    const zeroRead = await read(
+      `${API}/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions`,
+      session.token,
+    );
+    expect(zeroRead.status).toBe(200);
+    expect(asJson(zeroRead.body).availability).toBe('MEASURED');
+    expect(Number(asJson(asJson(zeroRead.body).totals).exceptions)).toBe(0);
+    expect(Number(asJson(asJson(zeroRead.body).totals).deliveries)).toBe(0);
+    evidence.workflow.push({ step: 'measured zero on an empty window', status: zeroRead.status });
 
     const json = JSON.stringify(evidence);
     expect(json).toContain('arena6-real-session-workflow');

@@ -203,3 +203,78 @@ npm run lint && npm run format:check && npm run build
 3. Still not certified, unchanged from the first report: no browser leg against a live backend session
    (the gate above forbids it), no real provider sandbox, and the accessibility/keyboard matrix is
    component-test-level only.
+
+---
+
+## Addendum 2 — the exceptions card now shares the queue's read (aggregate-only, labeled window)
+
+### The defect
+The card *was* coded against `NotificationOperationsService.summary()` — the same read the failed-delivery
+queue answers from — but `src/dashboard/dashboard-widget-data.service.ts` imported the class as
+**`import type { NotificationOperationsService }`**. TypeScript elides a type-only import, so the emitted
+`design:paramtypes` metadata for that constructor parameter was `Object`, Nest could not resolve a DI
+token for it, and because the parameter is `@Optional()` the failure was silent: the collaborator arrived
+`undefined` and the card answered `availability: UNAVAILABLE` / "not wired in this deployment" with
+`totals.deliveries: 0`. The queue, served by the same service through `NotificationModule`, returned the
+row. Two answers, one source — caught only by the real-session run.
+
+### What changed
+* `src/dashboard/dashboard-widget-data.service.ts` — value import, so the token resolves and the card is a
+  **projection of the one provider**, not a second implementation. `NotificationModule` keeps providing and
+  exporting it; no new query was added to the dashboard: the card reuses `summary()`'s scoped aggregate
+  (`GROUP BY channel, status` over the same half-open window) and sums FAILED + DEAD + UNKNOWN.
+* **Same scope as the queue, stated rather than implied.** Both reads are gated by
+  `notification.view_deliveries`, both hit `notification_deliveries`, and neither partitions by workforce or
+  institution — the table has no such column, so a card-side filter would have *narrowed* the queue's scope
+  and made the two disagree. Provider identity still stays behind `notification.provider.view`
+  (`includeProviderIdentity: false`), so the card cannot disclose what the queue withholds.
+* **Clearly labeled window.** `window: { hours, from, to, label, boundary }` where `boundary` is
+  `half-open: created_at >= from AND created_at < to (UTC)` and `label` is rendered verbatim on the card
+  (`Window: <period> window, <from> to <to> UTC`). `to` is now normalized to ISO the same way `from` was —
+  previously a string `to` fell through to `undefined`, so the payload could state a start without an end.
+* **Aggregate only.** The dashboard payload is `availability`, `configuration` (+ `configurationNote`),
+  `totals: { deliveries, exceptions }`, `window`, `policy: { manualRetrySupported: false, policyReference }`,
+  `definition`, `checkedAt`, `source`. Dropped: `totals.byStatus`, `errorCodes[]`, the retry backlog
+  (`pending/failedAwaitingRetry/dead/unknown/oldestPendingAt/nextScheduledRetryAt`) and
+  `provider.channels[]` — that is the queue's content, reachable through the preserved link.
+* **Zero only on a successful read.** An unreadable source now answers `UNAVAILABLE` with
+  `totals: { deliveries: null, exceptions: null }` and a reason; it no longer carries `0` at all, so a
+  client cannot render an absent read as a quiet shift. A read that succeeds with no matches is
+  `MEASURED` with real zeros. A failed *query* still throws 503 (`ServiceUnavailableException`) instead of
+  being flattened. `widget-validation.ts` enforces both halves client-side: MEASURED requires numeric
+  totals + a labeled window, UNAVAILABLE requires a reason **and** `totals.exceptions == null`.
+* **Restrictions preserved.** `requiredFunctions: ['notification.view_deliveries']`, the authorized-only
+  `drilldown` in `dashboard.service.ts`, and the tile's "no control when not authorized" behaviour are
+  unchanged; the widget's `description` was retitled to say the list and error codes live in the queue.
+
+### Proof that the card agrees with the queue (real PostgreSQL, real session)
+`test/arena6-real-session-workflow.integration.spec.ts` — 6/6 pass on a migrated disposable cluster as
+FINANCE_AUDITOR, after a real password sign-in:
+* `widgets/notification-delivery-exceptions` → `availability: 'MEASURED'` (this is the DI fix proving
+  itself at runtime, not in a unit double), labeled window, `policy.manualRetrySupported === false`, and
+  `totals.byStatus` / `errorCodes` / `retry` **absent** from the payload.
+* Using the card's own `window.from`/`window.to`: `deliveries?from&to&page=1&limit=1` `total` ===
+  `totals.deliveries`, and Σ`total` over `status=FAILED|DEAD|UNKNOWN` === `totals.exceptions` (== 1, the
+  synthetic row). Same table, same window, same gate — the numbers are the same numbers.
+* Empty window: after the synthetic rows are deleted, the card answers `MEASURED` with `exceptions: 0`
+  and `deliveries: 0` — a genuine zero from a successful read. The `UNAVAILABLE`/null shape is asserted in
+  `notificationDeliveryExceptions`'s unit path and by the client validator.
+* RISK_FRAUD still gets 403 on every protected read (89-byte bodies, no ids/destination leaked) and zero
+  authorized drill-downs, so the aggregate is not a new disclosure channel.
+
+Local gates at this change: `npm run lint` clean, `npm run format:check` clean, `npm run build` clean;
+root `npx jest dashboard` 8/8, `npx jest widget notification operations` 20 suites / 230 tests; admin-web
+full suite **102 suites / 1019 tests**; `tsc --noEmit` clean in both projects.
+
+### Evidence provenance — which run was which
+| Evidence | Source of API data |
+| --- | --- |
+| `docs/integration/evidence/arena6-real-session/real-session-workflow.json` | **real**: migrated disposable PostgreSQL, real `local-admin-sessions` sign-in, real bearer requests to a listening socket, real guards; synthetic delivery/outbox/audit rows only |
+| `docs/integration/evidence/arena6-drilldown/` (6 PNGs + JSON, 26/26) | **fixture**: real Chromium rendering the built bundle, API stubbed at the browser network layer |
+| `apps/admin-web/__tests__/*` (1019) | jsdom, stubbed `ApiClient` |
+
+No browser run in this turn was captured against a live backend session: the isolated bootstrap's HTTP
+listener lives inside the jest worker and exits with the suite, so serving the built Admin Web through it
+needs the harness to keep a worker alive across the browser leg. That remains the one gap in the browser
+column; the payload the browser renders is the payload asserted above, and `widget-validation.ts` is what
+refuses to turn an unavailable read into a number.

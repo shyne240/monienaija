@@ -56,28 +56,15 @@ export interface NotificationExceptionsResponse {
   configuration?: 'CONFIGURED' | 'NO_TRANSPORT_CONFIGURED' | 'UNKNOWN';
   configurationNote?: string;
   reason?: string;
-  window?: { hours?: number; from?: string; to?: string };
-  totals: {
-    deliveries: number;
-    exceptions: number;
-    byStatus: Array<{ status: string; count: number }>;
-  };
-  errorCodes: Array<{ errorCode: string; count: number; lastSeenAt: string | null }>;
-  retry: {
-    pending?: number;
-    failedAwaitingRetry?: number;
-    dead?: number;
-    unknown?: number;
-    oldestPendingAt?: string | null;
-    nextScheduledRetryAt?: string | null;
-    manualRetrySupported: false;
-    policyReference?: string;
-  };
-  provider: {
-    availability: 'CHECKED' | 'UNKNOWN';
-    projectionScope?: string;
-    channels: Array<{ channel: string; available: boolean }>;
-  };
+  /** The interval the aggregate covers, labeled, with the boundary the queue filters on too. */
+  window?: { hours?: number; from?: string; to?: string; label?: string; boundary?: string };
+  /**
+   * Only the aggregate is exposed on the dashboard; the per-delivery detail lives in the queue the
+   * card links to. `null` means the source could not be read — zero is reserved for a successful
+   * read that found no matches, which is the whole point of the availability flag.
+   */
+  totals: { deliveries: number | null; exceptions: number | null };
+  policy?: { manualRetrySupported: false; policyReference?: string };
   definition?: string;
   checkedAt: string;
   source?: string;
