@@ -1,0 +1,97 @@
+{
+  "date": "2026-11-25T15:37:16.071Z",
+  "commit": "46e9ff703884dff6aa4d9b520a1b6817c8c5b705",
+  "scope": "Fully migrated disposable PostgreSQL, real AppModule, real local workforce email/password sign-in. Synthetic business rows; not a production record.",
+  "browser": true,
+  "checks": [
+    {
+      "name": "11 local workforce accounts seeded by the real seed script",
+      "result": "PASS",
+      "detail": {
+        "accounts": 11
+      }
+    },
+    {
+      "name": "real AppModule booted against fully migrated disposable PostgreSQL",
+      "result": "PASS"
+    },
+    {
+      "name": "real email/password sign-in for OPERATIONS and FINANCE_AUDITOR",
+      "result": "PASS",
+      "detail": {
+        "operations": "https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95"
+      }
+    },
+    {
+      "name": "fixture created: visible rows, a foreign institution, and Lagos day edges",
+      "result": "PASS",
+      "detail": {
+        "visible": 47,
+        "foreign": 9,
+        "outsideLagosDay": 2
+      }
+    },
+    {
+      "name": "export equals the paginated list exactly — every row once, across all UI pages",
+      "result": "PASS",
+      "detail": {
+        "pages": 3,
+        "rows": 47,
+        "header": [
+          "transaction_reference",
+          "product",
+          "product_label",
+          "status",
+          "created_at_lagos",
+          "created_at_utc",
+          "amount",
+          "currency",
+          "fee",
+          "fee_recorded",
+          "business_transaction_id"
+        ]
+      }
+    },
+    {
+      "name": "foreign institution and out-of-range Lagos rows are absent from the file",
+      "result": "PASS"
+    },
+    {
+      "name": "unauthorized requests are denied server-side (403 for a role without transaction.view, 401 anonymous)",
+      "result": "PASS"
+    },
+    {
+      "name": "export recorded in the existing audit trail with actor, applied filters and outcome",
+      "result": "PASS",
+      "detail": {
+        "actor": "https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95",
+        "outcome": "SUCCEEDED"
+      }
+    },
+    {
+      "name": "an empty result returns a header-only file, not an error",
+      "result": "PASS"
+    },
+    {
+      "name": "an over-size export is refused with a narrowing instruction and no file",
+      "result": "PASS",
+      "detail": {
+        "status": 413,
+        "message": "This export matches more than 10 transactions, which is above the supported export size. Narrow the date range or add a product, status or reference filter and export again. No file was produced."
+      }
+    },
+    {
+      "name": "real browser sign-in, filtered list on page 2, Export CSV downloaded every matching row",
+      "result": "PASS",
+      "detail": {
+        "suggestedFilename": "transaction-history_2026-11-24_to_2026-11-24_bank_to_wallet.csv",
+        "confirmation": "Exported 47 transactions to transaction-history_2026-11-24_to_2026-11-24_bank_to_wallet.csv. These are all records matching the applied filters, not just this page.",
+        "rowsInFile": 47
+      }
+    },
+    {
+      "name": "the size refusal is shown in the UI with the narrowing instruction",
+      "result": "PASS"
+    }
+  ]
+}

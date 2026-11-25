@@ -1,4 +1,9 @@
 import { TransactionHistoryController } from './transaction-history.controller';
+import {
+  MAX_EXPORT_ROWS,
+  TRANSACTION_HISTORY_EXPORT_LIMITS,
+  TransactionHistoryExportService,
+} from './transaction-history-export.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -62,6 +67,17 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     AdminNotificationProviderController,
     NotificationOperationsController,
   ],
-  providers: [CustomerTransactionHistoryService, NotificationOperationsService],
+  providers: [
+    CustomerTransactionHistoryService,
+    NotificationOperationsService,
+    // CSV export shares the history list's read path; it only serialises and audits.
+    TransactionHistoryExportService,
+    // The supported export ceiling. Above it the export is refused with an explanation, never
+    // truncated; a deployment may override this provider from measured capacity.
+    {
+      provide: TRANSACTION_HISTORY_EXPORT_LIMITS,
+      useValue: { maxRows: MAX_EXPORT_ROWS },
+    },
+  ],
 })
 export class AdminModule {}
