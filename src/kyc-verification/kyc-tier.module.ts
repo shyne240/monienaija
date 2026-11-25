@@ -2,20 +2,12 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import type { Environment } from '../config/environment';
-import { AuthorizationModule } from '../authorization/authorization.module';
-import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
-import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
-import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
-import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
-import { FeeRulesModule } from '../fee-rules/fee-rules.module';
-import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
-import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
 import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import {
   MonnifyVerificationProvider,
@@ -119,17 +111,25 @@ function providerRuntimeFromConfig(
   };
 }
 
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- lazy require breaks a Nest DI cycle observed in compiled CI/unit bootstrap */
 @Module({
   imports: [
-    ProtectedAuthorityModule,
-    forwardRef(() => AuthorizationModule),
-    forwardRef(() => OperationsModule),
-    forwardRef(() => CustomerAuthenticationModule),
-    forwardRef(() => CustomerClassModule),
-    forwardRef(() => FeeRulesModule),
-    forwardRef(() => LimitCatalogModule),
-    forwardRef(() => ProductCatalogModule),
+    forwardRef(
+      () => require('../authorization/protected-authority.module').ProtectedAuthorityModule,
+    ),
+    forwardRef(() => require('../authorization/authorization.module').AuthorizationModule),
+    forwardRef(() => require('../operations/operations.module').OperationsModule),
+    forwardRef(
+      () =>
+        require('../customer-authentication/customer-authentication.module')
+          .CustomerAuthenticationModule,
+    ),
+    forwardRef(() => require('../customer-class/customer-class.module').CustomerClassModule),
+    forwardRef(() => require('../fee-rules/fee-rules.module').FeeRulesModule),
+    forwardRef(() => require('../limit-catalog/limit-catalog.module').LimitCatalogModule),
+    forwardRef(() => require('../product-catalog/product-catalog.module').ProductCatalogModule),
   ],
+  /* eslint-enable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
   controllers: [KycTierPolicyController, KycTierReviewController, PremblyCredentialController],
   providers: [
     CustomerFinancialEligibilityService,
