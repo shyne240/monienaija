@@ -6,7 +6,8 @@
  *
  * - The link is `#transaction-history/<TYPE>/<UUID>`.
  * - The UUID is the **business transaction key**, never a ledger line, event or arbitrary journal.
- * - Supported types are `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT` and `CASH_TO_CASH`.
+ * - Supported types are `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT`, `CASH_TO_CASH` and
+ *   `BANK_TO_WALLET`.
  * - Cash-in/cash-out use the **original posted canonical-service journal ID**; a reversal journal
  *   ID is never a substitute.
  * - A product with no supported history mapping reports that the link is unavailable instead of
@@ -22,12 +23,15 @@ export type UnifiedTransactionHistoryType =
   | 'WALLET_TRANSFER'
   | 'CASH_IN'
   | 'CASH_OUT'
-  | 'CASH_TO_CASH';
+  | 'CASH_TO_CASH'
+  | 'BANK_TO_WALLET';
 
 export interface UnifiedTransactionTarget {
   type: UnifiedTransactionHistoryType;
   id: string;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TransactionHistoryLinkResolution =
   | { available: true; target: UnifiedTransactionTarget }
@@ -61,6 +65,26 @@ export function resolveTransactionHistoryLink(
     case 'CASH_TO_CASH':
       // Claim/expiry investigations still link the parent cash-to-cash transaction.
       return { available: true, target: { type: 'CASH_TO_CASH', id: source.id } };
+    case 'BANK_TO_WALLET': {
+      // The server only emits this type when persisted evidence produced the immutable bank-intake
+      // UUID. Refuse anything that is not a UUID, or a journal that is itself a reversal, rather than
+      // building a link that cannot resolve to the same business record.
+      if (!UUID.test(source.id)) {
+        return {
+          available: false,
+          reason:
+            'No persisted bank-intake identifier was resolved for this journal, so Bank to Wallet cannot be linked.',
+        };
+      }
+      if (journal && journal.reversal.kind !== 'NORMAL') {
+        return {
+          available: false,
+          reason:
+            'This record is a reversal journal. The contract links the original business transaction, never a reversal.',
+        };
+      }
+      return { available: true, target: { type: 'BANK_TO_WALLET', id: source.id } };
+    }
     case 'DEPOSIT':
     case 'WITHDRAWAL': {
       if (!journal) {

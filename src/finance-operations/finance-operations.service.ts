@@ -75,7 +75,7 @@ interface SourceRow {
   id: string;
   reference: string | null;
   status: string;
-  linked_by: 'JOURNAL_ID' | 'CLAIM_JOURNAL_ID';
+  linked_by: 'JOURNAL_ID' | 'CLAIM_JOURNAL_ID' | 'DURABLE_INBOUND_LINK' | 'LEGACY_RECEIPT_JOURNAL';
 }
 
 /**
@@ -1447,7 +1447,100 @@ export class FinanceOperationsService {
     return rows[0] ?? null;
   }
 
+  /**
+   * Durable inbound identity is owned by PR #23 (migration 0806). This service may ship before that
+   * migration lands, so the relation is only queried when it actually exists — an absent link table
+   * is "no proven source", never a missing-table 500.
+   */
+  private inboundLinkTablePresence: boolean | null = null;
+
+  private async hasDurableInboundLinks(): Promise<boolean> {
+    if (this.inboundLinkTablePresence !== null) return this.inboundLinkTablePresence;
+    const rows = await this.dataSource.query<Array<{ present: boolean }>>(
+      `SELECT to_regclass('public.banking_inbound_float_links') IS NOT NULL AS present`,
+    );
+    this.inboundLinkTablePresence = rows[0]?.present === true;
+    return this.inboundLinkTablePresence;
+  }
+
+  /**
+   * The authoritative Bank to Wallet business key is the immutable bank-intake UUID, resolved from
+   * persisted evidence only: the posted float receipt → `banking_inbound_float_links` → the verified
+   * `banking_inbound_payments` row. The float receipt UUID, the journal UUID and any reference prefix
+   * are never substituted for it.
+   */
+  private async durableInboundSource(journalId: string): Promise<JournalSourceLink | null> {
+    if (!(await this.hasDurableInboundLinks())) return null;
+    const rows = await this.dataSource.query<SourceRow[]>(
+      `SELECT 'BANK_TO_WALLET'::text AS source_type,
+              b.id::text AS id,
+              b.provider_transaction_reference AS reference,
+              'CREDITED'::text AS status,
+              'DURABLE_INBOUND_LINK'::text AS linked_by,
+              b.recorded_at AS created_at
+         FROM banking_inbound_float_links l
+         JOIN agent_float_funding_receipts r ON r.id = l.float_receipt_id
+         JOIN banking_inbound_payments b ON b.id = l.payment_id
+        WHERE r.journal_id = $1
+        LIMIT 1`,
+      [journalId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      type: 'BANK_TO_WALLET',
+      id: row.id,
+      reference: row.reference,
+      status: row.status,
+      linkedBy: 'DURABLE_INBOUND_LINK',
+      navigable: true,
+    };
+  }
+
+  /**
+   * Legacy wallet receipts have no persisted provider/environment binding, so they keep their own
+   * `BANK_TO_WALLET/<receipt UUID>` identity (PR #23 contract) and are never joined to a banking row
+   * by hash or reference. Suspense receipts have no implemented resolution and stay unlinked.
+   */
+  private async legacyInboundSource(journalId: string): Promise<JournalSourceLink | null> {
+    const rows = await this.dataSource.query<SourceRow[]>(
+      `SELECT 'BANK_TO_WALLET'::text AS source_type,
+              r.id::text AS id,
+              COALESCE(o.provider_reference, r.id::text) AS reference,
+              'CREDITED'::text AS status,
+              'LEGACY_RECEIPT_JOURNAL'::text AS linked_by,
+              r.created_at AS created_at
+         FROM inbound_funding_receipts r
+         LEFT JOIN LATERAL (
+           SELECT x.provider_reference
+             FROM inbound_funding_observations x
+            WHERE x.provider_key = r.provider_key
+              AND x.provider_reference_hash = r.provider_reference_hash
+              AND x.evidence_hash = r.evidence_hash
+            ORDER BY x.created_at, x.id
+            LIMIT 1
+         ) o ON true
+        WHERE r.journal_id = $1 AND r.status = 'CREDITED'
+        LIMIT 1`,
+      [journalId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      type: 'BANK_TO_WALLET',
+      id: row.id,
+      reference: row.reference,
+      status: row.status,
+      linkedBy: 'LEGACY_RECEIPT_JOURNAL',
+      navigable: true,
+    };
+  }
+
   private async sourceFor(journalId: string): Promise<JournalSourceLink | null> {
+    // Persisted inbound identity wins; the generic source rows below do not know about float receipts.
+    const inbound =
+      (await this.durableInboundSource(journalId)) ?? (await this.legacyInboundSource(journalId));
+    if (inbound) return inbound;
     const rows = await this.dataSource.query<SourceRow[]>(
       `SELECT * FROM (
           SELECT 'TRANSFER'::text AS source_type, t.id::text AS id, t.reference, t.status,
@@ -1484,7 +1577,7 @@ export class FinanceOperationsService {
       reference: row.reference,
       status: row.status,
       linkedBy: row.linked_by,
-      navigable: ['TRANSFER', 'DEPOSIT', 'WITHDRAWAL'].includes(row.source_type),
+      navigable: ['TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'BANK_TO_WALLET'].includes(row.source_type),
     };
   }
 

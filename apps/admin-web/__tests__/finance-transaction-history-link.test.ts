@@ -62,6 +62,31 @@ describe('Finance → Transaction History detail-link contract', () => {
     if (!resolved.available) expect(resolved.reason).toMatch(/reversal journal/i);
   });
 
+  it('links Bank to Wallet by the persisted immutable bank-intake UUID', () => {
+    const intake = '1c8c3340-ccec-41f5-882b-80a0c93a3a82';
+    const resolved = resolveTransactionHistoryLink(
+      { type: 'BANK_TO_WALLET', id: intake },
+      journal(),
+    );
+    expect(resolved.available && resolved.target).toEqual({ type: 'BANK_TO_WALLET', id: intake });
+  });
+
+  it('never links Bank to Wallet without a real intake UUID or from a reversal journal', () => {
+    const receiptId = '1c8c3340-ccec-41f5-882b-80a0c93a3a82';
+    const missing = resolveTransactionHistoryLink(
+      { type: 'BANK_TO_WALLET', id: 'not-a-uuid' },
+      journal(),
+    );
+    const reversal = resolveTransactionHistoryLink(
+      { type: 'BANK_TO_WALLET', id: receiptId },
+      journal('IS_REVERSAL'),
+    );
+    expect(missing.available).toBe(false);
+    if (!missing.available) expect(missing.reason).toMatch(/persisted bank-intake/i);
+    expect(reversal.available).toBe(false);
+    if (!reversal.available) expect(reversal.reason).toMatch(/reversal journal/i);
+  });
+
   it('reports unavailable for products without a history mapping', () => {
     for (const type of [
       'CUSTOMER_FUNDING',

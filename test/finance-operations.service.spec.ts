@@ -380,6 +380,107 @@ describe('FinanceOperationsService journal detail & transaction link', () => {
     expect(journal.reversal.kind).toBe('NORMAL');
   });
 
+  it('resolves Bank to Wallet from the durable bank-intake link, never the receipt id', async () => {
+    const intakeId = '1c8c3340-ccec-41f5-882b-80a0c93a3a82';
+    const receiptId = '4d4d4d4d-4444-4444-8444-444444444444';
+    const { service, dataSource } = fixture({
+      scopes: { institutions: [INSTITUTION_A] },
+      handler: (sql) => {
+        if (sql.includes('to_regclass')) return [{ present: true }];
+        if (sql.includes('FROM banking_inbound_float_links')) {
+          return [
+            {
+              source_type: 'BANK_TO_WALLET',
+              id: intakeId,
+              reference: 'MNFY-7835be17',
+              status: 'CREDITED',
+              linked_by: 'DURABLE_INBOUND_LINK',
+            },
+          ];
+        }
+        if (sql.includes('FROM inbound_funding_receipts')) return [];
+        if (sql.includes('JOIN ledger_accounts a ON a.id = l.ledger_account_id')) return [];
+        if (sql.includes('i.code AS institution_code')) return [journalRow()];
+        return [];
+      },
+    });
+    const journal = await service.getJournal(preparerA, JOURNAL_ID);
+    expect(journal.source).toMatchObject({
+      type: 'BANK_TO_WALLET',
+      id: intakeId,
+      reference: 'MNFY-7835be17',
+      status: 'CREDITED',
+      linkedBy: 'DURABLE_INBOUND_LINK',
+      navigable: true,
+    });
+    expect(journal.source?.id).not.toBe(receiptId);
+    expect(journal.source?.id).not.toBe(JOURNAL_ID);
+    expect(dataSource.calls.some((call) => call.sql.includes('banking_inbound_float_links'))).toBe(
+      true,
+    );
+  });
+
+  it('leaves a float-receipt journal without a durable link unavailable', async () => {
+    const { service } = fixture({
+      scopes: { institutions: [INSTITUTION_A] },
+      handler: (sql) => {
+        if (sql.includes('to_regclass')) return [{ present: true }];
+        if (sql.includes('JOIN ledger_accounts a ON a.id = l.ledger_account_id')) return [];
+        if (sql.includes('i.code AS institution_code')) return [journalRow()];
+        return [];
+      },
+    });
+    const journal = await service.getJournal(preparerA, JOURNAL_ID);
+    expect(journal.source).toBeNull();
+  });
+
+  it('keeps a standalone legacy receipt on its own BANK_TO_WALLET identity', async () => {
+    const receiptId = '6f6f6f6f-6666-4666-8666-666666666666';
+    const { service } = fixture({
+      scopes: { institutions: [INSTITUTION_A] },
+      handler: (sql) => {
+        if (sql.includes('to_regclass')) return [{ present: true }];
+        if (sql.includes('FROM inbound_funding_receipts')) {
+          return [
+            {
+              source_type: 'BANK_TO_WALLET',
+              id: receiptId,
+              reference: 'MNFY-LEGACY-1',
+              status: 'CREDITED',
+              linked_by: 'LEGACY_RECEIPT_JOURNAL',
+            },
+          ];
+        }
+        if (sql.includes('JOIN ledger_accounts a ON a.id = l.ledger_account_id')) return [];
+        if (sql.includes('i.code AS institution_code')) return [journalRow()];
+        return [];
+      },
+    });
+    const journal = await service.getJournal(preparerA, JOURNAL_ID);
+    expect(journal.source).toMatchObject({
+      type: 'BANK_TO_WALLET',
+      id: receiptId,
+      linkedBy: 'LEGACY_RECEIPT_JOURNAL',
+    });
+  });
+
+  it('never queries the durable link relation when this deployment predates it', async () => {
+    const { service, dataSource } = fixture({
+      scopes: { institutions: [INSTITUTION_A] },
+      handler: (sql) => {
+        if (sql.includes('to_regclass')) return [{ present: false }];
+        if (sql.includes('JOIN ledger_accounts a ON a.id = l.ledger_account_id')) return [];
+        if (sql.includes('i.code AS institution_code')) return [journalRow()];
+        return [];
+      },
+    });
+    const journal = await service.getJournal(preparerA, JOURNAL_ID);
+    expect(journal.source).toBeNull();
+    expect(
+      dataSource.calls.some((call) => call.sql.includes('FROM banking_inbound_float_links')),
+    ).toBe(false);
+  });
+
   it('withholds ledger content from a transaction.view-only principal but says why', async () => {
     const { service, dataSource } = fixture({
       scopes: { institutions: [INSTITUTION_A] },
