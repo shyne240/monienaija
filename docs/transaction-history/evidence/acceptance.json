@@ -1,9 +1,13 @@
 {
-  "date": "2026-11-25T11:05:07.279Z",
+  "date": "2026-11-25T11:34:33.747Z",
   "scope": "Disposable minimal PostgreSQL schema; production controller and AuthorizationService; audit sink and browser bearer adapter test-only. NOT full application/session integration.",
   "checks": [
     {
-      "name": "mixed history includes all four supported types",
+      "name": "mixed history includes all nine supported types",
+      "result": "PASS"
+    },
+    {
+      "name": "added product detail keys and exact-reference filters resolve independently",
       "result": "PASS"
     },
     {

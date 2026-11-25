@@ -111,6 +111,49 @@ const check = async (name, fn) => {
           `SYN-${service}`,
         ],
       );
+    await client.query(`
+ CREATE TABLE agent_float_funding_receipts(id uuid,provider_transaction_reference text,credited_at timestamptz,amount_minor bigint,currency text,institution_id uuid,journal_id uuid,agent_id uuid,wallet_account_id uuid,provider_key text,policy_id uuid,provider_observed_at timestamptz,environment text);
+ CREATE TABLE financial_authorizations(id uuid,principal_type text,principal_id text,wallet_account_id uuid,amount_minor bigint,currency text);
+ CREATE TABLE financial_commitments(id uuid,authorization_id uuid,state text,created_at timestamptz,resolved_at timestamptz,reservation_journal_id uuid,resolution_journal_id uuid,external_operation_id uuid);
+ CREATE TABLE banking_outbound_operations(id uuid,external_operation_id uuid,operation_reference text,provider_transaction_reference text,state text,created_at timestamptz);
+ CREATE TABLE banking_operation_fee_bindings(external_operation_id uuid,beneficiary_amount_minor bigint,service_fee_minor bigint,tax_minor bigint,customer_debit_minor bigint);
+ CREATE TABLE inbound_funding_receipts(id uuid,status text,created_at timestamptz,amount_minor bigint,currency text,journal_id uuid,wallet_account_id uuid,provider_key text,provider_reference_hash text,evidence_hash text,provider_observed_at timestamptz);
+ CREATE TABLE inbound_funding_observations(id uuid,provider_key text,provider_reference_hash text,evidence_hash text,provider_reference text,created_at timestamptz);
+ CREATE TABLE banking_inbound_payments(id uuid,environment text,provider_key text,provider_transaction_reference text,provider_payment_reference text,verification_state text,recorded_at timestamptz,credited_amount_minor bigint,provider_fee_minor bigint,currency text,institution_id uuid,ledger_transaction_id uuid,gross_amount_minor bigint,paid_at timestamptz);
+ CREATE TABLE customer_funding_requests(id uuid,status text,reference text,created_at timestamptz,approved_at timestamptz,rejected_at timestamptz,amount_minor bigint,currency text,journal_id uuid,customer_id uuid,channel text,external_reference text,maker_id text,checker_id text,rejection_reason text);
+ CREATE TABLE agent_funding_requests(id uuid,direction text,status text,reference text,created_at timestamptz,executed_at timestamptz,rejected_at timestamptz,amount_minor bigint,currency text,journal_id uuid,agent_id uuid,approval_id uuid,maker_principal_id text,checker_principal_id text,rejection_reason text);
+ `);
+    const foreignJournal = randomUUID();
+    await client.query('INSERT INTO ledger_journals(id,institution_id) VALUES($1,$2)', [
+      foreignJournal,
+      other,
+    ]);
+    await client.query(
+      'UPDATE transfers SET journal_id=CASE WHEN source_wallet_id=$1 THEN $2::uuid ELSE $3::uuid END',
+      [wallet, journal, foreignJournal],
+    );
+    const authorization = randomUUID();
+    await client.query(
+      "INSERT INTO financial_authorizations VALUES($1,'AGENT','synthetic-agent',$2,10000,'NGN')",
+      [authorization, wallet],
+    );
+    await client.query(
+      "INSERT INTO financial_commitments VALUES($1,$2,'RESERVED','2026-11-24T13:10:00Z',NULL,$3,NULL,$4)",
+      [randomUUID(), authorization, journal, randomUUID()],
+    );
+    await client.query(
+      "INSERT INTO banking_inbound_payments(id,provider_key,provider_transaction_reference,verification_state,recorded_at,credited_amount_minor,provider_fee_minor,currency,institution_id,gross_amount_minor) VALUES($1,'MONNIFY','SYN-BANK-TO-WALLET','VERIFIED','2026-11-24T13:10:00Z',9900,100,'NGN',$2,10000)",
+      [randomUUID(), institution],
+    );
+    await client.query(
+      "INSERT INTO customer_funding_requests(id,status,reference,created_at,amount_minor,currency,journal_id) VALUES($1,'APPROVED','SYN-CUSTOMER-FUNDING','2026-11-24T13:10:00Z',10000,'NGN',$2)",
+      [randomUUID(), journal],
+    );
+    for (const direction of ['FUND', 'DEFUND'])
+      await client.query(
+        "INSERT INTO agent_funding_requests(id,direction,status,reference,created_at,amount_minor,currency,journal_id) VALUES($1,$2,'EXECUTED',$3,'2026-11-24T13:10:00Z',10000,'NGN',$4)",
+        [randomUUID(), direction, 'SYN-AGENT-' + direction, journal],
+      );
     await client.end();
     // Use the cluster's private client config; no existing env/DB configuration is read.
     const cfg = cluster.getPgClient().connectionParameters;
@@ -136,11 +179,33 @@ const check = async (name, fn) => {
       assuranceLevel: 'MFA',
     };
     const req = { authorizationPrincipal: principal };
-    await check('mixed history includes all four supported types', async () => {
+    await check('mixed history includes all nine supported types', async () => {
       const r = await controller.list(req, { limit: '100' });
-      assert.equal(r.items.length, 46);
-      assert.equal(new Set(r.items.map((x) => x.type)).size, 4);
+      assert.equal(r.items.length, 51);
+      assert.equal(new Set(r.items.map((x) => x.type)).size, 9);
     });
+    await check(
+      'added product detail keys and exact-reference filters resolve independently',
+      async () => {
+        const all = await controller.list(req, { limit: '100' });
+        for (const type of [
+          'WALLET_TO_BANK',
+          'BANK_TO_WALLET',
+          'CUSTOMER_FUNDING',
+          'AGENT_FUNDING',
+          'AGENT_DEFUNDING',
+        ]) {
+          const row = all.items.find((x) => x.type === type);
+          assert(row);
+          const detail = await controller.detail(req, type, row.id);
+          assert.equal(detail.id, row.id);
+          assert.equal(detail.type, type);
+          const filtered = await controller.list(req, { type, reference: row.reference });
+          assert.equal(filtered.items.length, 1);
+          assert.equal(filtered.items[0].id, row.id);
+        }
+      },
+    );
     await check('combined Lagos date, type, status and exact reference filters', async () => {
       const r = await controller.list(req, {
         from: '2026-11-24',
@@ -170,8 +235,8 @@ const check = async (name, fn) => {
           seen.push(...r.items.map((x) => x.id));
           cursor = r.nextCursor;
         } while (cursor);
-        assert.equal(seen.length, 46);
-        assert.equal(new Set(seen).size, 46);
+        assert.equal(seen.length, 51);
+        assert.equal(new Set(seen).size, 51);
       },
     );
     await check(

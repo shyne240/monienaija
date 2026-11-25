@@ -131,6 +131,145 @@ describe('local development 11-role fixture (real migrations, PostgreSQL, Nest H
     ).toEqual(rolesBefore);
   });
 
+  it('transaction history uses real role sessions, historical institution scope, direct detail denial and immediate revocation', async () => {
+    const fs = require('node:fs');
+    const { HISTORY_SQL } = require('../src/admin/transaction-history.controller');
+    const out = 'docs/transaction-history/evidence';
+    fs.mkdirSync(out, { recursive: true });
+    const credentialsBefore = await ds.query(
+      'SELECT id,password_hash FROM local_admin_credentials ORDER BY id',
+    );
+    const login = async (role: string) =>
+      (
+        await request(app.getHttpServer())
+          .post(loginPath)
+          .send({ email: seed.emailFor(role), password: seed.passwordFor(role) })
+          .expect(201)
+      ).body;
+    const ops = await login('OPERATIONS');
+    const auditor = await login('FINANCE_AUDITOR');
+    const treasury = await login('TREASURY');
+    const institution = async () =>
+      (
+        await ds.query(
+          `INSERT INTO financial_institutions(reference,code,legal_name,institution_type,created_by) VALUES($1,$2,'History synthetic institution','PARTNER','test') RETURNING id`,
+          [randomUUID(), `H_${randomUUID().slice(0, 8).toUpperCase()}`],
+        )
+      )[0].id;
+    const own = await institution(),
+      foreign = await institution();
+    await ds.query(
+      `INSERT INTO workforce_institution_assignments(principal_id,institution_id,status,granted_by) VALUES($1,$2,'ACTIVE','test')`,
+      [ops.principal.principalId, own],
+    );
+    const inbound = async (inst: string, ref: string) =>
+      (
+        await ds.query(
+          `INSERT INTO banking_inbound_payments(institution_id,provider_key,environment,provider_transaction_reference,currency,gross_amount_minor,provider_fee_minor,credited_amount_minor,verification_state) VALUES($1,'MONNIFY','sandbox',$2,'NGN',10000,100,9900,'VERIFIED') RETURNING id`,
+          [inst, ref],
+        )
+      )[0].id;
+    const ownId = await inbound(own, 'HISTORY-BANK-OWN'),
+      foreignId = await inbound(foreign, 'HISTORY-BANK-FOREIGN');
+    const base = '/api/v1/internal/admin/transaction-history';
+    const read = (path: string, session: any) =>
+      request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${session.accessToken}`);
+    const list = await read(base + '?type=BANK_TO_WALLET', ops).expect(200);
+    expect(list.body.items.map((x: any) => x.id)).toEqual([ownId]);
+    await read(base + '/BANK_TO_WALLET/' + ownId, ops).expect(200);
+    await read(base + '/BANK_TO_WALLET/' + foreignId, ops).expect(404);
+    expect(
+      (await read(base + '?reference=HISTORY-BANK-FOREIGN', ops).expect(200)).body.items,
+    ).toEqual([]);
+    expect((await read(base + '?type=BANK_TO_WALLET', auditor).expect(200)).body.items.length).toBe(
+      2,
+    );
+    await read(base, treasury).expect(403);
+    await request(app.getHttpServer()).get(base).expect(401);
+    const plans = await ds.query(
+      `EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${HISTORY_SQL} SELECT id FROM scoped WHERE type='BANK_TO_WALLET' ORDER BY created_at DESC,type DESC,id DESC LIMIT 21`,
+      [false, ops.principal.principalId],
+    );
+    fs.writeFileSync(
+      out + '/migrated-query-plan.json',
+      JSON.stringify(
+        {
+          fixture:
+            'two inbound rows, fully migrated schema; not a production-scale performance certification',
+          plan: plans,
+        },
+        null,
+        2,
+      ),
+    );
+    if (process.env.HISTORY_BROWSER === 'yes') {
+      await app.listen(3099, '0.0.0.0');
+      const { chromium } = require('playwright');
+      const binary = JSON.parse(
+        spawnSync(
+          process.execPath,
+          [
+            '-e',
+            "const c=require('@sparticuz/chromium').default;c.executablePath().then(path=>console.log(JSON.stringify({path,args:c.args})))",
+          ],
+          { encoding: 'utf8' },
+        ).stdout,
+      );
+      const browser = await chromium.launch({
+        executablePath: binary.path,
+        args: binary.args,
+        headless: true,
+      });
+      try {
+        const page = await browser.newPage({ viewport: { width: 1512, height: 982 } });
+        await page.goto('http://127.0.0.1:5173');
+        await page.getByPlaceholder('Workforce email').fill(seed.emailFor('OPERATIONS'));
+        await page.getByPlaceholder('••••••••••••').fill(seed.passwordFor('OPERATIONS'));
+        await page.getByRole('button', { name: 'Sign in', exact: false }).click();
+        await page.getByTestId('section-money').click();
+        await page.getByTestId('nav-transfers').click();
+        await page.getByText('HISTORY-BANK-OWN', { exact: true }).waitFor();
+        await page.screenshot({ path: out + '/real-workforce-bank-to-wallet.png', fullPage: true });
+        await page.getByRole('link', { name: 'View details' }).click();
+        await page.getByRole('dialog').waitFor();
+        await page.screenshot({ path: out + '/real-workforce-bank-detail.png', fullPage: true });
+      } finally {
+        await browser.close();
+      }
+    }
+    await ds.query(
+      `UPDATE workforce_institution_assignments SET status='REVOKED',revoked_by='test',revoked_at=clock_timestamp() WHERE principal_id=$1`,
+      [ops.principal.principalId],
+    );
+    expect((await read(base, ops).expect(200)).body.items).toEqual([]);
+    await read(base + '/BANK_TO_WALLET/' + ownId, ops).expect(404);
+    expect(
+      await ds.query('SELECT id,password_hash FROM local_admin_credentials ORDER BY id'),
+    ).toEqual(credentialsBefore);
+    fs.writeFileSync(
+      out + '/real-workforce-results.json',
+      JSON.stringify(
+        {
+          checks: [
+            'full migration chain',
+            'unchanged OPERATIONS/FINANCE_AUDITOR/TREASURY local passwords',
+            'real HTTP local login and workforce bearer sessions',
+            'own institution list/detail allowed',
+            'foreign reference list empty and detail 404',
+            'platform auditor allowed',
+            'treasury 403 and unauthenticated 401',
+            'assignment revocation immediate in same session',
+            'password hashes unchanged',
+          ],
+          browser: process.env.HISTORY_BROWSER === 'yes',
+          result: 'PASS',
+        },
+        null,
+        2,
+      ),
+    );
+  }, 180000);
+
   it('repairs a known fixture after issuer changes, without deleting the previous assignment', async () => {
     const email = seed.emailFor('OPERATIONS');
     const current = seed.principalFor(email, config);

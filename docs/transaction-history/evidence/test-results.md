@@ -23,3 +23,14 @@
 - Browser: Chromium 153 (Playwright + npm-provided serverless executable), full Vite SPA, real PostgreSQL-backed controller HTTP requests; **synthetic principal adapter and stub audit sink**. Not production login/session middleware evidence.
 - Minimal fixture schema is not a migration test. Full backend suite, full application bootstrap, seeded-account sign-in, large-volume query plans, banking/funding projections remain unverified.
 - Earlier full frontend run identified three assertions still expecting removed navigation. Updated those assertions to the unified contract; retained existing direct-component fee/trace/C2C tests elsewhere. Final full run is green; no tests were skipped.
+
+## Follow-up run (current nine-type implementation)
+
+- Full Admin Web: **99 suites / 996 tests passed** again.
+- Fully migrated disposable PostgreSQL + real AppModule/local sessions: **1 suite / 6 tests passed**, including new history role/scope/revocation test. Optional Chromium run passed actual email/password sign-in and Bank to Wallet list/detail; password hashes compared unchanged.
+- Existing product execution regressions: agent bank commitment + banking inbound + banking operation records **3 suites / 41 tests passed**; customer funding + governed agent funding + institutional float funding **3 suites / 61 tests passed**.
+- Focused backend unit tests: **2 suites / 6 tests passed** again.
+- Updated read harness: nine supported types, 51 scoped business rows, seven-row pages with preserved microsecond keys; added-type independent detail and reference checks. This remains a minimal-schema/auth-adapter test, NOT the real-session browser run.
+- Real-session artifacts: `real-workforce-results.json`, `real-workforce-bank-to-wallet.png`, `real-workforce-bank-detail.png`. Query plan: `migrated-query-plan.json` (two-row migrated fixture; no production volume claim).
+- Nest build, Admin Web typecheck/build and focused ESLint passed. See FOLLOWUP-COVERAGE.md for explicit withheld records, data-change proposal, authorization decision and unresolved matrix/identity/performance gates.
+- CI status is reported on PR #23 at its exact pushed SHA; earlier-head CI is not evidence for this follow-up. No merge request or approval is implied.

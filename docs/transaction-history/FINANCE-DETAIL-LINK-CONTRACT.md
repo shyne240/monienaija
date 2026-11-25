@@ -10,7 +10,7 @@ transactionDetailLink(type, id);
 // => #transaction-history/<TYPE>/<UUID>
 ```
 
-Supported TYPE values in this patch: `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT`, `CASH_TO_CASH`.
+Existing TYPE values (unchanged): `WALLET_TRANSFER`, `CASH_IN`, `CASH_OUT`, `CASH_TO_CASH`.
 
 Use the **business transaction key**, not an arbitrary ledger-line, event or journal ID:
 
@@ -38,3 +38,11 @@ References are display/search values, not globally unique keys. Exact-reference 
 2. Navigation owner: retain legacy view aliases but do not reintroduce separate Transfers/Deposits/Withdrawals/Cash-to-cash menu entries.
 3. Authorization owner: decide whether list uses existing `transaction.view` (this draft) or a newly activated `transaction.search`; no entitlement changes made here.
 4. Product + Finance: decide operational float funding/defunding visibility and primitive deposit/withdrawal taxonomy before new filter types are exposed.
+
+## Follow-up added products
+
+Additional keys: `WALLET_TO_BANK` (financial commitment UUID for customer OR agent), `BANK_TO_WALLET` (banking evidence UUID when matched, otherwise credited receipt UUID), `CUSTOMER_FUNDING` (staff funding request UUID), `AGENT_FUNDING` (governed request UUID or institutional float receipt UUID), `AGENT_DEFUNDING` (governed request UUID).
+
+`CASH_IN` and `CASH_OUT` now display **Cash to Wallet** and **Wallet to Cash** without changing stored keys. Cash to Cash remains on its parent. No generic deposit/withdrawal type.
+
+Authorization decision: bounded list and detail both require existing `transaction.view`; no role grants added and `transaction.search` remains reserved/non-assignable. See FOLLOWUP-COVERAGE.md for cross-pipeline inbound identity limitations and withheld unscoped records. Do not promise new inbound lifecycle links beyond tested mappings until that draft gate is resolved.

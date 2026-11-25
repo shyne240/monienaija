@@ -1,5 +1,7 @@
 # Transaction History workspace — implementation and review packet
 
+> **Current follow-up:** [FOLLOWUP-COVERAGE.md](FOLLOWUP-COVERAGE.md) supersedes the initial four-type scope, authorization decision and real-session blockers below. The original packet is retained as historical evidence; do not treat its omissions as current implementation status.
+
 ## Base and ownership
 
 - Base: `arena/5-main-web-integration` at **`41edf587c262edafbd3eb2cc1b3042c614a9730e`**. Verified with `git ls-remote origin refs/heads/arena/5-main-web-integration` before editing. No newer base existed at that check.

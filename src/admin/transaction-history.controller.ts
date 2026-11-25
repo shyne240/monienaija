@@ -11,7 +11,17 @@ import { DataSource } from 'typeorm';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
-export const HISTORY_TYPES = ['WALLET_TRANSFER', 'CASH_IN', 'CASH_OUT', 'CASH_TO_CASH'];
+export const HISTORY_TYPES = [
+  'WALLET_TRANSFER',
+  'CASH_IN',
+  'CASH_OUT',
+  'CASH_TO_CASH',
+  'WALLET_TO_BANK',
+  'BANK_TO_WALLET',
+  'CUSTOMER_FUNDING',
+  'AGENT_FUNDING',
+  'AGENT_DEFUNDING',
+];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function lagosBoundary(value: string): string {
   if (
@@ -27,7 +37,7 @@ export function lagosBoundary(value: string): string {
 export const HISTORY_SQL = `WITH history AS (
  SELECT t.id, 'WALLET_TRANSFER'::text AS type, t.status::text, COALESCE(t.payment_reference,t.reference,t.id::text) AS reference,
  t.created_at, t.completed_at, t.amount_minor::text, t.fee_minor::text, t.vat_minor::text, t.currency,
- CASE WHEN t.journal_id IS NOT NULL THEN posted.institution_id ELSE w.institution_id END AS institution_id, ARRAY[t.journal_id]::uuid[] AS journals,
+ posted.institution_id AS institution_id, ARRAY[t.journal_id]::uuid[] AS journals,
  jsonb_build_object('sourceWalletId',t.source_wallet_id,'destinationWalletId',t.destination_wallet_id,'failureCode',t.failure_code,'failureMessage',t.failure_message) AS investigation
  FROM transfers t JOIN wallet_accounts w ON w.id=t.source_wallet_id LEFT JOIN ledger_journals posted ON posted.id=t.journal_id
  UNION ALL
@@ -44,6 +54,41 @@ export const HISTORY_SQL = `WITH history AS (
  j.metadata->>'amountMinor','0','0',j.currency,j.institution_id,ARRAY[j.id]::uuid[],
  jsonb_build_object('agentId',j.metadata->>'agentId','customerId',COALESCE(j.metadata->>'customerId',j.metadata->>'recipientCustomerId'))
  FROM ledger_journals j WHERE j.metadata->>'canonicalService' IN ('CASH_IN','CASH_OUT') AND j.reversal_of_journal_id IS NULL
+ UNION ALL
+ SELECT fc.id,'WALLET_TO_BANK',fc.state,COALESCE(bo.operation_reference,fc.id::text),fc.created_at,fc.resolved_at,
+ COALESCE(fb.beneficiary_amount_minor,fa.amount_minor)::text,COALESCE(fb.service_fee_minor,0)::text,COALESCE(fb.tax_minor,0)::text,fa.currency,
+ j.institution_id,ARRAY[fc.reservation_journal_id,fc.resolution_journal_id]::uuid[],
+ jsonb_build_object('principalType',fa.principal_type,'partyId',fa.principal_id,'walletId',fa.wallet_account_id,'providerReference',bo.provider_transaction_reference,'providerState',bo.state,'externalOperationId',fc.external_operation_id,'totalDebitMinor',fb.customer_debit_minor::text)
+ FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id
+ JOIN ledger_journals j ON j.id=fc.reservation_journal_id
+ LEFT JOIN LATERAL (SELECT b.* FROM banking_outbound_operations b WHERE b.external_operation_id=fc.external_operation_id ORDER BY b.created_at,b.id LIMIT 1) bo ON true
+ LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id=fc.external_operation_id
+ UNION ALL
+ SELECT COALESCE(bank.id,r.id),'BANK_TO_WALLET',r.status,COALESCE(o.provider_reference,r.id::text),COALESCE(bank.recorded_at,r.created_at),j.posted_at,
+ r.amount_minor::text,COALESCE(bank.provider_fee_minor,0)::text,'0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('walletId',r.wallet_account_id,'provider',r.provider_key,'providerObservedAt',r.provider_observed_at)
+ FROM inbound_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
+ LEFT JOIN LATERAL (SELECT b.id,b.recorded_at,b.provider_fee_minor FROM banking_inbound_payments b WHERE b.provider_key=r.provider_key AND encode(sha256(convert_to(b.provider_transaction_reference,'UTF8')),'hex')=r.provider_reference_hash AND b.institution_id=j.institution_id ORDER BY b.recorded_at,b.id LIMIT 1) bank ON true
+ LEFT JOIN LATERAL (SELECT x.provider_reference FROM inbound_funding_observations x WHERE x.provider_key=r.provider_key AND x.provider_reference_hash=r.provider_reference_hash AND x.evidence_hash=r.evidence_hash ORDER BY x.created_at,x.id LIMIT 1) o ON true
+ WHERE r.status='CREDITED'
+ UNION ALL
+ SELECT b.id,'BANK_TO_WALLET',b.verification_state,b.provider_transaction_reference,b.recorded_at,NULL::timestamptz,
+ b.credited_amount_minor::text,b.provider_fee_minor::text,'0',b.currency,b.institution_id,ARRAY[b.ledger_transaction_id]::uuid[],
+ jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END)
+ FROM banking_inbound_payments b WHERE NOT EXISTS (SELECT 1 FROM agent_float_funding_receipts af WHERE af.institution_id=b.institution_id AND af.provider_key=b.provider_key AND af.environment=b.environment AND af.provider_transaction_reference=b.provider_transaction_reference) AND NOT EXISTS (
+ SELECT 1 FROM inbound_funding_receipts r JOIN ledger_journals receipt_j ON receipt_j.id=r.journal_id WHERE r.provider_key=b.provider_key AND receipt_j.institution_id=b.institution_id AND r.provider_reference_hash=encode(sha256(convert_to(b.provider_transaction_reference,'UTF8')),'hex'))
+ UNION ALL
+ SELECT r.id,'AGENT_FUNDING','CREDITED',r.provider_transaction_reference,r.credited_at,j.posted_at,r.amount_minor::text,'0','0',r.currency,r.institution_id,ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('agentId',r.agent_id,'walletId',r.wallet_account_id,'provider',r.provider_key,'policyId',r.policy_id,'providerObservedAt',r.provider_observed_at,'fundingSource','INSTITUTION_BANK_RECEIPT')
+ FROM agent_float_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
+ UNION ALL
+ SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason)
+ FROM customer_funding_requests r JOIN ledger_journals j ON j.id=r.journal_id
+ UNION ALL
+ SELECT r.id,CASE r.direction WHEN 'FUND' THEN 'AGENT_FUNDING' ELSE 'AGENT_DEFUNDING' END,r.status,r.reference,r.created_at,COALESCE(r.executed_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
+ jsonb_build_object('agentId',r.agent_id,'approvalId',r.approval_id,'makerId',r.maker_principal_id,'checkerId',r.checker_principal_id,'rejectionReason',r.rejection_reason)
+ FROM agent_funding_requests r JOIN ledger_journals j ON j.id=r.journal_id
 ), scoped AS (SELECT * FROM history h WHERE ($1::boolean OR EXISTS (
  SELECT 1 FROM workforce_institution_assignments a WHERE a.principal_id=$2 AND a.status='ACTIVE' AND a.institution_id=h.institution_id
 )))`;

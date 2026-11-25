@@ -8,9 +8,14 @@ import './transaction-history.css';
 
 const types = {
   WALLET_TRANSFER: 'Wallet transfer',
-  CASH_IN: 'Cash-in',
-  CASH_OUT: 'Cash-out',
-  CASH_TO_CASH: 'Cash to cash',
+  CASH_IN: 'Cash to Wallet',
+  CASH_OUT: 'Wallet to Cash',
+  CASH_TO_CASH: 'Cash to Cash',
+  WALLET_TO_BANK: 'Wallet to Bank',
+  BANK_TO_WALLET: 'Bank to Wallet',
+  CUSTOMER_FUNDING: 'Customer Funding',
+  AGENT_FUNDING: 'Agent Funding',
+  AGENT_DEFUNDING: 'Agent Defunding',
 };
 type Row = {
   id: string;
@@ -134,8 +139,8 @@ function History({ allowed }: { allowed: boolean }) {
         actions={<button onClick={() => setRevision((x) => x + 1)}>Refresh history</button>}
       />
       <p className="th-muted" role="note">
-        Current coverage: wallet transfers, agent cash-in, agent cash-out and cash to cash. Bank
-        transfers and funding are not yet included in this workspace.
+        History includes posted funding and bank receipts. Funding requests without historical
+        ledger attribution and unposted inbound observations are not included.
       </p>
       <section className="th-card">
         <form
@@ -200,6 +205,13 @@ function History({ allowed }: { allowed: boolean }) {
                 'EXPIRED',
                 'POSTED',
                 'REVERSED',
+                'RESERVED',
+                'SETTLED',
+                'RELEASED',
+                'APPROVED',
+                'REJECTED',
+                'EXECUTED',
+                'CREDITED',
               ].map((v) => (
                 <option key={v}>{v}</option>
               ))}

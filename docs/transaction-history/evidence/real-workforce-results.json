@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "full migration chain",
+    "unchanged OPERATIONS/FINANCE_AUDITOR/TREASURY local passwords",
+    "real HTTP local login and workforce bearer sessions",
+    "own institution list/detail allowed",
+    "foreign reference list empty and detail 404",
+    "platform auditor allowed",
+    "treasury 403 and unauthenticated 401",
+    "assignment revocation immediate in same session",
+    "password hashes unchanged"
+  ],
+  "browser": true,
+  "result": "PASS"
+}
