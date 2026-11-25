@@ -194,6 +194,27 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
               Evaluated {new Date(readiness.evaluatedAt).toLocaleString()} against the same gate
               that authorizes live Agent operations. Reading this did not attempt any operation.
             </p>
+            {/*
+              Configuration the class still needs. Kept separate from the permitted/denied service
+              list above: a service can be PERMITTED and still have no limit profile or no fee rule,
+              and conflating the two would let an operator read "permitted" as "configured".
+            */}
+            {readiness.missingConfiguration && readiness.missingConfiguration.length > 0 ? (
+              <div data-testid="agent-class-missing-configuration">
+                <strong>Configuration this class still needs</strong>
+                <ul className="agent-governance__list">
+                  {readiness.missingConfiguration.map((gap) => (
+                    <li key={gap.code} data-testid={`agent-class-missing-${gap.code}`}>
+                      <strong>{gap.surface}</strong> — {gap.detail}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mn-agent-workspace__description">
+                  Missing configuration does not block a class switch. It does mean some operations
+                  would run with undefined limits or charges rather than generous ones.
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

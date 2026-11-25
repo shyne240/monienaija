@@ -23,12 +23,15 @@ import {
 import {
   type AgentClassHistoryEntry,
   type AgentClassImpact,
+  type AgentClassOnboardingDefault,
   type AgentClassReadiness,
   fetchAgentClassHistory,
+  fetchAgentClassOnboardingDefault,
   fetchAgentClassReadiness,
   previewAgentClassImpact,
   switchAgentClass,
 } from '../../services/agent-class-lifecycle-api';
+import { AgentOnboardingPreActivationPanel } from '../../components/AgentOnboardingPreActivationPanel';
 import { AgentUnifiedHistoryPanel } from '../../components/AgentUnifiedHistoryPanel';
 import { AgentTransactionPinSupportPanel } from '../../components/AgentTransactionPinSupportPanel';
 
@@ -800,6 +803,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
    * action (or overwrite an unrelated lifecycle message).
    */
   const [classCatalogError, setClassCatalogError] = useState('');
+  /**
+   * The backend's answer to "is there an approved default class?".
+   *
+   * `null` until it has been read. Its `explicitSelectionRequired` flag — not any client-side
+   * ordering — decides whether the onboarding form may pre-select anything.
+   */
+  const [classOnboardingDefault, setClassOnboardingDefault] =
+    useState<AgentClassOnboardingDefault | null>(null);
   // V1-AGENT-CLASS-LIFECYCLE-01 — readiness/impact/history for the inspected Agent. Kept separate
   // from `classCatalog` (the catalogue) so a failed projection never blanks out class names.
   const [classReadiness, setClassReadiness] = useState<AgentClassReadiness | null>(null);
@@ -1210,10 +1221,29 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     } finally {
       setClassCatalogLoading(false);
     }
+    /*
+     * Read the default separately. A failure here must NOT blank the catalogue: an operator can
+     * still choose a class by hand, and the form simply keeps requiring an explicit selection
+     * (`classOnboardingDefault` stays null, which is treated exactly like "no approved default").
+     */
+    try {
+      setClassOnboardingDefault(await fetchAgentClassOnboardingDefault());
+    } catch {
+      setClassOnboardingDefault(null);
+    }
   };
 
   const loadApplications = async () => {
     if (!canReviewApplications) return;
+    /*
+     * The review queue renders each application's class by looking it up in `classCatalog`. Loading
+     * the queue without the catalogue produced a table where an APPROVED row could not resolve its
+     * own class — the pre-activation panel then told the operator "this class is not in the loaded
+     * catalogue, do not activate", on a class that does exist. Fetch both together.
+     */
+    if (canView && classCatalog.length === 0) {
+      void loadClassCatalog();
+    }
     const generation = ++applicationsReadGeneration.current;
     const uncertaintyAtStart = applicationsUncertaintyVersion.current;
     setApplicationsLoading(true);
@@ -1284,14 +1314,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setOnboardingError('');
     setApplicationsError('');
     setApplicationsMsg('');
-    // The class decides which services the applicant's Agent may ever perform, so the default is
-    // the same deterministic "approved default" the backend computes (earliest-created ACTIVE
-    // class) and the form says so. It is never an invisible first-row pick.
-    const activeClasses = classCatalog
-      .filter((c) => c.isActive !== false)
-      .slice()
-      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
-    const initial = { ...EMPTY_APPLICATION_FORM, agentClassId: activeClasses[0]?.id ?? '' };
+    // The class decides which services the applicant's Agent may ever perform — and therefore its
+    // fees, commissions and limits — so it is NEVER pre-filled from list order. The oldest active
+    // class is an ordering accident, not an approval, and a default is offered only when a policy
+    // or configuration record appoints one (`selectedDefaultClass`, always null today). The operator
+    // must choose.
+    const initial = { ...EMPTY_APPLICATION_FORM };
     applicationBaseline.current = initial;
     setApplicationForm(initial);
     if (canView && classCatalog.length === 0) {
@@ -1347,33 +1375,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
-  // Auto-select first active Agent class when creating a new draft and catalog arrives
-  useEffect(() => {
-    if (!onboardingOpen || editingDraftId) return;
-    if (applicationForm.agentClassId) return;
-    const firstActive = classCatalog
-      .filter((c) => c.isActive !== false)
-      .slice()
-      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))[0];
-    if (firstActive) {
-      applicationBaseline.current = {
-        ...applicationBaseline.current,
-        agentClassId: firstActive.id,
-      };
-      setApplicationForm((cur) => ({ ...cur, agentClassId: firstActive.id }));
-    }
-  }, [onboardingOpen, editingDraftId, classCatalog, applicationForm.agentClassId]);
-
   /**
-   * The same deterministic default the backend calls the "approved default": the earliest-created
-   * ACTIVE class. Labelled as computed in the UI because there is no stored default flag.
+   * The ONLY class the console may pre-select, or `null`.
+   *
+   * Sourced from `GET /internal/agents/classes/default`, which reports a class only when an approved
+   * policy or configuration record appoints one. It is `null` today — no `is_default` column and no
+   * agent-class default policy exists — so the onboarding form requires an explicit choice. Believing
+   * a rule in the client instead is how "oldest row wins" quietly becomes policy.
    */
-  const computedDefaultClassId =
-    classCatalog
-      .filter((c) => c.isActive !== false)
-      .slice()
-      .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))[0]?.id ??
-    '';
+  const selectedDefaultClassId =
+    classOnboardingDefault && !classOnboardingDefault.explicitSelectionRequired
+      ? (classOnboardingDefault.approvedDefault?.id ?? '')
+      : '';
+  const selectedDefaultClass =
+    classCatalog.find((c) => c.id === selectedDefaultClassId) ?? null;
   const selectedOnboardingClass = classCatalog.find((c) => c.id === applicationForm.agentClassId);
   const requiredInfoKeys = extractClassRequirementKeys(
     selectedOnboardingClass?.requiredInformation,
@@ -3030,18 +3045,43 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                           {activeClassOptions.map((cls) => (
                             <option key={cls.id} value={cls.id}>
                               {cls.name} ({cls.code})
-                              {cls.id === computedDefaultClassId ? ' — approved default' : ''}
+                              {/*
+                                A "default" suffix appears ONLY for a class a policy/configuration
+                                record appoints. The oldest active class gets no label: it is not
+                                more approved than its siblings, and implying otherwise is how an
+                                operator accepts services, fees, commissions and limits they never
+                                reviewed.
+                              */}
+                              {cls.id === selectedDefaultClassId ? ' — approved default' : ''}
                             </option>
                           ))}
                         </select>
                         <span style={smallMuted} data-testid="onboarding-class-provenance">
-                          {applicationForm.agentClassId === computedDefaultClassId
-                            ? 'Pre-filled with the approved default class'
-                            : 'Explicitly selected'}
+                          {/*
+                            Only claim a "default" when one actually exists AND this is that class.
+                            With no policy/configuration record there is no default at all, so an
+                            empty selector must not read as "pre-filled".
+                          */}
+                          {applicationForm.agentClassId === ''
+                            ? 'No class selected'
+                            : selectedDefaultClassId !== '' &&
+                                applicationForm.agentClassId === selectedDefaultClassId
+                              ? 'Pre-filled with the approved default class'
+                              : 'Explicitly selected by you'}
                           {applicationForm.agentClassId
-                            ? ` — ${selectedOnboardingClass ? `${selectedOnboardingClass.name} (${selectedOnboardingClass.code})` : applicationForm.agentClassId}. That class decides which services this Agent will be permitted to perform.`
-                            : ' — choose the class this Agent will operate under.'}
+                            ? ` — ${selectedOnboardingClass ? `${selectedOnboardingClass.name} (${selectedOnboardingClass.code})` : applicationForm.agentClassId}. That class decides which services this Agent will be permitted to perform, and which fees, commissions and limits apply.`
+                            : ' — choose the class this Agent will operate under. No default is applied.'}
                         </span>
+                        {applicationForm.agentClassId === '' ? (
+                          <span
+                            style={smallMuted}
+                            role="status"
+                            data-testid="onboarding-class-required"
+                          >
+                            {classOnboardingDefault?.approvedDefaultBasis ??
+                              'No approved Agent class default exists: no policy or configuration record appoints one. Select a class explicitly.'}
+                          </span>
+                        ) : null}
                       </>
                     ) : (
                       <input
@@ -3501,14 +3541,30 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   </>
                                 )}
                                 {canActivateFromApp && (
-                                  <button
-                                    type="button"
-                                    style={successBtn}
-                                    disabled={busy}
-                                    onClick={() => void handleApplicationAction(app, 'activate')}
-                                  >
-                                    Activate agent
-                                  </button>
+                                  <>
+                                    <AgentOnboardingPreActivationPanel
+                                      agentClassId={app.agentClassId}
+                                      agentClass={
+                                        matchedClass
+                                          ? {
+                                              id: matchedClass.id,
+                                              code: matchedClass.code,
+                                              name: matchedClass.name,
+                                              isActive: matchedClass.isActive,
+                                              applicableServices: matchedClass.applicableServices,
+                                            }
+                                          : null
+                                      }
+                                    />
+                                    <button
+                                      type="button"
+                                      style={successBtn}
+                                      disabled={busy}
+                                      onClick={() => void handleApplicationAction(app, 'activate')}
+                                    >
+                                      Activate agent
+                                    </button>
+                                  </>
                                 )}
                                 {app.agentId && (
                                   <button

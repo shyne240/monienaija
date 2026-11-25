@@ -61,11 +61,40 @@ export interface AgentClassReadiness {
   currentClassId: string | null;
   approvedDefault: AgentClassView | null;
   approvedDefaultBasis: string;
+  /** True when no policy/configuration record appoints a default, so the operator MUST choose. */
+  explicitSelectionRequired: boolean;
+  /** Configuration still needed before this Agent can transact. Empty = nothing known missing. */
+  missingConfiguration: AgentClassMissingConfiguration[];
   deniedServices: AgentServiceDenial[];
   allowedServices: string[];
   blockedBy: AgentServiceCapabilityReason | null;
   canOperate: boolean;
   evaluatedAt: string;
+}
+
+/**
+ * A gap an operator has to close before the Agent can transact.
+ *
+ * Advisory only: it never blocks a class switch, because a class mid-configuration is a legitimate
+ * state. What it refuses to do is let an absent limit read as "unlimited" or an absent fee rule read
+ * as "free" — both are reported against the surface that owns them.
+ */
+export interface AgentClassMissingConfiguration {
+  code:
+    | 'NO_APPLICABLE_SERVICES'
+    | 'CLASS_INACTIVE'
+    | 'NO_EFFECTIVE_LIMITS'
+    | 'NO_EFFECTIVE_FEE'
+    | 'NO_EFFECTIVE_COMMISSION';
+  surface: 'AGENT_CLASSES' | 'LIMITS' | 'FEES' | 'COMMISSIONS';
+  detail: string;
+}
+
+/** The onboarding default, as the backend reports it. `null` until a record appoints one. */
+export interface AgentClassOnboardingDefault {
+  approvedDefault: AgentClassView | null;
+  approvedDefaultBasis: string;
+  explicitSelectionRequired: boolean;
 }
 
 export interface AgentClassImpact {
@@ -171,6 +200,17 @@ export function fetchAgentClass(agentId: string): Promise<{
   approvedDefaultBasis: string;
 }> {
   return ApiClient.get(`/internal/agents/${encodeURIComponent(agentId)}/class`);
+}
+
+/**
+ * The class an approved policy/configuration record appoints as the onboarding default.
+ *
+ * The console asks rather than assuming: there is no `agent_classes.is_default` column and no
+ * agent-class default policy record, so this answers `approvedDefault: null` with a basis string
+ * explaining why — and the onboarding form therefore requires an explicit choice.
+ */
+export function fetchAgentClassOnboardingDefault(): Promise<AgentClassOnboardingDefault> {
+  return ApiClient.get('/internal/agents/classes/default');
 }
 
 export function fetchAgentClassReadiness(agentId: string): Promise<AgentClassReadiness> {

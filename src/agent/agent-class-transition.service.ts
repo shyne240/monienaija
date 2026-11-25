@@ -14,7 +14,11 @@ import { AgentClass } from './agent-class.entity';
 import { AgentStatus } from './agent.enums';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import type { AgentServiceCapabilityEvaluation } from './agent-service-capability.types';
-import { AgentService, normalizeAgentService } from './agent-service.enum';
+import {
+  AgentService,
+  PRODUCT_CODES_BY_SERVICE,
+  normalizeAgentService,
+} from './agent-service.enum';
 
 /** Audit vocabulary this service owns. Rows are the ONLY history store (no new table). */
 export const AGENT_CLASS_AUDIT_ENTITY = 'AGENT';
@@ -51,15 +55,48 @@ export interface AgentClassReadiness {
   /** Class currently persisted on `agents.agent_class_id`, resolved (or explicitly unresolved). */
   currentClass: AgentClassView | null;
   currentClassId: string | null;
-  /** Deterministic, backend-computed default. No `agent_classes.is_default` column exists. */
+  /**
+   * The class an operator may be offered as a DEFAULT, or `null`.
+   *
+   * `null` is the honest answer in the current schema: no `agent_classes.is_default` column, no
+   * agent-class default policy table and no configuration record exists that appoints one class as
+   * the default. A class is therefore reported here ONLY if such a record is ever introduced and
+   * resolves; the oldest-active row is an ordering accident, not an approval.
+   */
   approvedDefault: AgentClassView | null;
+  /** Why `approvedDefault` is null (or, if ever populated, which record appoints it). */
   approvedDefaultBasis: string;
+  /** Always true today. The UI must require an explicit operator selection. */
+  explicitSelectionRequired: boolean;
   /** Every service denied for the Agent's CURRENT class, in the shared evaluation order. */
   deniedServices: AgentServiceDenial[];
   allowedServices: AgentService[];
   blockedBy: string | null;
   canOperate: boolean;
+  /**
+   * Configuration a caller still has to supply before this Agent can actually transact, one entry
+   * per gap. Empty means nothing is known to be missing.
+   *
+   * This is what staff see when required configuration is absent: an explicit, itemised list that
+   * names the gap and the surface that owns it. It is deliberately NOT folded into `canOperate`
+   * (which answers only "is every service permitted for this class?") and never silently treated as
+   * "unlimited" or "no fee".
+   */
+  missingConfiguration: AgentClassMissingConfiguration[];
   evaluatedAt: string;
+}
+
+export interface AgentClassMissingConfiguration {
+  /** Stable code so the UI can group and test without parsing prose. */
+  code:
+    | 'NO_APPLICABLE_SERVICES'
+    | 'CLASS_INACTIVE'
+    | 'NO_EFFECTIVE_LIMITS'
+    | 'NO_EFFECTIVE_FEE'
+    | 'NO_EFFECTIVE_COMMISSION';
+  /** Which console owns the gap, so an operator is not sent to the wrong screen. */
+  surface: 'AGENT_CLASSES' | 'LIMITS' | 'FEES' | 'COMMISSIONS';
+  detail: string;
 }
 
 export interface AgentClassImpactPreview {
@@ -168,7 +205,7 @@ export class AgentClassTransitionService {
       if (evaluation.allowed) allowedServices.push(service);
       else deniedServices.push({ service, reason: evaluation.reason });
     }
-    const defaultClass = await this.computeApprovedDefault();
+    const defaultClass = this.computeApprovedDefault();
     const blockedBy =
       PRIMARY_DENIAL.find((reason) => deniedServices.some((d) => d.reason === reason)) ??
       (deniedServices.length > 0 ? deniedServices[0]!.reason : null);
@@ -179,13 +216,17 @@ export class AgentClassTransitionService {
       currentClass: currentClass ? this.toClassView(currentClass) : null,
       currentClassId: agent.agentClassId ?? null,
       approvedDefault: defaultClass ? this.toClassView(defaultClass) : null,
-      approvedDefaultBasis: defaultClass
-        ? APPROVED_DEFAULT_BASIS
-        : 'No active Agent class exists to act as a default. Create or reactivate a class before assigning one.',
+      approvedDefaultBasis: defaultClass ? APPROVED_DEFAULT_BASIS : NO_APPROVED_DEFAULT_BASIS,
+      explicitSelectionRequired: defaultClass === null,
       deniedServices,
       allowedServices,
       blockedBy,
       canOperate: deniedServices.length === 0,
+      missingConfiguration: await this.detectMissingConfiguration(
+        agent,
+        currentClass,
+        allowedServices,
+      ),
       evaluatedAt: new Date().toISOString(),
     };
   }
@@ -467,19 +508,154 @@ export class AgentClassTransitionService {
   }
 
   /**
-   * Deterministic "approved default" class.
+   * The class a governance record appoints as the default, if any.
    *
-   * There is no `is_default` column, so inventing one here (or a settings row) would be a second
-   * source of truth. Instead the default is the SAME row the admin catalogue lists first among
-   * active classes (`createdAt ASC`, i.e. the original onboarding class), and the basis string says
-   * so. Callers may always override it with an explicit choice.
+   * Deliberately NOT "the oldest active class". `createdAt ASC` is an ordering accident of whoever
+   * happened to create a row first, not an approval: treating it as a default pre-selects a class —
+   * and therefore that class's services, fees, commissions and limits — for an operator who never
+   * chose it. A default may only come from a durable record that says so.
+   *
+   * This schema has no such record (`agent_classes` has no `is_default`; there is no agent-class
+   * default policy/configuration table). The lookup below is therefore unconditional `null`, and it
+   * lives here — not in the callers — so introducing a record later is a change to THIS method plus
+   * the basis string, with no caller edits and no risk of one surface quietly reinstating a guess.
    */
-  private async computeApprovedDefault(): Promise<AgentClass | null> {
-    const rows = await this.classRepository.find({
-      where: { isActive: true },
-      order: { createdAt: 'ASC' },
-    });
-    return rows.find((row) => row.deletedAt === null) ?? null;
+  private computeApprovedDefault(): AgentClass | null {
+    return null;
+  }
+
+  /**
+   * Configuration this Agent still needs before it can transact under `currentClass`.
+   *
+   * Read-only and advisory: it never blocks a switch, because a class with no limits assigned may be
+   * exactly what an operator is mid-way through configuring. What it refuses to do is let silence
+   * read as "fine" — an absent limit assignment is reported as absent, never as unlimited, and an
+   * absent fee/commission rule is reported against the product+currency pair it applies to.
+   *
+   * Every query is scoped to the class (or to the class's own product codes), so the report cannot
+   * accidentally describe a different class's configuration.
+   */
+  private async detectMissingConfiguration(
+    agent: Agent,
+    currentClass: AgentClass | null,
+    allowedServices: AgentService[],
+  ): Promise<AgentClassMissingConfiguration[]> {
+    const missing: AgentClassMissingConfiguration[] = [];
+    if (!currentClass) {
+      missing.push({
+        code: 'NO_APPLICABLE_SERVICES',
+        surface: 'AGENT_CLASSES',
+        detail:
+          'This Agent has no Agent class, so no services are permitted and no configuration can be resolved. Assign a class.',
+      });
+      return missing;
+    }
+    if (!currentClass.isActive) {
+      missing.push({
+        code: 'CLASS_INACTIVE',
+        surface: 'AGENT_CLASSES',
+        detail: `The assigned class ${currentClass.code} is inactive. Its services remain on the record, but reactivate the class or move the Agent before relying on it.`,
+      });
+    }
+    if (allowedServices.length === 0) {
+      missing.push({
+        code: 'NO_APPLICABLE_SERVICES',
+        surface: 'AGENT_CLASSES',
+        detail: `The assigned class ${currentClass.code} permits no services, so this Agent cannot transact at all.`,
+      });
+      // Nothing downstream can be meaningful without a service to resolve configuration for.
+      return missing;
+    }
+
+    const activeAssignment = await this.dataSource.query<Array<{ code: string }>>(
+      `SELECT a.limit_profile_code AS code
+         FROM limit_assignments a
+         JOIN limit_profiles p ON p.code = a.limit_profile_code
+        WHERE a.subject_type='AGENT_CLASS' AND a.subject_id=$1
+          AND a.is_active = TRUE AND a.deleted_at IS NULL
+          AND (a.effective_from IS NULL OR a.effective_from <= now())
+          AND (a.effective_to IS NULL OR a.effective_to > now())
+          -- limit_profiles has no is_active column. The canonical predicate is the one
+          -- LimitProfileResolverService applies: deleted_at IS NULL AND enabled AND status=ACTIVE.
+          -- The previous predicate made this readiness projection throw a 500.
+          AND p.enabled = TRUE AND p.status = 'ACTIVE' AND p.deleted_at IS NULL
+        ORDER BY a.precedence ASC`,
+      [currentClass.id],
+    );
+    if (activeAssignment.length === 0) {
+      missing.push({
+        code: 'NO_EFFECTIVE_LIMITS',
+        surface: 'LIMITS',
+        detail: `No active limit profile is assigned to class ${currentClass.code}. Transactions that consult limits cannot resolve one; this is NOT the same as unlimited.`,
+      });
+    }
+
+    /*
+     * Fee and commission rules are keyed on the PRODUCT catatalogue, not on `AgentService` names
+     * (the two vocabularies differ: `CASH_TO_WALLET` vs `CASH_IN`). Map each permitted service to
+     * the product codes the engine actually uses, then report the products that resolve nothing.
+     */
+    const productCodes = Array.from(
+      new Set(allowedServices.flatMap((service) => PRODUCT_CODES_BY_SERVICE[service] ?? [])),
+    );
+    if (productCodes.length > 0) {
+      const feeRules = await this.dataSource.query<Array<{ product_code: string }>>(
+        `SELECT DISTINCT product_code FROM fee_rules
+          WHERE product_code = ANY($1)
+            AND (agent_class_id IS NULL OR agent_class_id = $2)
+            AND is_active = TRUE AND deleted_at IS NULL
+            AND (effective_to IS NULL OR effective_to > now())`,
+        [productCodes, currentClass.id],
+      );
+      const commissionRules = await this.dataSource.query<Array<{ product_code: string }>>(
+        `SELECT DISTINCT product_code FROM commission_rules
+          WHERE product_code = ANY($1)
+            AND (agent_class_id IS NULL OR agent_class_id = $2)
+            AND is_active = TRUE AND deleted_at IS NULL
+            AND (effective_to IS NULL OR effective_to > now())`,
+        [productCodes, currentClass.id],
+      );
+      const feeCovered = new Set(feeRules.map((row) => row.product_code));
+      const commissionCovered = new Set(commissionRules.map((row) => row.product_code));
+      const noFee = productCodes.filter((code) => !feeCovered.has(code));
+      const noCommission = productCodes.filter((code) => !commissionCovered.has(code));
+      if (noFee.length > 0) {
+        missing.push({
+          code: 'NO_EFFECTIVE_FEE',
+          surface: 'FEES',
+          detail: `No active fee rule resolves for ${noFee.join(', ')} under class ${currentClass.code}. A missing rule is not a zero fee — the charge is simply undefined.`,
+        });
+      }
+      if (noCommission.length > 0) {
+        missing.push({
+          code: 'NO_EFFECTIVE_COMMISSION',
+          surface: 'COMMISSIONS',
+          detail: `No active commission rule resolves for ${noCommission.join(', ')} under class ${currentClass.code}. No commission would accrue for those operations.`,
+        });
+      }
+    }
+
+    return missing;
+  }
+
+  /**
+   * The onboarding default, as a standalone answer.
+   *
+   * Thin wrapper over `computeApprovedDefault()` so the console asks the backend instead of keeping
+   * its own copy of the rule. Two callers (readiness and the class catalogue) share one lookup, so
+   * they cannot disagree about whether a default exists.
+   */
+  getOnboardingDefault(): {
+    approvedDefault: AgentClassView | null;
+    approvedDefaultBasis: string;
+    explicitSelectionRequired: boolean;
+  } {
+    const defaultClass = this.computeApprovedDefault();
+    return {
+      approvedDefault: defaultClass ? this.toClassView(defaultClass) : null,
+      approvedDefaultBasis: defaultClass ? APPROVED_DEFAULT_BASIS : NO_APPROVED_DEFAULT_BASIS,
+      explicitSelectionRequired: defaultClass === null,
+    };
   }
 
   private async loadAgent(agentId: string): Promise<Agent> {
@@ -532,5 +708,13 @@ export class AgentClassTransitionService {
   }
 }
 
+/** Only ever reported alongside a class that a real policy/configuration record appoints. */
 export const APPROVED_DEFAULT_BASIS =
-  'Computed default: the earliest-created ACTIVE Agent class (there is no stored default flag). Override it with an explicit selection before assigning an Agent.';
+  'Appointed by the approved Agent class default configuration record.';
+
+/**
+ * The basis string for "there is no approved default". It exists so the UI can explain WHY an
+ * operator has to choose instead of leaving them guessing whether something is missing.
+ */
+export const NO_APPROVED_DEFAULT_BASIS =
+  'No approved Agent class default exists: no policy or configuration record appoints one. An operator must select the class explicitly.';

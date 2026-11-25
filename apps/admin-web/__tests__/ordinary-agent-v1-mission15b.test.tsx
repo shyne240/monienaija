@@ -150,10 +150,36 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     // Open New Agent Application form
     fireEvent.click(view.getByRole('button', { name: 'New Agent Application' }));
-    expect(await view.findByLabelText('Application Agent class')).toBeTruthy();
+    const classSelect = (await view.findByLabelText(
+      'Application Agent class',
+    )) as HTMLSelectElement;
 
-    // Dynamic class requirement fields appear from selected AgentClass
+    /*
+     * No class is pre-selected. The class decides the Agent's services, fees, commissions and
+     * limits, and nothing in this schema appoints a default — the oldest active class is an
+     * ordering accident, not an approval. Saving without choosing must therefore be refused.
+     */
+    expect(classSelect.value).toBe('');
+    expect(view.getByTestId('onboarding-class-required')).toBeTruthy();
+    expect(view.queryByLabelText('Required info: bvn')).toBeNull();
+    // Validation is ordered: the applicant reference is checked first, then the class. Fill the
+    // reference so the class requirement is the one that actually fires.
+    fireEvent.change(view.getByLabelText(/Applicant reference/i), {
+      target: { value: 'AGT-NO-CLASS-01' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Save draft' }));
+    expect(
+      await view.findByText(/An active Agent Class selection .* is required/i),
+    ).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalledWith(
+      '/agents/applications',
+      expect.anything(),
+    );
+
+    // Choosing a class is what reveals its declared requirements.
+    fireEvent.change(classSelect, { target: { value: CLASS_ID } });
     expect(view.getByLabelText('Required info: bvn')).toBeTruthy();
+    expect(view.getByText(/Explicitly selected by you/i)).toBeTruthy();
     expect(view.getByLabelText('Required evidence: UTILITY_BILL')).toBeTruthy();
 
     // Client-side validation rejects short applicantReference on Save draft
@@ -930,6 +956,9 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect(await shell.findByLabelText('Application Agent class')).toBeTruthy();
     fireEvent.change(shell.getByLabelText('Applicant reference'), {
       target: { value: 'AGT-DUP-01' },
+    });
+    fireEvent.change(shell.getByLabelText('Application Agent class'), {
+      target: { value: CLASS_ID },
     });
     fireEvent.click(shell.getByRole('button', { name: 'Save draft' }));
     expect((await shell.findByRole('alert')).textContent).toContain(

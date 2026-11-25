@@ -1068,6 +1068,27 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Onboarding default lookup for the class catalogue. Read-only and required to answer "is there
+    // an approved default?" without the console keeping its own copy of the rule. Declared here so
+    // the literal `classes/default` path cannot be absorbed by the `classes/:id` catalogue read.
+    if (path === '/api/v1/internal/agents/classes/default') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-class-default',
+        auditDeniedWorkforceFunction: true,
+        policy: {
+          resourceType: 'agent-class-default',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Customer class governance is distinct from generic customer inspection routes.
     // auditDeniedWorkforceFunction ensures guard-level 403 denials record an audit event.
     if (
