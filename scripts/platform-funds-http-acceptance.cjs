@@ -36,6 +36,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
 require('dotenv').config();
 
@@ -45,6 +46,7 @@ const OUT = path.resolve(
     ? process.argv[process.argv.indexOf('--out') + 1]
     : '/tmp/platform-funds-http',
 );
+const ROOT = path.resolve(__dirname, '..');
 const RESULTS = [];
 const TRANSCRIPT = [];
 
@@ -738,12 +740,20 @@ async function main() {
   record('SUPER-ADMIN-CAN-READ-SETTLEMENT-ACCOUNTS', superAdminRead.status === 200, `HTTP ${superAdminRead.status}`);
 
   await app.close();
+  const gitCommit = (() => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT }).toString().trim();
+    } catch {
+      return 'unknown';
+    }
+  })();
   const failed = RESULTS.filter((entry) => !entry.ok);
   fs.writeFileSync(
     path.join(OUT, 'platform-funds-http-acceptance.json'),
     `${JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
+        gitCommit,
         run: RUN,
         bootstrap:
           'isolated test bootstrap: real AppModule/Fastify/guards/route policies, readiness gate skipped',
