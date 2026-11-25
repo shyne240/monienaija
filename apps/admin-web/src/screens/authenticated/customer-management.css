@@ -1365,9 +1365,12 @@
 .cm-statement__table td[data-unavailable="true"] { color:#8a5a12; font-weight:600; font-style:italic; }
 .cm-statement__note { margin:10px 0 0; color:#52655f; font-size:12px; line-height:1.5; }
 .cm-statement__table-wrap { margin-top:12px; overflow-x:auto; border:1px solid #dfe9e1; border-radius:8px; background:white; }
-.cm-statement__table { width:100%; border-collapse:collapse; font-size:12px; }
+/* The statement table keeps its own scroll box: six columns of money and free-text descriptions cannot
+ * shrink gracefully, so give the table a floor and let the wrapper scroll rather than fragmenting cells. */
+.cm-statement__table { width:100%; min-width:560px; border-collapse:collapse; font-size:12px; }
 .cm-statement__table th { padding:8px 10px; background:#eef6f1; color:#103a2b; text-align:left; font-weight:700; white-space:nowrap; }
-.cm-statement__table td { padding:7px 10px; border-top:1px solid #eef2ef; color:#24352f; vertical-align:top; }
+.cm-statement__table td { padding:7px 10px; border-top:1px solid #eef2ef; color:#24352f; vertical-align:top; white-space:nowrap; }
+.cm-statement__table td.cm-statement__description { white-space:normal; min-width:160px; }
 .cm-statement__table tbody tr:nth-child(even) td { background:#fafcfb; }
 .cm-statement__amount { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 @media(max-width:600px) { .cm-statement__controls { flex-direction:column; align-items:stretch; } }

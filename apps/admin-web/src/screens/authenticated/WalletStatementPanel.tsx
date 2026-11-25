@@ -350,7 +350,7 @@ export const WalletStatementPanel: React.FC<{
                     <tr key={`${row.postedAt}-${row.reference ?? index}-${index}`}>
                       <td>{lagosLabel(row.postedAt)}</td>
                       <td>{row.reference ?? '—'}</td>
-                      <td>{row.description ?? '—'}</td>
+                      <td className="cm-statement__description">{row.description ?? '—'}</td>
                       <td className="cm-statement__amount">
                         {row.direction === 'DEBIT' ? formatCell(row.amountMinor, currency) : ''}
                       </td>

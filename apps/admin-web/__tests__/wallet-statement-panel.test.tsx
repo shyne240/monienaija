@@ -8,6 +8,7 @@ import {
   validateStatementPreview,
   WalletStatementPanel,
 } from '../src/screens/authenticated/WalletStatementPanel';
+import { maskWalletIdentifier } from '../src/screens/authenticated/customer-masking';
 import { ApiClient } from '../src/services/api-client';
 
 jest.mock('../src/services/api-client', () => ({
@@ -230,4 +231,24 @@ test('money in the preview is exact for values beyond float precision', () => {
   expect(formatCell('9007199254740993', 'NGN')).toBe('NGN 90,071,992,547,409.93');
   expect(formatCell('5', 'NGN')).toBe('NGN 0.05');
   expect(formatCell('nope', 'NGN')).toBe('—');
+});
+
+test('a wallet identifier is masked wherever Customer 360 shows it', () => {
+  // The full id addresses an account in our ledger; it is not something staff need to copy.
+  expect(maskWalletIdentifier('e6db7ac2-b6b6-4b6b-a628-04a48c71b0f9')).toBe('•••• B0F9');
+  expect(maskWalletIdentifier('e6db7ac2-b6b6-4b6b-a628-04a48c71b0f9')).not.toContain('e6db7ac2');
+  // Anything that is not an identifier is fully withheld rather than echoed.
+  expect(maskWalletIdentifier('not-a-wallet')).toBe('••••');
+  expect(maskWalletIdentifier(null)).toBe('••••');
+  // The statement's own label and the drawer's label agree for the same wallet.
+  expect(maskWalletIdentifier('22222222-2222-4222-8222-222222222222')).toBe(
+    statementUrls(
+      customerId,
+      '22222222-2222-4222-8222-222222222222',
+      '2026-11-01',
+      '2026-11-30',
+    ).preview.includes('2222')
+      ? '•••• 2222'
+      : 'unreachable',
+  );
 });
