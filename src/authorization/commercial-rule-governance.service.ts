@@ -250,6 +250,11 @@ export class CommercialRuleGovernanceService {
       command.payload,
     );
 
+    // Tracks whether this attempt got as far as consuming the approval. It decides what the
+    // failure audit below may honestly claim: a write failure means the approval was rolled back
+    // to APPROVED and is still usable; a consumption refusal (replay, expiry, wrong executor)
+    // means the approval was never this attempt's to use.
+    let consumptionRefused = false;
     try {
       return await this.dataSource.transaction(async (manager) => {
         const consumed = await this.approvals.consumeInTransaction(manager, {
@@ -261,6 +266,7 @@ export class CommercialRuleGovernanceService {
           now: command.now,
         });
         if (!consumed.approved) {
+          consumptionRefused = true;
           throw this.consumptionException(consumed.reason, consumed.approval);
         }
         // Execute the write in the same transaction. If it throws (invalid input, conflict,
@@ -269,11 +275,11 @@ export class CommercialRuleGovernanceService {
         return await command.write(resourceId, manager);
       });
     } catch (error) {
-      // The approval was NOT consumed when the write failed: consume + write share one
-      // transaction, so the rollback restores APPROVED. Record the failed attempt outside that
-      // transaction so the refusal is durably auditable without affecting the approval, then
-      // rethrow the original error (validation → 400, conflict → 409, persistence failure → 500).
+      // Tampering and entitlement refusals are not "execution failures" and are already audited by
+      // the authorization surface; do not manufacture a second, misleading record.
       if (error instanceof ForbiddenException) throw error;
+      // Recorded OUTSIDE the rolled-back transaction, so the refusal survives while the approval
+      // does too (or, for a replay, so the duplicate attempt is visible without touching state).
       await this.audit
         .record(this.dataSource.manager, {
           entityType: 'COMMERCIAL_RULE_CHANGE',
@@ -284,8 +290,9 @@ export class CommercialRuleGovernanceService {
           newValues: {
             actionType: definition.action,
             resourceId,
+            approvalRefusedNotConsumed: consumptionRefused,
             approvalConsumed: false,
-            approvalUsable: true,
+            approvalUsable: consumptionRefused ? false : true,
             error: error instanceof Error ? error.message.slice(0, 500) : 'unknown',
           },
         })

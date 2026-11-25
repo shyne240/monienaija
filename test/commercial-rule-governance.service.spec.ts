@@ -458,9 +458,17 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       }),
     ).rejects.toThrow(/duplicate rule identity/i);
 
+    // The failure audit states the truth: this attempt never consumed the approval, and the
+    // rollback left it usable.
     expect(auditService.record).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ action: 'GOVERNED_CHANGE_EXECUTION_FAILED' }),
+      expect.objectContaining({
+        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
+        newValues: expect.objectContaining({
+          approvalRefusedNotConsumed: false,
+          approvalUsable: true,
+        }),
+      }),
     );
     // Consumption and write share one transaction: a failed write leaves the approval APPROVED
     // and therefore usable for the identical approved payload.
@@ -505,6 +513,46 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
     const [, manager] = write.mock.calls[0]! as [string | null, EntityManager];
     expect(manager).toBeDefined();
     expect(typeof manager.getRepository).toBe('function');
+  });
+
+  it('does not claim a replayed approval is still usable', async () => {
+    const { governance, approvals, auditService } = fixture();
+    const view = await governance.requestChange({
+      principal: maker,
+      action: 'FEE_RULE_CREATE',
+      payload: createPayload,
+      reason: createPayload.reason,
+    });
+    await approvals.approve({ approvalId: view.approvalId, principal: checker });
+    await governance.executeChange({
+      principal: checker,
+      action: 'FEE_RULE_CREATE',
+      approvalId: view.approvalId,
+      payload: createPayload,
+      write: jest.fn().mockResolvedValue({ id: 'rule-1' }),
+    });
+    auditService.record.mockClear();
+
+    await expect(
+      governance.executeChange({
+        principal: checker,
+        action: 'FEE_RULE_CREATE',
+        approvalId: view.approvalId,
+        payload: createPayload,
+        write: jest.fn(),
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
+        newValues: expect.objectContaining({
+          approvalRefusedNotConsumed: true,
+          approvalUsable: false,
+        }),
+      }),
+    );
   });
 
   it('maps consumption refusals to the established HTTP semantics', () => {
