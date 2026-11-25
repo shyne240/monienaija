@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -205,14 +205,22 @@ describe('Agent class lifecycle (real PostgreSQL + real HTTP)', () => {
       .set('Authorization', auth)
       .expect(200);
 
-    expect(preview.body.readonly).toBe(true);
-    expect(preview.body.writesPerformed).toEqual([]);
-    expect(preview.body.financialMutations).toEqual([]);
-    expect(preview.body.canSwitch).toBe(true);
-    expect(preview.body.gains.map((gain: { service: string }) => gain.service)).toEqual(
+    const previewBody = preview.body as {
+      readonly: boolean;
+      writesPerformed: unknown[];
+      financialMutations: unknown[];
+      canSwitch: boolean;
+      gains: Array<{ service: string }>;
+      losses: unknown[];
+    };
+    expect(previewBody.readonly).toBe(true);
+    expect(previewBody.writesPerformed).toEqual([]);
+    expect(previewBody.financialMutations).toEqual([]);
+    expect(previewBody.canSwitch).toBe(true);
+    expect(previewBody.gains.map((gain) => gain.service)).toEqual(
       expect.arrayContaining(['CASH_OUT', 'AGENT_FUNDING', 'AGENT_DEFUNDING']),
     );
-    expect(preview.body.losses).toEqual([]);
+    expect(previewBody.losses).toEqual([]);
 
     const after = await dataSource.query<Array<{ agent_class_id: string; version: number }>>(
       `SELECT agent_class_id, version FROM agents WHERE id=$1`,
