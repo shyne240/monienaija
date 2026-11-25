@@ -54,6 +54,18 @@ test('combines filters server side and resets pagination', async () => {
   render(<TransactionHistoryScreen />);
   await screen.findByText('SYN-C2C');
   expect(screen.queryByRole('option', { name: 'Deposit' })).toBeNull();
+  for (const name of [
+    'Cash to Wallet',
+    'Wallet to Cash',
+    'Cash to Cash',
+    'Wallet to Bank',
+    'Bank to Wallet',
+    'Customer Funding',
+    'Agent Funding',
+    'Agent Defunding',
+  ])
+    expect(screen.getByRole('option', { name })).toBeTruthy();
+  expect(screen.getByRole('option', { name: 'VERIFIED' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await waitFor(() =>
     expect(get).toHaveBeenLastCalledWith(expect.stringContaining('cursor=cursor-2')),

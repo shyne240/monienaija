@@ -212,6 +212,8 @@ function History({ allowed }: { allowed: boolean }) {
                 'REJECTED',
                 'EXECUTED',
                 'CREDITED',
+                'UNVERIFIED',
+                'VERIFIED',
               ].map((v) => (
                 <option key={v}>{v}</option>
               ))}
