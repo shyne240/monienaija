@@ -1,0 +1,11 @@
+PASS test/transaction-history-mixed-volume.integration.spec.ts (22.971 s)
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Time:        23.036 s, estimated 25 s
+
+Additional validation on source commit 7d2c0412494ebdfe6344cffd08cf29dc76484c17:
+- backend TypeScript: PASS
+- transaction-history.controller.spec.ts: 1 suite / 4 tests PASS
+- changed controller/test ESLint + Prettier: PASS
+- transaction-history-browser-matrix.integration.spec.ts: 1 suite / 1 test PASS, 28.394s (HTTP-only; no browser claim)
+- No Admin Web files changed from fetched 46e9ff7; journal-link implementation preserved.

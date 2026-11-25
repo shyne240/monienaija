@@ -26,6 +26,8 @@ Filters (`type`, `status`, exact `reference`, Lagos `from`/`to`) are ANDed befor
 
 ## Latest local validation
 
+**Mixed-product query update:** [MIXED-VOLUME-PLANS.md](MIXED-VOLUME-PLANS.md) records 90,300 rows across all nine TYPEs / four institutions, three-sample before-and-after ANALYZE/BUFFERS plans for both real session scopes, and clean-head correctness checks at `7d2c0412494ebdfe6344cffd08cf29dc76484c17`. List-only projection avoids detail JSON work; residual full scans/top-N sorts and production-SLO limits are explicit. This supersedes the inbound-only volume-plan limitation below.
+
 **Latest journal navigation update:** [JOURNAL-NAVIGATION.md](JOURNAL-NAVIGATION.md) records the implemented Open journal action, PR23-owned Layout resolution and successful real-session wallet + Bank to Wallet round trips with Finance `8301fa2` on the explicitly resolved tree. Integration adoption and eventual-head rerun still required; merge held. The older diagnostic below is historical, not current forward-link status.
 
 Finance #25 combined real-session browser diagnostic: **BLOCKED**, with exact PR heads, tree provenance and fresh screenshots in [FINANCE25-ROUNDTRIP.md](FINANCE25-ROUNDTRIP.md). Wallet journal return and both-record denial checks pass, but missing History → journal navigation and Finance Bank to Wallet source mapping prevent the requested two-product round trip. Do not close that gate. The separate five-product browser acceptance is documented in [BROWSER-ACCEPTANCE.md](BROWSER-ACCEPTANCE.md).
@@ -33,7 +35,7 @@ Finance #25 combined real-session browser diagnostic: **BLOCKED**, with exact PR
 
 The follow-up volume test runs the full migration chain and real AppModule against an independently created disposable PostgreSQL cluster. All six local-role integration tests pass, including authentication of all 11 existing fixture accounts, unchanged hashes, institution isolation, direct/reference denial and immediate revocation. The local-role suite is HTTP-only. New Bank to Wallet identity browser evidence is recorded separately below. Prior Bank to Wallet browser evidence remains in `evidence/real-workforce-results.json`; the latest HTTP run is recorded separately in `evidence/real-workforce-http-results.json`.
 
-`evidence/migrated-query-plan.json` now contains ANALYZE/BUFFERS plans for the full combined UNION and type, exact-reference, type/status/Lagos-date and keyset predicates. Fixture: **20,002 inbound rows**, evenly split across two institutions; other source tables are empty. Latest timings are in the regenerated plan artifact; this turn did not add a mixed-product workload or tune those queries. These are diagnostic single runs, not production SLOs or representative mixed-product certification. Verified rows are never deleted to clean up; the harness drops its disposable database.
+Historical inbound-only packet: `evidence/migrated-query-plan.json` contains ANALYZE/BUFFERS plans for the full combined UNION and type, exact-reference, type/status/Lagos-date and keyset predicates. Fixture: **20,002 inbound rows**, evenly split across two institutions; other source tables are empty. Latest timings are in the regenerated plan artifact; this turn did not add a mixed-product workload or tune those queries. These are diagnostic single runs, not production SLOs or representative mixed-product certification. Verified rows are never deleted to clean up; the harness drops its disposable database.
 
 ## Unclosed merge gates
 
@@ -41,7 +43,7 @@ The follow-up volume test runs the full migration chain and real AppModule again
 2. Bank intake → verification → proven institutional float identity is implemented and verified in a real workforce browser; see [durable inbound identity](INBOUND-IDENTITY.md). Legacy wallet receipts lack environment context and suspense has no resolution execution/binding contract; these unsupported records stay unlinked. Historical/concurrent link reconciliation needs a reviewed workflow.
 3. Real workforce browser matrix for Wallet to Bank, Customer Funding, Agent Funding and Agent Defunding: outstanding. Prior real browser proof covers Bank to Wallet only.
 4. Combined real-session Finance #25 bidirectional links: outstanding. Inspected Finance head `891a1c1777855b9e921cfc50c962f2626d7eecf8`; its existing combined DOM harness mocks API responses and its adapter supports only the original four types. It was not merged into this branch.
-5. Representative mixed-product volume plans and tuning: outstanding; inbound-only volume plans are a useful but bounded improvement.
+5. Local representative synthetic mixed-product query validation completed: 90,300 rows / nine TYPEs, with narrow projection optimization and exact-head paging/filter/isolation tests. See MIXED-VOLUME-PLANS.md. Residual O(N) scans/sorts and larger/concurrent production SLO certification remain unclaimed.
 6. Exact new-head CI must be explicitly checked. New saved-URL identity browser proof is in `evidence/inbound-identity-results.json` and before/after PNGs; the remaining browser matrix is not claimed.
 
 The [initial packet](INITIAL-REVIEW-PACKET.md) is historical provenance only, not current coverage or authorization policy. No governance approval is implied by implementation choices.
