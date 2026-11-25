@@ -1172,14 +1172,19 @@ export class PlatformFundsService {
     const difference = bankBalanceMinor - expected;
     const timingTotal = this.timingTotal(timingItems);
     const unexplained = difference - timingTotal;
+    // bank_balance_minor is persisted in the SAME statement as the derived math so the
+    // chk_platform_funds_difference_math / chk_platform_funds_unexplained_math constraints
+    // (non-deferrable CHECKs) always hold. Updating the balance in a later statement left an
+    // inconsistent intermediate row and was refused by the database.
     await manager.query(
       `UPDATE platform_funds_comparisons
-          SET expected_minor = $2, difference_minor = $3, timing_total_minor = $4,
-              unexplained_minor = $5, mapping_complete = $6, blockers = $7::jsonb,
-              updated_at = now()
+          SET bank_balance_minor = $2, expected_minor = $3, difference_minor = $4,
+              timing_total_minor = $5, unexplained_minor = $6, mapping_complete = $7,
+              blockers = $8::jsonb, updated_at = now()
         WHERE id = $1`,
       [
         row.id,
+        bankBalanceMinor.toString(),
         expected.toString(),
         difference.toString(),
         timingTotal.toString(),
@@ -1234,9 +1239,9 @@ export class PlatformFundsService {
       await manager.query(
         `UPDATE platform_funds_comparisons
             SET ledger_cutoff = $2, bank_cutoff = $3, statement_reference = $4,
-                bank_balance_minor = $5, updated_at = now()
+                updated_at = now()
           WHERE id = $1`,
-        [row.id, ledgerCutoff, bankCutoff, statementReference, bankBalance.toString()],
+        [row.id, ledgerCutoff, bankCutoff, statementReference],
       );
       const updatedRow = await this.lockComparison(manager, row.id);
       await this.insertSnapshot(manager, {
