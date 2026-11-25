@@ -34,31 +34,36 @@ export function lagosBoundary(value: string): string {
 }
 
 // One source row per business operation. Never join journal lines into the history.
-export const HISTORY_SQL = `WITH history AS (
+function historySql(includeInvestigation: boolean) {
+  return `WITH history AS (
  SELECT t.id, 'WALLET_TRANSFER'::text AS type, t.status::text, COALESCE(t.payment_reference,t.reference,t.id::text) AS reference,
  t.created_at, t.completed_at, t.amount_minor::text, t.fee_minor::text, t.vat_minor::text, t.currency,
  posted.institution_id AS institution_id, ARRAY[t.journal_id]::uuid[] AS journals,
- jsonb_build_object('sourceWalletId',t.source_wallet_id,'destinationWalletId',t.destination_wallet_id,'failureCode',t.failure_code,'failureMessage',t.failure_message) AS investigation
+ ${includeInvestigation ? `jsonb_build_object('sourceWalletId',t.source_wallet_id,'destinationWalletId',t.destination_wallet_id,'failureCode',t.failure_code,'failureMessage',t.failure_message)` : 'NULL::jsonb'} AS investigation
  FROM transfers t JOIN wallet_accounts w ON w.id=t.source_wallet_id LEFT JOIN ledger_journals posted ON posted.id=t.journal_id
  UNION ALL
  SELECT t.id, 'CASH_TO_CASH', t.status, COALESCE(t.reference,t.id::text), t.created_at,
  COALESCE(t.claimed_at,t.expired_at),t.principal_minor::text,t.fee_minor::text,t.vat_minor::text,t.currency,
  j.institution_id, ARRAY[t.journal_id,t.claim_journal_id]::uuid[],
- jsonb_build_object('agentId',t.agent_id,'beneficiaryPhoneMasked','••••••' || right(t.beneficiary_phone,4),
+ ${
+   includeInvestigation
+     ? `jsonb_build_object('agentId',t.agent_id,'beneficiaryPhoneMasked','••••••' || right(t.beneficiary_phone,4),
  'claimantCustomerId',t.claimant_customer_id,'claimReference',t.claim_reference,'claimedAt',t.claimed_at,
  'expiresAt',t.expires_at,'expiredAt',t.expired_at,'updatedAt',t.updated_at,'totalMinor',t.total_minor::text,
- 'redemptionMethod',(SELECT e.new_values->>'redemptionMethod' FROM audit_events e WHERE e.entity_type='AGENT_CASH_TO_CASH_CLAIM' AND e.action='CASH_TO_CASH_CLAIMED' AND e.entity_id=t.claim_journal_id ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1))
+ 'redemptionMethod',(SELECT e.new_values->>'redemptionMethod' FROM audit_events e WHERE e.entity_type='AGENT_CASH_TO_CASH_CLAIM' AND e.action='CASH_TO_CASH_CLAIMED' AND e.entity_id=t.claim_journal_id ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1))`
+     : 'NULL::jsonb'
+ }
  FROM cash_to_cash_transfers t JOIN ledger_journals j ON j.id=t.journal_id
  UNION ALL
  SELECT j.id,j.metadata->>'canonicalService',j.status::text,COALESCE(j.reference,j.id::text),j.created_at,j.posted_at,
  j.metadata->>'amountMinor','0','0',j.currency,j.institution_id,ARRAY[j.id]::uuid[],
- jsonb_build_object('agentId',j.metadata->>'agentId','customerId',COALESCE(j.metadata->>'customerId',j.metadata->>'recipientCustomerId'))
+ ${includeInvestigation ? `jsonb_build_object('agentId',j.metadata->>'agentId','customerId',COALESCE(j.metadata->>'customerId',j.metadata->>'recipientCustomerId'))` : 'NULL::jsonb'}
  FROM ledger_journals j WHERE j.metadata->>'canonicalService' IN ('CASH_IN','CASH_OUT') AND j.reversal_of_journal_id IS NULL
  UNION ALL
  SELECT fc.id,'WALLET_TO_BANK',fc.state,COALESCE(bo.operation_reference,fc.id::text),fc.created_at,fc.resolved_at,
  COALESCE(fb.beneficiary_amount_minor,fa.amount_minor)::text,fb.service_fee_minor::text,fb.tax_minor::text,fa.currency,
  j.institution_id,ARRAY[fc.reservation_journal_id,fc.resolution_journal_id]::uuid[],
- jsonb_build_object('principalType',fa.principal_type,'partyId',fa.principal_id,'walletId',fa.wallet_account_id,'providerReference',bo.provider_transaction_reference,'providerState',bo.state,'externalOperationId',fc.external_operation_id,'totalDebitMinor',fb.customer_debit_minor::text)
+ ${includeInvestigation ? `jsonb_build_object('principalType',fa.principal_type,'partyId',fa.principal_id,'walletId',fa.wallet_account_id,'providerReference',bo.provider_transaction_reference,'providerState',bo.state,'externalOperationId',fc.external_operation_id,'totalDebitMinor',fb.customer_debit_minor::text)` : 'NULL::jsonb'}
  FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id
  JOIN ledger_journals j ON j.id=fc.reservation_journal_id
  LEFT JOIN LATERAL (SELECT b.* FROM banking_outbound_operations b WHERE b.external_operation_id=fc.external_operation_id ORDER BY b.created_at,b.id LIMIT 1) bo ON true
@@ -66,35 +71,40 @@ export const HISTORY_SQL = `WITH history AS (
  UNION ALL
  SELECT r.id,'BANK_TO_WALLET',r.status,COALESCE(o.provider_reference,r.id::text),r.created_at,j.posted_at,
  r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('walletId',r.wallet_account_id,'provider',r.provider_key,'providerObservedAt',r.provider_observed_at,'identitySource','LEGACY_RECEIPT_WITHOUT_ENVIRONMENT')
+ ${includeInvestigation ? `jsonb_build_object('walletId',r.wallet_account_id,'provider',r.provider_key,'providerObservedAt',r.provider_observed_at,'identitySource','LEGACY_RECEIPT_WITHOUT_ENVIRONMENT')` : 'NULL::jsonb'}
  FROM inbound_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
  LEFT JOIN LATERAL (SELECT x.provider_reference FROM inbound_funding_observations x WHERE x.provider_key=r.provider_key AND x.provider_reference_hash=r.provider_reference_hash AND x.evidence_hash=r.evidence_hash ORDER BY x.created_at,x.id LIMIT 1) o ON true
  WHERE r.status='CREDITED'
  UNION ALL
  SELECT b.id,'BANK_TO_WALLET',CASE WHEN r.id IS NOT NULL THEN 'CREDITED' ELSE b.verification_state END,b.provider_transaction_reference,b.recorded_at,j.posted_at,
  b.credited_amount_minor::text,b.provider_fee_minor::text,'0',b.currency,b.institution_id,ARRAY[COALESCE(r.journal_id,b.ledger_transaction_id)]::uuid[],
- jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN r.id IS NOT NULL THEN 'FLOAT_CREDITED' WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END,'floatReceiptId',r.id,'walletId',r.wallet_account_id,'identitySource','BANK_INTAKE')
+ ${includeInvestigation ? `jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN r.id IS NOT NULL THEN 'FLOAT_CREDITED' WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END,'floatReceiptId',r.id,'walletId',r.wallet_account_id,'identitySource','BANK_INTAKE')` : 'NULL::jsonb'}
  FROM banking_inbound_payments b
  LEFT JOIN banking_inbound_float_links identity ON identity.payment_id=b.id
  LEFT JOIN agent_float_funding_receipts r ON r.id=identity.float_receipt_id
  LEFT JOIN ledger_journals j ON j.id=r.journal_id
  UNION ALL
  SELECT r.id,'AGENT_FUNDING','CREDITED',r.provider_transaction_reference,r.credited_at,j.posted_at,r.amount_minor::text,'0','0',r.currency,r.institution_id,ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('agentId',r.agent_id,'walletId',r.wallet_account_id,'provider',r.provider_key,'policyId',r.policy_id,'providerObservedAt',r.provider_observed_at,'fundingSource','INSTITUTION_BANK_RECEIPT')
+ ${includeInvestigation ? `jsonb_build_object('agentId',r.agent_id,'walletId',r.wallet_account_id,'provider',r.provider_key,'policyId',r.policy_id,'providerObservedAt',r.provider_observed_at,'fundingSource','INSTITUTION_BANK_RECEIPT')` : 'NULL::jsonb'}
  FROM agent_float_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
  WHERE NOT EXISTS (SELECT 1 FROM banking_inbound_float_links identity WHERE identity.float_receipt_id=r.id)
  UNION ALL
  SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,NULL::text,NULL::text,r.currency,COALESCE(scope.institution_id,j.institution_id),ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason,'scopeEvidenceId',scope.attribution_id,'scopeCapturedAt',scope.captured_at)
+ ${includeInvestigation ? `jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason,'scopeEvidenceId',scope.attribution_id,'scopeCapturedAt',scope.captured_at)` : 'NULL::jsonb'}
  FROM customer_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
  LEFT JOIN customer_funding_scope_evidence scope ON scope.request_id=r.id
  UNION ALL
  SELECT r.id,CASE r.direction WHEN 'FUND' THEN 'AGENT_FUNDING' ELSE 'AGENT_DEFUNDING' END,r.status,r.reference,r.created_at,COALESCE(r.executed_at,r.rejected_at),r.amount_minor::text,NULL::text,NULL::text,r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
- jsonb_build_object('agentId',r.agent_id,'approvalId',r.approval_id,'makerId',r.maker_principal_id,'checkerId',r.checker_principal_id,'rejectionReason',r.rejection_reason)
+ ${includeInvestigation ? `jsonb_build_object('agentId',r.agent_id,'approvalId',r.approval_id,'makerId',r.maker_principal_id,'checkerId',r.checker_principal_id,'rejectionReason',r.rejection_reason)` : 'NULL::jsonb'}
  FROM agent_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
 ), scoped AS (SELECT * FROM history h WHERE ($1::boolean OR EXISTS (
  SELECT 1 FROM workforce_institution_assignments a WHERE a.principal_id=$2 AND a.status='ACTIVE' AND a.institution_id=h.institution_id
 )))`;
+}
+// List reads do not need detail-only JSON or cash-to-cash audit subqueries.
+// Keep source joins, historical scope, fees and business identities exactly shared.
+export const HISTORY_SQL = historySql(true);
+export const HISTORY_LIST_SQL = historySql(false);
 
 type Request = { authorizationPrincipal?: AuthorizationPrincipal };
 @Controller('internal/admin/transaction-history')
@@ -172,7 +182,7 @@ export class TransactionHistoryController {
     }
     values.push(limit + 1);
     const rows: Record<string, unknown>[] = await this.db.query(
-      `${HISTORY_SQL} SELECT id,type,status,reference,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorAt",created_at AS "createdAt",amount_minor AS "amountMinor",fee_minor AS "feeMinor",currency FROM scoped ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''} ORDER BY created_at DESC,type DESC,id DESC LIMIT $${values.length}`,
+      `${HISTORY_LIST_SQL} SELECT id,type,status,reference,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorAt",created_at AS "createdAt",amount_minor AS "amountMinor",fee_minor AS "feeMinor",currency FROM scoped ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''} ORDER BY created_at DESC,type DESC,id DESC LIMIT $${values.length}`,
       values,
     );
     const more = rows.length > limit;
