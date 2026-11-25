@@ -17,7 +17,6 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 
-import { AppModule } from '../src/app.module';
 import { TransferService } from '../src/transfer/transfer.service';
 import { TransferStatus } from '../src/transfer/transfer.enums';
 import { CustomerEffectiveConfigurationService } from '../src/customer-onboarding/customer-effective-configuration.service';
@@ -40,6 +39,12 @@ import {
   seedTransferParticipant,
   truncateAllTables,
 } from './support/pg-harness';
+
+// CI runs this suite through the standard real-PG runner without extra env overrides.
+// Tier-bound admission must be enabled before AppModule/ConfigModule initializes so the
+// approved institution tier policy is actually enforced (not the legacy unenforced path).
+const PREV_TIER_LIMIT_ENFORCEMENT = process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED;
+process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED = 'true';
 
 const TIER_CAP_MINOR = '500000000'; // 5,000,000 NGN in minor units (synthetic test cap)
 const COMMERCIAL_CAP_MINOR = '1000000000'; // 10,000,000 NGN - higher than tier cap
@@ -75,12 +80,13 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
   let app: NestFastifyApplication;
   let transfers: TransferService;
   let effectiveConfig: CustomerEffectiveConfigurationService;
-  const prevEnforcement = process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED;
-
   beforeAll(async () => {
     process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED = 'true';
     process.env.NODE_ENV = 'test';
     process.env.PG_TEST_CONFIRM_DISPOSABLE_CLUSTER = 'yes';
+
+    // Import after env is set: ConfigModule.forRoot is evaluated at AppModule import time.
+    const { AppModule } = await import('../src/app.module');
 
     dataSource = await createIntegrationDataSource('tier1-ceiling');
     moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -99,8 +105,9 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
     if (app) await app.close().catch(() => undefined);
     else if (moduleRef) await moduleRef.close().catch(() => undefined);
     if (dataSource) await destroyIntegrationDataSource(dataSource).catch(() => undefined);
-    if (prevEnforcement === undefined) delete process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED;
-    else process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED = prevEnforcement;
+    if (PREV_TIER_LIMIT_ENFORCEMENT === undefined)
+      delete process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED;
+    else process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED = PREV_TIER_LIMIT_ENFORCEMENT;
   }, 120000);
 
   beforeEach(async () => {
@@ -377,6 +384,11 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
   }
 
   it('tier cap controls: effective config matches runtime; below-cap succeeds, above-cap denied', async () => {
+    // Prerequisite: tier-limit enforcement must be active in this test process before
+    // AppModule initialized. The standard CI PG runner does not set this env var.
+    const tierPolicies = moduleRef.get(InstitutionKycLimitPolicyService);
+    expect(tierPolicies.enforcementEnabled).toBe(true);
+
     await seedGovernedTierPolicyHead();
     await seedProduct();
     const institutionId = await createInstitution();
@@ -388,6 +400,30 @@ describe('Tier 1 runtime ceiling proof (fully migrated disposable PG)', () => {
     // Approved synthetic institution Tier 1 cap is lower - this must control.
     await seedLimitProfile('T1_TIER_CAP', TIER_CAP_MINOR);
     await approveInstitutionTierPolicy(institutionId, 'T1_TIER_CAP');
+
+    // Prerequisite: approved institution tier policy for LEVEL_1/WALLET_TRANSFER/NGN
+    // must be selected as the PROFILE mapping to T1_TIER_CAP.
+    const approvedPolicy = await dataSource.query<
+      Array<{ version: number; definition: { mappings?: Array<Record<string, unknown>> } }>
+    >(
+      `SELECT version, definition
+         FROM institution_kyc_limit_policy_versions
+        WHERE institution_id = $1
+        ORDER BY version DESC LIMIT 1`,
+      [institutionId],
+    );
+    expect(approvedPolicy).toHaveLength(1);
+    const definition = approvedPolicy[0]!.definition;
+    const l1 = (definition.mappings ?? []).find(
+      (m) =>
+        m.product === 'WALLET_TRANSFER' &&
+        m.currency === 'NGN' &&
+        m.tier === 'LEVEL_1' &&
+        (m.serviceClass === null || m.serviceClass === undefined),
+    );
+    expect(l1).toBeDefined();
+    expect(l1!.disposition).toBe('PROFILE');
+    expect(l1!.profileCode).toBe('T1_TIER_CAP');
 
     const sender = await provisionClaimedWallet('sender', institutionId);
     const receiver = await provisionClaimedWallet('receiver', institutionId);
