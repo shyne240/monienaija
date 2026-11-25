@@ -1,0 +1,81 @@
+{
+  "generatedAt": "2026-11-25T13:50:46.146Z",
+  "branch": "arena/41dde913-monienaija",
+  "database": "monienaija",
+  "product": "WALLET_TRANSFER",
+  "currency": "NGN",
+  "proposal": {
+    "action": "FEE_RULE_CREATE",
+    "approvalId": "98c051aa-baf7-457d-aa05-2e9bbd2e70e6",
+    "payloadSentByAdminWebContract": {
+      "reason": "PR27 runtime quote parity — open-ended wallet transfer fee",
+      "productCode": "WALLET_TRANSFER",
+      "currency": "NGN",
+      "customerClassCode": null,
+      "agentClassId": null,
+      "institutionId": null,
+      "flatFeeMinor": "100",
+      "percentageBps": 0,
+      "minimumFeeMinor": null,
+      "maximumFeeMinor": null,
+      "vatBps": 0,
+      "effectiveFrom": "2026-01-01T00:00:00.000Z",
+      "priority": 100,
+      "isActive": true
+    },
+    "effectiveToKeyPresent": false
+  },
+  "lifecycle": {
+    "makerRoleKey": "FINANCE_PREPARER",
+    "makerPrincipalId": "pr27fee:FINANCE_PREPARER:7e95ed19-ecc6-41ad-8c92-ddb43af095f2",
+    "selfApprovalStatus": 403,
+    "checkerRoleKey": "FINANCE_CONTROLLER",
+    "checkerPrincipalId": "pr27fee:FINANCE_CONTROLLER:d4855958-6eb0-44da-a476-7814f9da2bdc",
+    "approvalStatusAfterApprove": "APPROVED",
+    "ruleIdBeforeExecution": null,
+    "executionStatus": 201,
+    "appliedRuleId": "c5f3cb97-656c-448a-a8d7-55dfa5326e50",
+    "approvalStatusAfterExecution": "CONSUMED"
+  },
+  "appliedRule": {
+    "flatFeeMinor": "100",
+    "percentageBps": 0,
+    "vatBps": 0,
+    "effectiveFrom": "2026-01-01T00:00:00.000Z",
+    "effectiveTo": null,
+    "priority": 100,
+    "isActive": true
+  },
+  "runtime": {
+    "resolverStatus": "RESOLVED",
+    "resolvedRuleId": "c5f3cb97-656c-448a-a8d7-55dfa5326e50",
+    "resolvedEffectiveTo": null,
+    "quote": {
+      "quoteId": "57eee25e-d5ad-409c-b4fc-075e72004fba",
+      "amountMinor": "100000",
+      "feeMinor": "100",
+      "vatMinor": "0",
+      "totalDebitMinor": "100100",
+      "status": "ACTIVE"
+    },
+    "preview": {
+      "status": "RESOLVED",
+      "ruleId": "c5f3cb97-656c-448a-a8d7-55dfa5326e50",
+      "computed": {
+        "status": "APPLIED",
+        "feeMinor": "100",
+        "vatMinor": "0",
+        "totalMinor": "100100",
+        "calculationModel": "FLAT_PLUS_PERCENTAGE",
+        "postsJournalLegs": false
+      }
+    },
+    "parity": {
+      "quoteEqualsPreview": true,
+      "quoteEqualsResolver": true
+    }
+  },
+  "guarantees": {
+    "journalsPosted": "0"
+  }
+}

@@ -1546,6 +1546,184 @@ describe('ARENA 3 commercial configuration Phase 2 — real PostgreSQL + real HT
 
   // ══════════════════════════════════════════════════ 6. change-history filtering
 
+  describe('fee-rule execution atomicity (governed commercial executor)', () => {
+    const feeBody = (overrides: Record<string, unknown> = {}) => ({
+      reason: 'Arena27 fee atomicity regression',
+      productCode: PRODUCT,
+      currency: CURRENCY,
+      customerClassCode: null,
+      agentClassId: null,
+      institutionId: null,
+      flatFeeMinor: '100',
+      percentageBps: 0,
+      minimumFeeMinor: null,
+      maximumFeeMinor: null,
+      vatBps: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      effectiveTo: null,
+      priority: 100,
+      isActive: true,
+      ...overrides,
+    });
+
+    async function proposeFee(preparer: { token: string }, overrides: Record<string, unknown> = {}) {
+      const body = feeBody(overrides);
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/internal/fee-rules')
+        .set(auth(preparer.token))
+        .send(body);
+      return { res, body };
+    }
+
+    it('accepts open-ended effectiveTo:null and invalid execution input does not consume the approval (retry succeeds)', async () => {
+      const preparer = await provisionRole('FINANCE_PREPARER');
+      const controller = await provisionRole('FINANCE_CONTROLLER');
+
+      const { res, body } = await proposeFee(preparer, { effectiveTo: null });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ status: 'REQUESTED', actionType: 'FEE_RULE_CREATE' });
+      const approvalId = res.body.approvalId as string;
+
+      const approved = await request(app.getHttpServer())
+        .post(`${APPROVALS_PATH}/${approvalId}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'ok' });
+      expect(approved.status).toBe(201);
+
+      // Invalid execution input (different payload -> fingerprint mismatch) must NOT consume approval.
+      const bad = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send({ ...body, effectiveTo: 'not-a-date' });
+      expect(bad.status).toBe(403);
+      expect(String(bad.body?.message ?? '')).toMatch(/fingerprint|mismatch|approved request/i);
+
+      const approvalRowAfterBad = await dataSource.query<Array<{ status: string }>>(
+        'SELECT status FROM privileged_action_approvals WHERE id = $1',
+        [approvalId],
+      );
+      expect(approvalRowAfterBad[0]?.status).toBe('APPROVED');
+
+      // Retry with the exact approved payload succeeds and consumes atomically.
+      const executed = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send(body);
+      expect(executed.status).toBe(201);
+      expect(executed.body).toMatchObject({
+        productCode: PRODUCT,
+        currency: CURRENCY,
+        flatFeeMinor: '100',
+        percentageBps: 0,
+        vatBps: 0,
+        effectiveTo: null,
+        isActive: true,
+      });
+
+      const rules = await dataSource.query<Array<{ count: string }>>(
+        'SELECT count(*)::text AS count FROM fee_rules WHERE product_code = $1 AND currency = $2',
+        [PRODUCT, CURRENCY],
+      );
+      expect(Number(rules[0]!.count)).toBe(1);
+    });
+
+    it('does not consume approval when persistence fails, then allows successful retry after the conflict is removed', async () => {
+      const preparer = await provisionRole('FINANCE_PREPARER');
+      const controller = await provisionRole('FINANCE_CONTROLLER');
+
+      const { res, body } = await proposeFee(preparer, {
+        reason: 'Arena27 persistence failure regression',
+        flatFeeMinor: '150',
+      });
+      expect(res.status).toBe(201);
+      const approvalId = res.body.approvalId as string;
+      await request(app.getHttpServer())
+        .post(`${APPROVALS_PATH}/${approvalId}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'ok' })
+        .expect(201);
+
+      // Sabotage: insert a conflicting row matching the unique shape to force persistence failure.
+      const product = await dataSource.query<Array<{ code: string }>>(
+        'SELECT code FROM products WHERE code = $1 LIMIT 1',
+        [PRODUCT],
+      );
+      expect(product.length).toBe(1);
+      await dataSource.query(
+        `INSERT INTO fee_rules (
+           product_code, currency, customer_class_code, agent_class_id, institution_id,
+           flat_fee_minor, percentage_bps, minimum_fee_minor, maximum_fee_minor, vat_bps,
+           effective_from, effective_to, priority, is_active, created_by, updated_by
+         ) VALUES ($1,$2,NULL,NULL,NULL,$3,0,NULL,NULL,0,$4,NULL,100,true,'sabotage','sabotage')`,
+        [PRODUCT, CURRENCY, '150', '2026-01-01T00:00:00.000Z'],
+      );
+
+      const failed = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send(body);
+      expect(failed.status).toBeGreaterThanOrEqual(400);
+
+      const ruleCountAfterFail = await dataSource.query<Array<{ count: string }>>(
+        "SELECT count(*)::text AS count FROM fee_rules WHERE created_by = 'sabotage' OR product_code = $1",
+        [PRODUCT],
+      );
+      // The sabotaging row exists; the governed write must not have been partially applied beyond it.
+      expect(Number(ruleCountAfterFail[0]!.count)).toBe(1);
+
+      // Approval must still be usable (not consumed).
+      const approvalRow = await dataSource.query<Array<{ status: string }>>(
+        'SELECT status FROM privileged_action_approvals WHERE id = $1',
+        [approvalId],
+      );
+      expect(approvalRow[0]?.status).toBe('APPROVED');
+
+      // Remove sabotage and retry with the same approved payload.
+      await dataSource.query("DELETE FROM fee_rules WHERE created_by = 'sabotage'");
+      const retried = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send(body);
+      expect(retried.status).toBe(201);
+      expect(retried.body).toMatchObject({ flatFeeMinor: '150', productCode: PRODUCT });
+    });
+
+    it('rejects duplicate execution after successful consume (replay protection)', async () => {
+      const preparer = await provisionRole('FINANCE_PREPARER');
+      const controller = await provisionRole('FINANCE_CONTROLLER');
+
+      const { res, body } = await proposeFee(preparer, {
+        reason: 'Arena27 replay protection regression',
+        flatFeeMinor: '175',
+      });
+      expect(res.status).toBe(201);
+      const approvalId = res.body.approvalId as string;
+      await request(app.getHttpServer())
+        .post(`${APPROVALS_PATH}/${approvalId}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'ok' })
+        .expect(201);
+
+      const first = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send(body);
+      expect(first.status).toBe(201);
+
+      const second = await request(app.getHttpServer())
+        .post(`/api/v1/internal/fee-rules/changes/${approvalId}/execute-create`)
+        .set(auth(controller.token))
+        .send(body);
+      expect(second.status).toBe(409);
+
+      const rules = await dataSource.query<Array<{ count: string }>>(
+        'SELECT count(*)::text AS count FROM fee_rules WHERE product_code = $1 AND currency = $2 AND flat_fee_minor = $3',
+        [PRODUCT, CURRENCY, '175'],
+      );
+      expect(Number(rules[0]!.count)).toBe(1);
+    });
+  });
+
   describe('change history', () => {
     async function seedApproval(params: {
       actionType: string;

@@ -152,7 +152,8 @@ export class ProductCatalogController {
       action: 'PRODUCT_MODIFY',
       approvalId,
       payload: this.buildCreatePayload(body),
-      write: () => this.service.createProduct(this.buildCreateCommand(body), this.actorOf(req)),
+      write: (_resourceId, manager) =>
+        this.service.createProduct(this.buildCreateCommand(body), this.actorOf(req), manager),
     });
   }
 
@@ -191,8 +192,13 @@ export class ProductCatalogController {
       action: 'PRODUCT_MODIFY',
       approvalId,
       payload: this.buildUpdatePayload(body),
-      write: (resourceId) =>
-        this.service.updateProduct(resourceId!, this.buildUpdateCommand(body), this.actorOf(req)),
+      write: (resourceId, manager) =>
+        this.service.updateProduct(
+          resourceId!,
+          this.buildUpdateCommand(body),
+          this.actorOf(req),
+          manager,
+        ),
     });
   }
 
