@@ -19,11 +19,12 @@ What each screen proves here (the check names are verbatim from `browser-run.jso
 | `03-04-delivery-trace.png` | the trace is rendered, or its absence is stated rather than glossed · the trace interprets a missing receipt instead of implying health · the trace offers the jump into the audit trail |
 | `04-06-restricted-role-no-controls.png` | the restricted role is offered no route into the protected views · the restricted role never issues a protected read from the client |
 
-`browser-run.json` recorded `passed: 17 / total: 18`, `realFailures: 0`, `advisorySkips: 1`, with
-`backend.port 39831`, `backend.seeded 11`, `backend.readinessRefuses true` and the seeded window
-`2026-11-25T14:26:00.000Z → 2026-11-25T16:26:00.000Z` (whole-minute bounds, because `Created to` in the
-queue is a minute-granularity `datetime-local` input). The run before it (port 40039, window
-`14:15 → 16:15`) produced the same ledger, and the tally has been stable across ~10 runs.
+`browser-run.json` recorded `passed: 17 / total: 18`, `realFailures: 0`, `advisorySkips: 1`,
+`restrictedRole: risk-fraud@monienaija.local`, with `backend.port 41631`, `backend.seeded 11`,
+`backend.readinessRefuses true` and the seeded window `2026-11-25T16:21:00.000Z → 2026-11-25T18:21:00.000Z`
+(whole-minute bounds, because `Created to` in the queue is a minute-granularity `datetime-local` input). The
+two runs before it (ports 40039 and 39831) produced the same ledger, and the tally has been stable across
+~12 runs.
 
 ## The one check this renderer could not paint
 

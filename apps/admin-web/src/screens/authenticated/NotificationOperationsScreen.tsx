@@ -123,6 +123,14 @@ const NotificationOperationsWorkspace: React.FC<{
    */
   const [toExclusive, setToExclusive] = useState(initialWindow?.exclusive === true);
   const [appliedExclusive, setAppliedExclusive] = useState(initialWindow?.exclusive === true);
+  /**
+   * Whether the queue itself reported the exclusive upper bound on the page being displayed. The client
+   * knowing what it *asked for* is not enough for the sentence below: if a queue answer arrives without a
+   * reported `window`, this screen already says the bound is unknown and tells the reader to treat the count
+   * as inclusive — and that warning must not be contradicted, in the same paragraph, by a claim that the two
+   * counts are meant to be equal.
+   */
+  const serverConfirmedExclusiveUpperBound = deliveries?.window?.upperBound === 'exclusive';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
@@ -294,9 +302,11 @@ const NotificationOperationsWorkspace: React.FC<{
             {deliveries?.window?.boundary ??
               'the queue did not report which upper bound it used — treat this count as inclusive of the end of the window'}
           </code>
-          {appliedExclusive && applied.to ? (
+          {appliedExclusive && applied.to && serverConfirmedExclusiveUpperBound ? (
             <span data-testid="a4-applied-window-card-match">
-              {' — the same interval the dashboard exception card aggregated, so the two counts are meant ' }
+              {
+                ' — the same interval the dashboard exception card aggregated, so the two counts are meant '
+              }
               to be equal.
             </span>
           ) : null}
@@ -308,12 +318,13 @@ const NotificationOperationsWorkspace: React.FC<{
       ) : summary ? (
         <>
           <p className="a4-ops__muted" data-testid="a4-summary-generated-at">
-            Aggregates computed {summary.generatedAt ? new Date(summary.generatedAt).toLocaleString() : 'without a reported time'}{' '}
-            · window {summary.window.hours}h from{' '}
-            {new Date(summary.window.from).toLocaleString()}
-            {summary.window.to ? ` to ${new Date(summary.window.to).toLocaleString()}` : ''} ·
-            these counts are for the summary window only and do not describe the filtered table
-            below.
+            Aggregates computed{' '}
+            {summary.generatedAt
+              ? new Date(summary.generatedAt).toLocaleString()
+              : 'without a reported time'}{' '}
+            · window {summary.window.hours}h from {new Date(summary.window.from).toLocaleString()}
+            {summary.window.to ? ` to ${new Date(summary.window.to).toLocaleString()}` : ''} · these
+            counts are for the summary window only and do not describe the filtered table below.
           </p>
 
           <div className="a4-ops__grid">
@@ -438,119 +449,118 @@ const NotificationOperationsWorkspace: React.FC<{
               could not be read is labelled as unread rather than as healthy.
             </p>
             {relatedEvent && providerReceipts ? (
-            <ol className="a4-ops__trace" data-testid="a4-delivery-trace">
-              <li>
-                <strong>Event raised</strong>
-                {relatedEvent.availability === 'FOUND' ? (
-                  <>
+              <ol className="a4-ops__trace" data-testid="a4-delivery-trace">
+                <li>
+                  <strong>Event raised</strong>
+                  {relatedEvent.availability === 'FOUND' ? (
+                    <>
+                      <span>
+                        Outbox event {relatedEvent.id} · {relatedEvent.eventType} · status{' '}
+                        {relatedEvent.status} · {relatedEvent.attempts} delivery attempt(s) by the
+                        publisher
+                        {relatedEvent.eventHasError
+                          ? ' · the event row records an error string (its text stays behind outbox.view)'
+                          : ''}
+                      </span>
+                      <span className="a4-ops__muted">
+                        occurred {formatStamp(relatedEvent.occurredAt)} · published{' '}
+                        {formatStamp(relatedEvent.publishedAt)}
+                      </span>
+                    </>
+                  ) : (
+                    <span data-testid="a4-trace-event-not-read">
+                      {relatedEvent.availability === 'NOT_FOUND'
+                        ? 'No upstream outbox event is addressable from this delivery.'
+                        : 'The upstream outbox event could not be read by this surface.'}{' '}
+                      {relatedEvent.reason} — this is not evidence about the event&rsquo;s health.
+                    </span>
+                  )}
+                  <span className="a4-ops__muted">
+                    Checked {formatStamp(relatedEvent.checkedAt)} · source {relatedEvent.source}
+                  </span>
+                </li>
+                <li>
+                  <strong>Event consumed by the notification worker</strong>
+                  {relatedEvent.receipt ? (
                     <span>
-                      Outbox event {relatedEvent.id} · {relatedEvent.eventType} ·
-                      status {relatedEvent.status} · {relatedEvent.attempts} delivery
-                      attempt(s) by the publisher
-                      {relatedEvent.eventHasError
-                        ? ' · the event row records an error string (its text stays behind outbox.view)'
+                      Consumer receipt {relatedEvent.receipt.status}
+                      {relatedEvent.receipt.reason
+                        ? ` · reason ${relatedEvent.receipt.reason}`
                         : ''}
+                      {relatedEvent.receipt.status !== 'MATERIALIZED'
+                        ? ' · no delivery row was created by this event for this consumer, so a "missing delivery" finding here is explained by suppression or quarantine, not by a lost message'
+                        : ''}
+                      {` · ${relatedEvent.receipt.attempts} processing attempt(s) · next attempt ${formatStamp(relatedEvent.receipt.nextAttemptAt)} · updated ${formatStamp(relatedEvent.receipt.updatedAt)}`}
                     </span>
-                    <span className="a4-ops__muted">
-                      occurred {formatStamp(relatedEvent.occurredAt)} · published{' '}
-                      {formatStamp(relatedEvent.publishedAt)}
+                  ) : (
+                    <span data-testid="a4-trace-receipt-absent">
+                      {relatedEvent.availability === 'FOUND'
+                        ? 'No consumer receipt row exists for this event, so the materialization decision was never recorded.'
+                        : 'No consumer receipt could be read because the event itself was not available to this surface.'}
                     </span>
-                  </>
-                ) : (
-                  <span data-testid="a4-trace-event-not-read">
-                    {relatedEvent.availability === 'NOT_FOUND'
-                      ? 'No upstream outbox event is addressable from this delivery.'
-                      : 'The upstream outbox event could not be read by this surface.'}{' '}
-                    {relatedEvent.reason} — this is not evidence about the event&rsquo;s
-                    health.
-                  </span>
-                )}
-                <span className="a4-ops__muted">
-                  Checked {formatStamp(relatedEvent.checkedAt)} · source{' '}
-                  {relatedEvent.source}
-                </span>
-              </li>
-              <li>
-                <strong>Event consumed by the notification worker</strong>
-                {relatedEvent.receipt ? (
+                  )}
+                </li>
+                <li>
+                  <strong>Delivery outcome</strong>
                   <span>
-                    Consumer receipt {relatedEvent.receipt.status}
-                    {relatedEvent.receipt.reason
-                      ? ` · reason ${relatedEvent.receipt.reason}`
-                      : ''}
-                    {relatedEvent.receipt.status !== 'MATERIALIZED'
-                      ? ' · no delivery row was created by this event for this consumer, so a "missing delivery" finding here is explained by suppression or quarantine, not by a lost message'
-                      : ''}
-                    {` · ${relatedEvent.receipt.attempts} processing attempt(s) · next attempt ${formatStamp(relatedEvent.receipt.nextAttemptAt)} · updated ${formatStamp(relatedEvent.receipt.updatedAt)}`}
+                    {detail.delivery.status} · {detail.delivery.channel} ·{' '}
+                    {detail.delivery.recipientType} {detail.delivery.recipientId} ·{' '}
+                    {detail.delivery.attempts} attempt(s) · errorCode{' '}
+                    {detail.delivery.errorCode ?? 'none recorded'} · failedAt{' '}
+                    {formatStamp(detail.delivery.failedAt)} · nextAttemptAt{' '}
+                    {formatStamp(detail.delivery.nextAttemptAt)}
                   </span>
-                ) : (
-                  <span data-testid="a4-trace-receipt-absent">
-                    {relatedEvent.availability === 'FOUND'
-                      ? 'No consumer receipt row exists for this event, so the materialization decision was never recorded.'
-                      : 'No consumer receipt could be read because the event itself was not available to this surface.'}
+                </li>
+                <li>
+                  <strong>Provider-reported outcome</strong>
+                  {providerReceipts.availability === 'AVAILABLE' ? (
+                    <ul>
+                      {providerReceipts.items.map((receipt) => (
+                        <li key={receipt.id} data-testid="a4-provider-receipt">
+                          {receipt.kind} · verification {receipt.verification} ·{' '}
+                          {receipt.providerCode ?? 'no recognized provider classification'} ·
+                          provider time {formatStamp(receipt.occurredAt)} · received{' '}
+                          {formatStamp(receipt.receivedAt)}
+                        </li>
+                      ))}
+                      {providerReceipts.returned >= providerReceipts.limit ? (
+                        <li className="a4-ops__muted">
+                          Showing the {providerReceipts.limit} most recent receipts for this
+                          delivery.
+                        </li>
+                      ) : null}
+                    </ul>
+                  ) : (
+                    <span data-testid="a4-provider-receipts-none">
+                      {providerReceipts.availability === 'NONE_RECORDED'
+                        ? 'The provider reported nothing about this message.'
+                        : 'Provider receipts could not be read by this surface.'}{' '}
+                      {providerReceipts.reason ?? ''} Absence of a provider receipt is not evidence
+                      of delivery or of failure.
+                    </span>
+                  )}
+                  <span className="a4-ops__muted">
+                    Checked {formatStamp(providerReceipts.checkedAt)} · source{' '}
+                    {providerReceipts.source}
                   </span>
-                )}
-              </li>
-              <li>
-                <strong>Delivery outcome</strong>
-                <span>
-                  {detail.delivery.status} · {detail.delivery.channel} ·{' '}
-                  {detail.delivery.recipientType} {detail.delivery.recipientId} ·{' '}
-                  {detail.delivery.attempts} attempt(s) · errorCode{' '}
-                  {detail.delivery.errorCode ?? 'none recorded'} · failedAt{' '}
-                  {formatStamp(detail.delivery.failedAt)} · nextAttemptAt{' '}
-                  {formatStamp(detail.delivery.nextAttemptAt)}
-                </span>
-              </li>
-              <li>
-                <strong>Provider-reported outcome</strong>
-                {providerReceipts.availability === 'AVAILABLE' ? (
-                  <ul>
-                    {providerReceipts.items.map((receipt) => (
-                      <li key={receipt.id} data-testid="a4-provider-receipt">
-                        {receipt.kind} · verification {receipt.verification} ·{' '}
-                        {receipt.providerCode ?? 'no recognized provider classification'} ·
-                        provider time {formatStamp(receipt.occurredAt)} · received{' '}
-                        {formatStamp(receipt.receivedAt)}
-                      </li>
-                    ))}
-                    {providerReceipts.returned >= providerReceipts.limit ? (
-                      <li className="a4-ops__muted">
-                        Showing the {providerReceipts.limit} most recent receipts for this
-                        delivery.
-                      </li>
-                    ) : null}
-                  </ul>
-                ) : (
-                  <span data-testid="a4-provider-receipts-none">
-                    {providerReceipts.availability === 'NONE_RECORDED'
-                      ? 'The provider reported nothing about this message.'
-                      : 'Provider receipts could not be read by this surface.'}{' '}
-                    {providerReceipts.reason ?? ''} Absence of a provider receipt is not
-                    evidence of delivery or of failure.
+                </li>
+                <li>
+                  <strong>Channel availability now</strong>
+                  <span>
+                    {detail.provider.channel}:{' '}
+                    {detail.provider.available ? 'available' : 'unavailable'}
+                    {detail.provider.provider ? ` (${detail.provider.provider})` : ''} · projection{' '}
+                    {detail.provider.projectionScope}
                   </span>
-                )}
-                <span className="a4-ops__muted">
-                  Checked {formatStamp(providerReceipts.checkedAt)} · source{' '}
-                  {providerReceipts.source}
-                </span>
-              </li>
-              <li>
-                <strong>Channel availability now</strong>
-                <span>
-                  {detail.provider.channel}: {detail.provider.available ? 'available' : 'unavailable'}
-                  {detail.provider.provider ? ` (${detail.provider.provider})` : ''} · projection{' '}
-                  {detail.provider.projectionScope}
-                </span>
-              </li>
-            </ol>
-              ) : (
-                <p className="a4-ops__muted" data-testid="a4-delivery-trace-unavailable">
-                  This delivery record was returned without a trace projection, so the upstream
-                  event, the consumer receipt and the provider receipts cannot be confirmed from
-                  this surface. Nothing here should be read as &ldquo;the event was fine&rdquo;.
-                </p>
-              )}
+                </li>
+              </ol>
+            ) : (
+              <p className="a4-ops__muted" data-testid="a4-delivery-trace-unavailable">
+                This delivery record was returned without a trace projection, so the upstream event,
+                the consumer receipt and the provider receipts cannot be confirmed from this
+                surface. Nothing here should be read as &ldquo;the event was fine&rdquo;.
+              </p>
+            )}
             {onOpenAuditSearch && detail.delivery.correlationId ? (
               <Button
                 size="sm"

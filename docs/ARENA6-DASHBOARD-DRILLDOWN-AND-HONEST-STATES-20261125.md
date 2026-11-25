@@ -310,6 +310,13 @@ Fixing it by flipping the queue's default would have changed the meaning of ever
   explicit `toExclusive: true`** through `WidgetDrilldownContext` → `navigation-access.ts` →
   `Layout.tsx` → `NotificationOperationsScreen`. `arena4-operations-api.ts` serializes it only when the
   caller asked for it, so an ordinary visit sends no `toExclusive` at all.
+* **The equality claim is only made when the queue confirms it.** The "same interval as the card, so the two
+  counts are meant to be equal" sentence renders only when the response itself reports
+  `window.upperBound === 'exclusive'`. What the client *asked for* is not evidence of what the server *did*:
+  without that gate, a queue answer that omits `window` (an older deployment) would have said "treat this
+  count as inclusive of the end of the window" and "these counts are meant to be equal" in one paragraph.
+  Found while writing the evidence README for the browser run; fixed with it, and pinned by a jsdom test whose
+  fixture response carries no `window` at all.
 * **The applied window is shown, not assumed.** The queue renders `a4-applied-window`:
   `Applied window: <from> → <to> · <boundary>`, where `<boundary>` is the server's own string, one of five:
   `created_at >= from AND created_at < to (half-open, UTC)`,
@@ -341,9 +348,10 @@ rows stamped **exactly at `from`**, **one second before `to`**, and **exactly at
 | `toExclusive=maybe` | **400** |
 
 `apps/admin-web/__tests__/arena6-dashboard-drilldown.test.tsx` and
-`arena4-notification-operations.test.tsx` (6/6) pin the client half: the link the card offers carries the
+`arena4-notification-operations.test.tsx` (7/7) pin the client half: the link the card offers carries the
 card's `from`/`to` and `toExclusive=true`; the queue renders the half-open boundary with the card-match
-sentence; an edited query reverts to the inclusive sentence.
+sentence; an edited query reverts to the inclusive sentence; and a response that reports no `window` renders
+the warning without the equality claim.
 
 ### The browser run (real backend, real session, real Chromium)
 
@@ -354,7 +362,11 @@ keeps that listener alive for the whole browser phase; `scripts/arena6-real-sess
 serves the built bundle plus a same-origin `/api/v1` proxy to it and drives the flow. Nothing is stubbed in
 the page.
 
-**17 of 18 checks pass; 0 are real failures.** One sign-in, then the flow the request asked to be shown —
+**17 of 18 checks pass; 0 are real failures; 1 advisory** (`browser-run.json`: `backend { port 41631,
+seeded 11, readinessRefuses: true }`, window `2026-11-25T16:21:00Z → 18:21:00Z` — whole-minute bounds,
+because `Created to` is a minute-granularity `datetime-local` — and `restrictedRole
+risk-fraud@monienaija.local`). The three runs that produced this ledger (ports 40039, 39831, 41631) reported
+the same checks. One sign-in, then the flow the request asked to be shown —
 dashboard card → failed-delivery queue → delivery trace → audit search:
 
 * the card labels the window it counted, exposes only its aggregate (no `PROVIDER_TIMEOUT` on the card), says
@@ -382,12 +394,19 @@ suites and by the HTTP assertions in `test/arena6-real-session-workflow.integrat
 The harness is now truncation-proof rather than merely green: a failed check records and continues instead of
 aborting the run; environment-only misses are flagged `advisory` and excluded from the exit code; and the
 sign-in, drill-down-filter, audit-search and restricted-role legs are **mandatory** — a run that never
-reached one fails even if everything it did run passed.
+reached one fails even if everything it did run passed. Three failure modes met *while producing this*
+evidence are closed in the harness too, because each of them can otherwise report a short run that looks
+clean: a reused admin bundle built without `ADMIN_WEB_API_BASE_URL` (the runner now reads the built asset for
+the base and rebuilds when it is missing — one such run spent 90 s waiting for a dashboard that bundle could
+never reach, and reported nothing at all); a sign-in failure while the page is dying (the reason is captured
+before any further `await`, so "the page said this" is no longer replaced by "page has been closed"); and a
+restricted leg that could not be switched off (it is on by default, disabled only by `--no-restricted`, the
+state is printed when the run starts, and the report records `restrictedRole`).
 
 ### Local gates at this change
 
 `npm run lint`, `npm run format:check`, `npm run build` clean; root `arena6-deliveries-window-boundary`
-5/5; admin-web full suite **102 suites / 1022 tests**; `npm run test:pg -- arena6-real-session` **8/8** on a
+5/5; admin-web full suite **102 suites / 1023 tests** plus `npm run ts:check` clean; `npm run test:pg -- arena6-real-session` **8/8** on a
 migrated disposable cluster (and that run regenerated
 `docs/integration/evidence/arena6-real-session/real-session-workflow.json`, whose `browserRun` field now
 states that the browser leg runs as its own process and points at its evidence file).
@@ -399,13 +418,15 @@ states that the browser leg runs as its own process and points at its evidence f
 env NODE_ENV=test DB_HOST=127.0.0.1 DB_PORT=<port> DB_USER=<user> DB_PASSWORD=<pw> \
     DB_ADMIN_NAME=postgres DB_NAME=monienaija_arena6 DB_SSL=false \
     PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
-  node scripts/arena6-real-browser.cjs --executable /tmp/chromium --lib-path /tmp/al2023/lib --restricted
+  node scripts/arena6-real-browser.cjs --executable /tmp/chromium --lib-path /tmp/al2023/lib
+# (the restricted-role leg is on by default; pass `--no-restricted` only to drop it)
 # 2. the HTTP half (same database, no browser)
 env NODE_ENV=test ARENA6_EVIDENCE_DIR=docs/integration/evidence/arena6-real-session \
     DB_HOST=127.0.0.1 DB_PORT=<port> … PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
   npm run test:pg -- arena6-real-session
 ```
 
-The admin bundle must be rebuilt before a browser run
-(`ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build` in `apps/admin-web`): the orchestrator reuses a stale
-`dist` silently.
+The admin bundle must have been built with `ADMIN_WEB_API_BASE_URL=/api/v1`
+(`ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build` in `apps/admin-web`). The orchestrator now checks the bundle
+on disk for that base and rebuilds it when the base is missing — before that check existed a stale or
+differently configured `dist` was reused silently, and the run failed as an unexplained sign-in timeout.

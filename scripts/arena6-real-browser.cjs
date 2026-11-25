@@ -37,8 +37,35 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * Whether the bundle that is already on disk was built with the API base this run needs. A reused bundle
+ * built without `ADMIN_WEB_API_BASE_URL` renders a login page that can never sign in — the page says so in a
+ * red notice, and the browser leg then reports ninety seconds of waiting for a dashboard that was never
+ * reachable. Checking the built asset costs one read and turns that into a rebuild.
+ */
+function bundleCarriesApiBase(webRoot, apiBase) {
+  const assets = path.join(webRoot, 'assets');
+  if (!fs.existsSync(assets)) return false;
+  return fs.readdirSync(assets).some((file) => {
+    if (!file.endsWith('.js')) return false;
+    try {
+      return fs.readFileSync(path.join(assets, file), 'utf8').includes(apiBase);
+    } catch {
+      return false;
+    }
+  });
+}
+
 function buildWebIfNeeded(webRoot) {
-  if (fs.existsSync(path.join(webRoot, 'index.html'))) return 'reused';
+  const apiBase = process.env.ADMIN_WEB_API_BASE_URL ?? '/api/v1';
+  if (fs.existsSync(path.join(webRoot, 'index.html')) && bundleCarriesApiBase(webRoot, apiBase)) {
+    return 'reused';
+  }
+  if (fs.existsSync(path.join(webRoot, 'index.html'))) {
+    process.stdout.write(
+      `arena6-browser-run: the bundle on disk was not built with ${apiBase}; rebuilding\n`,
+    );
+  }
   const result = spawnSync('npx', ['vite', 'build'], {
     cwd: path.join(ROOT, 'apps/admin-web'),
     stdio: 'inherit',
@@ -60,12 +87,18 @@ async function main() {
   const out = path.resolve(ROOT, args.out ?? 'docs/integration/evidence/arena6-real-browser');
   const email = args.email ?? 'finance-auditor@monienaija.local';
   const password = args.password ?? 'MonieNaija_FINANCE_AUDITOR_123!';
+  // On by default, because the negative half of the drill-down is what proves the permissions hold; switched
+  // off only by name, and the state is printed so a report can never be read as "no requests" by accident.
+  const restricted = !args['no-restricted'];
   const restrictedEmail = args['restricted-email'] ?? 'risk-fraud@monienaija.local';
   const restrictedPassword = args['restricted-password'] ?? 'MonieNaija_RISK_FRAUD_123!';
   fs.mkdirSync(out, { recursive: true });
 
   const built = buildWebIfNeeded(webRoot);
   process.stdout.write(`arena6-browser-run: admin bundle ${built} at ${webRoot}\n`);
+  process.stdout.write(
+    `arena6-browser-run: restricted-role leg ${restricted ? 'enabled' : 'DISABLED by --no-restricted'}\n`,
+  );
 
   process.stdout.write(
     'arena6-browser-run: starting the standalone backend (migrates its own database)…\n',
@@ -137,7 +170,7 @@ async function main() {
       restrictedEmail,
       restrictedPassword,
       correlationId: ready.correlationId,
-      restricted: args.restricted,
+      restricted,
       window: JSON.stringify(ready.window),
       expectTotal: 3,
       out,

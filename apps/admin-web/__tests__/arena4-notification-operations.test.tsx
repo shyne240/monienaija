@@ -251,12 +251,17 @@ test('a drill-down hands the card window to the queue with the bound excluded, a
 });
 
 test('editing the upper bound ends the card handoff: the inclusive bound returns', async () => {
+  // Each request is answered the way the real queue answers it: the drill-down's `toExclusive=true` gets the
+  // half-open echo, the edited query (no flag) gets the inclusive echo. The screen's statement therefore
+  // follows the server's answer in both directions, which is the behavior under test.
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
     if (path.startsWith('/internal/notifications/operations/summary')) {
       return Promise.resolve(summary);
     }
     if (path.startsWith('/internal/notifications/deliveries?')) {
-      return Promise.resolve(editWindowDeliveries);
+      return Promise.resolve(
+        path.includes('toExclusive=true') ? cardWindowDeliveries : editWindowDeliveries,
+      );
     }
     return Promise.reject(new Error(`unexpected ${path}`));
   });
@@ -288,4 +293,44 @@ test('editing the upper bound ends the card handoff: the inclusive bound returns
   expect(last).not.toContain('toExclusive');
   expect(last).toContain('to=2026-11-25T14%3A00%3A00.000Z');
   expect(last).toContain('from=2026-11-18T15%3A56%3A00.000Z');
+});
+
+test('a queue that does not report its bound warns, and does not also claim the card match', async () => {
+  // The response below deliberately has no `window` at all — the shape an older queue answers with. The
+  // screen's only honest move is to say the bound is unreported; rendering the card-match sentence next to
+  // that warning would put "treat this count as inclusive" and "these counts are meant to be equal" in the
+  // same paragraph, which is the contradiction this test exists to keep out.
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/notifications/operations/summary')) {
+      return Promise.resolve(summary);
+    }
+    if (path.startsWith('/internal/notifications/deliveries?')) {
+      return Promise.resolve(deliveries);
+    }
+    return Promise.reject(new Error(`unexpected ${path}`));
+  });
+  render(
+    <NotificationOperationsScreen
+      initialStatus="FAILED"
+      initialWindow={{
+        from: '2026-11-18T15:56:00.000Z',
+        to: '2026-11-25T15:56:00.000Z',
+        exclusive: true,
+      }}
+    />,
+  );
+  // Barrier first: the queue answer has been painted (so the absence asserted below is not a pre-response
+  // emptiness), and it was requested with the exclusive bound.
+  await screen.findByText(/1 matching deliveries/);
+  const requested = (ApiClient.get as jest.Mock).mock.calls
+    .map((call) => String(call[0]))
+    .filter((path) => path.startsWith('/internal/notifications/deliveries?'))
+    .at(-1)!;
+  expect(requested).toContain('toExclusive=true');
+
+  const note = await screen.findByTestId('a4-applied-window');
+  expect(note.textContent).toContain(
+    'the queue did not report which upper bound it used — treat this count as inclusive of the end of the window',
+  );
+  expect(screen.queryByTestId('a4-applied-window-card-match')).toBeNull();
 });

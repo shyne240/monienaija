@@ -57,8 +57,15 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i += 1) {
     if (!argv[i].startsWith('--')) continue;
-    args[argv[i].slice(2)] = argv[i + 1];
-    i += 1;
+    const key = argv[i].slice(2);
+    // A flag whose value is another flag is a boolean, and swallowing the next token would shift every
+    // later argument (a bare `--restricted` used to eat `--out`, which then read as `--out undefined`).
+    if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+      args[key] = argv[i + 1];
+      i += 1;
+    } else {
+      args[key] = true;
+    }
   }
   return args;
 }
@@ -185,7 +192,7 @@ async function main(cliArgs, options = {}) {
   const webRoot = path.resolve(args['web-root']);
   // A silently skipped leg is worse than a failing one: the restricted role is what proves the negative
   // half of the drill-down, so it runs unless switched off by name.
-  if (args.restricted === 'off') {
+  if (args.restricted === false || args.restricted === 'off') {
     delete args['restricted-email'];
   } else if (!args['restricted-email']) {
     args['restricted-email'] = 'risk-fraud@monienaija.local';
@@ -403,12 +410,25 @@ async function main(cliArgs, options = {}) {
       cardVisible = await cardWindow.count();
     } catch (waitError) {
       // Whatever the page actually shows is the only way to tell a selector problem from a bundle problem
-      // from a refused login, so it goes into the report rather than into a stack trace alone.
-      await capture(page, '01-signin-did-not-reach-dashboard');
-      throw new Error(
-        `dashboard card never appeared after sign-in: ${String(waitError).split('\n')[0]} :: ` +
-          JSON.stringify(await pageState()),
-      );
+      // from a refused login, so it goes into the report rather than into a stack trace alone. Every step
+      // here is guarded: this path is taken exactly when the page may already be dying, and an unguarded
+      // `await` in it replaced the real reason with "page has been closed" once — the screenshot was the
+      // only thing left that explained the run.
+      const reason = `dashboard card never appeared after sign-in: ${String(waitError).split('\n')[0]}`;
+      reportFatal = reason;
+      let state = '(page state unavailable)';
+      try {
+        state = JSON.stringify(await pageState());
+      } catch (stateError) {
+        state = `(page state unavailable: ${String(stateError).split('\n')[0]})`;
+      }
+      reportFatal = `${reason} :: ${state}`;
+      try {
+        await capture(page, '01-signin-did-not-reach-dashboard');
+      } catch (captureError) {
+        reportFatal = `${reportFatal} (screenshot failed: ${String(captureError).split('\n')[0]})`;
+      }
+      throw new Error(reportFatal);
     }
     await capture(page, '01-dashboard-exception-card');
     check(
@@ -856,6 +876,9 @@ async function main(cliArgs, options = {}) {
       realFailures: realFailures.length,
       requests: requestsByRole,
       responses: responsesByRole,
+      // Recorded so the report itself says whether the restricted leg was in this run at all: an empty
+      // `requests.restricted` means "not exercised" exactly as often as it means "nothing was offered".
+      restrictedRole: args['restricted-email'] ?? 'not exercised in this run',
       environment:
         'a browser leg that the sandbox Chromium could not paint is recorded as advisory, not as a product failure; the same view is covered by apps/admin-web jsdom suites and the real-session HTTP test',
       notCertified: [
@@ -915,6 +938,7 @@ async function run(options = {}) {
     port: options.port,
     email: options.email,
     password: options.password,
+    restricted: options.restricted,
     'restricted-email': options.restrictedEmail,
     'restricted-password': options.restrictedPassword,
     'correlation-id': options.correlationId,
