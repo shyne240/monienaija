@@ -10,6 +10,7 @@ import {
   DEFAULT_SESSION_AUDIENCE,
   type AuthenticationSessionService,
 } from '../customer-authentication/authentication-session.service';
+import type { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import type { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import type { KycTierPolicyService } from './kyc-tier-policy.service';
 import { decideTier, planTierTransition, type TierLevel } from './kyc-tier-decision';
@@ -24,6 +25,7 @@ type CustomerRow = {
 /** Single transactional mutation boundary for governed automatic assessments. */
 export class KycTierTransitionService {
   private readonly logger = new Logger(KycTierTransitionService.name);
+  private institutionScope?: InstitutionWorkforceScopeService;
   constructor(
     private readonly db: DataSource,
     private readonly policies: KycTierPolicyService,
@@ -32,6 +34,10 @@ export class KycTierTransitionService {
     private readonly authorization: AuthorizationService,
     private readonly sessions?: Pick<AuthenticationSessionService, 'revokeAllForCustomerInManager'>,
   ) {}
+  setInstitutionScope(institutionScope?: InstitutionWorkforceScopeService): this {
+    this.institutionScope = institutionScope;
+    return this;
+  }
   async reviews(principal: AuthorizationPrincipal | undefined) {
     if (!principal || !principal.sessionId || !UUID.test(principal.sessionId))
       throw new ForbiddenException('KYC authorization required');
@@ -48,6 +54,19 @@ export class KycTierTransitionService {
       { type: 'kyc' },
     );
     if (!d.allowed) throw new ForbiddenException('KYC authorization required');
+    const scope = this.institutionScope
+      ? await this.institutionScope.resolveCustomerRecordScope(principal)
+      : null;
+    const params: unknown[] = [];
+    let scopeFilter = '';
+    if (scope && scope.enrolmentsTablePresent) {
+      if (scope.mode === 'ASSIGNED_INSTITUTIONS' || scope.mode === 'EXPLICIT_INSTITUTION') {
+        params.push(scope.institutionIds);
+        scopeFilter = `WHERE EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = s.customer_id AND cie.institution_id = ANY($1::uuid[]))`;
+      } else if (scope.mode === 'UNASSIGNED_DIRECT_ONLY') {
+        scopeFilter = `WHERE NOT EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = s.customer_id)`;
+      }
+    }
     return this.db.query<
       Array<{
         customer_id: string;
@@ -56,9 +75,12 @@ export class KycTierTransitionService {
         created_at: Date;
         hold_reason: string | null;
       }>
-    >(`WITH latest AS (SELECT DISTINCT ON(customer_id) customer_id,reason,policy_version,created_at,outcome FROM kyc_tier_evaluations ORDER BY customer_id,created_at DESC,id DESC),
+    >(
+      `WITH latest AS (SELECT DISTINCT ON(customer_id) customer_id,reason,policy_version,created_at,outcome FROM kyc_tier_evaluations ORDER BY customer_id,created_at DESC,id DESC),
     subjects AS (SELECT customer_id FROM latest WHERE outcome='HOLD_FOR_REVIEW' AND reason NOT IN ('TRUSTED_EVIDENCE_UNAVAILABLE','POLICY_NOT_EFFECTIVE_OR_APPROVED') UNION SELECT customer_id FROM kyc_tier_manual_holds)
-    SELECT s.customer_id,COALESCE(l.reason,h.reason) AS reason,l.policy_version,COALESCE(l.created_at,h.created_at) AS created_at,h.reason AS hold_reason FROM subjects s LEFT JOIN latest l ON l.customer_id=s.customer_id LEFT JOIN kyc_tier_manual_holds h ON h.customer_id=s.customer_id ORDER BY created_at DESC LIMIT 100`);
+    SELECT s.customer_id,COALESCE(l.reason,h.reason) AS reason,l.policy_version,COALESCE(l.created_at,h.created_at) AS created_at,h.reason AS hold_reason FROM subjects s LEFT JOIN latest l ON l.customer_id=s.customer_id LEFT JOIN kyc_tier_manual_holds h ON h.customer_id=s.customer_id ${scopeFilter} ORDER BY created_at DESC LIMIT 100`,
+      params,
+    );
   }
   /** Queue revision is monotonic even after a worker completes it. */
   async enqueue(customerId: string): Promise<void> {
@@ -111,6 +133,9 @@ export class KycTierTransitionService {
     );
     if (!authorization.allowed) throw new ForbiddenException('KYC authorization required');
     if (!UUID.test(customerId)) throw new ConflictException('Invalid customer');
+    if (this.institutionScope) {
+      await this.institutionScope.assertCanAccessCustomerRecord(principal, customerId);
+    }
     // An approval is evaluated from locked authoritative evidence, never from the body.
     if (command.status === CustomerKycStatus.APPROVED) {
       if (!['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(command.level))

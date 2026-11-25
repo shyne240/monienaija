@@ -14,9 +14,12 @@ interface Ticket {
   status: string;
   priority?: string;
   subject?: string;
+  description?: string;
   customerId?: string | null;
   agentId?: string | null;
   assignedTo?: string | null;
+  fundingRequestId?: string | null;
+  relatedTransferId?: string | null;
   createdAt: string;
   updatedAt: string;
   version?: number;
@@ -57,6 +60,9 @@ interface SupportProps {
   initialCustomerId?: string;
   initialAgentId?: string;
   onBackToAgent?: () => void;
+  onBackToCustomer?: () => void;
+  onNavigateToCustomer?: (customerId: string) => void;
+  onNavigateToAgent?: (agentId: string) => void;
   onSupportGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
@@ -82,6 +88,9 @@ const SupportWorkspace: React.FC<SupportProps> = ({
   initialCustomerId,
   initialAgentId,
   onBackToAgent,
+  onBackToCustomer,
+  onNavigateToCustomer,
+  onNavigateToAgent,
   onSupportGuardChange,
 }) => {
   const { principal } = useAuthStore();
@@ -94,6 +103,33 @@ const SupportWorkspace: React.FC<SupportProps> = ({
   const customerFilter = initialCustomerId || '';
   const [agentIdDraft, setAgentIdDraft] = useState(initialAgentId || '');
   const [appliedAgentFilter, setAppliedAgentFilter] = useState(initialAgentId || '');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [assignedFilter, setAssignedFilter] = useState('');
+  const [sortBy, setSortBy] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [summaryCounts, setSummaryCounts] = useState<{
+    total: number;
+    open: number;
+    inProgress: number;
+    resolved: number;
+    closed: number;
+    unassigned: number;
+    criticalOrHigh: number;
+  } | null>(null);
+
+  // Create Ticket state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newSubject, setNewSubject] = useState('');
+  const [newCategory, setNewCategory] = useState('FUNDING');
+  const [newPriority, setNewPriority] = useState('HIGH');
+  const [newDescription, setNewDescription] = useState('');
+  const [newTargetCustomerId, setNewTargetCustomerId] = useState(initialCustomerId || '');
+  const [newTargetAgentId, setNewTargetAgentId] = useState(initialAgentId || '');
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [createTicketErr, setCreateTicketErr] = useState('');
+  const [createTicketMsg, setCreateTicketMsg] = useState('');
 
   useEffect(() => {
     const nextAgentId = initialAgentId || '';
@@ -194,6 +230,18 @@ const SupportWorkspace: React.FC<SupportProps> = ({
     try {
       const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
       if (status) query.set('status', status);
+      if (priorityFilter) query.set('priority', priorityFilter);
+      if (categoryFilter) query.set('category', categoryFilter);
+      if (assignedFilter) {
+        query.set(
+          'assignedTo',
+          assignedFilter === '__ME__' && principal?.principalId
+            ? principal.principalId
+            : assignedFilter,
+        );
+      }
+      if (appliedSearch.trim()) query.set('search', appliedSearch.trim());
+      if (sortBy) query.set('sortBy', sortBy);
       if (customerFilter) query.set('customerId', customerFilter);
       if (appliedAgentFilter.trim()) query.set('agentId', appliedAgentFilter.trim());
       const response: any = await ApiClient.get(`/internal/support/tickets?${query.toString()}`);
@@ -216,6 +264,9 @@ const SupportWorkspace: React.FC<SupportProps> = ({
       if (requestId !== listRequestId.current) return;
       setTickets(rows);
       setTotal(count);
+      if (response?.counts && typeof response.counts === 'object') {
+        setSummaryCounts(response.counts);
+      }
     } catch (err: any) {
       if (requestId === listRequestId.current) setError(err?.message || 'Failed to load tickets');
     } finally {
@@ -232,7 +283,63 @@ const SupportWorkspace: React.FC<SupportProps> = ({
     return () => {
       listRequestId.current += 1;
     };
-  }, [page, status, customerFilter, appliedAgentFilter, canView]);
+  }, [
+    page,
+    status,
+    priorityFilter,
+    categoryFilter,
+    assignedFilter,
+    appliedSearch,
+    sortBy,
+    customerFilter,
+    appliedAgentFilter,
+    canView,
+  ]);
+
+  const handleCreateSupportTicket = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canChange || creatingTicket) return;
+    const subj = newSubject.trim();
+    const desc = newDescription.trim();
+    if (subj.length < 3 || desc.length < 3) {
+      setCreateTicketErr('Subject and description must each be at least 3 characters.');
+      return;
+    }
+    setCreatingTicket(true);
+    setCreateTicketErr('');
+    setCreateTicketMsg('');
+    try {
+      const idemKey = globalThis.crypto?.getRandomValues
+        ? Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (v) =>
+            v.toString(16).padStart(2, '0'),
+          ).join('')
+        : `sup-${Date.now()}`;
+      const payload: Record<string, unknown> = {
+        subject: subj,
+        category: newCategory,
+        priority: newPriority,
+        description: desc,
+      };
+      if (newTargetCustomerId.trim()) payload.targetCustomerId = newTargetCustomerId.trim();
+      if (newTargetAgentId.trim()) payload.targetAgentId = newTargetAgentId.trim();
+      const created = await ApiClient.post<Ticket>('/internal/support/tickets', payload, {
+        idempotencyKey: idemKey,
+      });
+      if (!validTicket(created)) {
+        throw new Error('Ticket creation receipt was invalid.');
+      }
+      setCreateTicketMsg(`Created support ticket ${created.reference || created.id}.`);
+      setNewSubject('');
+      setNewDescription('');
+      setShowCreateForm(false);
+      void latestFetchList.current();
+      void open(created);
+    } catch (err: any) {
+      setCreateTicketErr(err?.message || 'Failed to create support ticket.');
+    } finally {
+      setCreatingTicket(false);
+    }
+  };
 
   const fetchMessages = async (ticketId: string, detailId = detailRequestId.current) => {
     const requestId = ++messageRequestId.current;
@@ -555,8 +662,20 @@ const SupportWorkspace: React.FC<SupportProps> = ({
       />
       {initialCustomerId && (
         <div style={contextNote}>
-          🔗 Customer context: <code>{initialCustomerId}</code> — results are filtered by the
-          backend <code>customerId</code> query.
+          <span>
+            🔗 Customer context: <code>{initialCustomerId}</code> — results are filtered by the
+            backend <code>customerId</code> query.
+          </span>
+          {onBackToCustomer && (
+            <button
+              type="button"
+              onClick={onBackToCustomer}
+              disabled={saving || Boolean(pendingExit)}
+              style={smallBtn}
+            >
+              Back to Customer 360°
+            </button>
+          )}
         </div>
       )}
       {appliedAgentFilter && (
@@ -581,13 +700,189 @@ const SupportWorkspace: React.FC<SupportProps> = ({
         </div>
       )}
       <section className="mn-support-redesign__queue" aria-label="Support ticket queue">
-        <header className="mn-support-redesign__section-head">
+        <header
+          className="mn-support-redesign__section-head"
+          style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}
+        >
           <div>
             <p>SUPPORT OPERATIONS</p>
             <h2>Ticket queue</h2>
             <span>Find a ticket, review its history and act within your permissions.</span>
           </div>
+          {canChange && (
+            <button
+              type="button"
+              style={btn}
+              onClick={() => {
+                setShowCreateForm((openState) => !openState);
+                setCreateTicketErr('');
+                setCreateTicketMsg('');
+              }}
+            >
+              {showCreateForm ? 'Close new ticket form' : '+ New support ticket'}
+            </button>
+          )}
         </header>
+
+        {createTicketMsg && (
+          <div style={successBox} role="status">
+            {createTicketMsg}
+          </div>
+        )}
+
+        {showCreateForm && canChange && (
+          <form
+            onSubmit={handleCreateSupportTicket}
+            aria-label="Create support ticket"
+            style={{
+              background: '#F8FAFC',
+              border: '1px solid #DDE7E2',
+              borderRadius: 8,
+              padding: 14,
+              marginBottom: 14,
+              display: 'grid',
+              gap: 10,
+            }}
+          >
+            <strong style={{ fontSize: 14 }}>Open workforce support ticket</strong>
+            {createTicketErr && (
+              <div style={errBox} role="alert">
+                {createTicketErr}
+              </div>
+            )}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: 10,
+              }}
+            >
+              <label style={fieldLabel}>
+                Subject
+                <input
+                  aria-label="Ticket subject"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  placeholder="Concise issue summary"
+                  style={input}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Category
+                <select
+                  aria-label="Ticket category"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  style={statusSelect}
+                >
+                  <option value="FUNDING">FUNDING</option>
+                  <option value="TRANSFER">TRANSFER</option>
+                  <option value="WALLET">WALLET</option>
+                  <option value="CASH_IN">CASH_IN</option>
+                  <option value="CASH_OUT">CASH_OUT</option>
+                  <option value="CASH_TO_CASH">CASH_TO_CASH</option>
+                  <option value="PROFILE">PROFILE</option>
+                  <option value="PIN">PIN</option>
+                  <option value="AUTHENTICATION">AUTHENTICATION</option>
+                  <option value="AGENT_FUNDING">AGENT_FUNDING</option>
+                  <option value="OUTLET">OUTLET</option>
+                  <option value="TERMINAL">TERMINAL</option>
+                  <option value="OTHER">OTHER</option>
+                </select>
+              </label>
+              <label style={fieldLabel}>
+                Priority
+                <select
+                  aria-label="Ticket priority"
+                  value={newPriority}
+                  onChange={(e) => setNewPriority(e.target.value)}
+                  style={statusSelect}
+                >
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="LOW">LOW</option>
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 10,
+              }}
+            >
+              <label style={fieldLabel}>
+                Customer UUID (optional)
+                <input
+                  aria-label="Target customer UUID"
+                  value={newTargetCustomerId}
+                  onChange={(e) => setNewTargetCustomerId(e.target.value)}
+                  placeholder="Optional customer UUID"
+                  style={input}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Agent UUID (optional)
+                <input
+                  aria-label="Target agent UUID"
+                  value={newTargetAgentId}
+                  onChange={(e) => setNewTargetAgentId(e.target.value)}
+                  placeholder="Optional agent UUID"
+                  style={input}
+                />
+              </label>
+            </div>
+            <label style={fieldLabel}>
+              Description
+              <textarea
+                aria-label="Ticket description"
+                rows={3}
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Describe customer/agent report, references, and triage steps…"
+                style={{ ...input, minHeight: 72 }}
+              />
+            </label>
+            <div>
+              <button type="submit" style={btn} disabled={creatingTicket}>
+                {creatingTicket ? 'Creating…' : 'Create support ticket'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {summaryCounts && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+              gap: 8,
+              marginBottom: 12,
+            }}
+            data-testid="support-ticket-kpis"
+          >
+            <div style={contextNote}>
+              <span>Total:</span> <strong>{summaryCounts.total}</strong>
+            </div>
+            <div style={contextNote}>
+              <span>Open:</span> <strong>{summaryCounts.open}</strong>
+            </div>
+            <div style={contextNote}>
+              <span>In Progress:</span> <strong>{summaryCounts.inProgress}</strong>
+            </div>
+            <div style={contextNote}>
+              <span>Unassigned:</span> <strong>{summaryCounts.unassigned}</strong>
+            </div>
+            <div style={contextNote}>
+              <span>Critical/High:</span> <strong>{summaryCounts.criticalOrHigh}</strong>
+            </div>
+            <div style={contextNote}>
+              <span>Resolved:</span> <strong>{summaryCounts.resolved}</strong>
+            </div>
+          </div>
+        )}
+
         <WorkspaceFilterTabs
           label="Ticket status filters"
           value={status}
@@ -621,6 +916,104 @@ const SupportWorkspace: React.FC<SupportProps> = ({
               <option value="CLOSED">CLOSED</option>
             </select>
           </label>
+          <label>
+            Priority{' '}
+            <select
+              aria-label="Filter by priority"
+              style={statusSelect}
+              value={priorityFilter}
+              onChange={(event) => {
+                setPriorityFilter(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="HIGH">HIGH</option>
+              <option value="MEDIUM">MEDIUM</option>
+              <option value="LOW">LOW</option>
+            </select>
+          </label>
+          <label>
+            Category{' '}
+            <select
+              aria-label="Filter by category"
+              style={statusSelect}
+              value={categoryFilter}
+              onChange={(event) => {
+                setCategoryFilter(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All</option>
+              <option value="FUNDING">FUNDING</option>
+              <option value="TRANSFER">TRANSFER</option>
+              <option value="WALLET">WALLET</option>
+              <option value="CASH_IN">CASH_IN</option>
+              <option value="CASH_OUT">CASH_OUT</option>
+              <option value="CASH_TO_CASH">CASH_TO_CASH</option>
+              <option value="PROFILE">PROFILE</option>
+              <option value="PIN">PIN</option>
+              <option value="AUTHENTICATION">AUTHENTICATION</option>
+              <option value="AGENT_FUNDING">AGENT_FUNDING</option>
+              <option value="OUTLET">OUTLET</option>
+              <option value="TERMINAL">TERMINAL</option>
+              <option value="OTHER">OTHER</option>
+            </select>
+          </label>
+          <label>
+            Queue{' '}
+            <select
+              aria-label="Filter by assignment"
+              style={statusSelect}
+              value={assignedFilter}
+              onChange={(event) => {
+                setAssignedFilter(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All</option>
+              <option value="__UNASSIGNED__">Unassigned</option>
+              <option value="__ME__">Assigned to me</option>
+            </select>
+          </label>
+          <label>
+            Sort{' '}
+            <select
+              aria-label="Sort tickets"
+              style={statusSelect}
+              value={sortBy}
+              onChange={(event) => {
+                setSortBy(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Newest first</option>
+              <option value="priority">Priority &amp; urgency</option>
+              <option value="updated_at">Recently updated</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            Search
+            <input
+              aria-label="Search tickets"
+              placeholder="Reference, subject, or UUID"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              style={{ ...input, minWidth: 160, padding: '6px 8px' }}
+            />
+          </label>
+          <button
+            type="button"
+            style={smallBtn}
+            disabled={loading}
+            onClick={() => {
+              setAppliedSearch(searchDraft.trim());
+              setPage(1);
+            }}
+          >
+            Search
+          </button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
             Agent ID
             <input
@@ -821,15 +1214,41 @@ const SupportWorkspace: React.FC<SupportProps> = ({
             <div>
               <strong>Subject:</strong> {selected.subject || '—'}
             </div>
+            {selected.description && (
+              <div>
+                <strong>Description:</strong>{' '}
+                <span style={{ whiteSpace: 'pre-wrap' }}>{selected.description}</span>
+              </div>
+            )}
             <div>
               <strong>Principal:</strong>{' '}
               {selected.agentId ? (
                 <span>
-                  Agent <code>{selected.agentId}</code>
+                  Agent <code>{selected.agentId}</code>{' '}
+                  {onNavigateToAgent && (
+                    <button
+                      type="button"
+                      style={smallBtn}
+                      disabled={saving || Boolean(pendingExit)}
+                      onClick={() => onNavigateToAgent(selected.agentId!)}
+                    >
+                      Open Agent Network
+                    </button>
+                  )}
                 </span>
               ) : selected.customerId ? (
                 <span>
-                  Customer <code>{selected.customerId}</code>
+                  Customer <code>{selected.customerId}</code>{' '}
+                  {onNavigateToCustomer && (
+                    <button
+                      type="button"
+                      style={smallBtn}
+                      disabled={saving || Boolean(pendingExit)}
+                      onClick={() => onNavigateToCustomer(selected.customerId!)}
+                    >
+                      Open Customer 360°
+                    </button>
+                  )}
                 </span>
               ) : (
                 '—'
@@ -900,6 +1319,23 @@ const SupportWorkspace: React.FC<SupportProps> = ({
                   style={input}
                 />
               </label>
+              {canChange && principal?.principalId && (
+                <button
+                  type="button"
+                  style={smallBtn}
+                  disabled={
+                    saving ||
+                    needsReload ||
+                    Boolean(pendingExit) ||
+                    Boolean(messageAttempt) ||
+                    selected.status === 'RESOLVED' ||
+                    selected.status === 'CLOSED'
+                  }
+                  onClick={() => setAssignedToInput(principal.principalId)}
+                >
+                  Assign to me
+                </button>
+              )}
               <button
                 type="submit"
                 style={btn}

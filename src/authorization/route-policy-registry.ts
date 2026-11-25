@@ -1795,7 +1795,9 @@ export class RoutePolicyRegistry {
       path.startsWith('/api/v1/internal/kyc/providers/') ||
       path === '/api/v1/internal/kyc/tier-reviews' ||
       path === '/api/v1/internal/kyc/tier-policies' ||
-      path.startsWith('/api/v1/internal/kyc/tier-policies/')
+      path.startsWith('/api/v1/internal/kyc/tier-policies/') ||
+      path === '/api/v1/internal/kyc/review-workspace' ||
+      path.startsWith('/api/v1/internal/kyc/review-workspace/')
     ) {
       return {
         public: false,
@@ -1807,6 +1809,23 @@ export class RoutePolicyRegistry {
           allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
           minimumAssurance: 'MFA',
           customerAccess: 'NONE',
+        },
+      };
+    }
+
+    if (path === '/api/v1/internal/compliance-cases') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-compliance-case',
+        policy: {
+          resourceType: 'customer-compliance-case',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          minimumAssurance: 'MFA',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }

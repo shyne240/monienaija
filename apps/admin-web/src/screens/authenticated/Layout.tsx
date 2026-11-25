@@ -660,6 +660,21 @@ export const Layout: React.FC = () => {
                 ? () => handleNav('agents', { agentId: navContext.agentId })
                 : undefined
             }
+            onBackToCustomer={
+              navContext.customerId && isVisible('customers')
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToAgent={
+              isVisible('agents')
+                ? (agentId: string) => handleNav('agents', { agentId })
+                : undefined
+            }
           />
         );
       case 'transfers':
@@ -722,26 +737,82 @@ export const Layout: React.FC = () => {
             onComplianceGuardChange={reportComplianceGuard}
             initialCustomerId={navContext.customerId}
             mode="kyc"
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToKycProviders={
+              isVisible('kycProviders') ? () => handleNav('kycProviders') : undefined
+            }
+            onNavigateToKycTierPolicies={
+              isVisible('kycTierPolicies') ? () => handleNav('kycTierPolicies') : undefined
+            }
+            onNavigateToComplianceCases={
+              isVisible('complianceCases')
+                ? (customerId?: string) =>
+                    handleNav('complianceCases', customerId ? { customerId } : undefined)
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />
         );
       case 'kycProviders':
-        return <KycProviderManagementScreen onGuardChange={reportKycProviderGuard} />;
+        return (
+          <KycProviderManagementScreen
+            onGuardChange={reportKycProviderGuard}
+            onNavigateToKycReviews={
+              isVisible('kycQueue') ? () => handleNav('kycQueue') : undefined
+            }
+            onNavigateToTierPolicies={
+              isVisible('kycTierPolicies') ? () => handleNav('kycTierPolicies') : undefined
+            }
+          />
+        );
       case 'kycTierPolicies':
-        return <KycTierPolicyManagementScreen onGuardChange={reportKycTierPolicyGuard} />;
+        return (
+          <KycTierPolicyManagementScreen
+            onGuardChange={reportKycTierPolicyGuard}
+            onNavigateToKycReviews={
+              isVisible('kycQueue') ? () => handleNav('kycQueue') : undefined
+            }
+            onNavigateToProviders={
+              isVisible('kycProviders') ? () => handleNav('kycProviders') : undefined
+            }
+          />
+        );
       case 'complianceCases':
         return (
           <ComplianceScreen
             initialCustomerId={navContext.customerId}
-            initialCategory="AML"
+            initialCategory="ALL"
             mode="cases"
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />
@@ -750,9 +821,21 @@ export const Layout: React.FC = () => {
         return (
           <RiskFraudScreen
             initialCustomerId={navContext.customerId}
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />

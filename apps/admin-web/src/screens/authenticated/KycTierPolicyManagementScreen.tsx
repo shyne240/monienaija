@@ -14,6 +14,8 @@ import './kyc-governance.css';
 
 interface Props {
   onGuardChange?: (guarded: boolean, busy: boolean) => void;
+  onNavigateToKycReviews?: () => void;
+  onNavigateToProviders?: () => void;
 }
 type TierPolicyTextField = Exclude<keyof TierPolicyEditor, 'regulatoryRequirementsConfirmed'>;
 interface TierPolicyEditor {
@@ -188,7 +190,7 @@ export const KycTierPolicyManagementScreen: React.FC<Props> = (props) => {
 
 const KycTierPolicyManagementWorkspace: React.FC<
   Props & { principal: WorkforcePrincipal | null }
-> = ({ onGuardChange, principal }) => {
+> = ({ onGuardChange, onNavigateToKycReviews, onNavigateToProviders, principal }) => {
   const [versions, setVersions] = useState<KycTierPolicyVersion[]>([]);
   const [proposals, setProposals] = useState<KycTierPolicyProposal[]>([]);
   const [editor, setEditor] = useState<TierPolicyEditor>({ ...EMPTY_EDITOR });
@@ -376,6 +378,20 @@ const KycTierPolicyManagementWorkspace: React.FC<
         title="KYC tier policies"
         description="Review versioned policy requirements and submit changes for independent MFA approval. The editor contains no monetary limits and does not assign tiers to customers."
       />
+      {(onNavigateToKycReviews || onNavigateToProviders) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {onNavigateToKycReviews && (
+            <Button variant="secondary" onClick={onNavigateToKycReviews}>
+              ← Operational KYC Reviews
+            </Button>
+          )}
+          {onNavigateToProviders && (
+            <Button variant="secondary" onClick={onNavigateToProviders}>
+              KYC Providers →
+            </Button>
+          )}
+        </div>
+      )}
       <div className="kyc-governance-notices">
         {error && (
           <Alert tone="danger" title="Tier-policy workspace error">

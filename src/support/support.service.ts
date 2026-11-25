@@ -14,6 +14,7 @@ import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import type { CustomerRecordScopeResolution } from '../institution/institution-workforce-scope.service';
 import { SupportTicketCategory, SupportTicketPriority, SupportTicketStatus } from './support.enums';
 import type { SupportTicket } from './support-ticket.entity';
 import type { SupportTicketMessage } from './support-ticket-message.entity';
@@ -518,18 +519,116 @@ export class SupportService {
   async listForInternal(
     page = 1,
     limit = 20,
-    filters?: { status?: string; customerId?: string; agentId?: string; assignedTo?: string },
-  ): Promise<{ items: SupportTicketView[]; pagination: Pagination }> {
+    filters?: {
+      status?: string;
+      customerId?: string;
+      agentId?: string;
+      assignedTo?: string;
+      priority?: string;
+      category?: string;
+      search?: string;
+      sortBy?: string;
+      recordScope?: CustomerRecordScopeResolution;
+    },
+  ): Promise<{
+    items: SupportTicketView[];
+    pagination: Pagination;
+    counts?: {
+      total: number;
+      open: number;
+      inProgress: number;
+      resolved: number;
+      closed: number;
+      unassigned: number;
+      criticalOrHigh: number;
+    };
+  }> {
     const normalizedPage = this.normalizePage(page);
     const normalizedLimit = this.normalizeLimit(limit);
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const where: string[] = [];
-    const params: unknown[] = [];
-    let idx = 1;
+
+    const scopeWhere: string[] = [];
+    const scopeParams: unknown[] = [];
+
+    const recordScope = filters?.recordScope;
+    if (
+      recordScope &&
+      (recordScope.mode === 'EXPLICIT_INSTITUTION' || recordScope.mode === 'ASSIGNED_INSTITUTIONS')
+    ) {
+      const instClauses: string[] = [];
+      if (recordScope.enrolmentsTablePresent || recordScope.agentAffiliationsTablePresent) {
+        scopeParams.push(recordScope.institutionIds);
+        const paramIdx = scopeParams.length;
+        if (recordScope.enrolmentsTablePresent) {
+          instClauses.push(
+            `EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = support_tickets.customer_id AND cie.institution_id = ANY($${paramIdx}::uuid[]))`,
+          );
+        }
+        if (recordScope.agentAffiliationsTablePresent) {
+          instClauses.push(
+            `EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.institution_id = ANY($${paramIdx}::uuid[]) AND iaa.status = 'ACTIVE' AND iaa.deleted_at IS NULL)`,
+          );
+        }
+        scopeWhere.push(`(${instClauses.join(' OR ')})`);
+      }
+    } else if (recordScope && recordScope.mode === 'UNASSIGNED_DIRECT_ONLY') {
+      if (recordScope.enrolmentsTablePresent) {
+        scopeWhere.push(
+          `(support_tickets.customer_id IS NULL OR NOT EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = support_tickets.customer_id))`,
+        );
+      }
+      if (recordScope.agentAffiliationsTablePresent) {
+        scopeWhere.push(
+          `(support_tickets.agent_id IS NULL OR NOT EXISTS (SELECT 1 FROM institution_agent_affiliations iaa WHERE iaa.agent_id = support_tickets.agent_id AND iaa.status = 'ACTIVE' AND iaa.deleted_at IS NULL))`,
+        );
+      }
+    }
+
+    const scopeWhereClause = scopeWhere.length ? `WHERE ${scopeWhere.join(' AND ')}` : '';
+    const summaryRows: Array<{
+      total: string;
+      open_count: string;
+      in_progress_count: string;
+      resolved_count: string;
+      closed_count: string;
+      unassigned_count: string;
+      critical_high_count: string;
+    }> = await this.dataSource.query(
+      `SELECT
+         count(*)::text AS total,
+         count(*) FILTER (WHERE status = 'OPEN')::text AS open_count,
+         count(*) FILTER (WHERE status = 'IN_PROGRESS')::text AS in_progress_count,
+         count(*) FILTER (WHERE status = 'RESOLVED')::text AS resolved_count,
+         count(*) FILTER (WHERE status = 'CLOSED')::text AS closed_count,
+         count(*) FILTER (WHERE assigned_to IS NULL AND status NOT IN ('RESOLVED', 'CLOSED'))::text AS unassigned_count,
+         count(*) FILTER (WHERE priority IN ('CRITICAL', 'HIGH') AND status NOT IN ('RESOLVED', 'CLOSED'))::text AS critical_high_count
+       FROM support_tickets
+       ${scopeWhereClause}`,
+      scopeParams,
+    );
+
+    const where: string[] = [...scopeWhere];
+    const params: unknown[] = [...scopeParams];
+    let idx = params.length + 1;
+
     if (filters?.status) {
-      this.assertStatus(filters.status as SupportTicketStatus);
-      where.push(`status=$${idx++}`);
-      params.push(filters.status);
+      if (filters.status === 'ACTIVE') {
+        where.push(`status NOT IN ('RESOLVED', 'CLOSED')`);
+      } else {
+        this.assertStatus(filters.status as SupportTicketStatus);
+        where.push(`status=$${idx++}`);
+        params.push(filters.status);
+      }
+    }
+    if (filters?.priority) {
+      this.assertPriority(filters.priority as SupportTicketPriority);
+      where.push(`priority=$${idx++}`);
+      params.push(filters.priority);
+    }
+    if (filters?.category) {
+      this.assertCategory(filters.category as SupportTicketCategory);
+      where.push(`category=$${idx++}`);
+      params.push(filters.category);
     }
     if (filters?.customerId) {
       const cid = this.assertUuid(filters.customerId, 'customerId');
@@ -542,12 +641,41 @@ export class SupportService {
       params.push(aid);
     }
     if (filters?.assignedTo) {
-      where.push(`assigned_to=$${idx++}`);
-      params.push(filters.assignedTo);
+      if (filters.assignedTo === '__UNASSIGNED__') {
+        where.push(`assigned_to IS NULL`);
+      } else {
+        where.push(`assigned_to=$${idx++}`);
+        params.push(filters.assignedTo);
+      }
     }
+    if (filters?.search?.trim()) {
+      const search = filters.search.trim();
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search)) {
+        const searchIdx = idx++;
+        params.push(search.toLowerCase());
+        where.push(
+          `(id=$${searchIdx}::uuid OR customer_id=$${searchIdx}::uuid OR agent_id=$${searchIdx}::uuid)`,
+        );
+      } else {
+        const escaped = `%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+        const searchIdx = idx++;
+        params.push(escaped);
+        where.push(
+          `(reference ILIKE $${searchIdx} ESCAPE '\\' OR subject ILIKE $${searchIdx} ESCAPE '\\')`,
+        );
+      }
+    }
+
+    const orderBy =
+      filters?.sortBy === 'priority'
+        ? `CASE status WHEN 'OPEN' THEN 0 WHEN 'IN_PROGRESS' THEN 1 WHEN 'RESOLVED' THEN 2 ELSE 3 END ASC, CASE priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END ASC, created_at DESC, id DESC`
+        : filters?.sortBy === 'updated_at'
+          ? `updated_at DESC, id DESC`
+          : `created_at DESC, id DESC`;
+
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const rows: Array<SupportTicketRow> = await this.dataSource.query(
-      `SELECT * FROM support_tickets ${whereClause} ORDER BY created_at DESC, id DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM support_tickets ${whereClause} ORDER BY ${orderBy} LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, normalizedLimit, offset],
     );
     const countRows: Array<{ count: string }> = await this.dataSource.query(
@@ -556,8 +684,18 @@ export class SupportService {
     );
     const total = Number(countRows[0]?.count ?? '0');
     const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
+    const summary = summaryRows[0];
     return {
       items: rows.map((r) => this.toView(r)),
+      counts: {
+        total: Number(summary?.total ?? '0'),
+        open: Number(summary?.open_count ?? '0'),
+        inProgress: Number(summary?.in_progress_count ?? '0'),
+        resolved: Number(summary?.resolved_count ?? '0'),
+        closed: Number(summary?.closed_count ?? '0'),
+        unassigned: Number(summary?.unassigned_count ?? '0'),
+        criticalOrHigh: Number(summary?.critical_high_count ?? '0'),
+      },
       pagination: {
         page: normalizedPage,
         limit: normalizedLimit,

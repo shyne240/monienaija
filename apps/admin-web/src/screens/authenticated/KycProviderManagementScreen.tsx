@@ -21,6 +21,8 @@ import './kyc-governance.css';
 
 interface Props {
   onGuardChange?: (guarded: boolean, busy: boolean) => void;
+  onNavigateToKycReviews?: () => void;
+  onNavigateToTierPolicies?: () => void;
 }
 
 function copyConfiguration(value: KycProviderConfiguration): KycProviderConfiguration {
@@ -107,7 +109,7 @@ export const KycProviderManagementScreen: React.FC<Props> = (props) => {
 
 const KycProviderManagementWorkspace: React.FC<
   Props & { principal: WorkforcePrincipal | null }
-> = ({ onGuardChange, principal }) => {
+> = ({ onGuardChange, onNavigateToKycReviews, onNavigateToTierPolicies, principal }) => {
   const [workspace, setWorkspace] = useState<KycProviderWorkspace | null>(null);
   const [draft, setDraft] = useState<KycProviderConfiguration | null>(null);
   const [baseline, setBaseline] = useState<KycProviderConfiguration | null>(null);
@@ -349,6 +351,20 @@ const KycProviderManagementWorkspace: React.FC<
         title="KYC provider management"
         description="Review fail-closed provider readiness and propose non-secret routing changes. Provider approval does not grant access, establish contract terms, or make an unavailable provider dispatch-ready."
       />
+      {(onNavigateToKycReviews || onNavigateToTierPolicies) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {onNavigateToKycReviews && (
+            <Button variant="secondary" onClick={onNavigateToKycReviews}>
+              ← Operational KYC Reviews
+            </Button>
+          )}
+          {onNavigateToTierPolicies && (
+            <Button variant="secondary" onClick={onNavigateToTierPolicies}>
+              KYC Tier Policies →
+            </Button>
+          )}
+        </div>
+      )}
       <div className="kyc-governance-notices">
         {error && (
           <Alert tone="danger" title="Provider workspace error">
@@ -383,6 +399,49 @@ const KycProviderManagementWorkspace: React.FC<
         </section>
       ) : (
         <>
+          <section className="kyc-governance-card" aria-labelledby="kyc-provider-role-summary-heading">
+            <div className="kyc-governance-card__heading">
+              <div>
+                <h2 id="kyc-provider-role-summary-heading">Provider roles &amp; routing paths</h2>
+                <p>
+                  Governed routing applies consistently across customer registration KYC sessions
+                  and post-claim customer BVN/NIN verification.
+                </p>
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 12,
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <strong>MONNIFY — Identity (BVN / NIN)</strong>
+                <p style={{ margin: '4px 0 0', color: '#475569' }}>
+                  Candidate primary or fallback for BVN and NIN verification; gated by{' '}
+                  <code>MONNIFY_VERIFICATION_ENABLED</code> and runtime API credentials.
+                </p>
+              </div>
+              <div>
+                <strong>DOJAH — Identity &amp; Address Assurance</strong>
+                <p style={{ margin: '4px 0 0', color: '#475569' }}>
+                  Candidate for BVN/NIN plus the sole configured route holder for{' '}
+                  <code>ADDRESS_VERIFICATION</code> and enhanced assurance; assurance adapter fails
+                  closed until contract and live-call gates are enabled.
+                </p>
+              </div>
+              <div>
+                <strong>PREMBLY — Governed BVN / NIN Adapter</strong>
+                <p style={{ margin: '4px 0 0', color: '#475569' }}>
+                  Documented BVN Basic and NIN Basic adapter backed by maker-checker AES-256-GCM
+                  credentials below (<code>kyc_provider_credentials</code>) and environment release
+                  gates.
+                </p>
+              </div>
+            </div>
+          </section>
           <section className="kyc-governance-card" aria-labelledby="kyc-provider-readiness-heading">
             <div className="kyc-governance-card__heading">
               <div>

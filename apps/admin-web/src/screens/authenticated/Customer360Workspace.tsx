@@ -847,6 +847,49 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                   Assessment details are restricted to authorized KYC roles.
                 </p>
               )}
+              {onNavigate && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  {(hasFunction('kyc.view') ||
+                    hasFunction('kyc.review') ||
+                    hasFunction('kyc.approve') ||
+                    hasFunction('kyc.reject')) && (
+                    <button
+                      className="cm-text-button"
+                      type="button"
+                      onClick={() => onNavigate('kycQueue', customer.id)}
+                    >
+                      Open KYC review →
+                    </button>
+                  )}
+                  {hasFunction('compliance.manage_case') && (
+                    <button
+                      className="cm-text-button"
+                      type="button"
+                      onClick={() => onNavigate('complianceCases', customer.id)}
+                    >
+                      Compliance cases →
+                    </button>
+                  )}
+                  {hasFunction('risk_fraud.manage_fraud_case') && (
+                    <button
+                      className="cm-text-button"
+                      type="button"
+                      onClick={() => onNavigate('fraudCases', customer.id)}
+                    >
+                      Fraud cases →
+                    </button>
+                  )}
+                  {hasFunction('customer.manage_support_case') && (
+                    <button
+                      className="cm-text-button"
+                      type="button"
+                      onClick={() => onNavigate('support', customer.id)}
+                    >
+                      Support tickets →
+                    </button>
+                  )}
+                </div>
+              )}
             </article>
 
             <article className="cm-card">

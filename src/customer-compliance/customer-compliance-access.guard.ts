@@ -3,12 +3,14 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import {
   ComplianceCaseRequest,
   type ComplianceCaseAccess,
@@ -22,6 +24,7 @@ const FRAUD_FUNCTION = 'risk_fraud.manage_fraud_case';
 const CASE_FUNCTIONS = [COMPLIANCE_FUNCTION, FRAUD_FUNCTION] as const;
 const WORKFORCE_TYPES = ['OPERATOR', 'PRIVILEGED'] as const;
 const RESOURCE_TYPE = 'customer-compliance-case';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Class-level gate for every case and subresource handler. The global guard must first
@@ -34,6 +37,7 @@ export class CustomerComplianceAccessGuard implements CanActivate {
   constructor(
     private readonly dataSource: DataSource,
     private readonly authorization: AuthorizationService,
+    @Optional() private readonly institutionScope?: InstitutionWorkforceScopeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -104,6 +108,10 @@ export class CustomerComplianceAccessGuard implements CanActivate {
       }
     }
 
+    if (params.id && UUID_PATTERN.test(params.id) && this.institutionScope) {
+      await this.institutionScope.assertCanAccessCustomerRecord(principal, params.id);
+    }
+
     const categories: ComplianceCaseCategory[] = [];
     if (functions.includes(COMPLIANCE_FUNCTION)) categories.push(...NON_FRAUD_CASE_CATEGORIES);
     if (functions.includes(FRAUD_FUNCTION)) categories.push(...FRAUD_CASE_CATEGORIES);
@@ -111,5 +119,25 @@ export class CustomerComplianceAccessGuard implements CanActivate {
       actor: principal.principalId,
       categories: Object.freeze(categories),
     });
+  }
+
+  async hasExecuteCapability(
+    principal: AuthorizationPrincipal | undefined,
+    functionCode: typeof COMPLIANCE_FUNCTION | typeof FRAUD_FUNCTION,
+  ): Promise<boolean> {
+    if (!principal || principal.readOnlyPrincipal || !principal.scopes.includes(functionCode)) {
+      return false;
+    }
+    const rows: Array<{ function_code: string }> = await this.dataSource.query(
+      `SELECT DISTINCT rf.function_code
+         FROM authorization_role_functions rf
+         JOIN authorization_roles r ON r.id = rf.role_id
+        WHERE r.role_key = ANY($1::varchar[])
+          AND r.is_active = true AND rf.is_active = true
+          AND rf.function_code = $2
+          AND rf.access_type = 'EXECUTE'`,
+      [principal.roles, functionCode],
+    );
+    return rows.length > 0;
   }
 }
