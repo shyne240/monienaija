@@ -6,6 +6,14 @@ import './ledger-workspace.css';
 import { formatFinancialAmount } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import {
+  FinanceOperationsApi,
+  type JournalSearchResponse,
+  type JournalSourceLink,
+  type LedgerJournalDetail,
+  type LedgerJournalSummary,
+  type ReversalEligibility,
+} from '../../services/finance-operations-api';
 
 interface LedgerAccount {
   id: string;
@@ -56,6 +64,52 @@ const validJournal = (value: any, id: string): value is Journal =>
       /^\d+$/.test(line.amountMinor),
   );
 
+/**
+ * Finance-operations payloads are validated before they reach the render tree. A screen that
+ * assumed the shape would throw on a partial response and take the whole ledger desk down with it;
+ * an unreadable payload is reported instead, and the governed reversal workflow above is untouched.
+ */
+function validJournalDetail(value: any): value is LedgerJournalDetail {
+  return (
+    !!value &&
+    ['NORMAL', 'IS_REVERSAL', 'REVERSED'].includes(value.reversal?.kind) &&
+    (value.institution === null || typeof value.institution?.name === 'string') &&
+    (value.source === null ||
+      (typeof value.source?.type === 'string' && typeof value.source?.navigable === 'boolean')) &&
+    Array.isArray(value.lines) &&
+    value.lines.every(
+      (line: any) =>
+        line &&
+        typeof line.id === 'string' &&
+        typeof line.accountCode === 'string' &&
+        typeof line.accountName === 'string' &&
+        typeof line.direction === 'string' &&
+        typeof line.amountMinor === 'string' &&
+        typeof line.currency === 'string',
+    )
+  );
+}
+
+function validEligibility(value: any): value is ReversalEligibility {
+  return (
+    !!value &&
+    typeof value.nextActionLabel === 'string' &&
+    Array.isArray(value.blockers) &&
+    typeof value.permissions?.canExecute === 'boolean' &&
+    typeof value.governance?.note === 'string' &&
+    (value.approval === null ||
+      (typeof value.approval?.approvalId === 'string' &&
+        typeof value.approval?.reason === 'string' &&
+        typeof value.approval?.expiresAt === 'string'))
+  );
+}
+
+/** Source links are server-labelled; an absent link stays explicit rather than guessed. */
+export function describeSource(source: JournalSourceLink | null): string {
+  if (!source) return 'No source transaction linked';
+  return `${source.type.replace(/_/g, ' ')} · ${source.reference || source.id}`;
+}
+
 function canVerifyReversal(journal: Journal): boolean {
   return (
     journal.lines.some((line) => line.direction === 'DEBIT') &&
@@ -76,9 +130,22 @@ function matchesReversedLines(original: JournalLine[], reversed: JournalLine[]):
   );
 }
 
-export const LedgerOperationsScreen: React.FC<{
+export interface LedgerOperationsScreenProps {
   onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ onLedgerGuardChange }) => {
+  /** Deep link from a transaction: audit this journal record on open. */
+  initialJournalId?: string;
+  /** Deep link from a transaction/reconciliation break: prefill the record search reference. */
+  initialReference?: string;
+  /** Navigate to the source transaction that produced a journal. */
+  onOpenTransaction?: (source: JournalSourceLink) => void;
+}
+
+export const LedgerOperationsScreen: React.FC<LedgerOperationsScreenProps> = ({
+  onLedgerGuardChange,
+  initialJournalId,
+  initialReference,
+  onOpenTransaction,
+}) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([
     sessionId,
@@ -92,13 +159,23 @@ export const LedgerOperationsScreen: React.FC<{
     principal?.readOnlyPrincipal,
   ]);
   return (
-    <LedgerWorkspace key={key} principal={principal} onLedgerGuardChange={onLedgerGuardChange} />
+    <LedgerWorkspace
+      key={key}
+      principal={principal}
+      onLedgerGuardChange={onLedgerGuardChange}
+      initialJournalId={initialJournalId}
+      initialReference={initialReference}
+      onOpenTransaction={onOpenTransaction}
+    />
   );
 };
 const LedgerWorkspace: React.FC<{
   principal: ReturnType<typeof useAuthStore.getState>['principal'];
   onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ principal, onLedgerGuardChange }) => {
+  initialJournalId?: string;
+  initialReference?: string;
+  onOpenTransaction?: (source: JournalSourceLink) => void;
+}> = ({ principal, onLedgerGuardChange, initialJournalId, initialReference, onOpenTransaction }) => {
   const generations = useRef({ accounts: 0, journal: 0, reversal: 0 });
   useEffect(
     () => () => {
@@ -120,6 +197,18 @@ const LedgerWorkspace: React.FC<{
   const [journal, setJournal] = useState<Journal | null>(null);
   const [journalError, setJournalError] = useState('');
   const [journalLoading, setJournalLoading] = useState(false);
+  const [journalDetail, setJournalDetail] = useState<LedgerJournalDetail | null>(null);
+  const [journalDetailError, setJournalDetailError] = useState('');
+  const [eligibility, setEligibility] = useState<ReversalEligibility | null>(null);
+  const detailGeneration = useRef(0);
+
+  // Ledger record search state (server-side listing; no journal UUID required).
+  const [recordReference, setRecordReference] = useState(initialReference ?? '');
+  const [recordFrom, setRecordFrom] = useState('');
+  const [recordTo, setRecordTo] = useState('');
+  const [recordResults, setRecordResults] = useState<JournalSearchResponse | null>(null);
+  const [recordSearchError, setRecordSearchError] = useState('');
+  const [recordSearchLoading, setRecordSearchLoading] = useState(false);
 
   // Reversal Form State
   const [reversalReason, setReversalReason] = useState('');
@@ -222,8 +311,7 @@ const LedgerWorkspace: React.FC<{
     else setIsLoading(false);
   }, [searchCurrency, canViewLedger]);
 
-  const handleSearchJournal = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadJournal = async (rawId: string) => {
     if (
       !canViewLedger ||
       reversalLoading ||
@@ -235,14 +323,18 @@ const LedgerWorkspace: React.FC<{
       Boolean(reversalApprovalId.trim())
     )
       return;
-    if (!searchJournalId.trim()) {
+    const id = rawId.trim();
+    if (!id) {
       setJournalError('Journal ID is required');
       return;
     }
     const request = ++generations.current.journal;
-    const id = searchJournalId.trim();
+    const detailRequest = ++detailGeneration.current;
     setJournalError('');
     setJournal(null);
+    setJournalDetail(null);
+    setEligibility(null);
+    setJournalDetailError('');
     setJournalLoading(true);
     setReversalSuccess('');
     setReversalError('');
@@ -254,6 +346,7 @@ const LedgerWorkspace: React.FC<{
       if (!validJournal(res, id))
         throw new Error('Journal response is invalid or does not match the requested ID.');
       setJournal(res);
+      void loadJournalContext(id, detailRequest, request);
     } catch (err: any) {
       if (request === generations.current.journal)
         setJournalError(err?.message || 'Journal entry not found.');
@@ -261,6 +354,104 @@ const LedgerWorkspace: React.FC<{
       if (request === generations.current.journal) setJournalLoading(false);
     }
   };
+
+  /**
+   * Institution attribution, source-transaction link, enriched posting lines and the server's
+   * reversal eligibility. These are display inputs only: the governed reversal workflow above
+   * still decides and records every action.
+   */
+  const loadJournalContext = async (id: string, detailRequest: number, request: number) => {
+    const [detail, eligible] = await Promise.allSettled([
+      FinanceOperationsApi.journal(id),
+      FinanceOperationsApi.reversalEligibility(id),
+    ]);
+    if (detailRequest !== detailGeneration.current || request !== generations.current.journal)
+      return;
+    if (detail.status === 'fulfilled' && validJournalDetail(detail.value))
+      setJournalDetail(detail.value);
+    else
+      setJournalDetailError(
+        `Institution attribution and source link unavailable: ${
+          ((detail as PromiseRejectedResult).reason as any)?.message ??
+            'Finance operations service unavailable.'
+        }`,
+      );
+    if (eligible.status === 'fulfilled' && validEligibility(eligible.value))
+      setEligibility(eligible.value);
+    else
+      setJournalDetailError(
+        (current) =>
+          current ||
+          `Reversal eligibility unavailable: ${
+            ((eligible as PromiseRejectedResult).reason as any)?.message ??
+              'Finance operations service unavailable.'
+          }`,
+      );
+  };
+
+  const handleSearchJournal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loadJournal(searchJournalId);
+  };
+
+  const handleOpenRecord = (record: LedgerJournalSummary) => {
+    setSearchJournalId(record.id);
+    setReversalSuccess('');
+    void loadJournal(record.id);
+  };
+
+  const handleRecordSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !canViewLedger ||
+      recordSearchLoading ||
+      reversalLoading ||
+      reviewReadLoading ||
+      reversalLock.current ||
+      confirmReversal ||
+      confirmClearDraft ||
+      Boolean(reversalReason.trim()) ||
+      Boolean(reversalApprovalId.trim())
+    ) {
+      if (Boolean(reversalReason.trim()) || Boolean(reversalApprovalId.trim()))
+        setRecordSearchError('Clear the local reversal details before searching ledger records.');
+      return;
+    }
+    setRecordSearchLoading(true);
+    setRecordSearchError('');
+    setRecordResults(null);
+    try {
+      const response = await FinanceOperationsApi.searchJournals({
+        reference: recordReference,
+        from: recordFrom || undefined,
+        to: recordTo || undefined,
+        limit: 50,
+      });
+      setRecordResults(response);
+    } catch (err: any) {
+      setRecordSearchError(err?.message || 'Ledger record search failed.');
+    } finally {
+      setRecordSearchLoading(false);
+    }
+  };
+
+  const handleLoadApproval = () => {
+    if (!eligibility?.approval || !eligibility.permissions.canExecute) return;
+    if (reversalLoading || confirmReversal || confirmClearDraft) return;
+    setReversalApprovalId(eligibility.approval.approvalId);
+    setReversalReason(eligibility.approval.reason);
+    setReversalError('');
+  };
+
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || !canViewLedger) return;
+    if (!initialJournalId) return;
+    autoOpened.current = true;
+    setSearchJournalId(initialJournalId);
+    void loadJournal(initialJournalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewLedger, initialJournalId]);
 
   const refreshJournalForReview = async () => {
     if (!journal || !reversalReviews[journal.id] || reviewReadLoading || reversalLock.current)
@@ -448,7 +639,7 @@ const LedgerWorkspace: React.FC<{
       <PageHeader
         eyebrow="Finance and ledger"
         title="Ledger Core & Reversals Desk"
-        description="Inspect accounts and journal postings, and use the existing governed reversal workflow."
+        description="Search ledger records by reference and date, resolve their source transaction, and use the existing governed reversal workflow."
       />
       {Object.keys(reversalReviews).length > 0 && (
         <div role="status" style={styles.gapWarning}>
@@ -467,12 +658,171 @@ const LedgerWorkspace: React.FC<{
         </div>
       )}
 
-      <div style={styles.gapWarning}>
-        <span style={styles.gapTitle}>Journal listing and backlog search unavailable</span>
-        <p style={styles.gapText}>
-          Search by a known journal UUID. A journal listing or backlog search is not available here.
+      <section
+        className="mn-ledger__panel"
+        aria-label="Ledger record search"
+        data-testid="ledger-record-search"
+        style={styles.recordSearchPanel}
+      >
+        <p className="mn-ledger__eyebrow">LEDGER RECORD SEARCH</p>
+        <h2 style={styles.sectionTitle}>Find a journal record</h2>
+        <p className="mn-ledger__hint">
+          Search inside your institution scope by journal reference, journal UUID, postings
+          reference, idempotency key or source transaction reference. Leave the reference blank to
+          list recent journals; only journals your assignments cover are returned, and an
+          out-of-scope record is not distinguished from one that does not exist.
         </p>
-      </div>
+        <form onSubmit={handleRecordSearch} style={styles.recordSearchForm}>
+          <div style={styles.inputGroup}>
+            <label htmlFor="ledger-record-reference" style={styles.label}>
+              Reference
+            </label>
+            <input
+              id="ledger-record-reference"
+              data-testid="ledger-record-reference"
+              type="text"
+              style={styles.input}
+              placeholder="e.g. TRF-2026-000123 or a journal UUID"
+              value={recordReference}
+              onChange={(e) => setRecordReference(e.target.value)}
+              disabled={recordSearchLoading}
+            />
+          </div>
+          <div style={styles.inputGroup}>
+            <label htmlFor="ledger-record-from" style={styles.label}>
+              Posted from
+            </label>
+            <input
+              id="ledger-record-from"
+              data-testid="ledger-record-from"
+              type="date"
+              style={styles.input}
+              value={recordFrom}
+              onChange={(e) => setRecordFrom(e.target.value)}
+              disabled={recordSearchLoading}
+            />
+          </div>
+          <div style={styles.inputGroup}>
+            <label htmlFor="ledger-record-to" style={styles.label}>
+              Posted to
+            </label>
+            <input
+              id="ledger-record-to"
+              data-testid="ledger-record-to"
+              type="date"
+              style={styles.input}
+              value={recordTo}
+              onChange={(e) => setRecordTo(e.target.value)}
+              disabled={recordSearchLoading}
+            />
+          </div>
+          <button
+            type="submit"
+            data-testid="ledger-record-search-submit"
+            style={styles.searchBtn}
+            disabled={recordSearchLoading || !canViewLedger}
+          >
+            {recordSearchLoading ? 'Searching…' : 'Search ledger records'}
+          </button>
+        </form>
+
+        {!canViewLedger && (
+          <div role="note" style={styles.gapWarning}>
+            Ledger record search requires the <code>ledger.view</code> function.
+          </div>
+        )}
+        {recordSearchError && (
+          <div style={styles.errorBox} role="alert" data-testid="ledger-record-error">
+            {recordSearchError}
+          </div>
+        )}
+
+        {recordResults && (
+          <div data-testid="ledger-record-results" style={styles.recordResults}>
+            <p style={styles.recordResultsMeta}>
+              {recordResults.total} record{recordResults.total === 1 ? '' : 's'} in scope for{' '}
+              {recordResults.range.from.slice(0, 10)} – {recordResults.range.to.slice(0, 10)}
+              {recordResults.scope.mode === 'PLATFORM'
+                ? ' · platform-wide authority'
+                : ` · ${recordResults.scope.institutionIds.length} assigned institution(s)`}
+            </p>
+            {recordResults.scope.mode === 'NONE' && (
+              <div role="note" style={styles.gapWarning}>
+                You hold no active institution assignment, so only unattributed legacy journals are
+                visible.
+              </div>
+            )}
+            {recordResults.items.length === 0 ? (
+              <p style={styles.gapText} data-testid="ledger-record-empty">
+                No journal record matches this reference and date range inside your scope.
+              </p>
+            ) : (
+              <div
+                style={styles.linesTableWrapper}
+                role="region"
+                aria-label="Ledger record search results"
+                tabIndex={0}
+              >
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.thRow}>
+                      <th style={styles.th}>Reference</th>
+                      <th style={styles.th}>Institution</th>
+                      <th style={styles.th}>Source</th>
+                      <th style={styles.th}>Status</th>
+                      <th style={styles.th}>Total</th>
+                      <th style={styles.th}>Posted</th>
+                      <th style={styles.th}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recordResults.items.map((record) => (
+                      <tr key={record.id} style={styles.tableRow}>
+                        <td style={styles.td}>
+                          <code>{record.reference || record.id}</code>
+                          {record.reference && (
+                            <div style={styles.recordSubId}>{record.id}</div>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          {record.institution
+                            ? `${record.institution.name} (${record.institution.code})`
+                            : 'Unattributed legacy journal'}
+                        </td>
+                        <td style={styles.td}>{describeSource(record.source)}</td>
+                        <td style={styles.td}>
+                          {record.status}
+                          {record.reversal.kind !== 'NORMAL' && (
+                            <div style={styles.recordSubId}>
+                              {record.reversal.kind === 'IS_REVERSAL'
+                                ? 'This record is a reversal'
+                                : 'Already reversed'}
+                            </div>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          {formatFinancialAmount(record.totalMinor, record.currency)}
+                        </td>
+                        <td style={styles.td}>{record.postedAt.slice(0, 10)}</td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            data-testid={`ledger-record-open-${record.id}`}
+                            className="mn-ledger__detail-button"
+                            onClick={() => handleOpenRecord(record)}
+                          >
+                            Inspect
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <div style={styles.splitLayout}>
         {/* Chart of Accounts */}
@@ -695,7 +1045,124 @@ const LedgerWorkspace: React.FC<{
                 <p style={styles.metaItem}>
                   <strong>Accounting Unit:</strong> {journal.accountingUnit}
                 </p>
+                <p style={styles.metaItem}>
+                  <strong>Institution:</strong>{' '}
+                  {journalDetail?.institution
+                    ? `${journalDetail.institution.name} (${journalDetail.institution.code})`
+                    : journalDetail
+                      ? 'Unattributed legacy journal'
+                      : 'Attribution unavailable'}
+                </p>
+                <p style={styles.metaItem}>
+                  <strong>Source transaction:</strong> {describeSource(journalDetail?.source ?? null)}
+                </p>
+                <p style={styles.metaItem}>
+                  <strong>Reversal state:</strong>{' '}
+                  {journalDetail?.reversal.kind === 'IS_REVERSAL'
+                    ? `This record reverses ${journalDetail.reversal.reversalOfJournalId}`
+                    : journalDetail?.reversal.kind === 'REVERSED'
+                      ? `Reversed by ${journalDetail.reversal.reversedByJournalId}`
+                      : journalDetail
+                        ? 'Original posting'
+                        : 'Unavailable'}
+                </p>
               </div>
+
+              {journalDetail?.source && (
+                <div style={styles.sourceLinkRow} data-testid="ledger-journal-source">
+                  <span>
+                    Linked from {journalDetail.source.type.replace(/_/g, ' ')}{' '}
+                    <code>{journalDetail.source.reference || journalDetail.source.id}</code> (
+                    {journalDetail.source.status})
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="open-source-transaction"
+                    className="mn-ledger__detail-button"
+                    disabled={!journalDetail.source.navigable || !onOpenTransaction}
+                    title={
+                      !journalDetail.source.navigable
+                        ? 'This source type has no transaction screen.'
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (journalDetail.source?.navigable && onOpenTransaction)
+                        onOpenTransaction(journalDetail.source);
+                    }}
+                  >
+                    {journalDetail.source.navigable
+                      ? 'Open source transaction'
+                      : 'No transaction screen for this source'}
+                  </button>
+                </div>
+              )}
+
+              {journalDetailError && (
+                <div role="note" style={styles.gapWarning} data-testid="ledger-detail-error">
+                  {journalDetailError}
+                </div>
+              )}
+
+              {eligibility && (
+                <div style={styles.eligibilityBox} data-testid="reversal-eligibility">
+                  <p style={styles.eligibilityHead}>
+                    Governed next action:{' '}
+                    <strong data-testid="reversal-next-action">
+                      {eligibility.nextActionLabel}
+                    </strong>{' '}
+                    <span style={styles.recordBadge}>{eligibility.nextAction}</span>
+                  </p>
+                  <p style={styles.gapText}>{eligibility.reason}</p>
+                  {eligibility.blockers.length > 0 && (
+                    <ul style={styles.blockerList}>
+                      {eligibility.blockers.map((blocker) => (
+                        <li key={blocker.code}>
+                          <strong>{blocker.code}</strong> — {blocker.message}{' '}
+                          <em>({blocker.action})</em>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {eligibility.approval && (
+                    <div style={styles.approvalBox} data-testid="reversal-approval">
+                      <p>
+                        Approval <code>{eligibility.approval.approvalId}</code> is{' '}
+                        <strong>{eligibility.approval.status}</strong>, requested{' '}
+                        {eligibility.approval.requestedAt.slice(0, 10)} and expires{' '}
+                        {eligibility.approval.expiresAt.slice(0, 10)}.
+                      </p>
+                      <p style={styles.recordSubId}>
+                        Requested reason: {eligibility.approval.reason}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="load-approval"
+                        className="mn-ledger__detail-button"
+                        disabled={
+                          !eligibility.permissions.canExecute ||
+                          reversalLoading ||
+                          confirmReversal ||
+                          confirmClearDraft
+                        }
+                        title={
+                          eligibility.permissions.canExecute
+                            ? 'Copy the approval id and its exact reason into the reversal form'
+                            : 'Your principal cannot execute reversals; no approval can be loaded.'
+                        }
+                        onClick={handleLoadApproval}
+                      >
+                        {eligibility.permissions.canExecute
+                          ? 'Load approval into reversal form'
+                          : 'Execution requires CHECKER entitlement'}
+                      </button>
+                    </div>
+                  )}
+                  <p style={styles.recordSubId}>
+                    Maker: {eligibility.governance.makerRole} · Checker:{' '}
+                    {eligibility.governance.checkerRole}. {eligibility.governance.note}
+                  </p>
+                </div>
+              )}
 
               <h5 style={styles.linesTitle}>Double-Entry Postings Lines</h5>
               <div
@@ -713,21 +1180,43 @@ const LedgerWorkspace: React.FC<{
                     </tr>
                   </thead>
                   <tbody>
-                    {(journal.lines || []).map((l) => (
-                      <tr key={l.id} style={styles.tableRow}>
-                        <td style={styles.td}>{l.accountId}</td>
-                        <td style={styles.td}>
-                          {l.direction === 'DEBIT'
-                            ? formatFinancialAmount(l.amountMinor, journal.currency)
-                            : '-'}
-                        </td>
-                        <td style={styles.td}>
-                          {l.direction === 'CREDIT'
-                            ? formatFinancialAmount(l.amountMinor, journal.currency)
-                            : '-'}
-                        </td>
-                      </tr>
-                    ))}
+                    {journalDetail
+                      ? journalDetail.lines.map((l) => (
+                          <tr key={l.id} style={styles.tableRow}>
+                            <td style={styles.td}>
+                              <code>{l.accountCode}</code> {l.accountName}
+                              <div style={styles.recordSubId}>
+                                {l.accountType} · {l.institutionalScope}
+                                {l.institutionId ? ` · ${l.institutionId}` : ''}
+                              </div>
+                            </td>
+                            <td style={styles.td}>
+                              {l.direction === 'DEBIT'
+                                ? formatFinancialAmount(l.amountMinor, l.currency)
+                                : '-'}
+                            </td>
+                            <td style={styles.td}>
+                              {l.direction === 'CREDIT'
+                                ? formatFinancialAmount(l.amountMinor, l.currency)
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      : (journal.lines || []).map((l) => (
+                          <tr key={l.id} style={styles.tableRow}>
+                            <td style={styles.td}>{l.accountId}</td>
+                            <td style={styles.td}>
+                              {l.direction === 'DEBIT'
+                                ? formatFinancialAmount(l.amountMinor, journal.currency)
+                                : '-'}
+                            </td>
+                            <td style={styles.td}>
+                              {l.direction === 'CREDIT'
+                                ? formatFinancialAmount(l.amountMinor, journal.currency)
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))}
                   </tbody>
                 </table>
               </div>
@@ -1247,5 +1736,77 @@ const styles = {
     fontSize: '12px',
     color: 'var(--mn-text-muted, #5b6b66)',
     textAlign: 'center' as const,
+  },
+  recordSearchPanel: {
+    padding: '20px',
+    marginBottom: '24px',
+  },
+  recordSearchForm: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)) auto',
+    gap: '12px',
+    alignItems: 'end',
+    marginBottom: '16px',
+  },
+  recordResults: {
+    marginTop: '12px',
+  },
+  recordResultsMeta: {
+    fontSize: '12px',
+    color: 'var(--mn-text-secondary, #52655f)',
+    margin: '0 0 10px 0',
+  },
+  recordSubId: {
+    fontSize: '11px',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    marginTop: '2px',
+  },
+  recordBadge: {
+    display: 'inline-block',
+    fontSize: '10px',
+    letterSpacing: '0.04em',
+    border: '1px solid var(--mn-border-subtle, #cfdad6)',
+    borderRadius: '999px',
+    padding: '1px 6px',
+    marginLeft: '6px',
+    color: 'var(--mn-text-secondary, #52655f)',
+  },
+  sourceLinkRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '10px 12px',
+    marginBottom: '12px',
+    backgroundColor: 'var(--mn-surface-raised, #f5f8f7)',
+    border: '1px solid var(--mn-border-subtle, #cfdad6)',
+    borderRadius: '6px',
+    fontSize: '13px',
+  },
+  eligibilityBox: {
+    border: '1px solid var(--mn-border-strong, #a9bab5)',
+    borderLeft: '4px solid var(--mn-action-primary, #0b624a)',
+    borderRadius: '6px',
+    padding: '12px 16px',
+    margin: '12px 0',
+    backgroundColor: 'var(--mn-surface, #ffffff)',
+  },
+  eligibilityHead: {
+    fontSize: '13px',
+    margin: '0 0 6px 0',
+  },
+  blockerList: {
+    margin: '6px 0 10px 18px',
+    padding: 0,
+    fontSize: '12px',
+    lineHeight: 1.5,
+  },
+  approvalBox: {
+    border: '1px dashed var(--mn-border-strong, #a9bab5)',
+    borderRadius: '6px',
+    padding: '10px 12px',
+    marginBottom: '10px',
+    fontSize: '12px',
   },
 };

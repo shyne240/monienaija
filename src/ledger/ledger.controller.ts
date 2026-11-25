@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  NotFoundException,
   Post,
   Query,
   Req,
@@ -19,6 +20,8 @@ import { LedgerService } from './ledger.service';
 import { LedgerReversalGovernanceService } from './ledger-reversal-governance.service';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
+import type { LedgerAccountView } from './ledger.types';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -31,6 +34,7 @@ export class LedgerController {
     private readonly ledgerService: LedgerService,
     private readonly reversalGovernance: LedgerReversalGovernanceService,
     private readonly auth: AuthorizationService,
+    private readonly institutionScope: InstitutionWorkforceScopeService,
   ) {}
 
   /**
@@ -55,19 +59,24 @@ export class LedgerController {
   @Get('accounts')
   async listAccounts(@Req() req: AuthenticatedRequest, @Query('currency') currency?: string) {
     if (req?.authorizationPrincipal) await this.requireFunction(req, 'ledger.view');
-    return this.ledgerService.listAccounts(currency);
+    const accountList = await this.ledgerService.listAccounts(currency);
+    return this.visibleAccounts(req.authorizationPrincipal, accountList);
   }
 
   @Get('accounts/:accountId/balance')
   async getAccountBalance(@Param('accountId') accountId: string, @Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'ledger.view');
+    const account = await this.ledgerService.getAccount(accountId);
+    await this.assertAccountScope(req.authorizationPrincipal, account);
     return this.ledgerService.getAccountBalance(accountId);
   }
 
   @Get('accounts/:accountId')
   async getAccount(@Param('accountId') accountId: string, @Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'ledger.view');
-    return this.ledgerService.getAccount(accountId);
+    const account = await this.ledgerService.getAccount(accountId);
+    await this.assertAccountScope(req.authorizationPrincipal, account);
+    return account;
   }
 
   @Post('journals')
@@ -90,7 +99,9 @@ export class LedgerController {
   @Get('journals/:journalId')
   async getJournal(@Param('journalId') journalId: string, @Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'ledger.view');
-    return this.ledgerService.getJournal(journalId);
+    const journal = await this.ledgerService.getJournal(journalId);
+    await this.assertJournalScope(req.authorizationPrincipal, journal.institutionId ?? null);
+    return journal;
   }
 
   @Post('journals/:journalId/reversal-request')
@@ -105,6 +116,11 @@ export class LedgerController {
     // LEDGER_JOURNAL_REVERSAL / LEDGER_JOURNAL governed action with a server-computed
     // deterministic fingerprint of the actual request (action + journal id + reason).
     await this.requireFunction(req, 'ledger.reverse');
+    // Institution scope is enforced for the reversal too: holding ledger.reverse does not let an
+    // operator reverse another institution's attributed journal through the direct API (which
+    // would otherwise bypass the finance-operations screen's scoping).
+    const journal = await this.ledgerService.getJournal(journalId);
+    await this.assertJournalScope(req.authorizationPrincipal, journal.institutionId ?? null);
     return this.reversalGovernance.requestReversal({
       principal: req.authorizationPrincipal!,
       journalId,
@@ -131,6 +147,8 @@ export class LedgerController {
     if (!principal) {
       throw new UnauthorizedException('Authentication required');
     }
+    const journal = await this.ledgerService.getJournal(journalId);
+    await this.assertJournalScope(principal, journal.institutionId ?? null);
     return this.reversalGovernance.executeReversal({
       principal,
       journalId,
@@ -146,5 +164,53 @@ export class LedgerController {
       'SERVICE',
       'PRIVILEGED',
     ]);
+  }
+
+  /**
+   * Institution-attributed journals and accounts are visible only to platform-level staff or a
+   * principal with an ACTIVE assignment to that exact institution. Unattributed legacy records are
+   * left on the pre-existing function gate (`ledger.view` / `ledger.reverse`) — they belong to no
+   * institution, so there is no institution scope to enforce. Denial is 404 so the endpoint cannot
+   * be used to enumerate another institution's record ids.
+   */
+  private async assertJournalScope(
+    principal: AuthorizationPrincipal | undefined,
+    institutionId: string | null,
+  ): Promise<void> {
+    if (!institutionId || !principal) return;
+    if (this.institutionScope.hasPlatformAuthority(principal)) return;
+    try {
+      await this.institutionScope.assertCanAccessInstitution(principal, institutionId);
+    } catch {
+      throw new NotFoundException('Journal not found');
+    }
+  }
+
+  private async assertAccountScope(
+    principal: AuthorizationPrincipal | undefined,
+    account: LedgerAccountView,
+  ): Promise<void> {
+    if (!account.institutionId || !principal) return;
+    if (this.institutionScope.hasPlatformAuthority(principal)) return;
+    try {
+      await this.institutionScope.assertCanAccessInstitution(principal, account.institutionId ?? null);
+    } catch {
+      throw new NotFoundException('Ledger account not found');
+    }
+  }
+
+  private async visibleAccounts(
+    principal: AuthorizationPrincipal | undefined,
+    accounts: LedgerAccountView[],
+  ): Promise<LedgerAccountView[]> {
+    if (!principal) return accounts;
+    if (this.institutionScope.hasPlatformAuthority(principal)) return accounts;
+    const institutionIds = await this.institutionScope.institutionIdsForPrincipal(
+      principal.principalId,
+    );
+    const allowed = new Set(institutionIds.map((id) => id.toLowerCase()));
+    return accounts.filter(
+      (account) => !account.institutionId || allowed.has(account.institutionId.toLowerCase()),
+    );
   }
 }

@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-11-25T11:14:34.988Z",
+  "api": "stubbed",
+  "checks": [
+    {
+      "name": "LEDGER-SEARCH-PANEL-RENDERS",
+      "ok": true,
+      "detail": "search panel visible"
+    },
+    {
+      "name": "LEDGER-SEARCH-RETURNS-SCOPED-ROWS",
+      "ok": true,
+      "detail": "1 result row(s), institution and source rendered"
+    },
+    {
+      "name": "JOURNAL-DETAIL-SHOWS-NEXT-ACTION-AND-SOURCE",
+      "ok": true,
+      "detail": "next action=\"Execute the approved reversal\", source link visible=true"
+    },
+    {
+      "name": "TRANSACTION-SHOWS-LEDGER-POSTING",
+      "ok": true,
+      "detail": "status=\"FOUND — The transaction is recorded by one posted ledger journal.\", journal button visible=true"
+    },
+    {
+      "name": "JOURNAL-RECORD-DEEP-LINK-REOPENS-ELIGIBILITY",
+      "ok": true,
+      "detail": "transaction → journal deep link rendered the eligibility panel"
+    },
+    {
+      "name": "RECONCILIATION-SHOWS-NOT-ESTABLISHED-AND-SOURCES",
+      "ok": true,
+      "detail": "3 source cards; banner: \"Reconciliation not established — 0/1 internal checks passed, 1 error break(s), 0 warning(s), 2 source(s) not performed, \""
+    },
+    {
+      "name": "RECONCILIATION-BREAK-OPENS-JOURNAL",
+      "ok": true,
+      "detail": "internal break next action opened the journal record"
+    },
+    {
+      "name": "NO-UNCAUGHT-PAGE-ERRORS",
+      "ok": true,
+      "detail": "none"
+    }
+  ]
+}

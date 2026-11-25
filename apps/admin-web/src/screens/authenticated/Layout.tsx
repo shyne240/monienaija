@@ -52,6 +52,15 @@ interface NavContext {
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
+  /** Finance operations deep links: open a ledger journal record by id. */
+  journalId?: string;
+  /** Finance operations deep links: run a ledger record search by reference. */
+  ledgerReference?: string;
+  /** Finance operations deep links: open a transaction and resolve its journal. */
+  transactionId?: string;
+  transactionType?: string;
+  /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
+  reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
   institutionId?: string;
 }
 
@@ -667,6 +676,8 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="TRANSFER"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
             onBackToCustomer={
               navContext.customerId
                 ? () => handleNav('customers', { customerId: navContext.customerId })
@@ -679,6 +690,8 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="DEPOSIT"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
           />
         );
       case 'cashOut':
@@ -686,14 +699,48 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="WITHDRAWAL"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
           />
         );
       case 'ledgerExplorer':
-        return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
+        return (
+          <LedgerOperationsScreen
+            onLedgerGuardChange={reportLedgerGuard}
+            initialJournalId={navContext.journalId}
+            initialReference={navContext.ledgerReference}
+            onOpenTransaction={(source) =>
+              handleNav(
+                source.type === 'DEPOSIT'
+                  ? 'cashIn'
+                  : source.type === 'WITHDRAWAL'
+                    ? 'cashOut'
+                    : 'transfers',
+                { transactionId: source.id, transactionType: source.type },
+              )
+            }
+          />
+        );
       case 'reconciliation':
-        return <ReconciliationObservabilityScreen />;
+        return (
+          <ReconciliationObservabilityScreen
+            initialTab={navContext.reconciliationTab}
+            initialInstitutionId={navContext.institutionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+          />
+        );
       case 'bankingOperations':
-        return <BankingOperationsScreen />;
+        return (
+          <BankingOperationsScreen
+            initialInstitutionId={navContext.institutionId}
+            onOpenReconciliation={(institutionId) =>
+              handleNav('reconciliation', {
+                institutionId,
+                reconciliationTab: 'evidence',
+              })
+            }
+          />
+        );
       case 'feeRules':
         return <CommercialRulesScreen initialTab="fees" />;
       case 'commissionRules':
