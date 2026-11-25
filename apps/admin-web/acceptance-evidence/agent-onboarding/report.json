@@ -1,21 +1,23 @@
 {
-  "generatedAt": "2026-11-25T14:28:05.852Z",
+  "generatedAt": "2026-11-25T17:55:22.847Z",
   "environment": {
     "adminWeb": "http://127.0.0.1:5173",
     "api": "http://127.0.0.1:3000/api/v1",
     "browser": "Chromium (serverless build) via playwright-core",
     "note": "Real Admin Web dev server → real API → disposable local PostgreSQL with synthetic data. No response is stubbed.",
-    "apiStartup": "API started with scripts/local-dev-api-server.js: release readiness reported as error (financial_dependencies_not_ready) and NOT bypassed; bound to 127.0.0.1 only."
+    "apiStartup": "API started with scripts/local-dev-api-server.js: release readiness reported as error (financial_dependencies_not_ready) and NOT bypassed; bound to 127.0.0.1 only.",
+    "database": "Disposable local PostgreSQL, fully migrated, synthetic accounts and synthetic Agent applications only.",
+    "productionGate": "dist/main.js was NOT used and was NOT modified; it still refuses to start until the release-readiness blockers clear."
   },
   "syntheticIdentifiers": {
-    "applicantReference": "ACC-AGT-7619B944",
-    "applicationId": "091fd794-5117-466f-b937-6fc9261be379",
-    "applicationReference": "AGENT-APP-A08A673E",
-    "agentId": "16453a62-4afd-44be-a2aa-0ddcd247e076",
+    "applicantReference": "ACC-AGT-02580326",
+    "applicationId": "465e2c90-1da1-43b7-aa8a-b47b97bc818b",
+    "applicationReference": "AGENT-APP-DC8C98EB",
+    "agentId": "72aa26b1-4e4c-4a7a-b85b-64b5822c5610",
     "chosenClassId": "099d7905-c494-4771-bb15-ad321bccdc66",
     "chosenClassCode": "DEMO_ORDINARY_L1",
-    "bareClassId": "3e62098c-fd56-42a6-934d-9ef41e241248",
-    "bareClassCode": "ACC_BARE_7619B944"
+    "bareClassId": "905e679e-3c5c-410b-a02a-231b6d28fd73",
+    "bareClassCode": "ACC_BARE_02580326"
   },
   "steps": [
     {
@@ -48,27 +50,39 @@
     },
     {
       "step": "draft saved",
-      "detail": "draft created for ACC-AGT-7619B944"
+      "detail": "draft created for ACC-AGT-02580326"
     },
     {
       "step": "draft persisted",
-      "detail": "AGENT-APP-A08A673E status=DRAFT class=099d7905-c494-4771-bb15-ad321bccdc66"
+      "detail": "AGENT-APP-DC8C98EB status=DRAFT class=099d7905-c494-4771-bb15-ad321bccdc66"
     },
     {
       "step": "submitted for review",
-      "detail": "application AGENT-APP-A08A673E status=SUBMITTED"
+      "detail": "application AGENT-APP-DC8C98EB status=SUBMITTED"
     },
     {
       "step": "submission confirmed",
-      "detail": "status=SUBMITTED submittedAt=2026-11-25T14:27:42.027Z"
+      "detail": "status=SUBMITTED submittedAt=2026-11-25T17:54:59.462Z submittedBy=recorded"
+    },
+    {
+      "step": "submitter cannot approve explained",
+      "detail": "notice: \"You submitted this application, so you cannot approve it. Separation of duties requires a different operator holding review permission to decide it.\" — and no Approve button is offered on this row"
     },
     {
       "step": "independent reviewer session",
       "detail": "super-admin@monienaija.local — a different principal from the maker (5fb0c7f1 vs a5035123)"
     },
     {
-      "step": "separation of duties (throwaway application)",
-      "detail": "maker approve attempt -> HTTP 200; application state=APPROVED — FINDING: the submitting principal holds agent.review_application so the API accepts a self-approval; there is no maker!=checker guard in AgentApplicationService.approve() and no AGENT_APPLICATION_APPROVE maker-checker rule in the governed-action registry"
+      "step": "self-approval refused",
+      "detail": "submitter's own POST /approve -> HTTP 403 (\"Separation of duties: the operator who submitted this application cannot approve it. A different operator holding agent.review_application must decide it.\"); application remains SUBMITTED"
+    },
+    {
+      "step": "independent checker approved the same application",
+      "detail": "different principal -> HTTP 200 status=APPROVED"
+    },
+    {
+      "step": "same operator, new session is still the same submitter",
+      "detail": "second session (distinct session id) /review -> HTTP 409 (Only SUBMITTED applications can be moved to UNDER_REVIEW)"
     },
     {
       "step": "review",
@@ -80,7 +94,7 @@
     },
     {
       "step": "approved awaiting activation",
-      "detail": "application AGENT-APP-A08A673E is APPROVED and awaiting activation"
+      "detail": "application AGENT-APP-DC8C98EB is APPROVED and awaiting activation"
     },
     {
       "step": "pre activation class and services",
@@ -96,11 +110,11 @@
     },
     {
       "step": "activated",
-      "detail": "application AGENT-APP-A08A673E → Agent ACTIVE"
+      "detail": "application AGENT-APP-DC8C98EB → Agent ACTIVE"
     },
     {
       "step": "activation receipt",
-      "detail": "applicationStatus=APPROVED agentId=16453a62-4afd-44be-a2aa-0ddcd247e076 agentStatus=ACTIVE linkedAgentStatus=ACTIVE"
+      "detail": "applicationStatus=APPROVED agentId=72aa26b1-4e4c-4a7a-b85b-64b5822c5610 agentStatus=ACTIVE linkedAgentStatus=ACTIVE"
     },
     {
       "step": "activated agent class persisted",
@@ -120,7 +134,7 @@
     },
     {
       "step": "bare class created",
-      "detail": "POST /agents/classes -> 201 ACC_BARE_7619B944"
+      "detail": "POST /agents/classes -> 201 ACC_BARE_02580326"
     },
     {
       "step": "bare class impact",
@@ -140,7 +154,7 @@
     },
     {
       "step": "missing configuration confirmed in the database",
-      "detail": "limit assignments=0, class-scoped fee rules=0, class=ACC_BARE_7619B944 — the gaps describe genuine absence, not a failed read"
+      "detail": "limit assignments=0, class-scoped fee rules=0, class=ACC_BARE_02580326 — the gaps describe genuine absence, not a failed read"
     }
   ],
   "screenshots": [
@@ -166,48 +180,52 @@
     },
     {
       "file": "apps/admin-web/acceptance-evidence/agent-onboarding/06-draft-saved.png",
-      "note": "draft created for ACC-AGT-7619B944"
+      "note": "draft created for ACC-AGT-02580326"
     },
     {
       "file": "apps/admin-web/acceptance-evidence/agent-onboarding/07-submitted-for-review.png",
-      "note": "application AGENT-APP-A08A673E status=SUBMITTED"
+      "note": "application AGENT-APP-DC8C98EB status=SUBMITTED"
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/08-approved-awaiting-activation.png",
-      "note": "application AGENT-APP-A08A673E is APPROVED and awaiting activation"
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/08-submitter-cannot-approve-explained.png",
+      "note": "notice: \"You submitted this application, so you cannot approve it. Separation of duties requires a different operator holding review permission to decide it.\" — and no Approve button is offered on this row"
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/09-pre-activation-class-and-services.png",
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/09-approved-awaiting-activation.png",
+      "note": "application AGENT-APP-DC8C98EB is APPROVED and awaiting activation"
+    },
+    {
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/10-pre-activation-class-and-services.png",
       "note": "class: \"Demo Ordinary Agent (Level 1) (DEMO_ORDINARY_L1) — active\" | services: \"CASH_IN, CASH_OUT, CASH_TO_CASH, WALLET_TRANSFER, AGENT_FUNDING, AGENT_DEFUNDING\""
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/10-pre-activation-fees-commissions-limits.png",
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/11-pre-activation-fees-commissions-limits.png",
       "note": "limits: \"DEMO_AGENT_CLASS_ORDINARY\tactive assignment\" | pricing: \"Product Fee Commission CASH_TO_WALLET ₦2.50 total ₦502.50 0.5% · PERCENTAGE no commission rule — nothing would accrue WALLET_TO_CASH no fee rule — charge undefined, not zero — resolved CASH_TO_CASH un\""
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/11-pre-activation-gaps.png",
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/12-pre-activation-gaps.png",
       "note": "no configuration gaps for this class"
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/12-activated.png",
-      "note": "application AGENT-APP-A08A673E → Agent ACTIVE"
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/13-activated.png",
+      "note": "application AGENT-APP-DC8C98EB → Agent ACTIVE"
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/13-activated-agent-class-persisted.png",
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/14-activated-agent-class-persisted.png",
       "note": "agents.agent_class_id = 099d7905-c494-4771-bb15-ad321bccdc66 (the chosen class), governing services: AGENT_DEFUNDING,AGENT_FUNDING,CASH_IN,CASH_OUT,CASH_TO_CASH,WALLET_TRANSFER"
     },
     {
-      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/14-missing-configuration-what-staff-see.png",
+      "file": "apps/admin-web/acceptance-evidence/agent-onboarding/15-missing-configuration-what-staff-see.png",
       "note": "gaps rendered: \"Required configuration still missing NO_EFFECTIVE_LIMITS (LIMITS): No active limit profile is assigned to this class. Limit-governed operations cannot resolve a profile — this is NOT the same as unlimited. Missing configuration does not block activation. It do\""
     }
   ],
-  "findings": [
-    "Self-approval is accepted: a principal holding agent.review_application can approve the application it submitted. Approval is gated by function scope only; no maker!=checker signature or governed-action rule applies. Enforced independence was NOT demonstrated."
-  ],
-  "probeApplication": {
-    "id": "ddc3857c-1c98-4c1d-8eca-210e40a111b4",
-    "state": "APPROVED",
-    "selfApproveHttpStatus": 200,
-    "note": "walked away from: self-approval accepted by the API"
+  "findings": [],
+  "separationOfDuties": {
+    "applicationId": "0e2ee390-c694-421b-9a9e-79c398fe3e4e",
+    "selfApproveHttpStatus": 403,
+    "selfApproveMessage": "Separation of duties: the operator who submitted this application cannot approve it. A different operator holding agent.review_application must decide it.",
+    "stateAfterRefusedSelfApproval": "SUBMITTED",
+    "independentCheckerApprovalStatus": 200,
+    "independentCheckerResultingState": "APPROVED"
   }
 }

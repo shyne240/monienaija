@@ -99,6 +99,12 @@ interface AgentApplicationRecord {
   linkedAgentStatus?: string | null;
   rejectionReason: string | null;
   createdAt: string;
+  /**
+   * Computed server-side: true when the signed-in operator is the one who submitted this
+   * application, in which case they may not approve it. Only the boolean is sent — other
+   * operators' principal ids never reach the browser.
+   */
+  selfSubmitted?: boolean;
 }
 
 interface AgentApplicationFormState {
@@ -2689,6 +2695,18 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setApplicationsError('A rejection reason is required before rejecting an application.');
       return;
     }
+    /*
+     * The backend refuses this regardless — the check is not a bypass guard. It exists so the
+     * operator gets the reason instead of a bare 403 if the row was rendered before this session
+     * refreshed its capability annotation.
+     */
+    if (app.selfSubmitted === true && (action === 'approve' || action === 'reject')) {
+      setApplicationsError(
+        'Separation of duties: you submitted this application, so you cannot approve or reject it. ' +
+          'A different operator holding review permission must decide it.',
+      );
+      return;
+    }
     applicationActionRef.current = true;
     setApplicationBusyId(app.id);
     setApplicationsError('');
@@ -3421,6 +3439,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         const isDraft = app.status === 'DRAFT';
                         const canReviewOrDecide =
                           app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
+                        /*
+                         * Separation of duties, stated where the operator looks for the Approve
+                         * button. The backend decides (and enforces); this only explains the
+                         * decision in place of a button that would fail.
+                         */
+                        const selfSubmitted = app.selfSubmitted === true;
+                        const canDecideThisRow = canReviewOrDecide && !selfSubmitted;
                         // Application approval and Agent activation are separate. Use the review
                         // projection, not the (possibly filtered or off-page) Agent directory.
                         const canActivateFromApp =
@@ -3514,7 +3539,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     Mark under review
                                   </button>
                                 )}
-                                {canReviewOrDecide && (
+                                {selfSubmitted && (
+                                  <p style={smallMuted} data-testid="application-sod-blocked">
+                                    You submitted this application, so you cannot approve it.
+                                    Separation of duties requires a different operator holding
+                                    review permission to decide it.
+                                  </p>
+                                )}
+                                {canDecideThisRow && (
                                   <>
                                     <button
                                       type="button"

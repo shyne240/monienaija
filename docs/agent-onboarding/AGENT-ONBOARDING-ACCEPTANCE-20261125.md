@@ -4,6 +4,8 @@ One synthetic Agent, driven through the real Admin Web against the real API and 
 fully-migrated local PostgreSQL. Nothing is stubbed: every assertion below is read back from the
 API or the database after the click that produced it.
 
+34 recorded steps, 15 screenshots, 0 findings.
+
 Reproduce with:
 
 ```bash
@@ -24,6 +26,9 @@ Evidence (screenshots + `report.json`) lives in `evidence/acceptance-20261125/`.
 | Class-declared requirements | 2 info fields + 1 evidence reference rendered and supplied |
 | Draft | Persisted as `DRAFT` against the chosen class |
 | Submission | Reaches `SUBMITTED` with a `submittedAt` |
+| Submitter cannot approve | Own row shows *"You submitted this application, so you cannot approve it"* and offers no Approve button |
+| Self-approval refused | Submitter's own `POST /approve` → 403, application stays `SUBMITTED` |
+| Independent checker | Same application approved by a different principal → 200, `APPROVED` |
 | Review → approval | Driven by a **different principal** from the maker |
 | Pre-activation panel | Selected class, eligible services, effective limits, and per-product fee/commission |
 | Activation | Application remains `APPROVED`; the canonical Agent reaches `ACTIVE` |
@@ -42,16 +47,24 @@ Existing local role accounts only; no password was changed.
 `POST /internal/agents/applications/:id/approve` returns `403 FUNCTION_MISSING`. Only
 `AGENT_NETWORK_MANAGER` and `SUPER_ADMIN` hold `agent.review_application`.
 
-## Open finding — independence is not enforced
+## Independence is enforced (was an open finding)
 
-**The submitting principal can approve its own application.** A throwaway second application was
-approved by the account that submitted it (`HTTP 200`, state `APPROVED`). `AgentApplicationService.approve()`
-compares nothing but the function scope, and there is no `AGENT_APPLICATION_APPROVE` maker-checker
-rule in the governed-action registry.
+On the previous revision this walkthrough recorded a finding: the submitting principal could
+approve their own application. That is now **closed** at the approval boundary —
+`AgentApplicationService.approve()` refuses an approver whose principal id equals the persisted
+`submitted_by`, before any state change, and a database trigger prevents the attribution from being
+rewritten.
 
-So the "independent approval" above is a **procedural** separation (two accounts were used), not an
-enforced one. Enforcing it needs a product decision: either a `principal != submittedBy` guard in
-the service, or a governed maker-checker rule for the approve action.
+Verified in this walkthrough (throwaway application, 34/34 steps):
+
+| Attempt | Result |
+| --- | --- |
+| Submitting operator approves their own application | `403` *"Separation of duties: the operator who submitted this application cannot approve it."* — application remains `SUBMITTED` |
+| Different principal approves the same application | `200` → `APPROVED` |
+| Same operator, second session | Still the same submitter |
+
+The walkthrough's own approval is therefore an enforced separation, not a procedural one. See
+`APPROVAL-INDEPENDENCE.md` for the rule, the legacy-attribution blocker, and the safe handling path.
 
 ## Two defects found and fixed while producing this evidence
 

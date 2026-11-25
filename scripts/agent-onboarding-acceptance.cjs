@@ -381,9 +381,39 @@ async function main() {
   if (!submitted || submitted.status !== 'SUBMITTED') {
     throw new Error(`expected SUBMITTED, got ${submitted && submitted.status}`);
   }
-  record('submission confirmed', `status=${submitted.status} submittedAt=${submitted.submittedAt}`);
+  record(
+    'submission confirmed',
+    `status=${submitted.status} submittedAt=${submitted.submittedAt} submittedBy=${submitted.submittedBy ? 'recorded' : 'MISSING'}`,
+  );
+  if (!submitted.submittedBy) {
+    throw new Error('the submission recorded no submitter, so approval independence cannot be enforced');
+  }
 
-  // ---------------------------------------------------------------- 6. independent review
+  // ------------------------------------------------- 6. what the submitter is told in the console
+  /*
+   * The submitting operator is looking at their own SUBMITTED row. They hold
+   * `agent.review_application`, so a bare 403 would be the first they heard of the rule. The
+   * console must state it where the Approve button would have been.
+   */
+  const ownRow = page.getByTestId(`application-row-${draft.id}`).first();
+  await ownRow.waitFor({ state: 'visible', timeout: 25000 });
+  const sodNotice = ownRow.getByTestId('application-sod-blocked');
+  if (!(await sodNotice.count())) {
+    throw new Error(
+      'the submitter sees no explanation of why they cannot approve their own application',
+    );
+  }
+  const sodNoticeText = (await sodNotice.first().innerText()).replace(/\s+/g, ' ').trim();
+  if (await ownRow.getByRole('button', { name: 'Approve' }).count()) {
+    throw new Error('the submitter is still offered an Approve button on their own application');
+  }
+  await shot(
+    'submitter-cannot-approve-explained',
+    `notice: "${sodNoticeText}" — and no Approve button is offered on this row`,
+    ownRow,
+  );
+
+  // ---------------------------------------------------------------- 7. independent review
   const reviewer = await signIn(ACCOUNTS.reviewer);
   record(
     'independent reviewer session',
@@ -394,12 +424,13 @@ async function main() {
   }
 
   /*
-   * Separation of duties is checked, not assumed — but on a THROWAWAY second application, so the
-   * walkthrough application below is only ever driven by the independent reviewer. Probing on the
-   * real record would either contaminate the evidence or abort the whole run.
+   * Separation of duties, exercised the way it actually breaks: the submitting operator holds
+   * `agent.review_application`, so nothing but the guard stops them approving their own work.
+   *
+   * Done on a THROWAWAY second application so the walkthrough record above is only ever driven by
+   * the independent reviewer. The submission is made through the submitter's own authenticated
+   * session — that is what records them as the submitter.
    */
-  // Creation is the public applicant endpoint and returns a one-time capability, so the probe is
-  // created the same way a member of the public would create it.
   const probe = await api('/agents/applications', {
     method: 'POST',
     body: {
@@ -413,9 +444,8 @@ async function main() {
   let sodAttempt = { status: 0, body: {} };
   let probeState = null;
   if (probeId) {
-    // The one-time applicant capability, returned only by the create response.
     await api(`/agents/applications/${probeId}/submit`, {
-      token: probe.body.applicantAccessToken,
+      token: maker.accessToken,
       method: 'POST',
     });
     sodAttempt = await api(`/internal/agents/applications/${probeId}/approve`, {
@@ -425,25 +455,59 @@ async function main() {
     const probeList = await api('/internal/agents/applications', { token: maker.accessToken });
     probeState = probeList.body.find((a) => a.id === probeId);
   }
-  record(
-    'separation of duties (throwaway application)',
-    probeId
-      ? `maker approve attempt -> HTTP ${sodAttempt.status}; application state=${probeState?.status}` +
-        (probeState?.status === 'APPROVED'
-          ? ' — FINDING: the submitting principal holds agent.review_application so the API accepts a ' +
-            'self-approval; there is no maker!=checker guard in AgentApplicationService.approve() and no ' +
-            'AGENT_APPLICATION_APPROVE maker-checker rule in the governed-action registry'
-          : ' — self-approval refused')
-      : `probe application could not be created: HTTP ${probe.status} ${JSON.stringify(probe.body).slice(0, 240)}`,
-  );
-  if (probeState?.status === 'APPROVED') {
-    findings.push(
-      'Self-approval is accepted: a principal holding agent.review_application can approve the ' +
-        'application it submitted. Approval is gated by function scope only; no maker!=checker ' +
-        'signature or governed-action rule applies. Enforced independence was NOT demonstrated.',
+
+  if (!probeId) {
+    throw new Error(
+      `probe application could not be created: HTTP ${probe.status} ${JSON.stringify(probe.body).slice(0, 240)}`,
     );
   }
-  const probeApproved = probeState?.status === 'APPROVED';
+  if (sodAttempt.status !== 403) {
+    throw new Error(
+      `the submitter's own approval was not refused: HTTP ${sodAttempt.status} ${JSON.stringify(sodAttempt.body).slice(0, 240)}`,
+    );
+  }
+  if (probeState?.status !== 'SUBMITTED') {
+    throw new Error(
+      `refused self-approval still moved the application to ${probeState?.status}; the guard must fire before any state change`,
+    );
+  }
+  if (!/separation of duties/i.test(JSON.stringify(sodAttempt.body))) {
+    throw new Error(
+      `refusal did not explain separation of duties: ${JSON.stringify(sodAttempt.body).slice(0, 240)}`,
+    );
+  }
+  record(
+    'self-approval refused',
+    `submitter's own POST /approve -> HTTP ${sodAttempt.status} ("${sodAttempt.body?.message}"); ` +
+      `application remains ${probeState.status}`,
+  );
+
+  // A different authorised checker approves the SAME application — the pair proves both halves.
+  const checkerApproves = await api(`/internal/agents/applications/${probeId}/approve`, {
+    token: reviewer.accessToken,
+    method: 'POST',
+  });
+  if (checkerApproves.status !== 200 || checkerApproves.body?.status !== 'APPROVED') {
+    throw new Error(
+      `an independent checker could not approve the application the submitter was refused on: HTTP ${checkerApproves.status} ${JSON.stringify(checkerApproves.body).slice(0, 240)}`,
+    );
+  }
+  record(
+    'independent checker approved the same application',
+    `different principal -> HTTP ${checkerApproves.status} status=${checkerApproves.body.status}`,
+  );
+
+  // And the submitter cannot sneak in afterwards, from a *different session*, on the same record.
+  const secondMakerSession = await signIn(ACCOUNTS.maker);
+  const crossSession = await api(`/internal/agents/applications/${probeId}/review`, {
+    token: secondMakerSession.accessToken,
+    method: 'POST',
+  });
+  record(
+    'same operator, new session is still the same submitter',
+    `second session (${secondMakerSession.sessionId !== maker.sessionId ? 'distinct session id' : 'same session id'}) ` +
+      `/review -> HTTP ${crossSession.status}${crossSession.status === 200 ? '' : ` (${crossSession.body?.message ?? ''})`}`,
+  );
 
   // Drive the review/approve transitions through the same governed endpoints the UI calls.
   const underReview = await api(`/internal/agents/applications/${draft.id}/review`, {
@@ -761,7 +825,14 @@ async function main() {
     steps,
     screenshots: shots,
     findings,
-    probeApplication: { id: probeId, state: probeState?.status, selfApproveHttpStatus: sodAttempt.status, note: probeApproved ? 'walked away from: self-approval accepted by the API' : 'unused' },
+    separationOfDuties: {
+      applicationId: probeId,
+      selfApproveHttpStatus: sodAttempt.status,
+      selfApproveMessage: sodAttempt.body?.message ?? null,
+      stateAfterRefusedSelfApproval: probeState?.status,
+      independentCheckerApprovalStatus: checkerApproves.status,
+      independentCheckerResultingState: checkerApproves.body?.status,
+    },
   };
   fs.writeFileSync(path.join(EVIDENCE, 'report.json'), JSON.stringify(report, null, 2));
 
