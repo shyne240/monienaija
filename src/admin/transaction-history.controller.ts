@@ -56,7 +56,7 @@ export const HISTORY_SQL = `WITH history AS (
  FROM ledger_journals j WHERE j.metadata->>'canonicalService' IN ('CASH_IN','CASH_OUT') AND j.reversal_of_journal_id IS NULL
  UNION ALL
  SELECT fc.id,'WALLET_TO_BANK',fc.state,COALESCE(bo.operation_reference,fc.id::text),fc.created_at,fc.resolved_at,
- COALESCE(fb.beneficiary_amount_minor,fa.amount_minor)::text,COALESCE(fb.service_fee_minor,0)::text,COALESCE(fb.tax_minor,0)::text,fa.currency,
+ COALESCE(fb.beneficiary_amount_minor,fa.amount_minor)::text,fb.service_fee_minor::text,fb.tax_minor::text,fa.currency,
  j.institution_id,ARRAY[fc.reservation_journal_id,fc.resolution_journal_id]::uuid[],
  jsonb_build_object('principalType',fa.principal_type,'partyId',fa.principal_id,'walletId',fa.wallet_account_id,'providerReference',bo.provider_transaction_reference,'providerState',bo.state,'externalOperationId',fc.external_operation_id,'totalDebitMinor',fb.customer_debit_minor::text)
  FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id
@@ -84,12 +84,12 @@ export const HISTORY_SQL = `WITH history AS (
  FROM agent_float_funding_receipts r JOIN ledger_journals j ON j.id=r.journal_id
  WHERE NOT EXISTS (SELECT 1 FROM banking_inbound_float_links identity WHERE identity.float_receipt_id=r.id)
  UNION ALL
- SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,COALESCE(scope.institution_id,j.institution_id),ARRAY[r.journal_id]::uuid[],
+ SELECT r.id,'CUSTOMER_FUNDING',r.status::text,r.reference,r.created_at,COALESCE(r.approved_at,r.rejected_at),r.amount_minor::text,NULL::text,NULL::text,r.currency,COALESCE(scope.institution_id,j.institution_id),ARRAY[r.journal_id]::uuid[],
  jsonb_build_object('customerId',r.customer_id,'channel',r.channel,'externalReference',r.external_reference,'makerId',r.maker_id,'checkerId',r.checker_id,'rejectionReason',r.rejection_reason,'scopeEvidenceId',scope.attribution_id,'scopeCapturedAt',scope.captured_at)
  FROM customer_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
  LEFT JOIN customer_funding_scope_evidence scope ON scope.request_id=r.id
  UNION ALL
- SELECT r.id,CASE r.direction WHEN 'FUND' THEN 'AGENT_FUNDING' ELSE 'AGENT_DEFUNDING' END,r.status,r.reference,r.created_at,COALESCE(r.executed_at,r.rejected_at),r.amount_minor::text,'0','0',r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
+ SELECT r.id,CASE r.direction WHEN 'FUND' THEN 'AGENT_FUNDING' ELSE 'AGENT_DEFUNDING' END,r.status,r.reference,r.created_at,COALESCE(r.executed_at,r.rejected_at),r.amount_minor::text,NULL::text,NULL::text,r.currency,j.institution_id,ARRAY[r.journal_id]::uuid[],
  jsonb_build_object('agentId',r.agent_id,'approvalId',r.approval_id,'makerId',r.maker_principal_id,'checkerId',r.checker_principal_id,'rejectionReason',r.rejection_reason)
  FROM agent_funding_requests r LEFT JOIN ledger_journals j ON j.id=r.journal_id
 ), scoped AS (SELECT * FROM history h WHERE ($1::boolean OR EXISTS (

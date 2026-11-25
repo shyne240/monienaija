@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
   TransactionHistoryScreen,
   transactionDetailLink,
@@ -111,3 +111,31 @@ test('late list responses from a previous principal cannot leak', async () => {
   resolve({ items: [row], nextCursor: null });
   await waitFor(() => expect(screen.queryByText('SYN-C2C')).toBeNull());
 });
+
+test.each([
+  { fee: null, journals: [null], feeLabel: 'Not recorded', journalLabel: 'No journal recorded.' },
+  {
+    fee: '0',
+    journals: null,
+    feeLabel: '₦0.00',
+    journalLabel: 'Ledger information requires ledger.view.',
+  },
+])(
+  'distinguishes absent fee/journal evidence from zero or denied permission ($feeLabel)',
+  async ({ fee, journals, feeLabel, journalLabel }) => {
+    window.location.hash = transactionDetailLink(row.type, row.id);
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes('/' + row.type + '/')
+          ? { ...row, feeMinor: fee, vatMinor: null, journals }
+          : { items: [{ ...row, feeMinor: fee }], nextCursor: null },
+      ),
+    );
+    render(<TransactionHistoryScreen />);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('heading', { name: row.reference });
+    expect(within(dialog).getByText('Fee').nextElementSibling?.textContent).toBe(feeLabel);
+    expect(within(dialog).getByText('VAT').nextElementSibling?.textContent).toBe('Not recorded');
+    expect(within(dialog).getByText(journalLabel)).toBeTruthy();
+  },
+);

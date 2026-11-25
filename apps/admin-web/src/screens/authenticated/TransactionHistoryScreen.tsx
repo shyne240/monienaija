@@ -25,8 +25,8 @@ type Row = {
   createdAt: string;
   completedAt?: string;
   amountMinor: string;
-  feeMinor: string;
-  vatMinor?: string;
+  feeMinor: string | null;
+  vatMinor?: string | null;
   currency: string;
   institutionId?: string;
   investigation?: Record<string, string | null>;
@@ -297,7 +297,11 @@ function History({ allowed }: { allowed: boolean }) {
                     </td>
                     <td>{date(row.createdAt)}</td>
                     <td>{formatFinancialAmount(row.amountMinor, row.currency)}</td>
-                    <td>{formatFinancialAmount(row.feeMinor, row.currency)}</td>
+                    <td>
+                      {row.feeMinor == null
+                        ? 'Not recorded'
+                        : formatFinancialAmount(row.feeMinor, row.currency)}
+                    </td>
                     <td>
                       <a href={transactionDetailLink(row.type, row.id)}>View details</a>
                     </td>
@@ -349,8 +353,14 @@ function History({ allowed }: { allowed: boolean }) {
                       ? date(detail.completedAt)
                       : 'Not recorded',
                     Amount: formatFinancialAmount(detail.amountMinor, detail.currency),
-                    Fee: formatFinancialAmount(detail.feeMinor, detail.currency),
-                    VAT: formatFinancialAmount(detail.vatMinor || '0', detail.currency),
+                    Fee:
+                      detail.feeMinor == null
+                        ? 'Not recorded'
+                        : formatFinancialAmount(detail.feeMinor, detail.currency),
+                    VAT:
+                      detail.vatMinor == null
+                        ? 'Not recorded'
+                        : formatFinancialAmount(detail.vatMinor, detail.currency),
                     Institution: detail.institutionId || 'Unattributed',
                     ...detail.investigation,
                   }).map(([label, value]) => (
@@ -365,11 +375,15 @@ function History({ allowed }: { allowed: boolean }) {
                   Reference: <code>{detail.reference}</code>
                 </p>
                 {detail.journals ? (
-                  detail.journals.filter(Boolean).map((id) => (
-                    <p key={id}>
-                      <code>{id}</code>
-                    </p>
-                  ))
+                  detail.journals.filter(Boolean).length ? (
+                    detail.journals.filter(Boolean).map((id) => (
+                      <p key={id}>
+                        <code>{id}</code>
+                      </p>
+                    ))
+                  ) : (
+                    <p>No journal recorded.</p>
+                  )
                 ) : (
                   <p>Ledger information requires ledger.view.</p>
                 )}
