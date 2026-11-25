@@ -810,7 +810,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     );
     expect(latest[0]).toEqual({
       timestamp: '1785753600812',
-      name: 'CreateCustomerClasses1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
     const pool: Array<{ code: string }> = await dataSource.query(
       `SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
@@ -825,7 +825,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     );
     expect(latest[0]).toEqual({
       timestamp: '1785753600812',
-      name: 'CreateCustomerClasses1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
   });
 });
