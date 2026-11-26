@@ -1,0 +1,7 @@
+{
+  "pr23": "bdbc7ceed188f7a9902d497fb4a5104ddb2ff370",
+  "pr25": "8301fa245e686c68a2fdce611c93cc191e2106d3",
+  "combinedTree": "58ef38ef63c51009344ce466dabe125979378759",
+  "resolvedTree": "6df5ba3abdf6a00dffaca78a6b7cb0f3abdde719",
+  "resolution": "PR23-owned Layout resolution: unified History + journal callback; no cashIn/cashOut cases; retain all Finance contexts including journalId and ledgerReference. Ledger workspace retains PR25 implementation with PR23 re-entrant initialJournalId effect (no one-shot StrictMode ref)."
+}

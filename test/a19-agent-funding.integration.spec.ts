@@ -8,7 +8,13 @@ import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { AgentFundingService } from '../src/agent/agent-funding.service';
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
-import { AgentFundingGovernanceTestFacade } from './support/agent-funding-governance';
+import * as request from 'supertest';
+import { writeFileSync } from 'node:fs';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  financeControllerPrincipal,
+  AgentFundingGovernanceTestFacade,
+} from './support/agent-funding-governance';
 import { AggregatorService } from '../src/aggregator/aggregator.service';
 import { AggregatorAgentRelationshipService } from '../src/aggregator/aggregator-agent-relationship.service';
 import { AgentClassService } from '../src/agent/agent-class.service';
@@ -183,6 +189,104 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     );
     return BigInt(rows[0]!.balance);
   }
+
+  it('keeps platform agent FUND/DEFUND requests platform-only before and after posting or rejection', async () => {
+    const fixture = new GovernedFinancialFixture({ app, dataSource, label: 'agent-funding-scope' });
+    const institution = await fixture.createInstitution();
+    const workforce = await fixture.workforce();
+    const { agentId } = await createActiveAgent();
+    const raw = app.get(AgentFundingService);
+    await fundingService.fund({
+      agentId,
+      amountMinor: '10000',
+      currency: 'NGN',
+      idempotencyKey: 'scope-seed-' + randomUUID(),
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
+    });
+    const base = '/api/v1/internal/admin/transaction-history';
+    const read = (path: string, who = workforce.auditor) =>
+      request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', 'Bearer ' + who.token);
+    const results: unknown[] = [];
+    for (const direction of ['FUND', 'DEFUND'] as const) {
+      const input = {
+        agentId,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: 'scope-' + randomUUID(),
+        principal: privilegedPrincipal,
+        actor: 'test-actor',
+        reason: 'Controlled pending history test',
+      };
+      const pending = await raw.requestFunding(input, direction);
+      const type = direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING';
+      const path = base + '/' + type + '/' + pending.id;
+      const before = (await read(path).expect(200)).body;
+      expect(before).toMatchObject({ id: pending.id, status: 'PENDING', institutionId: null });
+      await read(path, workforce.operator).expect(404);
+      expect(
+        (
+          await read(
+            base + '?reference=' + encodeURIComponent(pending.reference),
+            workforce.operator,
+          ).expect(200)
+        ).body.items,
+      ).toEqual([]);
+      if (direction === 'FUND') await fixture.affiliateAgent(agentId, institution.id);
+      // Affiliation has changed; the funding pool and wallet still have no institution custody.
+      await read(path, workforce.operator).expect(404);
+      if (direction === 'FUND') await fundingService.fund(input);
+      else await fundingService.defund(input);
+      const after = (await read(path).expect(200)).body;
+      expect(after).toMatchObject({ id: pending.id, status: 'EXECUTED', institutionId: null });
+      await read(path, workforce.operator).expect(404);
+      expect(
+        (await read(base + '?reference=' + encodeURIComponent(pending.reference)).expect(200)).body
+          .items,
+      ).toHaveLength(1);
+      const toReject = await raw.requestFunding(
+        { ...input, idempotencyKey: 'scope-reject-' + randomUUID() },
+        direction,
+      );
+      await raw.rejectFundingRequest(
+        toReject.id,
+        financeControllerPrincipal(),
+        'Controlled history rejection',
+      );
+      const rejectedPath = base + '/' + type + '/' + toReject.id;
+      expect((await read(rejectedPath).expect(200)).body.status).toBe('REJECTED');
+      await read(rejectedPath, workforce.operator).expect(404);
+      expect(
+        (
+          await read(
+            base + '?reference=' + encodeURIComponent(toReject.reference),
+            workforce.operator,
+          ).expect(200)
+        ).body.items,
+      ).toEqual([]);
+      results.push({ direction, before, after, rejectedId: toReject.id });
+    }
+    writeFileSync(
+      'docs/transaction-history/evidence/platform-agent-funding-scope.json',
+      JSON.stringify(
+        {
+          result: 'PASS',
+          authentication: 'real persisted MFA workforce sessions and real AppModule',
+          checks: [
+            'platform auditor can read pending/rejected/executed FUND and DEFUND',
+            'institution operator cannot read platform requests in any state',
+            'current agent affiliation never supplies institution scope',
+            'posting retains request UUID and one row',
+          ],
+          results,
+        },
+        null,
+        2,
+      ),
+    );
+  });
 
   // 1. valid funding
   it('1. valid funding (internal)', async () => {
@@ -809,8 +913,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
     });
     const pool: Array<{ code: string }> = await dataSource.query(
       `SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
@@ -824,8 +928,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
     });
   });
 });

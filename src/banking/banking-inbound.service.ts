@@ -208,13 +208,14 @@ export class BankingInboundService {
     const rows = await this.db.query<
       Array<{
         provider_key: string;
+        environment: string;
         provider_transaction_reference: string;
         gross_amount_minor: string;
         currency: string;
         verification_state: string;
       }>
     >(
-      `SELECT provider_key,provider_transaction_reference,gross_amount_minor::text AS gross_amount_minor,
+      `SELECT provider_key,environment,provider_transaction_reference,gross_amount_minor::text AS gross_amount_minor,
               currency,verification_state
          FROM banking_inbound_payments WHERE id=$1`,
       [id],
@@ -224,7 +225,11 @@ export class BankingInboundService {
     if (row.verification_state === 'VERIFIED' && !force) return { state: 'VERIFIED' };
 
     const provider = this.registry.find(row.provider_key);
-    if (!provider || !this.registry.supports(row.provider_key, 'INBOUND_PAYMENT_VERIFICATION')) {
+    if (
+      !provider ||
+      provider.descriptor.environment !== row.environment ||
+      !this.registry.supports(row.provider_key, 'INBOUND_PAYMENT_VERIFICATION')
+    ) {
       // No verification capability means the payment stays unverified. It is never assumed good.
       await this.db.query(
         `UPDATE banking_inbound_payments SET verification_state='UNKNOWN' WHERE id=$1`,
@@ -255,8 +260,10 @@ export class BankingInboundService {
       // Amount agreement is the difference between "the provider confirms this reference" and "the
       // provider confirms this reference for this amount".
       if (
-        verification.grossAmountMinor !== undefined &&
-        BigInt(verification.grossAmountMinor) !== BigInt(row.gross_amount_minor)
+        verification.providerTransactionReference !== row.provider_transaction_reference ||
+        (verification.currency !== undefined && verification.currency !== row.currency) ||
+        (verification.grossAmountMinor !== undefined &&
+          BigInt(verification.grossAmountMinor) !== BigInt(row.gross_amount_minor))
       ) {
         await this.db.query(
           `UPDATE banking_inbound_payments SET verification_state='REJECTED' WHERE id=$1`,

@@ -1,0 +1,27 @@
+{
+  "runId": "skipfixed2",
+  "nodeEnv": "test",
+  "filesDiscovered": 2,
+  "batches": 2,
+  "batchSize": 1,
+  "concurrency": 1,
+  "maxOldSpaceMb": 2560,
+  "durationMs": 30256,
+  "passingBatches": 2,
+  "failingBatches": 0,
+  "memoryFailures": 0,
+  "timeouts": 0,
+  "unexplainedCrashes": 0,
+  "failingFiles": [],
+  "suitesReported": 2,
+  "suitesPassed": 1,
+  "suitesSkipped": 1,
+  "suitesFailed": 0,
+  "filesWithoutResult": [],
+  "testTallies": [
+    "1 skipped, 1 total",
+    "4 passed, 4 total"
+  ],
+  "failureCategories": {},
+  "failures": []
+}

@@ -91,6 +91,25 @@ beforeEach(() => {
   setupReads();
 });
 
+test('creates the first dashboard assignment for a configurable role', async () => {
+  const read = (ApiClient.get as jest.Mock).getMockImplementation()!;
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) =>
+    url.endsWith('/roles') ? Promise.resolve([{ roleKey: 'CUSTOM_REVIEWER' }]) : read(url),
+  );
+  (ApiClient.put as jest.Mock).mockResolvedValue(receipt('CUSTOM_REVIEWER'));
+  render(<DashboardSettingsScreen />);
+
+  expect(await screen.findByText('No dashboard assigned')).toBeTruthy();
+  await choose('CUSTOM_REVIEWER');
+  submit('CUSTOM_REVIEWER');
+
+  expect(await screen.findByText('Dashboard for CUSTOM_REVIEWER is now TWO.')).toBeTruthy();
+  expect(ApiClient.put).toHaveBeenCalledWith(
+    '/internal/a2/workforce/dashboard/assignments/CUSTOM_REVIEWER',
+    { templateKey: 'TWO', reason: undefined },
+  );
+});
+
 test('malformed configuration is unavailable rather than an empty list', async () => {
   (ApiClient.get as jest.Mock).mockImplementation((url: string) =>
     Promise.resolve(

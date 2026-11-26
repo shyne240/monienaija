@@ -7,6 +7,9 @@ import { pbkdf2Sync, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { AuthorizationCatalogueSeedService } from '../src/authorization-catalogue/authorization-catalogue-seed.service';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import { writeFileSync } from 'node:fs';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
@@ -227,6 +230,198 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     if (rows.length === 0) throw new Error('Settlement asset not found');
     return rows[0]!.id;
   }
+
+  it('captures custody at request creation, isolates unposted history and ignores later enrolment changes', async () => {
+    await app.get(AuthorizationCatalogueSeedService).seedIfEmpty();
+    const ownFixture = new GovernedFinancialFixture({ app, dataSource, label: 'fundscope-own' });
+    const foreignFixture = new GovernedFinancialFixture({
+      app,
+      dataSource,
+      label: 'fundscope-foreign',
+    });
+    const own = await ownFixture.createInstitution();
+    const foreign = await foreignFixture.createInstitution();
+    const operator = (await ownFixture.workforce()).operator;
+    const outsider = (await foreignFixture.workforce()).operator;
+    const { customerId, walletId } = await createCustomerWithCredential();
+    // This first request predates any governed custody evidence. Never backfill it from later facts.
+    const unresolved = await fundingService.createRequest({
+      customerId,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: 'unresolved-' + randomUUID(),
+      principal: supportMaker,
+    });
+    await ownFixture.enrolCustomer(customerId, own.id);
+    const attribution = await ownFixture.attributeWallet(walletId, own.id);
+    const pending = await fundingService.createRequest({
+      customerId,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: 'captured-' + randomUUID(),
+      principal: supportMaker,
+    });
+    const evidence = await dataSource.query(
+      'SELECT * FROM customer_funding_scope_evidence WHERE request_id=$1',
+      [pending.id],
+    );
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      request_id: pending.id,
+      wallet_id: walletId,
+      institution_id: own.id,
+      attribution_id: attribution.attributionId,
+    });
+    const base = '/api/v1/internal/admin/transaction-history';
+    const path = base + '/CUSTOMER_FUNDING/' + pending.id;
+    const read = (url: string, who = operator) =>
+      request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer ' + who.token);
+    const before = (await read(path).expect(200)).body;
+    expect(before).toMatchObject({ id: pending.id, status: 'PENDING', institutionId: own.id });
+    expect(
+      (await read(base + '?reference=' + pending.reference).expect(200)).body.items,
+    ).toHaveLength(1);
+    await read(path, outsider).expect(404);
+    expect(
+      (await read(base + '?reference=' + pending.reference, outsider).expect(200)).body.items,
+    ).toEqual([]);
+    await read(base + '/CUSTOMER_FUNDING/' + unresolved.id).expect(404);
+    let scopedPostingRefusal = '';
+    try {
+      await fundingService.approve({ fundingRequestId: pending.id, principal: operatorChecker });
+    } catch (error) {
+      scopedPostingRefusal = error instanceof Error ? error.message : String(error);
+    }
+    expect(scopedPostingRefusal).not.toBe('');
+    expect((await read(path).expect(200)).body).toEqual(before);
+    // Change current customer affiliation using the governed enrolment workflow. Custody remains
+    // immutable; reads must continue using the creation-time receipt, not today's enrolment.
+    await ownFixture.enrolCustomer(customerId, own.id, {
+      targetStatus: 'SUSPENDED' as any,
+      financialEligibility: 'RESTRICTED' as any,
+      withKycReuse: false,
+    });
+    await foreignFixture.enrolCustomer(customerId, foreign.id);
+    expect((await read(path).expect(200)).body).toEqual(before);
+    await read(path, outsider).expect(404);
+    await read(base + '/CUSTOMER_FUNDING/' + unresolved.id).expect(404);
+    const rejected = await fundingService.reject({
+      fundingRequestId: pending.id,
+      rejectionReason: 'Controlled history rejection',
+      principal: operatorChecker,
+    });
+    expect(rejected.status).toBe('REJECTED');
+    const after = (await read(path).expect(200)).body;
+    expect(after).toMatchObject({ id: pending.id, status: 'REJECTED', institutionId: own.id });
+    await read(path, outsider).expect(404);
+    expect(
+      (await read(base + '?reference=' + pending.reference).expect(200)).body.items,
+    ).toHaveLength(1);
+    await expect(
+      dataSource.query(
+        'UPDATE customer_funding_scope_evidence SET institution_id=$2 WHERE request_id=$1',
+        [pending.id, foreign.id],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      dataSource.query('UPDATE customer_funding_requests SET customer_id=$2 WHERE id=$1', [
+        pending.id,
+        randomUUID(),
+      ]),
+    ).rejects.toThrow('Captured funding request identity');
+    expect(
+      (
+        await dataSource.query(
+          'SELECT count(*)::int AS n FROM customer_funding_scope_evidence WHERE request_id=$1',
+          [unresolved.id],
+        )
+      )[0].n,
+    ).toBe(0);
+    await expect(
+      dataSource.query(
+        `INSERT INTO customer_funding_scope_evidence
+      (request_id,wallet_id,ledger_account_id,institution_id,attribution_id)
+      SELECT $1,wallet_id,ledger_account_id,institution_id,attribution_id
+      FROM customer_funding_scope_evidence WHERE request_id=$2`,
+        [unresolved.id, pending.id],
+      ),
+    ).rejects.toThrow('Funding scope requires same-transaction');
+    expect(
+      await dataSource.query(`SELECT
+      has_table_privilege('monienaija_runtime','customer_funding_scope_evidence','INSERT') AS insert,
+      has_table_privilege('monienaija_runtime','customer_funding_scope_evidence','UPDATE') AS update,
+      has_table_privilege('monienaija_runtime','customer_funding_scope_evidence','DELETE') AS delete,
+      has_table_privilege('monienaija_runtime','customer_funding_scope_evidence','TRUNCATE') AS truncate`),
+    ).toEqual([{ insert: false, update: false, delete: false, truncate: false }]);
+    // The shipped platform rail CAN post an unattributed wallet. Use a real platform-auditor
+    // session to show the same pending ID becomes APPROVED once, without inventing an
+    // institution settlement rail merely to make the scoped acceptance test green.
+    const platformCustomer = await createCustomerWithCredential();
+    const platformRequest = await fundingService.createRequest({
+      customerId: platformCustomer.customerId,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: 'platform-post-' + randomUUID(),
+      principal: supportMaker,
+    });
+    const auditor = (await ownFixture.workforce()).auditor;
+    const platformPath = base + '/CUSTOMER_FUNDING/' + platformRequest.id;
+    const platformBefore = (await read(platformPath, auditor).expect(200)).body;
+    expect(platformBefore.status).toBe('PENDING');
+    await read(platformPath).expect(404);
+    const platformApproved = await fundingService.approve({
+      fundingRequestId: platformRequest.id,
+      principal: operatorChecker,
+    });
+    await expect(
+      dataSource.query('UPDATE customer_funding_requests SET journal_id=$2 WHERE id=$1', [
+        pending.id,
+        platformApproved.journalId,
+      ]),
+    ).rejects.toThrow('Funding journal does not match captured request custody');
+    const platformAfter = (await read(platformPath, auditor).expect(200)).body;
+    expect(platformAfter).toMatchObject({ id: platformRequest.id, status: 'APPROVED' });
+    expect(
+      (await read(base + '?reference=' + platformRequest.reference, auditor).expect(200)).body
+        .items,
+    ).toHaveLength(1);
+    await read(platformPath).expect(404);
+    writeFileSync(
+      'docs/transaction-history/evidence/unposted-funding-scope.json',
+      JSON.stringify(
+        {
+          result: 'PASS',
+          authentication:
+            'real persisted MFA workforce sessions; real AppModule and full migration chain',
+          creationEvidence:
+            'governed wallet attribution receipt, wallet and ledger agree at request INSERT',
+          savedHash: '#transaction-history/CUSTOMER_FUNDING/' + pending.id,
+          before,
+          after,
+          evidence: evidence[0],
+          platformPosting: { before: platformBefore, after: platformAfter },
+          checks: [
+            'own pending list/detail allowed',
+            'foreign pending/rejected list/detail denied',
+            'unresolved creation stays withheld after attribution',
+            'governed enrolment change does not change historical access',
+            'rejection preserves request ID and one history row',
+            'captured custody and request identity immutable',
+            'supported platform posting keeps request UUID and one history row (platform auditor only)',
+          ],
+          postingBoundary: {
+            message:
+              'Institution-attributed customer wallet cannot be funded from the platform settlement rail. No new rail or settlement authority invented.',
+            actualRefusal: scopedPostingRefusal,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  });
 
   it('1. authorized maker creates funding request (PENDING)', async () => {
     const { customerId } = await createCustomerWithCredential();

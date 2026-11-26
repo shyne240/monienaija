@@ -35,12 +35,12 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
     const journalId = randomUUID();
     const debitAccountId = randomUUID();
     const creditAccountId = randomUUID();
-    const reference = `C2C-HTTP-${randomUUID().slice(0, 8)}`;
+    const reference = `C2C-HTTP-${randomUUID().slice(0, 8).toUpperCase()}`;
     const amountMinor = '123456';
 
     await dataSource.query(`INSERT INTO agents (id, reference, status) VALUES ($1, $2, 'ACTIVE')`, [
       agentId,
-      `AG-HTTP-${randomUUID().slice(0, 8)}`,
+      `AG-HTTP-${randomUUID().slice(0, 8).toUpperCase()}`,
     ]);
 
     await dataSource.transaction(async (manager) => {
@@ -111,7 +111,14 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
           type: 'OPERATOR',
           principalId: 'test-operator-c2c',
           roles: [],
-          scopes: testAccess === 'allow' ? ['transaction.view'] : [],
+          // The original fixture journal is deliberately unattributed. Only an explicit
+          // platform reader may see it; transaction.view alone is institution-scoped.
+          scopes:
+            testAccess === 'platform'
+              ? ['transaction.view', 'institution.attribution.view']
+              : testAccess === 'scoped'
+                ? ['transaction.view']
+                : [],
           customerAccess: 'NONE',
         };
         return true;
@@ -130,12 +137,12 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
   it('serves real filtered PostgreSQL transfer rows over the HTTP route with masked PII', async () => {
     const response = await request(app.getHttpServer())
       .get(PATH)
-      .set('x-test-access', 'allow')
+      .set('x-test-access', 'platform')
       .query({ page: '1', limit: '10', status: 'unclaimed', agentId, transferId })
       .expect(200);
 
     expect(authorizationRequireFunction).toHaveBeenCalledWith(
-      expect.objectContaining({ scopes: ['transaction.view'] }),
+      expect.objectContaining({ scopes: ['transaction.view', 'institution.attribution.view'] }),
       'transaction.view',
       'agent-cash-to-cash-operations',
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
@@ -159,10 +166,33 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
 
     const filtered = await request(app.getHttpServer())
       .get(PATH)
-      .set('x-test-access', 'allow')
+      .set('x-test-access', 'platform')
       .query({ status: 'CLAIMED', transferId })
       .expect(200);
     expect(filtered.body).toMatchObject({ total: 0, data: [] });
+  });
+
+  it('withholds an unattributed journal from institution-scoped transaction.view readers', async () => {
+    // Membership in an unrelated institution must not authorize historical platform data.
+    const [institution] = await dataSource.query<Array<{ id: string }>>(
+      `INSERT INTO financial_institutions(reference,code,legal_name,institution_type,created_by)
+       VALUES($1,$2,'Synthetic unrelated C2C institution','PARTNER','test') RETURNING id`,
+      [randomUUID(), 'C2C_' + randomUUID().slice(0, 8).toUpperCase()],
+    );
+    await dataSource.query(
+      `INSERT INTO workforce_institution_assignments(principal_id,institution_id,status,granted_by)
+       VALUES('test-operator-c2c',$1,'ACTIVE','test')`,
+      [institution!.id],
+    );
+    for (const filters of [{ agentId, transferId }, { transferId }, { agentId }]) {
+      const response = await request(app.getHttpServer())
+        .get(PATH)
+        .set('x-test-access', 'scoped')
+        .query(filters)
+        .expect(200);
+      expect(response.body).toMatchObject({ total: 0, totalPages: 0, data: [] });
+      expect(JSON.stringify(response.body)).not.toContain(transferId);
+    }
   });
 
   it('rejects missing transaction.view over HTTP before querying the database', async () => {
@@ -173,7 +203,7 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
   it('validates malformed filters over HTTP', async () => {
     await request(app.getHttpServer())
       .get(PATH)
-      .set('x-test-access', 'allow')
+      .set('x-test-access', 'platform')
       .query({ status: 'PENDING' })
       .expect(400);
   });
