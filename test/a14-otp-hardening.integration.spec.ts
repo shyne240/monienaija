@@ -41,6 +41,10 @@ import {
   RecordingSmsProvider,
   type DeskOtpHandle,
 } from './support/desk-otp-fixture';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -125,6 +129,11 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       isActive: true,
       applicableServices: [AgentService.CASH_OUT] as any,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,
