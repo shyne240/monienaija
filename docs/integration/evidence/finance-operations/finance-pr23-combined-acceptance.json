@@ -1,0 +1,119 @@
+{
+  "generatedAt": "2026-11-25T11:46:24.289Z",
+  "dist": "/tmp/combined-dist",
+  "api": "stubbed",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers?page=1&limit=20"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customer-classes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/class"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/class/history"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/phone-verification"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/c0c0c0c0-1111-4222-8333-444455556666/onboarding-readiness"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/c0c0c0c0-1111-4222-8333-444455556666/eligibility"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/transactions?page=1&limit=5"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/registration-review"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/c0c0c0c0-1111-4222-8333-444455556666/transactions?page=1&limit=20"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/deposits/aa11bb22-3333-4444-8555-666677778888"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/transactions/aa11bb22-3333-4444-8555-666677778888/journal?type=DEPOSIT"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/journals/1a2b3c4d-2222-4333-8444-555566667777"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/ledger/journals/1a2b3c4d-2222-4333-8444-555566667777"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/ledger/journals/1a2b3c4d-2222-4333-8444-555566667777/reversal-eligibility"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/transaction-history?from=&to=&type=&status=&reference=&limit=20&cursor="
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/transaction-history/CASH_IN/1a2b3c4d-2222-4333-8444-555566667777"
+    }
+  ],
+  "checks": [
+    {
+      "name": "TRANSACTION-RESOLVES-ITS-LEDGER-JOURNAL",
+      "ok": true,
+      "detail": "FOUND — The transaction is recorded by one posted ledger journal. | LEDGER POSTING FOUND — The transaction is recorded by one posted ledger journal. Journal: DEP-2026-000044 Institution: M"
+    },
+    {
+      "name": "JOURNAL-OPENS-THE-FINANCE-LEDGER-DESK",
+      "ok": true,
+      "detail": "Linked from DEPOSIT DEP-2026-000044 (COMPLETED) Open unified transaction detail"
+    },
+    {
+      "name": "LEDGER-LINKS-BY-CANONICAL-CASH-IN-JOURNAL-ID",
+      "ok": true,
+      "detail": "href=#transaction-history/CASH_IN/1a2b3c4d-2222-4333-8444-555566667777 (deposit row id d0e0f0a0-9999-4888-8777-666655554444 must not appear)"
+    },
+    {
+      "name": "UNIFIED-DETAIL-READS-THE-CONTRACT-ENDPOINT",
+      "ok": true,
+      "detail": "/api/v1/internal/admin/transaction-history/CASH_IN/1a2b3c4d-2222-4333-8444-555566667777"
+    },
+    {
+      "name": "UNIFIED-DETAIL-SHOWS-THE-SAME-BUSINESS-RECORD",
+      "ok": true,
+      "detail": "READ-ONLY INVESTIGATION Transaction details Close DEP-2026-000044 BUSINESS TRANSACTION ID 1a2b3c4d-2222-4333-8444-555566667777 TYPE Cash-in STATUS POSTED CREATED · LAGOS 20 Nov 2026, 10:00:00 COMPLETED · LAGOS 20 Nov 202"
+    },
+    {
+      "name": "NO-UNCAUGHT-PAGE-ERRORS",
+      "ok": true,
+      "detail": "none"
+    }
+  ]
+}

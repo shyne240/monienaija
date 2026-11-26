@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
 import { B2FFinanceControlModule } from '../policy/b2f-finance-control.module';
+import { InstitutionModule } from '../institution/institution.module';
 import { A5ArControlAccountProvisioningService } from './ar-control-account-provisioning.service';
 import { LedgerAccount } from './ledger-account.entity';
 import { LedgerController } from './ledger.controller';
@@ -20,6 +21,7 @@ import { LedgerReversalGovernanceService } from './ledger-reversal-governance.se
     forwardRef(() => OperationsModule),
     forwardRef(() => AuthorizationModule),
     forwardRef(() => B2FFinanceControlModule),
+    forwardRef(() => InstitutionModule),
     TypeOrmModule.forFeature([LedgerAccount, LedgerJournal, LedgerLine]),
   ],
   controllers: [LedgerController],

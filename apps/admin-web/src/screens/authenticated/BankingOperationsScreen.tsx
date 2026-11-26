@@ -1,5 +1,5 @@
 import './operational-surfaces.css';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -69,8 +69,12 @@ function describeError(error: unknown): string {
   return 'An unexpected error occurred. Nothing was changed.';
 }
 
-export const BankingOperationsScreen: React.FC = () => {
-  const [institutionId, setInstitutionId] = useState('');
+export const BankingOperationsScreen: React.FC<{
+  /** Deep link into the reconciliation evidence workspace for this institution. */
+  onOpenReconciliation?: (institutionId: string) => void;
+  initialInstitutionId?: string;
+}> = ({ onOpenReconciliation, initialInstitutionId }) => {
+  const [institutionId, setInstitutionId] = useState(initialInstitutionId ?? '');
   const [readiness, setReadiness] = useState<ProviderReadiness[] | null>(null);
   const [registered, setRegistered] = useState<string[]>([]);
   const [capabilities, setCapabilities] = useState<ProviderCapabilityDescriptor[]>([]);
@@ -79,6 +83,9 @@ export const BankingOperationsScreen: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [exceptionQuery, setExceptionQuery] = useState('');
+  const [exceptionSeverity, setExceptionSeverity] = useState('');
+  const autoLoaded = useRef(false);
 
   const clearFeedback = () => {
     setError(null);
@@ -165,6 +172,25 @@ export const BankingOperationsScreen: React.FC = () => {
 
   const anyUsable = useMemo(() => (readiness ?? []).some((entry) => entry.usable), [readiness]);
 
+  // The exception list is the server's open set for this institution; these filters narrow what is
+  // already loaded and never imply that unloaded exceptions do not exist.
+  const visibleExceptions = useMemo(() => {
+    const query = exceptionQuery.trim().toLowerCase();
+    return exceptions.filter((exception) => {
+      if (exceptionSeverity && exception.severity !== exceptionSeverity) return false;
+      if (!query) return true;
+      return `${exception.kind} ${exception.operationReference ?? ''} ${exception.id}`
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [exceptions, exceptionQuery, exceptionSeverity]);
+
+  useEffect(() => {
+    if (autoLoaded.current || !initialInstitutionId) return;
+    autoLoaded.current = true;
+    void loadInstitution(initialInstitutionId);
+  }, [initialInstitutionId, loadInstitution]);
+
   return (
     <div className="mn-page">
       <PageHeader
@@ -172,6 +198,26 @@ export const BankingOperationsScreen: React.FC = () => {
         title="Banking operations"
         description="Provider readiness, reconciliation runs and exception triage for one institution."
       />
+
+      <div role="note" className="mn-muted" data-testid="banking-evidence-boundary">
+        <strong>External provider evidence only.</strong> This workspace reads provider records and
+        records decisions about them. Internal ledger agreement, statement evidence and the
+        institution-wide break list live in Reconciliation → External Evidence &amp; Breaks.
+        {onOpenReconciliation && (
+          <>
+            {' '}
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="banking-open-evidence-breaks"
+              disabled={!institutionId.trim()}
+              onClick={() => onOpenReconciliation(institutionId.trim())}
+            >
+              Open evidence &amp; breaks
+            </Button>
+          </>
+        )}
+      </div>
 
       <form
         className="mn-toolbar"
@@ -325,8 +371,40 @@ export const BankingOperationsScreen: React.FC = () => {
       </ScrollRegion>
 
       <ScrollRegion label="Open reconciliation exceptions">
+        <div className="mn-toolbar" data-testid="banking-exception-filters">
+          <label>
+            <span className="mn-label">Filter loaded exceptions</span>
+            <input
+              className="mn-input"
+              type="search"
+              data-testid="banking-exception-search"
+              placeholder="Kind, reference or exception id"
+              value={exceptionQuery}
+              onChange={(event) => setExceptionQuery(event.target.value)}
+            />
+          </label>
+          <label>
+            <span className="mn-label">Severity</span>
+            <select
+              className="mn-input"
+              data-testid="banking-exception-severity"
+              value={exceptionSeverity}
+              onChange={(event) => setExceptionSeverity(event.target.value)}
+            >
+              <option value="">Any severity</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARNING">WARNING</option>
+            </select>
+          </label>
+        </div>
         {exceptions.length === 0 ? (
           <p className="mn-muted">No open exceptions.</p>
+        ) : visibleExceptions.length === 0 ? (
+          <p className="mn-muted" data-testid="banking-exception-empty">
+            No loaded open exception matches this filter. The institution still has{' '}
+            {exceptions.length} open exception(s).
+          </p>
         ) : (
           <table className="mn-table">
             <caption className="mn-visually-hidden">Open reconciliation exceptions</caption>
@@ -340,8 +418,8 @@ export const BankingOperationsScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {exceptions.map((exception) => (
-                <tr key={exception.id}>
+              {visibleExceptions.map((exception) => (
+                <tr key={exception.id} data-testid={`banking-exception-row-${exception.id}`}>
                   <td>{exception.kind}</td>
                   <td>
                     <StatusBadge tone={exception.severity === 'ERROR' ? 'danger' : 'warning'}>
@@ -374,7 +452,8 @@ export const BankingOperationsScreen: React.FC = () => {
         <p className="mn-muted">
           Resolving an exception records a decision and the evidence behind it. It cannot move,
           correct or settle money — any real correction must use the separately authorized financial
-          workflow.
+          workflow. A resolution here is not internal ledger agreement: the ledger-side checks and
+          statement evidence are reported separately.
         </p>
       </ScrollRegion>
 

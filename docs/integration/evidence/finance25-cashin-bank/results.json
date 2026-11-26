@@ -1,0 +1,94 @@
+{
+  "acceptance": "FINANCE_RETURN_HALF_PASS_FORWARD_HALF_BLOCKED_BY_PR23",
+  "pr23": "3c7f5c98fee27cb7164ee27f75605aeb58226c51",
+  "pr25": "8301fa2",
+  "combinedMergeCommit": "6036c17",
+  "resolution": "Layout.tsx conflict resolved by taking PR23 content (PR23 owns integration); no other product patch",
+  "realWorkforceSignIn": true,
+  "fullyMigrated": true,
+  "noBrowserApiStubs": true,
+  "database": {
+    "version": "PostgreSQL 18.4 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0, 64-bit"
+  },
+  "migrationCount": 171,
+  "records": [
+    {
+      "type": "CASH_IN",
+      "id": "99db69cd-842b-473b-bce2-508dc73f85bc",
+      "businessId": "99db69cd-842b-473b-bce2-508dc73f85bc",
+      "journalId": "99db69cd-842b-473b-bce2-508dc73f85bc",
+      "reference": "F25CW-CASHIN",
+      "sourceType": "DEPOSIT"
+    },
+    {
+      "type": "BANK_TO_WALLET",
+      "id": "2e455c11-088e-4b17-af79-7185cedac0d8",
+      "businessId": "2e455c11-088e-4b17-af79-7185cedac0d8",
+      "journalId": "dc653386-fcfa-4a60-8730-a9bfe609cc7a",
+      "reference": "MNFY-4a4bb793",
+      "sourceType": "BANK_TO_WALLET"
+    }
+  ],
+  "bankToWalletEvidence": {
+    "paymentId": "2e455c11-088e-4b17-af79-7185cedac0d8",
+    "floatReceiptId": "05b31234-63c5-42e5-bcd6-2dd86c68271f",
+    "receiptJournalId": "dc653386-fcfa-4a60-8730-a9bfe609cc7a",
+    "durableLink": {
+      "payment_id": "2e455c11-088e-4b17-af79-7185cedac0d8",
+      "float_receipt_id": "05b31234-63c5-42e5-bcd6-2dd86c68271f"
+    }
+  },
+  "browserResults": [
+    {
+      "type": "CASH_IN",
+      "businessId": "99db69cd-842b-473b-bce2-508dc73f85bc",
+      "journalId": "99db69cd-842b-473b-bce2-508dc73f85bc",
+      "historyDetailReference": "F25CW-CASHIN",
+      "historyJournalLinkCount": 0,
+      "financeSource": "DEPOSIT",
+      "returnHref": "#transaction-history/CASH_IN/99db69cd-842b-473b-bce2-508dc73f85bc",
+      "returnedUrl": "http://127.0.0.1:5173/#transaction-history/CASH_IN/99db69cd-842b-473b-bce2-508dc73f85bc",
+      "returnedReference": "F25CW-CASHIN"
+    },
+    {
+      "type": "BANK_TO_WALLET",
+      "businessId": "2e455c11-088e-4b17-af79-7185cedac0d8",
+      "journalId": "dc653386-fcfa-4a60-8730-a9bfe609cc7a",
+      "historyDetailReference": "MNFY-4a4bb793",
+      "historyJournalLinkCount": 0,
+      "financeSource": "BANK_TO_WALLET",
+      "returnHref": "#transaction-history/BANK_TO_WALLET/2e455c11-088e-4b17-af79-7185cedac0d8",
+      "returnedUrl": "http://127.0.0.1:5173/#transaction-history/BANK_TO_WALLET/2e455c11-088e-4b17-af79-7185cedac0d8",
+      "returnedReference": "MNFY-4a4bb793"
+    }
+  ],
+  "authorizationDenials": {
+    "CASH_IN": [
+      403,
+      403
+    ],
+    "BANK_TO_WALLET": [
+      403,
+      403
+    ]
+  },
+  "forwardHalf": "BLOCKED: PR23 TransactionHistoryScreen renders the journal UUID as <code>; no guarded journal navigation exists in 3c7f5c9",
+  "screenshots": [
+    "CASH_IN-history-detail.png",
+    "CASH_IN-finance-journal-return-link.png",
+    "CASH_IN-returned-canonical-detail.png",
+    "BANK_TO_WALLET-history-detail.png",
+    "BANK_TO_WALLET-finance-journal-return-link.png",
+    "BANK_TO_WALLET-returned-canonical-detail.png",
+    "CASH_IN-operations-denied-journal.png",
+    "BANK_TO_WALLET-operations-denied-journal.png"
+  ],
+  "hashes": {
+    "apps/admin-web/src/screens/authenticated/Layout.tsx": "63cb3298d6d9ed0f1a5faf804d966e4b5e9cb97ba141b2d5008b792e94928668",
+    "apps/admin-web/src/screens/authenticated/TransactionHistoryScreen.tsx": "fc13340a3faaaf08f9c9fa255f2db543f4a39001f94fe0a6cf0d608e19ac3761",
+    "apps/admin-web/src/screens/authenticated/transaction-history-link.ts": "50d44edcccfc3e06dd1e289a17b0eacc0346d5e2de3eb6553bde21bd85f0cb40",
+    "src/finance-operations/finance-operations.service.ts": "6c3aaa06bbc7a7b53a7a0b90e22851f939a999acd2be2aebefd317d954bbd4ae",
+    "test/finance25-cashin-bank-roundtrip.integration.spec.ts": "df4e26bc9797cf148c10b6252bf1833b10e549392e0a19c1fa2172599b161b51"
+  },
+  "executedAt": "2026-11-25T14:30:45.888Z"
+}
