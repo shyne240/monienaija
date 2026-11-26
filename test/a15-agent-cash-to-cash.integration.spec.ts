@@ -19,6 +19,12 @@ import { AgentAuthenticationService } from '../src/agent-authentication/agent-au
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
+import {
+  assignAgentClassLimitProfile,
+  countAgentAdmissionArtifacts,
+  limitErrorShape,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 import { LedgerService } from '../src/ledger/ledger.service';
 import {
   LedgerAccountType,
@@ -142,11 +148,18 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     }
   }, 60000);
 
+  // Agent admission now requires a configured limit (limit-enforcement.service.ts
+  // `requireConfiguration`). Default: one deliberately permissive rule per Agent money-movement
+  // product, so pre-existing assertions keep testing their own subject. `limitRules: null` seeds no
+  // rule at all (unconfigured); an explicit array seeds exactly those rules.
   async function createActiveAgentWithServicesAndPin(
     services: unknown,
     pin: string | null,
     isActive = true,
+    options: { limitRules?: Array<Record<string, unknown>> | null } = {},
   ) {
+    const limitRules =
+      options.limitRules === undefined ? permissiveAgentLimitRules() : options.limitRules;
     const cls = await classService.create({
       reference: `cls-a15-${randomUUID().slice(0, 8)}`,
       code: `A15-${randomUUID().slice(0, 6)}`,
@@ -187,6 +200,12 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     // resolve a real institutional financial context.
     await fixture.affiliateAgent(agent.id, institutionId);
     await fixture.attributeWallet(wallet.id, institutionId);
+    if (limitRules) {
+      await assignAgentClassLimitProfile(dataSource, {
+        agentClassId: cls.id,
+        rules: limitRules as never,
+      });
+    }
     return { cls, agent, appEntity, wallet };
   }
 
@@ -265,6 +284,139 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(res.transferCode).toBeDefined();
     expect(res.transferCode!).toMatch(/^\d{8}$/);
     expect(res.replayed).toBe(false);
+  });
+
+  // ---- Configured Agent limits (Cash→Cash) ---------------------------------------------------
+  // The Cash→Cash debit is agent-initiated and must be bounded by the Agent Class limit. These pin
+  // fail-closed configuration plus an over-limit refusal, both with no financial effect.
+
+  async function cashToCashTransferCount(): Promise<number> {
+    const rows = await dataSource.query<Array<{ count: string }>>(
+      'SELECT COUNT(*)::text AS count FROM cash_to_cash_transfers',
+    );
+    return Number(rows[0]!.count);
+  }
+
+  it('L1. missing limit configuration blocks Cash→Cash with a configuration error and no financial effect', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+      true,
+      { limitRules: null },
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+
+    const before = await countAgentAdmissionArtifacts(dataSource);
+    const transfersBefore = await cashToCashTransferCount();
+    const balanceBefore = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+
+    let caught: unknown;
+    try {
+      await cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '3000',
+        currency: 'NGN',
+        idempotencyKey: `l1-${randomUUID()}`,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    const shape = limitErrorShape(caught);
+    expect(shape.status).toBe(503);
+    expect(shape.code).toBe('LIMIT_PROFILE_MISSING');
+    expect(shape.message).toMatch(/limit/i);
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(before);
+    expect(await cashToCashTransferCount()).toBe(transfersBefore);
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      balanceBefore.balanceMinor,
+    );
+  });
+
+  it('L2. Cash→Cash within the configured Agent limit posts', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+      true,
+      {
+        limitRules: [
+          {
+            product: 'CASH_TO_CASH',
+            direction: 'OUTGOING',
+            dimension: 'MAX_AMOUNT_PER_TX',
+            amountMinor: '5000',
+          },
+        ],
+      },
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+
+    const res = await cashToCashService.execute({
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: phone,
+      amountMinor: '3000',
+      currency: 'NGN',
+      idempotencyKey: `l2-${randomUUID()}`,
+    });
+    expect(res.status).toBe('COMPLETED');
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '7000',
+    );
+  });
+
+  it('L3. Cash→Cash above the configured Agent limit is denied with no financial effect', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+      true,
+      {
+        limitRules: [
+          {
+            product: 'CASH_TO_CASH',
+            direction: 'OUTGOING',
+            dimension: 'MAX_AMOUNT_PER_TX',
+            amountMinor: '5000',
+          },
+        ],
+      },
+    );
+    await fundAgent(wallet.ledgerAccountId, '20000');
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+
+    const before = await countAgentAdmissionArtifacts(dataSource);
+    const transfersBefore = await cashToCashTransferCount();
+    const balanceBefore = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+
+    let caught: unknown;
+    try {
+      await cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '6000',
+        currency: 'NGN',
+        idempotencyKey: `l3-${randomUUID()}`,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    const shape = limitErrorShape(caught);
+    expect(shape.status).toBe(422);
+    expect(shape.code).toBe('LIMIT_MAX_AMOUNT_EXCEEDED');
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(before);
+    expect(await cashToCashTransferCount()).toBe(transfersBefore);
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      balanceBefore.balanceMinor,
+    );
   });
 
   // 2. unregistered beneficiary phone is accepted

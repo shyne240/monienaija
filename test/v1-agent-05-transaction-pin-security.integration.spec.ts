@@ -37,6 +37,10 @@ import {
   startGovernedDesk,
   type GovernedDeskHarness,
 } from './support/cash-out-lifecycle-fixture';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 import { RecordingSmsProvider } from './support/desk-otp-fixture';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
@@ -137,6 +141,11 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       isActive: true,
       applicableServices: services,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,

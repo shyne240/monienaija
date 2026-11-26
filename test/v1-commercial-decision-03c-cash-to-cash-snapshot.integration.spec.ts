@@ -53,6 +53,10 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
@@ -141,6 +145,12 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       isActive,
       applicableServices: services,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class; one permissive rule per product
+    // keeps this suite focused on what it asserts (commercial snapshot / fee / commission).
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,

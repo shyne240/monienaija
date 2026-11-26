@@ -41,6 +41,12 @@ import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import {
+  permissiveAgentLimitRules,
+  assignAgentClassLimitProfile,
+  countAgentAdmissionArtifacts,
+  limitErrorShape,
+} from './support/agent-limit-fixtures';
+import {
   createDeskOtpFixture,
   overrideSmsProvider,
   RecordingSmsProvider,
@@ -139,11 +145,19 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     }
   }, 60_000);
 
+  // The Agent lane requires a configured limit (see limit-enforcement.service.ts
+  // `requireConfiguration`). By default each Agent Class gets one deliberately permissive
+  // WALLET_TO_CASH/INCOMING rule so the pre-existing assertions keep testing their own subject;
+  // `limitRules: null` seeds no rule at all (unconfigured) and `limitRules: []` seeds an assigned
+  // profile with no rule for this product/direction.
   async function createActiveAgentWithServicesAndPin(
     services: unknown,
     pin: string | null,
     isActive = true,
+    options: { limitRules?: Array<Record<string, unknown>> | null } = {},
   ) {
+    const limitRules =
+      options.limitRules === undefined ? permissiveAgentLimitRules() : options.limitRules;
     const cls = await classService.create({
       reference: `cls-a14-${randomUUID().slice(0, 8)}`,
       code: `A14-${randomUUID().slice(0, 6)}`,
@@ -183,6 +197,12 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     // line, so the Cash-Out institution scope resolves for this Agent.
     await fixture.affiliateAgent(agent.id, institutionId);
     await fixture.attributeWallet(wallet.id, institutionId);
+    if (limitRules) {
+      await assignAgentClassLimitProfile(dataSource, {
+        agentClassId: cls.id,
+        rules: limitRules as never,
+      });
+    }
     // Cash-Out requires an authenticated Agent session bound to the cash-out intent.
     const [credential] = await dataSource.query(
       `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
@@ -407,6 +427,164 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const custBalAfter = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     expect(agentBalAfter.balanceMinor).toBe('3000');
     expect(custBalAfter.balanceMinor).toBe('7000');
+  });
+
+  // ---- Configured Agent limits (Wallet→Cash) -------------------------------------------------
+  // Reproduces the fail-open defect at the Wallet→Cash call site and pins the intended contract:
+  // an Agent admission that declares `requireConfiguration` must resolve an active profile *and*
+  // an applicable rule, otherwise it fails closed before any financial effect.
+
+  it('L1. missing limit configuration blocks Wallet→Cash with a configuration error and no financial effect', async () => {
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+      true,
+      { limitRules: null },
+    );
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
+    await fundCustomer(custWallet.ledgerAccountId, '10000');
+    const { challengeId, otp, operationKey } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '3000',
+    });
+
+    const before = await countAgentAdmissionArtifacts(dataSource);
+    const agentBefore = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
+    const customerBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
+
+    let caught: unknown;
+    try {
+      await cashOutService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        customerId,
+        customerPin: '1234',
+        mfaChallengeId: challengeId,
+        otp,
+        amountMinor: '3000',
+        currency: 'NGN',
+        idempotencyKey: operationKey,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    const shape = limitErrorShape(caught);
+    expect(shape.status).toBe(503);
+    expect(shape.code).toBe('LIMIT_PROFILE_MISSING');
+    expect(shape.message).toMatch(/limit/i);
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(before);
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      agentBefore.balanceMinor,
+    );
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      customerBefore.balanceMinor,
+    );
+  });
+
+  it('L2. Wallet→Cash within the configured Agent limit posts', async () => {
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+      true,
+      {
+        limitRules: [
+          {
+            product: 'WALLET_TO_CASH',
+            direction: 'INCOMING',
+            dimension: 'MAX_AMOUNT_PER_TX',
+            amountMinor: '5000',
+          },
+        ],
+      },
+    );
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
+    await fundCustomer(custWallet.ledgerAccountId, '10000');
+    const { challengeId, otp, operationKey } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '3000',
+    });
+
+    const result = await cashOutService.execute({
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      customerId,
+      customerPin: '1234',
+      mfaChallengeId: challengeId,
+      otp,
+      amountMinor: '3000',
+      currency: 'NGN',
+      idempotencyKey: operationKey,
+    });
+    expect(result.status).toBe('COMPLETED');
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '3000',
+    );
+  });
+
+  it('L3. Wallet→Cash above the configured Agent limit is denied with no financial effect', async () => {
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+      true,
+      {
+        limitRules: [
+          {
+            product: 'WALLET_TO_CASH',
+            direction: 'INCOMING',
+            dimension: 'MAX_AMOUNT_PER_TX',
+            amountMinor: '5000',
+          },
+        ],
+      },
+    );
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
+    await fundCustomer(custWallet.ledgerAccountId, '20000');
+    const { challengeId, otp, operationKey } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '6000',
+    });
+
+    const before = await countAgentAdmissionArtifacts(dataSource);
+    const agentBefore = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
+    const customerBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
+
+    let caught: unknown;
+    try {
+      await cashOutService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        customerId,
+        customerPin: '1234',
+        mfaChallengeId: challengeId,
+        otp,
+        amountMinor: '6000',
+        currency: 'NGN',
+        idempotencyKey: operationKey,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    const shape = limitErrorShape(caught);
+    expect(shape.status).toBe(422);
+    expect(shape.code).toBe('LIMIT_MAX_AMOUNT_EXCEEDED');
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(before);
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      agentBefore.balanceMinor,
+    );
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      customerBefore.balanceMinor,
+    );
   });
 
   it('B. Customer balance decreases by principal', async () => {
