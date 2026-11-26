@@ -92,15 +92,16 @@ Manual UAT per the 191-item catalogue ([`docs/uat/V1-UAT-MASTER-01.md`](docs/uat
 48/48 post-fix retests. The 16 blocked items are environment-only verifications: 5 deployment
 configuration checks + 5 real-SIM/physical lane cards + 6 human usability lanes.
 
-## Explicitly out of V1 scope
+## V1 scope and release acceptance
 
-Per the UAT catalogue §13/§19 exclusion register: push notifications; rewards crediting; external
-bank/NIBSS settlement rails and bank integration surface (partner rail inert —
-`A6_PARTNER_ENABLED=false`); external commission payout rails; QR/card/PoS/marketplace; multi-currency.
-Decision-pending for V2 (explicitly _not_ silent V1 defects): aggregator self-service login/portal,
-reconciliation-break resolver workflow, reversal UI workflow, settle-later release rail, KYC
-hard-gating beyond verified phone, DRAFT cleanup TTL (see
-[`docs/V1/V1-SCOPE-CHALLENGE-01.md`](docs/V1/V1-SCOPE-CHALLENGE-01.md)).
+The [Admin Web audit and proposed V1 scope](docs/V1/ADMIN-WEB-AUDIT-AND-PROPOSED-V1-SCOPE.md)
+maps the current application to operator workflows and release acceptance. It proposes coverage for
+both bank transfer directions, BVN/NIN and address verification, staff-to-mobile account claim,
+configurable workforce roles and function grants, and transaction and finance operations.
+Provider activation, bank settlement and pending Arena changes require verification before release.
+
+The [earlier V1 scope reassessment](docs/V1/V1-SCOPE-CHALLENGE-01.md) records the original exclusions
+and unresolved decisions. Use it for historical context when reviewing the proposed changes.
 
 ## Documentation
 
