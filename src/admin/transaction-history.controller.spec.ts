@@ -6,6 +6,10 @@ describe('Transaction history shared authorization contract', () => {
   test.each([
     '/api/v1/internal/admin/transaction-history',
     '/api/v1/internal/admin/transaction-history/CASH_TO_CASH/11111111-1111-4111-8111-111111111111',
+    // The CSV export is a read of the same history, so it must never be reachable by a caller
+    // that the list denies. Same policy object, not a near-copy.
+    '/api/v1/internal/admin/transaction-history/export.csv',
+    '/api/v1/internal/admin/transaction-history/export.csv?type=CASH_IN&from=2026-11-24',
   ])('requires a workforce session and transaction.view on %s', (url) => {
     const policy = new RoutePolicyRegistry().resolve({ method: 'GET', url });
     expect(policy).toMatchObject({
@@ -14,8 +18,21 @@ describe('Transaction history shared authorization contract', () => {
       policy: {
         requiredFunctions: ['transaction.view'],
         allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+        customerAccess: 'NONE',
+        agentAccess: 'NONE',
+        aggregatorAccess: 'NONE',
       },
     });
+  });
+
+  test('the export cannot be reached with a non-GET read-only bypass', () => {
+    const policy = new RoutePolicyRegistry().resolve({
+      method: 'POST',
+      url: '/api/v1/internal/admin/transaction-history/export.csv',
+    });
+    // The dedicated GET branch does not match; the generic worker-only fallback still must not
+    // hand the export to an unauthenticated caller.
+    expect(policy.public).toBe(false);
   });
   test('calendar days are Lagos days, never server-local days', () => {
     expect(lagosBoundary('2026-11-24')).toBe('2026-11-23T23:00:00.000Z');

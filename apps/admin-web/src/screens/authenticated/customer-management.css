@@ -1341,3 +1341,36 @@
 .cm-poa-filter-panel p { margin:0 0 8px; color:#52655f; font-size:12px; line-height:1.5; }
 .cm-poa-filter-panel .one-workspace-filter-tabs { margin-bottom:8px; }
 .cm-poa-filter-panel > span { color:#52655f; font-size:12px; font-weight:700; }
+
+/* ── Customer wallet statement ────────────────────────────────────────────────────────────────
+   Print-aware by design: the statement is a document first and a screen second, so the preview
+   table mirrors the PDF's column order and nothing here hides an "Unavailable" balance. */
+.cm-statement { margin-top:20px; padding-top:20px; border-top:1px solid #dfe9e1; }
+.cm-statement__heading h3 { margin:5px 0 0; color:#103a2b; font-size:17px; }
+.cm-statement__hint { margin:6px 0 0; color:#52655f; font-size:12px; line-height:1.5; max-width:64ch; }
+.cm-statement__controls { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin-top:14px; }
+.cm-statement__controls label { display:flex; flex-direction:column; gap:5px; color:#3f5750; font-size:12px; font-weight:700; }
+.cm-statement__controls input[type="date"] { padding:8px 10px; border:1px solid #cfe0d6; border-radius:7px; background:white; color:#132b25; font:inherit; font-weight:400; }
+.cm-statement__controls button:disabled { opacity:.55; cursor:not-allowed; }
+.cm-statement__preview { align-self:flex-end; }
+.cm-statement__download { align-self:flex-end; }
+.cm-statement__error { margin:12px 0 0; padding:10px 12px; border:1px solid #e7c9c2; border-left:3px solid #b3341f; border-radius:7px; background:#fdf3f1; color:#8a2a17; font-size:12px; }
+.cm-statement__status { margin:12px 0 0; padding:10px 12px; border:1px solid #cfe0d6; border-left:3px solid #0b6b45; border-radius:7px; background:#f3faf6; color:#0b5638; font-size:12px; }
+.cm-statement__preview-body { margin-top:16px; }
+.cm-statement__balances { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:0; }
+.cm-statement__balances > div { padding:10px 12px; border:1px solid #dfe9e1; border-radius:8px; background:#f6faf7; }
+.cm-statement__balances dt { color:#52655f; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+.cm-statement__balances dd { margin:5px 0 0; color:#103a2b; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+.cm-statement__balances dd[data-unavailable="true"],
+.cm-statement__table td[data-unavailable="true"] { color:#8a5a12; font-weight:600; font-style:italic; }
+.cm-statement__note { margin:10px 0 0; color:#52655f; font-size:12px; line-height:1.5; }
+.cm-statement__table-wrap { margin-top:12px; overflow-x:auto; border:1px solid #dfe9e1; border-radius:8px; background:white; }
+/* The statement table keeps its own scroll box: six columns of money and free-text descriptions cannot
+ * shrink gracefully, so give the table a floor and let the wrapper scroll rather than fragmenting cells. */
+.cm-statement__table { width:100%; min-width:560px; border-collapse:collapse; font-size:12px; }
+.cm-statement__table th { padding:8px 10px; background:#eef6f1; color:#103a2b; text-align:left; font-weight:700; white-space:nowrap; }
+.cm-statement__table td { padding:7px 10px; border-top:1px solid #eef2ef; color:#24352f; vertical-align:top; white-space:nowrap; }
+.cm-statement__table td.cm-statement__description { white-space:normal; min-width:160px; }
+.cm-statement__table tbody tr:nth-child(even) td { background:#fafcfb; }
+.cm-statement__amount { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+@media(max-width:600px) { .cm-statement__controls { flex-direction:column; align-items:stretch; } }
