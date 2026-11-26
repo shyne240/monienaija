@@ -1,0 +1,75 @@
+{
+  "generatedAt": "2026-11-26T15:00:28.355Z",
+  "gitHead": "f729f185d2cd4c4f4c6626acd8c165b7b8885320",
+  "statementReference": "BROWSER-REAL-1795705222580",
+  "base": "http://127.0.0.1:44311",
+  "api": "REAL Nest AppModule through the same-origin proxy; production Vite bundle; no stub router",
+  "database": {
+    "host": "127.0.0.1",
+    "port": "55433",
+    "name": "pfbrowser"
+  },
+  "expectedMinor": "0",
+  "bankBalanceMinor": "50000",
+  "total": 11,
+  "passed": 11,
+  "checks": [
+    {
+      "id": "LOGIN-FINANCE_PREPARER",
+      "ok": true,
+      "detail": "FINANCE_PREPARER sign-in HTTP 201"
+    },
+    {
+      "id": "PF-REAL-NAV-FROM-FINANCE",
+      "ok": true,
+      "detail": "Finance → Platform funds vs. bank opened from the production bundle against the real API"
+    },
+    {
+      "id": "PF-REAL-SETTLEMENT-ACCOUNTS",
+      "ok": true,
+      "detail": "HTTP 200, options=1, selected=PAYMENT-SETTLEMENT_ASSET-NGN"
+    },
+    {
+      "id": "PF-REAL-LEDGER-DERIVED-EXPECTED",
+      "ok": true,
+      "detail": "expectedMinor=0 cutoff=2026-11-26T15:00:54.794Z"
+    },
+    {
+      "id": "PF-REAL-CREATE-STAFF-ENTERED-BALANCE",
+      "ok": true,
+      "detail": "POST -> 201; balance=50000 minor; difference line=not found"
+    },
+    {
+      "id": "PF-REAL-TIMING-EXPLAINS-DIFFERENCE",
+      "ok": true,
+      "detail": "POST timing -> 201; unexplained visible=UNEXPLAINED DIFFERENCE"
+    },
+    {
+      "id": "PF-REAL-SUBMITTED-SELF-APPROVAL-BLOCKED",
+      "ok": true,
+      "detail": "POST submit -> 201; maker sees self-approval prohibited notice"
+    },
+    {
+      "id": "LOGIN-FINANCE_CONTROLLER",
+      "ok": true,
+      "detail": "FINANCE_CONTROLLER sign-in HTTP 201"
+    },
+    {
+      "id": "PF-REAL-INDEPENDENT-CHECKER-APPROVAL",
+      "ok": true,
+      "detail": "POST review -> 201; checker sees Signed off"
+    },
+    {
+      "id": "PF-REAL-ELEVEN-ACCOUNTS-UNCHANGED",
+      "ok": true,
+      "detail": "failures=0"
+    },
+    {
+      "id": "PF-REAL-NO-PAGE-ERRORS",
+      "ok": true,
+      "detail": "none"
+    }
+  ],
+  "pageErrors": [],
+  "responseCount": 26
+}

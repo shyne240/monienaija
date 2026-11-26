@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-11-26T15:36:13.771Z",
+  "gitCommit": "f729f185d2cd4c4f4c6626acd8c165b7b8885320",
+  "bootstrap": "isolated test bootstrap: real AppModule/Fastify/guards/route policies, readiness gate skipped by design",
+  "institutions": {
+    "a": {
+      "id": "929bcace-171a-4074-9955-065bbe3d114a",
+      "code": "PFEVID_A_D686B005"
+    },
+    "b": {
+      "id": "1aa83122-c265-40b9-8fed-508e9928b660",
+      "code": "PFEVID_B_D686B005"
+    }
+  },
+  "settlementAccounts": {
+    "a": "e704acf5-e527-4fc1-9d86-bdf976ce85f6",
+    "b": "69feafc6-4ed3-4aad-a3d8-5e7012578a90"
+  },
+  "scopedPrincipal": "https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857",
+  "comparisons": {
+    "a": "b7350729-7b9a-4f93-84a8-a91b01725c69",
+    "b": "21ccdf26-6242-4353-a2fe-d23d5eb88a6b"
+  },
+  "checks": [
+    {
+      "name": "OWN-INSTITUTION-PREVIEW-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "OWN-INSTITUTION-COMPARISON-CREATED",
+      "ok": true,
+      "detail": "HTTP 201, scope=INSTITUTION"
+    },
+    {
+      "name": "OWN-INSTITUTION-READ-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "OWN-INSTITUTION-PATCH-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "OWN-INSTITUTION-TIMING-ITEM-ADD-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "OWN-INSTITUTION-TIMING-ITEM-REMOVE-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "PRE-REVOCATION-PREVIEW-B-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "PRE-REVOCATION-COMPARISON-B-CREATED",
+      "ok": true,
+      "detail": "HTTP 201, scope=INSTITUTION"
+    },
+    {
+      "name": "PRE-REVOCATION-TIMING-ITEM-B-CREATED",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "OTHER-INSTITUTION-PREPARER-GRANT-REVOKED",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "SETTLEMENT-ACCOUNTS-LIST-SCOPED-TO-ASSIGNED-INSTITUTION",
+      "ok": true,
+      "detail": "HTTP 200, items=2, seesA=true, seesB=false"
+    },
+    {
+      "name": "OTHER-INSTITUTION-PREVIEW-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-CREATE-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-READ-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-PATCH-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-TIMING-ITEM-ADD-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-SUBMIT-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-SNAPSHOTS-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-TIMING-ITEM-REMOVE-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "OTHER-INSTITUTION-DETAIL-REFUSED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "COMPARISONS-LIST-OMITS-OTHER-INSTITUTION",
+      "ok": true,
+      "detail": "HTTP 200, items=6, seesA=true, seesB=false"
+    },
+    {
+      "name": "OWN-INSTITUTION-SNAPSHOTS-READ-ALLOWED",
+      "ok": true,
+      "detail": "HTTP 200"
+    }
+  ],
+  "summary": {
+    "total": 22,
+    "passed": 22,
+    "failed": 0
+  },
+  "transcript": [
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"2b085a68-e54a-45f0-9bde-c6df6817c185\",\"expiresAt\":\"2026-11-26T15:51:12.931Z\",\"principal\":{\"type\":\"PRIVILEGED\",\"principalId\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"sessionId\":\"2b085a68-e54a-45f0-9bde-c6df6817c185\",\"audience\":\"workforce-admin\",\"roles\":[\"SUPER_ADMIN\"],\"scopes\":[\"agent.activat"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"b11269ae-85da-4a03-8047-b703b807ea85\",\"expiresAt\":\"2026-11-26T15:51:12.968Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95\",\"sessionId\":\"b11269ae-85da-4a03-8047-b703b807ea85\",\"audience\":\"workforce-admin\",\"roles\":[\"OPERATIONS\"],\"scopes\":[\"aggregator.manag"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"e06ecf4b-4414-4b82-be0e-a6ae84e8f98a\",\"expiresAt\":\"2026-11-26T15:51:12.993Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04\",\"sessionId\":\"e06ecf4b-4414-4b82-be0e-a6ae84e8f98a\",\"audience\":\"workforce-admin\",\"roles\":[\"FINANCE_CONTROLLER\"],\"scopes\":[\"agent.de"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"a0d6f66f-3b9a-43b0-aaf1-847458eb77c1\",\"expiresAt\":\"2026-11-26T15:51:13.015Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"sessionId\":\"a0d6f66f-3b9a-43b0-aaf1-847458eb77c1\",\"audience\":\"workforce-admin\",\"roles\":[\"FINANCE_PREPARER\"],\"scopes\":[\"banking.pr"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions",
+      "status": 201,
+      "responsePreview": "{\"id\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"reference\":\"PFEVID-A-D686B005\",\"code\":\"PFEVID_A_D686B005\",\"legalName\":\"Platform Funds Evidence A Limited\",\"displayName\":\"PFE A\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-A-D686B005\",\"evidenceReference\":null,\"evidenceDigest\":null,\"status\":\"REGISTERED\",\"statusReason\":null,\"operationalAutho"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/evidence",
+      "status": 201,
+      "responsePreview": "{\"id\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"reference\":\"PFEVID-A-D686B005\",\"code\":\"PFEVID_A_D686B005\",\"legalName\":\"Platform Funds Evidence A Limited\",\"displayName\":\"PFE A\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-A-D686B005\",\"evidenceReference\":\"PFE-EVID-A-D686B005\",\"evidenceDigest\":\"927ed4ac0b37d6699e115db7c2cc83ecb2562a6cb0bae3"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"d98d1d8e-c494-40f0-9437-33467fd170cc\",\"principalId\":\"https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.098Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"04e27435-ac81-41c5-9f4e-80b95929b9d8\",\"principalId\":\"https://idp.example.com:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.119Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/lifecycle/request",
+      "status": 201,
+      "responsePreview": "{\"approvalId\":\"b150bd29-51f8-4189-9548-4f575b4c5ba0\",\"status\":\"REQUESTED\",\"actionFingerprint\":\"216abc9074e5952e93e06da656d8ff62b477101b1d2bd8923d8c0a686940158b\",\"expiresAt\":\"2026-11-26T15:51:13.147Z\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/approvals/b150bd29-51f8-4189-9548-4f575b4c5ba0/approve",
+      "status": 201,
+      "responsePreview": "{\"approved\":true,\"approval\":{\"id\":\"b150bd29-51f8-4189-9548-4f575b4c5ba0\",\"actionType\":\"FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE\",\"resourceType\":\"FINANCIAL_INSTITUTION\",\"resourceId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"customerId\":null,\"actionFingerprint\":\"216abc9074e5952e93e06da656d8ff62b477101b1d2bd8923d8c0a686940158b\",\"requesterPrincipalId\":\"https://idp.example.com:local-admin-credential:6adcd2"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/lifecycle",
+      "status": 201,
+      "responsePreview": "{\"id\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"reference\":\"PFEVID-A-D686B005\",\"code\":\"PFEVID_A_D686B005\",\"legalName\":\"Platform Funds Evidence A Limited\",\"displayName\":\"PFE A\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-A-D686B005\",\"evidenceReference\":\"PFE-EVID-A-D686B005\",\"evidenceDigest\":\"927ed4ac0b37d6699e115db7c2cc83ecb2562a6cb0bae3"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions",
+      "status": 201,
+      "responsePreview": "{\"id\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"reference\":\"PFEVID-B-D686B005\",\"code\":\"PFEVID_B_D686B005\",\"legalName\":\"Platform Funds Evidence B Limited\",\"displayName\":\"PFE B\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-B-D686B005\",\"evidenceReference\":null,\"evidenceDigest\":null,\"status\":\"REGISTERED\",\"statusReason\":null,\"operationalAutho"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/evidence",
+      "status": 201,
+      "responsePreview": "{\"id\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"reference\":\"PFEVID-B-D686B005\",\"code\":\"PFEVID_B_D686B005\",\"legalName\":\"Platform Funds Evidence B Limited\",\"displayName\":\"PFE B\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-B-D686B005\",\"evidenceReference\":\"PFE-EVID-B-D686B005\",\"evidenceDigest\":\"d86da86f02c5ff45c29ee8e7216e010ac739bf7701cd90"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"8c7dc14a-3a05-44f4-be26-9ac4fb90054d\",\"principalId\":\"https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.249Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"8d14ff8d-a53c-47c2-ad01-0112016579cc\",\"principalId\":\"https://idp.example.com:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.262Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/lifecycle/request",
+      "status": 201,
+      "responsePreview": "{\"approvalId\":\"760dd75b-9375-4901-af42-75af79f114e8\",\"status\":\"REQUESTED\",\"actionFingerprint\":\"058449c9288787c5903d4aaa522bb178a196466d11147a121f81487089d140da\",\"expiresAt\":\"2026-11-26T15:51:13.279Z\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/approvals/760dd75b-9375-4901-af42-75af79f114e8/approve",
+      "status": 201,
+      "responsePreview": "{\"approved\":true,\"approval\":{\"id\":\"760dd75b-9375-4901-af42-75af79f114e8\",\"actionType\":\"FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE\",\"resourceType\":\"FINANCIAL_INSTITUTION\",\"resourceId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"customerId\":null,\"actionFingerprint\":\"058449c9288787c5903d4aaa522bb178a196466d11147a121f81487089d140da\",\"requesterPrincipalId\":\"https://idp.example.com:local-admin-credential:6adcd2"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/lifecycle",
+      "status": 201,
+      "responsePreview": "{\"id\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"reference\":\"PFEVID-B-D686B005\",\"code\":\"PFEVID_B_D686B005\",\"legalName\":\"Platform Funds Evidence B Limited\",\"displayName\":\"PFE B\",\"institutionType\":\"MICROFINANCE_BANK\",\"regulatorName\":\"Central Bank of Nigeria\",\"licenceReference\":\"PFE-LIC-B-D686B005\",\"evidenceReference\":\"PFE-EVID-B-D686B005\",\"evidenceDigest\":\"d86da86f02c5ff45c29ee8e7216e010ac739bf7701cd90"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/929bcace-171a-4074-9955-065bbe3d114a/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"7e3ce725-0ef5-4213-a2e7-e4892650ca5f\",\"principalId\":\"https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.332Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/workforce",
+      "status": 201,
+      "responsePreview": "{\"id\":\"014e9628-b244-4619-959d-7be17861ba15\",\"principalId\":\"https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"status\":\"ACTIVE\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.343Z\",\"revokedBy\":null,\"revokedAt\":null}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "responsePreview": "{\"scope\":\"INSTITUTION\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T15:36:39.675Z\",\"settlementAccount\":{\"id\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"code\":\"PFESETT_A_D686B005\",\"name\":\"Institution A settlement evidence account\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"institutionalPur"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 201,
+      "responsePreview": "{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons/b7350729-7b9a-4f93-84a8-a91b01725c69",
+      "status": 200,
+      "responsePreview": "{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "PATCH",
+      "route": "/internal/finance-operations/platform-funds/comparisons/b7350729-7b9a-4f93-84a8-a91b01725c69",
+      "status": 200,
+      "responsePreview": "{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/b7350729-7b9a-4f93-84a8-a91b01725c69/timing-items",
+      "status": 201,
+      "responsePreview": "{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "DELETE",
+      "route": "/internal/finance-operations/platform-funds/comparisons/b7350729-7b9a-4f93-84a8-a91b01725c69/timing-items/d51d171f-15f0-4081-8016-7fe81ea4c44b",
+      "status": 200,
+      "responsePreview": "{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "responsePreview": "{\"scope\":\"INSTITUTION\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T15:36:39.675Z\",\"settlementAccount\":{\"id\":\"69feafc6-4ed3-4aad-a3d8-5e7012578a90\",\"code\":\"PFESETT_B_D686B005\",\"name\":\"Institution B settlement evidence account\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"INSTITUTION\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"institutionalPur"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 201,
+      "responsePreview": "{\"id\":\"21ccdf26-6242-4353-a2fe-d23d5eb88a6b\",\"scope\":\"INSTITUTION\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"settlementAccountId\":\"69feafc6-4ed3-4aad-a3d8-5e7012578a90\",\"settlementAccountCode\":\"PFESETT_B_D686B005\",\"settlementAccountName\":\"Institution B settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/timing-items",
+      "status": 201,
+      "responsePreview": "{\"id\":\"21ccdf26-6242-4353-a2fe-d23d5eb88a6b\",\"scope\":\"INSTITUTION\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"settlementAccountId\":\"69feafc6-4ed3-4aad-a3d8-5e7012578a90\",\"settlementAccountCode\":\"PFESETT_B_D686B005\",\"settlementAccountName\":\"Institution B settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T15:36:39."
+    },
+    {
+      "method": "DELETE",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660/workforce/https%3A%2F%2Fidp.example.com%3Alocal-admin-credential%3Acc12037b2b90869722d01e356f81e857",
+      "status": 200,
+      "responsePreview": "{\"id\":\"014e9628-b244-4619-959d-7be17861ba15\",\"principalId\":\"https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"institutionId\":\"1aa83122-c265-40b9-8fed-508e9928b660\",\"status\":\"REVOKED\",\"grantedBy\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"grantedAt\":\"2026-11-26T15:36:13.343Z\",\"revokedBy\":\"https://idp.example.com:local-admin-cre"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/settlement-accounts",
+      "status": 200,
+      "responsePreview": "{\"items\":[{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"currency\":\"NGN\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionCode\":null,\"selectable\":true,\"unavailableReason\":null},{\"id\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"code\":\"PFESETT_A_D686B005\",\"name\":\"Institution A settlement evidence acco"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Institution not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.638Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/preview\",\"requestId\":\"req-w\",\"correlationId\":\"req-w\",\"traceId\":\"b9d27ead-00c2-4ef5-81b6-06f56234f863\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Institution not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.648Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons\",\"requestId\":\"req-x\",\"correlationId\":\"req-x\",\"traceId\":\"ad86d126-4bcd-4593-b45e-5e384df20195\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.657Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b\",\"requestId\":\"req-y\",\"correlationId\":\"req-y\",\"traceId\":\"1eac607c-a759-43ec-aaa1-74bb82507ca6\"}"
+    },
+    {
+      "method": "PATCH",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.667Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b\",\"requestId\":\"req-z\",\"correlationId\":\"req-z\",\"traceId\":\"bbc430bd-5f98-42be-8964-87e2b1b804d1\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/timing-items",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.682Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/timing-items\",\"requestId\":\"req-10\",\"correlationId\":\"req-10\",\"traceId\":\"2a80aa34-5af9-46fb-8eee-0959718da799\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/submit",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.693Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/submit\",\"requestId\":\"req-11\",\"correlationId\":\"req-11\",\"traceId\":\"85c3bfc5-4f12-4c29-9b54-282f285019b4\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/snapshots",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.702Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/snapshots\",\"requestId\":\"req-12\",\"correlationId\":\"req-12\",\"traceId\":\"9f883f76-053d-422d-881a-2a98723f9f5c\"}"
+    },
+    {
+      "method": "DELETE",
+      "route": "/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/timing-items/750db579-739e-4289-baa0-2bec6975d716",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Comparison not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.712Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/21ccdf26-6242-4353-a2fe-d23d5eb88a6b/timing-items/750db579-739e-4289-baa0-2bec6975d716\",\"requestId\":\"req-13\",\"correlationId\":\"req-13\",\"traceId\":\"d737c206-4e3d-4099-8237-a790fe2a3c21\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660",
+      "status": 404,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Institution not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-26T15:36:13.720Z\",\"path\":\"/api/v1/internal/institutions/1aa83122-c265-40b9-8fed-508e9928b660\",\"requestId\":\"req-14\",\"correlationId\":\"req-14\",\"traceId\":\"b9ad1968-c920-4c0c-adde-5c9290f19a1e\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 200,
+      "responsePreview": "{\"items\":[{\"id\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"scope\":\"INSTITUTION\",\"institutionId\":\"929bcace-171a-4074-9955-065bbe3d114a\",\"settlementAccountId\":\"e704acf5-e527-4fc1-9d86-bdf976ce85f6\",\"settlementAccountCode\":\"PFESETT_A_D686B005\",\"settlementAccountName\":\"Institution A settlement evidence account\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons/b7350729-7b9a-4f93-84a8-a91b01725c69/snapshots",
+      "status": 200,
+      "responsePreview": "{\"items\":[{\"id\":\"b83236eb-83e0-49e8-91f0-26615147e418\",\"comparisonId\":\"b7350729-7b9a-4f93-84a8-a91b01725c69\",\"version\":1,\"reason\":\"CREATED\",\"snapshot\":{\"lines\":[{\"key\":\"CUSTOMER_WALLETS\",\"kind\":\"CUSTOMER_FUNDS\",\"note\":\"Ledger liability of customer-owned wallet accounts.\",\"group\":\"CUSTOMER_FUNDS\",\"label\":\"Customer wallets\",\"accounts\":[],\"debitMinor\":\"0\",\"creditMinor\":\"0\",\"contributionMinor\":\"0\"},{\""
+    }
+  ]
+}
