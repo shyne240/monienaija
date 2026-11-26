@@ -21,14 +21,16 @@
  *      `LimitEnforcementService.enforceWithManager` — the call the transfer path makes inside its
  *      own transaction — admits 50000 and refuses 150000 against the rule the panel displayed.
  *
- * The first fee attempt is deliberately the payload the Studio actually builds (VAT band included).
- * It ends at a 403 `FINGERPRINT_MISMATCH` when the checker clicks *Execute approved change*: the
- * execute contract replays the approval's stored `requestDetails`, and
- * `ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS` (src/authorization/commercial-rule-governance.service.ts)
- * does not contain `vatBps`, `minimumFeeMinor` or `maximumFeeMinor` (it lists `minFeeMinor` /
- * `maxFeeMinor`, which the fee body never uses). The suite records that refusal as a finding, then
- * completes the walkthrough with a fee whose fields all survive the allowlist, so the governed
- * lifecycle itself is still proven end to end.
+ * The fee is deliberately the hardest shape the Studio can author — a flat fee with a VAT band and
+ * a minimum/maximum collar — because that is the payload PR27-BROWSER-01 broke: the approval stored
+ * a *filtered* copy of the request (`ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS` in
+ * src/authorization/commercial-rule-governance.service.ts was missing `vatBps`, `minimumFeeMinor` and
+ * `maximumFeeMinor`), so replaying it to `execute-create` recomputed a different fingerprint and the
+ * inbox's *Execute approved change* button returned 403 FINGERPRINT_MISMATCH. The allowlist now
+ * carries those names, so the fee is applied from the inbox like the limit is; if the drift returns,
+ * this suite fails at that click instead of silently degrading. The tamper half of the guarantee
+ * (an altered stored request must still be refused) is pinned in
+ * `test/commercial-stored-request-details-execution.integration.spec.ts`.
  *
  * Stated plainly, so the evidence cannot be over-read:
  *   - Authoring, approval and application are done by clicking the real UI. Runtime numbers come
@@ -90,6 +92,9 @@ const ORIGIN = `http://127.0.0.1:${WEB_PORT}`;
 const PRODUCT = 'WALLET_TRANSFER';
 const CURRENCY = 'NGN';
 const FEE_MINOR = '100';
+const FEE_MINIMUM_MINOR = '50';
+const FEE_MAXIMUM_MINOR = '500';
+const VAT_BPS = '750';
 const LIMIT_PROFILE = 'PR27_BROWSER_WALK';
 const DAILY_LIMIT_MINOR = '100000';
 
@@ -199,8 +204,6 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
   const oldEnv = { ...process.env };
   const screenshots: string[] = [];
   const pageDiagnostics = new WeakMap<Page, { console: string[]; network: string[] }>();
-  // Bodies the drawer actually posted, so the approved payload can be replayed verbatim later.
-  const authoringBodies: { url: string; body: unknown }[] = [];
   let checkerSession: { context: BrowserContext; page: Page } | undefined;
   const report: Record<string, any> = {
     generatedAt: null,
@@ -211,6 +214,10 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     database: process.env.DB_NAME ?? null,
     checks: [],
     findings: [],
+    regressionGuards: [
+      'PR27-BROWSER-01 (fixed in this revision): the authored fee carries vatBps 750 and a 50/500 ' +
+        'minimum/maximum collar, and is applied by the inbox Execute button, not by an API replay.',
+    ],
     screenshots: [],
   };
 
@@ -321,15 +328,6 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     page.on('request', (request) => {
       if (request.method() === 'GET') return;
       network.push(`>> ${request.method()} ${request.url().replace(ORIGIN, '')}`);
-      try {
-        const body = request.postData();
-        authoringBodies.push({
-          url: request.url().replace(ORIGIN, ''),
-          body: body ? JSON.parse(body) : null,
-        });
-      } catch {
-        authoringBodies.push({ url: request.url().replace(ORIGIN, ''), body: null });
-      }
     });
     page.on('response', (response) => {
       const url = response.url();
@@ -497,30 +495,6 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
    * Waits for the inbox's own confirmation line. A timeout here is the interesting case (the API
    * refused the decision), so the inbox's rendered error and the network log are kept.
    */
-  /**
-   * Applies an approved change through the documented endpoint, from the checker's own browser
-   * session (same token, same origin, same route policy). Used only for the step the Studio's own
-   * "Execute approved change" button cannot perform — see finding PR27-BROWSER-01.
-   */
-  async function applyViaApi(
-    page: Page,
-    path: string,
-    body: unknown,
-  ): Promise<{ status: number; body: string }> {
-    return page.evaluate(
-      async ({ path: target, payload }) => {
-        const token = window.localStorage.getItem('admin_workforce_token');
-        const response = await fetch(target, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${token ?? ''}` },
-          body: JSON.stringify(payload),
-        });
-        return { status: response.status, body: (await response.text()).slice(0, 1500) };
-      },
-      { path, payload: body },
-    );
-  }
-
   async function waitForNotice(page: Page, pattern: RegExp, tag: string): Promise<boolean> {
     const found = await page
       .getByText(pattern)
@@ -587,7 +561,11 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     await form.locator('#authoring-currency').fill(CURRENCY);
     await form.locator('#authoring-flatFeeMinor').fill(FEE_MINOR);
     await form.locator('#authoring-percentageBps').fill('0');
-    if (options.withVat) await form.locator('#authoring-vatBps').fill('0');
+    if (options.withVat) {
+      await form.locator('#authoring-minimumFeeMinor').fill(FEE_MINIMUM_MINOR);
+      await form.locator('#authoring-maximumFeeMinor').fill(FEE_MAXIMUM_MINOR);
+      await form.locator('#authoring-vatBps').fill(VAT_BPS);
+    }
     await form.locator('#authoring-priority').fill(options.priority ?? '100');
     await form.locator('#authoring-effectiveFrom').fill('2026-01-01T00:00');
     // "Effective until" stays empty: open-ended must emit NO key rather than a fabricated date.
@@ -661,101 +639,48 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     // ── 2. Checker: different context, different credential, approves it.
     const checker = await signIn('FINANCE_CONTROLLER');
     await openView(checker.page, 'approvalsInbox');
-    const [vatApprovalId] = await pendingApprovalIds(checker.page, 'FEE_RULE_CREATE');
-    report.fee.vatApprovalId = vatApprovalId;
-    await decideInInbox(checker.page, vatApprovalId!, 'approve');
+    const [feeApprovalId] = await pendingApprovalIds(checker.page, 'FEE_RULE_CREATE');
+    report.fee.approvalId = feeApprovalId;
+    await decideInInbox(checker.page, feeApprovalId!, 'approve');
     const approvedNotice = await waitForNotice(
       checker.page,
-      new RegExp(`Approval ${vatApprovalId} recorded as APPROVED`),
+      new RegExp(`Approval ${feeApprovalId} recorded as APPROVED`),
       'fee-approve',
     );
     check('the independent checker approved the fee proposal', approvedNotice, {
-      approvalId: vatApprovalId,
+      approvalId: feeApprovalId,
     });
     await shot(checker.page, '05-fee-approved-by-independent-checker');
     check(
       'the approval ledger records APPROVED',
-      (await approvalRow(vatApprovalId!))?.status === 'APPROVED',
-      { status: (await approvalRow(vatApprovalId!))?.status },
+      (await approvalRow(feeApprovalId!))?.status === 'APPROVED',
+      { status: (await approvalRow(feeApprovalId!))?.status },
     );
 
-    // ── 3. FINDING: applying that proposal from the Studio is refused.
-    await decideInInbox(checker.page, vatApprovalId!, 'execute');
-    const mismatchNotice = await waitForNotice(
+    // ── 3. The checker applies it from the same inbox — no API workaround.
+    // This is the exact step PR27-BROWSER-01 used to break (403 FINGERPRINT_MISMATCH on a
+    // VAT-bearing fee); the authored fee now carries VAT *and* a min/max collar so the regression
+    // cannot come back unnoticed.
+    await decideInInbox(checker.page, feeApprovalId!, 'execute');
+    const executedNotice = await waitForNotice(
       checker.page,
-      /FINGERPRINT_MISMATCH|does not match the approved request/i,
-      'fee-execute-vat',
+      new RegExp(`Approved change ${feeApprovalId} executed and consumed`),
+      'fee-execute',
     );
-    await shot(checker.page, '06-fee-execute-refused-fingerprint-mismatch');
-    const vatApproval = await approvalRow(vatApprovalId!);
-    const storedDetails = (vatApproval?.policy?.requestDetails ?? {}) as Record<string, unknown>;
-    const feeRulesAfterRefusal = await dataSource.query<Array<{ count: string }>>(
-      'SELECT count(*)::text AS count FROM fee_rules',
-    );
-    report.findings.push({
-      id: 'PR27-BROWSER-01',
-      summary:
-        'The Admin Web cannot apply a fee rule it authored when the authored fee carries VAT, a minimum fee or a maximum fee.',
-      mechanism:
-        "CommercialApprovalInbox replays the approval's stored requestDetails to execute-create. " +
-        'ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS (src/authorization/commercial-rule-governance.service.ts) ' +
-        'omits vatBps, minimumFeeMinor and maximumFeeMinor (it lists minFeeMinor/maxFeeMinor, which the fee body never uses), ' +
-        'so the replayed payload is not byte-identical to the approved one and the backend refuses the fingerprint comparison.',
-      observed: {
-        approvalId: vatApprovalId,
-        approvalStatusAfterRefusal: vatApproval?.status ?? null,
-        refusedWith: mismatchNotice,
-        feeRulesWritten: feeRulesAfterRefusal[0]!.count,
-        storedRequestDetailsKeys: Object.keys(storedDetails).sort(),
-        storedRequestDetails: storedDetails,
-      },
-      serverEvidence:
-        'v1-commercial-configuration-authoring.integration.spec.ts passes because it replays the ORIGINAL proposal body, not the stored requestDetails.',
-    });
-    check(
-      'the Studio refusal left the approval usable and wrote no rule',
-      mismatchNotice &&
-        vatApproval?.status === 'APPROVED' &&
-        feeRulesAfterRefusal[0]!.count === '0',
-      {
-        approvalStatus: vatApproval?.status ?? null,
-        rulesWritten: feeRulesAfterRefusal[0]!.count,
-      },
-    );
-
-    // ── 4. Apply the SAME approved change through the documented endpoint.
-    // Not a shortcut around governance: the proposal, the fingerprint and the independent approval
-    // are the ones the browser produced. Only the "apply" click is unavailable (finding above), so
-    // the exact payload the drawer posted is replayed by the same checker session over the same
-    // route the inbox calls.
-    const authoredPayload = authoringBodies.find((entry) =>
-      entry.url.includes('/internal/fee-rules'),
-    )?.body as Record<string, unknown> | undefined;
-    check('the drawer payload was captured for verbatim replay', Boolean(authoredPayload), {
-      captured: authoringBodies.map((entry) => entry.url),
-      network: pageDiagnostics.get(maker.page)?.network,
-    });
-    report.fee.authoredPayload = authoredPayload;
-    const applied = await applyViaApi(
-      checker.page,
-      `/api/v1/internal/fee-rules/changes/${vatApprovalId}/execute-create`,
-      authoredPayload,
-    );
-    await shot(checker.page, '07-fee-approved-change-applied-via-documented-endpoint');
-    check(
-      'the documented execute endpoint applies the approved payload',
-      applied.status === 201,
-      applied,
-    );
+    await shot(checker.page, '06-fee-approved-change-executed-from-inbox');
     const appliedFee = await dataSource.query<
       Array<{
         id: string;
         flat_fee_minor: string;
+        minimum_fee_minor: string | null;
+        maximum_fee_minor: string | null;
         vat_bps: number | null;
         effective_to: string | null;
       }>
     >(
-      `SELECT id, flat_fee_minor, vat_bps, effective_to::text AS effective_to
+      `SELECT id, flat_fee_minor, minimum_fee_minor::text AS minimum_fee_minor,
+              maximum_fee_minor::text AS maximum_fee_minor, vat_bps,
+              effective_to::text AS effective_to
          FROM fee_rules WHERE product_code = $1 AND currency = $2`,
       [PRODUCT, CURRENCY],
     );
@@ -763,20 +688,26 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     report.fee.ruleId = feeRuleId;
     report.fee.appliedRule = {
       flatFeeMinor: appliedFee[0]!.flat_fee_minor,
+      minimumFeeMinor: appliedFee[0]!.minimum_fee_minor,
+      maximumFeeMinor: appliedFee[0]!.maximum_fee_minor,
       vatBps: appliedFee[0]!.vat_bps,
       effectiveTo: appliedFee[0]!.effective_to,
-      effectiveToIsNull: appliedFee[0]!.effective_to === null,
     };
     check(
-      'the applied rule carries what the browser authored and the approval is consumed',
-      appliedFee.length === 1 &&
-        (await approvalRow(vatApprovalId!))?.status === 'CONSUMED' &&
+      'the inbox applied the VAT + min/max fee and consumed the approval',
+      executedNotice &&
+        (await approvalRow(feeApprovalId!))?.status === 'CONSUMED' &&
+        appliedFee.length === 1 &&
         appliedFee[0]!.flat_fee_minor === FEE_MINOR &&
-        appliedFee[0]!.vat_bps === 0 &&
+        appliedFee[0]!.minimum_fee_minor === FEE_MINIMUM_MINOR &&
+        appliedFee[0]!.maximum_fee_minor === FEE_MAXIMUM_MINOR &&
+        appliedFee[0]!.vat_bps === Number(VAT_BPS) &&
         appliedFee[0]!.effective_to === null,
       {
-        approvalStatus: (await approvalRow(vatApprovalId!))?.status,
+        executed: executedNotice,
+        approvalStatus: (await approvalRow(feeApprovalId!))?.status,
         rule: report.fee.appliedRule,
+        rules: appliedFee.length,
       },
     );
 
@@ -797,17 +728,32 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
       .first();
     await feeSection.waitFor({ timeout: 30_000 });
     const feeSectionText = await feeSection.innerText();
-    await shot(checker.page, '08-fee-preview-in-browser');
+    await shot(checker.page, '07-fee-preview-in-browser');
     check('the preview panel names the applied rule id', feeSectionText.includes(feeRuleId), {
       ruleId: feeRuleId,
       panel: feeSectionText.replace(/\s+/g, ' ').slice(0, 400),
     });
-    report.fee.previewPanel = {
+    // Read the numbers the panel actually rendered, so parity is compared value by value rather
+    // than by "some number appears somewhere".
+    const panelLine = (label: string): string | null => {
+      const found = new RegExp(`${label} \\(minor\\)\\s+([\\d,]+)`).exec(
+        feeSectionText.replace(/\s+/g, ' '),
+      );
+      return found ? found[1]!.replace(/,/g, '') : null;
+    };
+    const preview = {
       ruleIdShown: feeSectionText.includes(feeRuleId),
-      feeShown: new RegExp(`${FEE_MINOR}(?!\\d)`).test(feeSectionText),
-      totalShown: /100100/.test(feeSectionText),
+      feeMinor: panelLine('Computed fee'),
+      vatMinor: panelLine('Computed VAT'),
+      totalMinor: panelLine('Computed total'),
       excerpt: feeSectionText.replace(/\s+/g, ' ').slice(0, 700),
     };
+    report.fee.previewPanel = preview;
+    check(
+      'the preview panel renders a non-zero VAT and the authored flat fee',
+      preview.feeMinor === FEE_MINOR && preview.vatMinor !== null && preview.vatMinor !== '0',
+      preview,
+    );
 
     // ── 6. Runtime: the real quote service, for the same amount.
     const clock = new Date();
@@ -858,9 +804,16 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
       status: quote.status,
     };
     check(
-      'runtime quote applies the rule the browser applied',
-      quote.feeMinor === FEE_MINOR,
-      report.fee.runtimeQuote,
+      'preview and runtime agree on the rule, the fee, the VAT and the total',
+      preview.ruleIdShown &&
+        quote.feeMinor === preview.feeMinor &&
+        quote.vatMinor === preview.vatMinor &&
+        quote.totalDebitMinor === preview.totalMinor &&
+        quote.feeMinor === FEE_MINOR &&
+        // 100 * 750bps, floor-rounded on the clamped fee; total = principal + fee + VAT.
+        quote.vatMinor === '7' &&
+        quote.totalDebitMinor === '100107',
+      { preview, runtime: report.fee.runtimeQuote },
     );
     const journals = await dataSource.query<Array<{ count: string }>>(
       'SELECT count(*)::text AS count FROM ledger_journals',

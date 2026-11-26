@@ -112,7 +112,31 @@ export function governedChangeConsumptionError(
   }
 }
 
+/**
+ * Field names a governed commercial change may keep in `policy.requestDetails`.
+ *
+ * The checker-execution endpoints replay these stored details as the change body and recompute the
+ * governed-change fingerprint from it (`governedChangeFingerprint`), then compare against the
+ * fingerprint recorded at approval time. That comparison is only sound if this list covers *every*
+ * field the create/update payload builders emit: a dropped key makes an untouched approval fail with
+ * `FINGERPRINT_MISMATCH`, and — worse — leaves a field the executor writes that the approver never
+ * saw the value of. The names below therefore mirror, field for field:
+ *
+ *   - `FeeRuleRegistryController.buildCreateCommand/buildUpdateCommand`                 (fees)
+ *   - `CommissionRuleRegistryController.buildCreateCommand/buildUpdateCommand`          (commissions)
+ *   - `RewardRuleRegistryController.buildCreateCommand/buildUpdateCommand`              (rewards)
+ *   - `ProductCatalogController.buildCreateCommand/buildUpdateCommand`                  (products)
+ *   - `LimitRuleGovernanceService.createPayload/updatePayload`                          (limits)
+ *
+ * `test/commercial-stored-request-details-execution.integration.spec.ts` fails if this list drifts
+ * from those builders again: for fees, commissions and rewards it authors a change, replays the
+ * stored details and requires the execution to succeed, then tampers with a stored field and requires
+ * the refusal. Product registration is covered the same way but is currently refused for an unrelated
+ * reason (see the note on `sanitizeCommercialRequestDetails`); limits are covered by
+ * `v1-commercial-configuration-authoring` and the browser walkthrough.
+ */
 const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
+  // Shared identity / lifecycle
   'productCode',
   'product',
   'code',
@@ -124,15 +148,6 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'status',
   'enabled',
   'configurationStatus',
-  'flatFeeMinor',
-  'percentageBps',
-  'minFeeMinor',
-  'maxFeeMinor',
-  'taxable',
-  'customerClassCode',
-  'customerClassId',
-  'agentClassId',
-  'institutionId',
   'priority',
   'effectiveFrom',
   'effectiveTo',
@@ -140,16 +155,40 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'version',
   'expectedVersion',
   'reason',
-  'calculationBasis',
+  'institutionId',
+  'customerClassCode',
+  'customerClassId',
+  'agentClassId',
+  // Fees (fee_rules: flat / rate / minimum / maximum / VAT band)
+  'flatFeeMinor',
+  'percentageBps',
+  'minimumFeeMinor',
+  'maximumFeeMinor',
+  'vatBps',
+  // Commissions
+  'recipientType',
   'calculationModel',
+  'calculationBasis',
+  'flatCommissionMinor',
+  'minimumCommissionMinor',
+  'maximumCommissionMinor',
   'agentShareBps',
   'aggregatorShareBps',
   'platformShareBps',
-  'beneficiaryType',
-  'flatRewardMinor',
-  'rewardBps',
+  'agentId',
+  'aggregatorId',
   'tiers',
+  // Rewards
+  'beneficiaryType',
+  'rewardType',
+  'flatRewardMinor',
+  'minimumRewardMinor',
+  'maximumRewardMinor',
+  'rewardBps',
   'campaignCode',
+  'customerId',
+  'customerKycLevel',
+  // Limits
   'limitProfileCode',
   'ruleId',
   'direction',
@@ -159,6 +198,16 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'limitValueCount',
 ]);
 
+/**
+ * NOTE (finding PR27-BROWSER-02, not fixed here): a product registration cannot be executed from its
+ * stored record. `redactRecord` classifies a bare `code` key as a credential carrier, so the product
+ * code the operator approved is stored as `[REDACTED]` (and `privileged-action-approval.service`
+ * re-redacts on write), while a `productCode` alias is injected for display. Neither the redacted
+ * `code` nor the extra alias can reproduce the approved fingerprint, so `products/changes/:id/
+ * execute-create` refuses the replay. Preserving an entity code through redaction is a security-shape
+ * decision for the redaction boundary, deliberately not taken here; see
+ * `docs/review/PR27-integration-review.md`.
+ */
 export function sanitizeCommercialRequestDetails(
   action: string,
   payload: Readonly<Record<string, unknown>>,

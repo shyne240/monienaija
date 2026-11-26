@@ -60,48 +60,81 @@ Preview and runtime agree on the rule id and on every number in both flows.
 
 ## Findings
 
-### PR27-BROWSER-01 — the Studio cannot apply a fee rule that carries VAT, a minimum fee or a maximum fee
+### PR27-BROWSER-01 — FIXED: the Studio could not apply a fee rule carrying VAT, a minimum or a maximum
 
-Reproduced in the browser: an approved `FEE_RULE_CREATE` proposal, executed from the Approval Inbox's
-_Execute approved change_ button, returns
+**Was.** An approved `FEE_RULE_CREATE` proposal, executed from the Approval Inbox's _Execute approved
+change_ button, returned
 
 ```
 POST /api/v1/internal/fee-rules/changes/<id>/execute-create → 403
 {"message":"Governed change rejected: executed payload does not match the approved request (FINGERPRINT_MISMATCH)"}
 ```
 
-Mechanism (traced in code, not inferred from the message): the inbox replays the approval's stored
-`policy.requestDetails`. That record is produced by `sanitizeCommercialRequestDetails()`
-(`src/authorization/commercial-rule-governance.service.ts:162`) through the allowlist
-`ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS` (line 115), which **does not contain** `vatBps`,
-`minimumFeeMinor` or `maximumFeeMinor` — it lists `minFeeMinor` / `maxFeeMinor`, names the fee body
-never uses. The drawer's `buildAuthoringPayload` (`apps/admin-web/src/screens/authenticated/commercial-authoring-contract.ts`) sends the real names, so the approved fingerprint and the replayed payload
-differ by exactly those keys. Observed stored details for the refused approval: `currency`,
-`effectiveFrom`, `flatFeeMinor`, `isActive`, `percentageBps`, `priority`, `productCode`, `reason` —
-`vatBps: 0` was dropped while the approved request carried it.
+**Cause.** The inbox replays the approval's stored `policy.requestDetails`. That record is produced by
+`sanitizeCommercialRequestDetails()` (`src/authorization/commercial-rule-governance.service.ts`) through
+the allowlist `ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS`, which did not contain `vatBps`,
+`minimumFeeMinor` or `maximumFeeMinor` — it carried the unused `minFeeMinor` / `maxFeeMinor` /
+`taxable` names instead. The executed payload therefore differed from the approved one only by the
+fields the allowlist had dropped, and the fingerprint comparison refused it.
 
-Blast radius: any fee with a VAT band, a minimum or a maximum — i.e. the ordinary way a fee is priced.
-The refusal is safe (no rule written, approval left `APPROVED`, nothing consumed), and the API path
-works, so this is a **UI-execution defect, not a governance hole**. `v1-commercial-configuration-authoring`
-(39 cases) and `v1-applied-fee-runtime-quote` do not catch it because they replay the original
-proposal body rather than the stored `requestDetails`.
+**Fix.** The allowlist now carries every field the create/update payload builders emit, per domain:
+fees (`vatBps`, `minimumFeeMinor`, `maximumFeeMinor`), commissions (`recipientType`,
+`flatCommissionMinor`, `minimumCommissionMinor`, `maximumCommissionMinor`, `agentId`, `aggregatorId`),
+rewards (`beneficiaryType`, `rewardType`, `minimumRewardMinor`, `maximumRewardMinor`, `customerId`,
+`customerKycLevel`, `agentId`). Dead names (`minFeeMinor`, `maxFeeMinor`, `taxable`) were removed. The
+drawer already sent the correct names, so nothing changed in Admin Web: drawer, stored request and
+executor now agree on one field vocabulary, and the comment above the list names the builders it
+mirrors.
 
-The same drift, read from code (not exercised in the browser this turn): the drawer's commission
-branch sends `recipientType`, `flatCommissionMinor`, `minimumCommissionMinor`, `maximumCommissionMinor`,
-none of which the allowlist carries; the reward branch sends `beneficiaryType` and `rewardType`, also
-absent. Expect the same 403 on the first commission or reward an operator tries to apply from the
-Studio. Fee is the case proven end to end here; commission/reward should be re-checked once the key
-list is unified.
+**Fingerprint and independent approval are unchanged.** The recomputation still covers the full
+payload, and an altered replay is still refused. `test/commercial-stored-request-details-execution.integration.spec.ts`
+pins both halves on disposable PostgreSQL (4 cases): fee with `vatBps 750` + 50/500 collar,
+commission with a floor and a cap, reward with a floor and a cap — each authored as a maker, approved
+by an independent checker, then replayed **from the stored `requestDetails`** and required to apply;
+then a stored request altered in `vatBps`, `minimumFeeMinor`, `maximumFeeMinor` or `flatFeeMinor` is
+refused with `FINGERPRINT_MISMATCH`, the approval stays `APPROVED`, no rule is written, and the
+untouched details still apply afterwards.
 
-Suggested fix: make the fee branch and the allowlist share one key list (widen the allowlist to
-`vatBps` / `minimumFeeMinor` / `maximumFeeMinor` and drop the unused `minFeeMinor` / `maxFeeMinor`),
-with a regression case that authorises a VAT-bearing fee, then executes from the stored
-`requestDetails`. Alternative if the redaction is deliberate: hash a canonical copy of the _full_
-payload at approval time and compare against that, keeping the redacted record purely for display.
+**Confirmed, not assumed.** With the fix reverted, all four cases fail (the three untouched replays
+get the same 403 the browser produced); with the fix in place all four pass. The commission and reward
+drift reported from code reading was therefore real, not theoretical.
 
-Because of this finding, the walkthrough proves the fee lifecycle with the same approved change
-applied through the documented endpoint by the same checker session, and says so in both the spec and
-the evidence file. The limit flow needed no such workaround.
+**Browser re-run (real Admin Web, real Chromium, disposable PostgreSQL).** The fee is now authored with
+VAT `750` bps and a `50` / `500` min/max collar and applied from the inbox itself:
+
+| Step                                                    | Result                                                                                                                                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Author as `FINANCE_PREPARER`                            | proposal recorded, `fee_rules` empty                                                                                                                                    |
+| Approve as `FINANCE_CONTROLLER`                         | `APPROVED`, independent of the maker                                                                                                                                    |
+| **Apply from the inbox**                                | _Execute approved change_ → `CONSUMED`; rule `569f5f3e…` with `flat_fee_minor 100`, `minimum_fee_minor 50`, `maximum_fee_minor 500`, `vat_bps 750`, `effective_to NULL` |
+| Preview (browser)                                       | rule `569f5f3e…`, computed fee `100`, computed VAT `7`, computed total `100107`                                                                                         |
+| Runtime (`TransferQuoteService.create()`, 100000 minor) | fee `100`, VAT `7`, total debit `100107`, `ACTIVE`                                                                                                                      |
+| Money movement                                          | `ledger_journals` = 0                                                                                                                                                   |
+
+Preview and runtime agree on the rule id and on all three amounts. 18/18 checks; evidence in
+`docs/commercial/evidence/pr27-browser-walkthrough.json`.
+
+### PR27-BROWSER-02 — OPEN: a product registration cannot be applied from its stored record
+
+Adjacent to the finding above, different root cause, and **not** changed by this revision.
+
+`redactRecord` classifies a bare `code` key as a credential carrier
+(`src/common/sensitive-data-redaction.ts`, `SENSITIVE_KEY_NAMES`), and
+`privileged-action-approval.service` redacts `requestDetails` a second time on write. So a product
+registration approved with `code: 'PR27_NEW_PRODUCT'` is stored as `code: '[REDACTED]'` plus a
+`productCode: 'PR27_NEW_PRODUCT'` alias injected for display. Neither reproduces the approved
+fingerprint: `POST /api/v1/internal/products/changes/<id>/execute-create` returns 403
+`FINGERPRINT_MISMATCH`, the approval stays `APPROVED` and no product row is written.
+
+Measured, not inferred: `test/commercial-stored-request-details-execution.integration.spec.ts` records
+the exact stored record and the refusal (`documents that a product registration is still refused from
+its stored record (PR27-BROWSER-02)`). It is a deliberate characterisation, so fixing the defect shows
+up as a failing expectation rather than a silent change.
+
+Remedy requires a decision this review should not take alone: either the redaction boundary must
+understand that a commercial payload's `code` is an entity identifier rather than a secret, or the
+approval record must keep the approved payload under a separate, non-redacted, integrity-checked
+field. Until then product registration stays an API-only flow.
 
 ### Known gaps carried forward (unchanged by this turn)
 
@@ -113,13 +146,14 @@ the evidence file. The limit flow needed no such workaround.
 
 ## What still blocks merge review
 
-1. **PR27-BROWSER-01** above — an operator cannot apply an ordinary VAT-bearing fee from the Studio.
-2. **`Backend (real PostgreSQL integration)` on the combined revision has no completed result yet**
-   (run [45880877624](https://github.com/shyne240/monienaija/actions/runs/45880877624), job started
-   19:08Z). The PR head is green, but the combined tree is not signed off until that job lands.
-3. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
-   resolved offline in merge `df56a4b9` (all gates above ran on that merge), but the PR branch itself
-   has not been rebased/merged-forward, so GitHub cannot merge it as-is.
+1. **PR27-BROWSER-02** (product registration cannot be applied from its stored record) — a
+   pre-existing defect the same mechanism exposed, left open on purpose; see above.
+2. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
+   resolved offline in merge `df56a4b9` (every gate in this document ran on that merge plus the fix),
+   but the PR branch itself has not been merged forward, so GitHub cannot merge it as-is.
+3. **A completed `Backend (real PostgreSQL integration)` job on the fixed combined revision.**
+   Run [45880877624](https://github.com/shyne240/monienaija/actions/runs/45880877624) on `df56a4b9`
+   is recorded below; the fixed head carries its own run.
 
 Out of scope by instruction: live bank enablement, mobile apps (`apps/customer-mobile`,
 `apps/agent-mobile` untouched), any live provider call, and any seeded production rate.
