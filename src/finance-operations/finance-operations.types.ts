@@ -53,7 +53,12 @@ export interface JournalSourceLink {
   reference: string | null;
   status: string;
   /** Which column/relation established the link, so an operator can tell evidence from inference. */
-  linkedBy: 'JOURNAL_ID' | 'CLAIM_JOURNAL_ID' | 'DURABLE_INBOUND_LINK' | 'LEGACY_RECEIPT_JOURNAL';
+  linkedBy:
+    | 'JOURNAL_ID'
+    | 'CLAIM_JOURNAL_ID'
+    | 'DURABLE_INBOUND_LINK'
+    | 'LEGACY_RECEIPT_JOURNAL'
+    | 'DIRECT_CREDIT_JOURNAL';
   /** True only when the admin console can open that exact source record. */
   navigable: boolean;
 }

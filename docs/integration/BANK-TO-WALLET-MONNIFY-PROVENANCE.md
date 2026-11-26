@@ -93,3 +93,23 @@ PR #23's draft SQL still derives `BANK_TO_WALLET` status from legacy float recei
 8. **Overlap with PR #23** also exists in `src/customer-app/customer-transaction-history.service.ts`; this branch adds only the `BANK_TO_WALLET` union member, count, row source and safe projection. Neither branch's other history logic was copied or rewritten.
 9. **Workforce preservation:** no role, password, credential or the 11 workforce accounts were changed. `KYC_OWNERSHIP_KEY_BASE64` is read from configuration; no key material was added.
 10. **Device/emulator evidence** and real provider sandbox evidence remain separately gated and are not claimed.
+
+## Admin Web History compatibility after PR #23 merged (follow-up)
+
+Fetched SHAs:
+
+- Integration tip: `de83c7b3047a47627b702c283ea03b3c32af7c9d` (its ancestry contains the PR #23 merge `39e0811d928c54537d120a5efad94cc76afb71ca` and PR #35 `Merge pull request #35 from shyne240/codex/custom-role-dashboard-assignment`).
+- PR #40 head before this update: `cfb6ca219bf63f55b6e4d4c544b2945ab4cd1471`.
+- Combined tree at the merge of those heads: `0c1953f5481cd02a48a4dcf61bfb896ed53d19f8`.
+
+**Gap confirmed on that exact combined tree.** A deposit posted through `BankToWalletService.verifyAndPost` was absent from `type=BANK_TO_WALLET&status=CREDITED` History: PR #23's `BANK_TO_WALLET` intake branch still derived status from `agent_float_funding_receipts` linked through `banking_inbound_float_links`, and a direct Monnify credit has no float receipt. Pre-fix `b2wgap1` expected one row and received zero; see `docs/integration/evidence/bank-to-wallet-history-compatibility/gap-verification.txt`.
+
+Compatibility fix (no PR #23 code or grant was reverted):
+
+- `src/admin/transaction-history.controller.ts` adds a second `BANK_TO_WALLET` source for rows with `resolution_state='CREDITED'` and a non-null `credit_journal_id`. It uses the journal's `institution_id` for scope, exposes `[credit_journal_id]` only to `ledger.view`, and keeps `b.id` (immutable bank intake UUID) as the history key. The display/exact-search reference prefers `business_reference`, falling back to the legacy provider reference; legacy receipt and unverified/direct-intake rows otherwise keep their existing projection. Direct credits are excluded from the old branch so one posted deposit appears exactly once.
+- `src/finance-operations/finance-operations.service.ts` resolves the reverse journal → source link from the journal's persisted `bankIntakeId` and `businessReference` (`DIRECT_CREDIT_JOURNAL`), so Finance returns to the same `#transaction-history/BANK_TO_WALLET/<intake UUID>`. The existing `DURABLE_INBOUND_LINK`, legacy receipt and generic JOURNAL_ID mappings keep priority/behavior.
+- Pending (`UNVERIFIED`, the schema's pending verification state) and return-authorised (`resolution_state='EXCEPTION'` / exception state `APPROVED_FOR_RETURN`) rows are still projected, but never with `CREDITED` status. No payout or settlement authority was invented.
+
+Evidence: `test/bank-to-wallet-history-compatibility.integration.spec.ts` posts a real #40 credit against a fresh fully migrated disposable PostgreSQL database with a deterministic Monnify transport, then asserts (1) exactly one CREDITED row with `businessReference`, intake UUID and credit journal, (2) a Finance journal source with `linkedBy=DIRECT_CREDIT_JOURNAL`, (3) pending and return-authorised rows excluded from CREDITED while remaining visible with their own states, (4) `ledger.view` and institution scope enforced (no journal id for OPERATIONS, 403 on the journal API, 404 for a foreign institution), and (5) unchanged 11 local credentials and role-function grants. `HISTORY_COMPAT_BROWSER=yes` additionally drives real Admin Web sign-in, filters, detail, **Open journal**, the Finance return link and negative CREDITED filters in headless Chromium against the real backend.
+
+Screenshots and machine-readable results: `docs/integration/evidence/bank-to-wallet-history-compatibility/`. No role, password, institution grant or production toggle was changed; all records are synthetic. No live provider, emulator or device claim is made.
