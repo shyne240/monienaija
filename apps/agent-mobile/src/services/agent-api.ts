@@ -1040,8 +1040,14 @@ export function isAmbiguousOperationOutcome(error: unknown): boolean {
 export function describeApiError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
     const status = (error as Error & { status?: number }).status;
+    const code = (error as Error & { code?: string }).code;
     if (status === 401) return 'Your session has expired. Please log in again.';
     if (status === 403) return 'This information is not available for your account.';
+    // Missing Agent limit configuration is an operator action, not a transient outage: the
+    // backend refuses the movement (503 LIMIT_PROFILE_MISSING) and retrying cannot help. Say what
+    // happened and who can fix it instead of the generic 5xx "retry" copy.
+    if (code === 'LIMIT_PROFILE_MISSING')
+      return "This agent's transaction limits are not set up yet, so this transaction was not carried out. Ask your institution to configure your limits, then try again.";
     if (typeof status === 'number' && status >= 500)
       return 'The service is temporarily unavailable. Please retry.';
     return error.message;

@@ -426,7 +426,9 @@ const LimitsSummary: React.FC<{ products: AgentLimitProductView[] }> = ({ produc
   if (configured.length === 0) {
     return (
       <Text style={styles.muted} testID="account-limits-none">
-        No transaction limits are currently configured for your agent services.
+        No transaction limits are configured for your agent services yet. Cash→Wallet, Wallet→Cash
+        and Cash→Cash stay blocked until your institution assigns your limits — contact your
+        institution's operations team.
       </Text>
     );
   }
@@ -460,8 +462,8 @@ const LimitsSummary: React.FC<{ products: AgentLimitProductView[] }> = ({ produc
                 >
                   {window.period.charAt(0) + window.period.slice(1).toLowerCase()}
                   {window.kind === 'COUNT'
-                    ? `: ${window.remainingCount ?? 0} of ${window.limitCount ?? 0} transactions left`
-                    : `: ${formatNairaFromMinor(window.remainingMinor ?? '0')} left of ${formatNairaFromMinor(window.limitMinor ?? '0')}`}
+                    ? `: ${window.remainingCount ?? '—'} of ${window.limitCount ?? '—'} transactions left`
+                    : `: ${window.remainingMinor === null ? '—' : formatNairaFromMinor(window.remainingMinor)} left of ${window.limitMinor === null ? '—' : formatNairaFromMinor(window.limitMinor)}`}
                   {window.usedMinor !== null && window.usedMinor !== '0'
                     ? ` · used ${formatNairaFromMinor(window.usedMinor)}`
                     : ''}

@@ -44,13 +44,33 @@ export interface EnforceInput {
   walletLedgerAccountId?: string | null; // for WALLET_BALANCE_MAX check
   principalWalletCustomerId?: string; // customerId for wallet lookup if ledgerAccountId not provided
   /**
-   * Pin the resolved limit profile and rules as immutable evidence of what governed this
-   * admission (commercial-accounting snapshot). This never changes admission behaviour: a missing
-   * assignment/profile/rule still follows the legacy advisory contract described on
-   * `enforceWithManager`. Do not use it as a fail-closed switch — use
-   * `strictConfiguredRules` or an enforced `requireKycTierPolicy` for that.
+   * Pin the resolved limit profile and rules as immutable evidence of what governed this admission
+   * (commercial-accounting snapshot). Evidence only: it does not change admission behaviour — a
+   * missing assignment/profile/rule still follows the legacy advisory contract. Use
+   * `requireApplicableLimit` (agent money movement) or `strictConfiguredRules` /
+   * an enforced `requireKycTierPolicy` to fail closed.
    */
   requireConfiguration?: boolean;
+
+  /**
+   * Fail closed when no active limit profile resolves, or when the resolved profile has no rule
+   * applicable to this product/direction/channel/currency.
+   *
+   * Set by the agent money-movement boundaries where an agent moves customer value (Cash→Wallet,
+   * Wallet→Cash, Cash→Cash initiation, Cash→Cash claim, wallet transfer, external bank transfer).
+   * Failure is `LIMIT_PROFILE_MISSING` (HTTP 503) raised before any journal, reservation or usage
+   * row is written, so a blocked admission has no financial effect.
+   *
+   * Deliberately not implied by `principalType: 'AGENT'`: staff-governed float funding/defunding
+   * must remain possible for an agent whose class is not configured yet, and customer admission
+   * must not be tightened as a side effect.
+   *
+   * An explicitly unlimited configuration (a resolved rule that is deliberately unlimited, where
+   * the rule model supports it) satisfies this flag: the check is "an applicable rule resolved",
+   * not "a numeric threshold exists". Note that a *disabled* profile does not resolve, so it is
+   * treated as missing configuration rather than as an approved unlimited grant.
+   */
+  requireApplicableLimit?: boolean;
   /** Explicitly require a resolved active profile and an applicable rule, independent of tier
    * rollout. For new admissions that cannot safely use the legacy advisory contract. */
   strictConfiguredRules?: boolean;
@@ -163,8 +183,9 @@ export class LimitEnforcementService {
    *    - WALLET_BALANCE_MAX vs ledger balance + amount (if credit) — authoritative, not window
    *    - DAILY/WEEKLY/MONTHLY/YEARLY amount+count via reserveBatchWithManager (checks used+reserved+delta > limit then increments reserved FOR UPDATE)
    * 4) Reserve windowed usages via LimitUsageService.reserveBatchWithManager inside same manager (atomic with ledger)
-   * Legacy/advisory callers retain their historical permissive behavior. Financial admission callers
-   * set strictConfiguredRules or an enforced requireKycTierPolicy to reject missing assignments,
+   * Admission strictness is explicit, never inferred: legacy/advisory callers retain their
+   * historical permissive behavior; `requireApplicableLimit` (agent money movement),
+   * `strictConfiguredRules` and an enforced `requireKycTierPolicy` reject missing assignments,
    * mappings, profiles and applicable rules. No thresholds are invented.
    */
   async enforceWithManager(manager: EntityManager, input: EnforceInput): Promise<EnforceResult> {
@@ -241,15 +262,30 @@ export class LimitEnforcementService {
         ...(tierProfileCode ? [tierProfileCode] : []),
       ]),
     ];
-    // Existing flows retain the advisory behavior until the tier rollout is active. New flows
-    // can explicitly require configured rules without changing that rollout or old obligations.
+    // Existing customer flows retain the advisory behavior until the tier rollout is active. New
+    // flows can explicitly require configured rules without changing that rollout or old
+    // obligations.
+    //
+    // Existing money movements also record `requireConfiguration` as immutable evidence of the
+    // configuration that governed them, and some of those admissions are agent money movements
+    // where the agent moves customer value. `requireApplicableLimit` is the explicit,
+    // lane-independent switch for those boundaries: without it the two "nothing resolved" paths
+    // below returned `allowed: true`, so an Agent Class with no profile — or a profile with no rule
+    // for this product/direction — silently moved without limit. It is opt-in per call site rather
+    // than implied by the principal type so that staff-governed float funding/defunding keeps
+    // working for agents whose class is not configured yet (an agent must be fundable before it can
+    // transact), and so customer admission is never tightened as a side effect of an agent fix.
     const configurationRequired =
-      tierEnforcement === 'ENFORCED' || input.strictConfiguredRules === true;
+      tierEnforcement === 'ENFORCED' ||
+      input.strictConfiguredRules === true ||
+      input.requireApplicableLimit === true;
     if (profileCodes.length === 0 && configurationRequired) {
       throw this.configurationException(
         explicitTierNonApplicability
           ? 'Explicit tier non-applicability still requires the product limit profile'
-          : 'No active limit profile is assigned for this financial operation',
+          : input.requireApplicableLimit === true
+            ? `No limit profile is assigned for ${product} (${direction}); an operator must configure a limit for this Agent's class before the transaction can proceed`
+            : 'No active limit profile is assigned for this financial operation',
       );
     }
     if (profileCodes.length === 0) {
@@ -283,7 +319,9 @@ export class LimitEnforcementService {
     if (applicable.length === 0) {
       if (configurationRequired) {
         throw this.configurationException(
-          'No applicable financial limit rules are configured for this operation',
+          input.requireApplicableLimit === true
+            ? `No applicable limit rule is configured for ${product} (${direction}); an operator must configure a limit for this Agent's class before the transaction can proceed`
+            : 'No applicable financial limit rules are configured for this operation',
         );
       }
       return {

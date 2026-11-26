@@ -76,6 +76,10 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -422,6 +426,11 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       isActive: true,
       applicableServices: services,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,

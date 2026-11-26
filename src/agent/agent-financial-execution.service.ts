@@ -368,6 +368,11 @@ export class AgentFinancialExecutionService {
                 walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
                 principalWalletCustomerId: agentId,
                 requireConfiguration: true,
+                // The agent is the party moving customer value: its class must resolve a limit for
+                // this product/direction, otherwise the movement is refused with no financial
+                // effect. (The agent must already have been funded by staff, which is why float
+                // funding itself is not gated the same way.)
+                requireApplicableLimit: true,
                 institutionId: agentWalletRows[0]!.institution_id,
               },
             );
