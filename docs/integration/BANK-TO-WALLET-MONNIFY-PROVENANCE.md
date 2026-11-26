@@ -113,3 +113,16 @@ Compatibility fix (no PR #23 code or grant was reverted):
 Evidence: `test/bank-to-wallet-history-compatibility.integration.spec.ts` posts a real #40 credit against a fresh fully migrated disposable PostgreSQL database with a deterministic Monnify transport, then asserts (1) exactly one CREDITED row with `businessReference`, intake UUID and credit journal, (2) a Finance journal source with `linkedBy=DIRECT_CREDIT_JOURNAL`, (3) pending and return-authorised rows excluded from CREDITED while remaining visible with their own states, (4) `ledger.view` and institution scope enforced (no journal id for OPERATIONS, 403 on the journal API, 404 for a foreign institution), and (5) unchanged 11 local credentials and role-function grants. `HISTORY_COMPAT_BROWSER=yes` additionally drives real Admin Web sign-in, filters, detail, **Open journal**, the Finance return link and negative CREDITED filters in headless Chromium against the real backend.
 
 Screenshots and machine-readable results: `docs/integration/evidence/bank-to-wallet-history-compatibility/`. No role, password, institution grant or production toggle was changed; all records are synthetic. No live provider, emulator or device claim is made.
+
+## Return / refund execution checkpoint (stacked lifecycle work)
+
+- A governed `RETURN` decision (`FINANCE_PREPARER` request → independent `FINANCE_CONTROLLER` approval → consumed approval) authorizes **one** `bank_to_wallet_return_refunds` row. The row carries the original MonieNaija business reference, the original Monnify transaction reference, the deterministic MonieNaija `return_reference` and the Monnify `refund_reference`.
+- `APPROVED` means authority exists; `SUBMITTED`/`PENDING` means one provider instruction was sent; `FAILED` means the provider refused/confirmed failure; `RETURNED` means the provider confirmed money returned. Late or duplicate updates cannot overwrite `RETURNED` or `FAILED`.
+- A timeout, transport fault or documented duplicate-code (`R9`/`D07`) response resolves to `UNKNOWN`; the only next action is authoritative `getRefundStatus` under the original reference. There is no resubmit method.
+- Live refunds remain fail-closed: `BANK_TO_WALLET_RETURN_EXECUTION_ENABLED=false` and `MonnifyProvider.refundsEnabled` defaults to false. The PG evidence injects a deterministic in-memory transport and an explicitly enabled test service; no live call was made.
+
+### Owner decisions still required
+1. Confirm Monnify refund entitlement/activation for the production contract (and any per-transaction fee such as the documented ₦10 wallet transfer fee).
+2. Confirm the Monnify wallet is funded to cover refunds and name the operational owner of that float.
+3. Decide the policy for payments received from third-party accounts: verified destination account/bank must be supplied for a non-virtual-account refund; Monnify refuses refunds to virtual account numbers. No destination is guessed by the adapter.
+4. Confirm the settlement destination and reconciliation authority for inbound collections under the Reserved Accounts contract.

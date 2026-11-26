@@ -22,6 +22,7 @@ import {
 } from './banking-provider-governance.service';
 import { BankingReadinessService } from './banking-readiness.service';
 import { BankingOutboundService } from './banking-outbound.service';
+import { BankToWalletReturnExecutionService } from './bank-to-wallet-return-execution.service';
 import { BankingInboundService } from './banking-inbound.service';
 import { BankingVirtualAccountService } from './banking-virtual-account.service';
 import { BankingReconciliationService } from './banking-reconciliation.service';
@@ -176,6 +177,21 @@ export interface BankingRuntime {
     },
     BankingProviderGovernanceService,
     BankingOutboundService,
+    {
+      // Refund execution is fail-closed: the boolean never defaults from a provider capability.
+      provide: BankToWalletReturnExecutionService,
+      inject: [DataSource, BankingProviderRegistry, ConfigService],
+      useFactory: (
+        db: DataSource,
+        registry: BankingProviderRegistry,
+        config: ConfigService<Environment, true>,
+      ) =>
+        new BankToWalletReturnExecutionService(
+          db,
+          registry,
+          config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', { infer: true }) === true,
+        ),
+    },
     BankingInboundService,
     BankingVirtualAccountService,
     BankingReconciliationService,
@@ -320,6 +336,7 @@ export interface BankingRuntime {
     BankingReadinessService,
     BankingProviderGovernanceService,
     BankingOutboundService,
+    BankToWalletReturnExecutionService,
     BankingInboundService,
     BankingVirtualAccountService,
     BankingReconciliationService,
