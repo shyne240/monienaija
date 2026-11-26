@@ -130,12 +130,20 @@ export class AgentCashToCashClaimService {
       try {
         return await this.execute({ ...claim, transferId: id });
       } catch (error) {
-        if (
-          error instanceof HttpException &&
-          error.getStatus() < 500 &&
-          !this.isRetryableClaimError(error)
-        )
-          throw this.locatorUnavailable();
+        if (error instanceof HttpException) {
+          const response = error.getResponse();
+          const responseBody =
+            typeof response === 'object' && response !== null
+              ? (response as { code?: unknown; error?: unknown })
+              : {};
+          const code = responseBody.code ?? responseBody.error;
+          // Missing limit configuration is a deterministic, pre-posting refusal rather than an
+          // ambiguous claim outcome. Preserve its actionable 503 contract through the protected
+          // locator route; all other server-side failures remain retry-required.
+          if (code === 'LIMIT_PROFILE_MISSING') throw error;
+          if (error.getStatus() < 500 && !this.isRetryableClaimError(error))
+            throw this.locatorUnavailable();
+        }
         throw new ServiceUnavailableException({
           code: 'C2C_RETRY_REQUIRED',
           message: 'Claim outcome unavailable; recover before retrying',
