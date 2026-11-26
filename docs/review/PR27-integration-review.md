@@ -6,14 +6,15 @@ run link listed here.
 
 ## Revisions under review
 
-| Role                      | Revision                                                                                                 |
-| ------------------------- | -------------------------------------------------------------------------------------------------------- |
-| PR head                   | `d953fcc1f83ac0d15e8772c1621777018c290110` (branch `arena/41dde913-monienaija`)                          |
-| Integration base          | `aa8b1cf47c80e865a18934cdab46aa66fedbad3c` (`arena/5-main-web-integration`)                              |
-| Merge base                | `41edf587`                                                                                               |
-| **Combined revision**     | merge commit `df56a4b9dc0ba32c7e7ec2f034ab59de1827d8e5`, tree `d9eec218e89f9ed93b4b1520fa2a255c1977c334` |
-| Branch carrying the merge | `arena/f5629bfa-monienaija`                                                                              |
-| **Fixed combined head**   | `4222ed99b9bb156e96f5db4895e77bffadc131e6` — merge `df56a4b9` + the PR27-BROWSER-01 fix and its tests    |
+| Role                         | Revision                                                                                                 |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| PR head                      | `d953fcc1f83ac0d15e8772c1621777018c290110` (branch `arena/41dde913-monienaija`)                          |
+| Integration base             | `aa8b1cf47c80e865a18934cdab46aa66fedbad3c` (`arena/5-main-web-integration`)                              |
+| Merge base                   | `41edf587`                                                                                               |
+| **Combined revision**        | merge commit `df56a4b9dc0ba32c7e7ec2f034ab59de1827d8e5`, tree `d9eec218e89f9ed93b4b1520fa2a255c1977c334` |
+| Branch carrying the merge    | `arena/f5629bfa-monienaija`                                                                              |
+| **Fixed combined head**      | `4222ed99b9bb156e96f5db4895e77bffadc131e6` — merge `df56a4b9` + the PR27-BROWSER-01 fix and its tests    |
+| **Fix head (both findings)** | `arena/f5629bfa-monienaija` head after the PR27-BROWSER-02 commit — CI run link in the follow-up PR      |
 
 `aa8b1cf4` is the tip of `arena/5-main-web-integration` at the time of writing, so the combined tree
 above is the tree a reviewer would get by merging #27 today.
@@ -46,9 +47,13 @@ CI:
   has no green real-PostgreSQL run yet.
 
 - **Fixed head `4222ed99`:** run
-  [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) — started when the fix
-  was pushed; its result is the one to read, and it was still running when this document was
-  committed.
+  [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) — **success, all 8
+  jobs** (classify, backend lint/format/build/unit, admin web, both mobile apps, real PostgreSQL
+  integration, isolated PostgreSQL suites, container images). The `a16-agent-cash-to-cash-claim`
+  contention flake that failed the previous run did not recur, which supports treating it as load
+  flakiness rather than a regression.
+- The PR27-BROWSER-02 fix, its tests and this document sit **on top of** that green head as
+  documentation-and-fix commits; the branch head at push time is recorded in the pull request.
 
 ## What this review verified
 
@@ -201,10 +206,10 @@ Screenshots `17`–`22` in `data/validation/pr27-browser-walkthrough/`, 26/26 ch
 1. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
    resolved offline in merge `df56a4b9` (every gate in this document ran on that merge plus the fix),
    but the PR branch itself has not been merged forward, so GitHub cannot merge it as-is.
-2. **A green `Backend (real PostgreSQL integration)` job.** On `df56a4b9` the job failed on one flaky
-   contention test (`a16-agent-cash-to-cash-claim`, see above) that passes locally; the fixed head's
-   run [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) is the one to
-   read. Until it lands, no run on the combined code is green end to end.
+2. **A follow-up pull request.** Session branch rules do not allow pushing to #27's head branch
+   (`arena/41dde913-monienaija`), so the reviewed code — #27 merged onto the current integration tip
+   plus both fixes — is published as a labelled draft follow-up from `arena/f5629bfa-monienaija`.
+   #27 itself still carries only the original feature commit and is not the branch that passes.
 
 Out of scope by instruction: live bank enablement, mobile apps (`apps/customer-mobile`,
 `apps/agent-mobile` untouched), any live provider call, and any seeded production rate.
