@@ -101,13 +101,18 @@ export class CustomerFinancialEligibilityService {
     // creates, mutates or shadows restriction state, and it keeps the caller's lock strength.
     const restrictions = await manager.query<Array<{ type: string }>>(
       `SELECT type FROM customer_restrictions
-       WHERE customer_id=$1 AND type IN ('BLACKLISTED','FROZEN') AND is_active=true AND deleted_at IS NULL
+       WHERE customer_id=$1 AND type IN ('BLACKLISTED','FROZEN','CONFIGURATION_REVIEW') AND is_active=true AND deleted_at IS NULL
        ORDER BY type ${rowLock}`,
       [customerId],
     );
     if (restrictions.some((restriction) => restriction.type === 'BLACKLISTED'))
       throw new ConflictException(BLACKLISTED_CUSTOMER_MESSAGE);
-    if (restrictions.length) throw new ConflictException(FROZEN_CUSTOMER_MESSAGE);
+    if (restrictions.some((restriction) => restriction.type === 'FROZEN'))
+      throw new ConflictException(FROZEN_CUSTOMER_MESSAGE);
+    if (restrictions.some((restriction) => restriction.type === 'CONFIGURATION_REVIEW'))
+      throw new ConflictException(
+        'Customer commercial configuration requires review before financial access',
+      );
     const now = (await manager.query<Array<{ now: Date }>>('SELECT clock_timestamp() AS now'))[0]!
       .now;
     let policy;

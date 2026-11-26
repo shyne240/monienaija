@@ -2,14 +2,13 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import type { Environment } from '../config/environment';
-import { AuthorizationModule } from '../authorization/authorization.module';
-import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
-import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
-import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
+import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
+import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import {
   MonnifyVerificationProvider,
   monnifyOptionsFromEnvironment,
@@ -47,7 +46,6 @@ import { KycProviderSecretEncryptionService } from './kyc-provider-secret-encryp
 import { KycWorkforceReviewController } from './kyc-workforce-review.controller';
 import { KycWorkforceReviewService } from './kyc-workforce-review.service';
 import { KycWorkforceVerificationService } from './kyc-workforce-verification.service';
-import { InstitutionModule } from '../institution/institution.module';
 import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import type { KycProvider } from './kyc.types';
 
@@ -117,14 +115,26 @@ function providerRuntimeFromConfig(
   };
 }
 
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- lazy require breaks a Nest DI cycle observed in compiled CI/unit bootstrap */
 @Module({
   imports: [
-    ProtectedAuthorityModule,
-    forwardRef(() => InstitutionModule),
-    forwardRef(() => AuthorizationModule),
-    forwardRef(() => OperationsModule),
-    forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(
+      () => require('../authorization/protected-authority.module').ProtectedAuthorityModule,
+    ),
+    forwardRef(() => require('../authorization/authorization.module').AuthorizationModule),
+    forwardRef(() => require('../operations/operations.module').OperationsModule),
+    forwardRef(
+      () =>
+        require('../customer-authentication/customer-authentication.module')
+          .CustomerAuthenticationModule,
+    ),
+    forwardRef(() => require('../customer-class/customer-class.module').CustomerClassModule),
+    forwardRef(() => require('../fee-rules/fee-rules.module').FeeRulesModule),
+    forwardRef(() => require('../limit-catalog/limit-catalog.module').LimitCatalogModule),
+    forwardRef(() => require('../product-catalog/product-catalog.module').ProductCatalogModule),
+    forwardRef(() => require('../institution/institution.module').InstitutionModule),
   ],
+  /* eslint-enable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
   controllers: [
     KycTierPolicyController,
     KycTierReviewController,
@@ -258,6 +268,7 @@ function providerRuntimeFromConfig(
           reader,
         ),
     },
+    CustomerEffectiveConfigurationService,
     {
       provide: KycTierTransitionService,
       inject: [
@@ -267,6 +278,9 @@ function providerRuntimeFromConfig(
         AuditService,
         AuthorizationService,
         AuthenticationSessionService,
+        CustomerClassResolverService,
+        CustomerTierDefaultClassService,
+        CustomerEffectiveConfigurationService,
         InstitutionWorkforceScopeService,
       ],
       useFactory: (
@@ -276,6 +290,9 @@ function providerRuntimeFromConfig(
         audit: AuditService,
         auth: AuthorizationService,
         sessions: AuthenticationSessionService,
+        classResolver: CustomerClassResolverService,
+        tierDefaults: CustomerTierDefaultClassService,
+        effectiveConfig: CustomerEffectiveConfigurationService,
         institutionScope: InstitutionWorkforceScopeService,
       ) =>
         new KycTierTransitionService(
@@ -285,6 +302,9 @@ function providerRuntimeFromConfig(
           audit,
           auth,
           sessions,
+          classResolver,
+          tierDefaults,
+          effectiveConfig,
         ).setInstitutionScope(institutionScope),
     },
     {
@@ -384,6 +404,7 @@ function providerRuntimeFromConfig(
     KycCustomerVerificationService,
     KycWorkforceReviewService,
     KycWorkforceVerificationService,
+    CustomerEffectiveConfigurationService,
   ],
 })
 export class KycTierModule {}

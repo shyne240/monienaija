@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-11-26T16:28:39.855Z",
+  "database": "monienaija_t1",
+  "tier": "LEVEL_3",
+  "reachable": false,
+  "reason": "EVIDENCE_STORE_ACCEPTS_ONLY_BVN_AND_NIN",
+  "detail": "Tier 3 requires a non-BVN/NIN evidence type on every satisfying path, but kyc_consents, kyc_verification_attempts and kyc_identity_claims constrain kind to (BVN,NIN) in varchar(3).",
+  "highestReachableTier": "LEVEL_2",
+  "constraints": [
+    {
+      "table": "kyc_identity_claims",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['BVN'::character varying, 'NIN'::character varying])::text[])))"
+    },
+    {
+      "table": "kyc_verification_attempts",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['BVN'::character varying, 'NIN'::character varying])::text[])))"
+    },
+    {
+      "table": "kyc_consents",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['BVN'::character varying, 'NIN'::character varying])::text[])))"
+    }
+  ]
+}

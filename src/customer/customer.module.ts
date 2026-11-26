@@ -9,6 +9,9 @@ import { Customer } from './customer.entity';
 import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { CustomerEligibilityModule } from '../customer-eligibility/customer-eligibility.module';
 import { CustomerOnboardingModule } from '../customer-onboarding/customer-onboarding.module';
+import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CustomerAddress } from './customer-address.entity';
 import { CustomerContactMethod } from './customer-contact-method.entity';
 import { CustomerController } from './customer.controller';
@@ -27,6 +30,9 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     CustomerOnboardingModule,
     CustomerEligibilityModule,
     KycTierModule,
+    forwardRef(() => ProductCatalogModule),
+    forwardRef(() => FeeRulesModule),
+    forwardRef(() => LimitCatalogModule),
     forwardRef(() => CustomerAuthenticationModule),
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: CustomerController's PATCH :id lifecycle handler
     // calls AuthorizationService.requireFunction() (customer.suspend/.activate/.close, derived
