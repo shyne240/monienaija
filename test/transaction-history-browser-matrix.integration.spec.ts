@@ -478,13 +478,25 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
           .getByRole('combobox', { name: 'Status', exact: true })
           .selectOption(entry.status);
         await page.getByPlaceholder('Enter a transaction reference').fill(entry.reference);
-        // Applying filters refetches the list and clears the table while it loads. Wait for that
-        // response before reading rows, otherwise a row seen before the reload can disappear.
-        const listLoaded = page.waitForResponse(
-          (r) => r.url().includes('/internal/admin/transaction-history?') && r.ok(),
-        );
+        // A successful initial list request can finish after Apply filters is clicked.
+        // Wait for the response to the exact filtered request before inspecting the table.
+        const listLoaded = page.waitForResponse((response) => {
+          const requestUrl = new URL(response.url());
+          return (
+            response.request().method() === 'GET' &&
+            requestUrl.pathname === '/api/v1/internal/admin/transaction-history' &&
+            requestUrl.searchParams.get('type') === entry.type &&
+            requestUrl.searchParams.get('status') === entry.status &&
+            requestUrl.searchParams.get('reference') === entry.reference
+          );
+        });
         await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
-        await listLoaded;
+        const filteredResponse = await listLoaded;
+        expect(filteredResponse.status()).toBe(200);
+        await filteredResponse.finished();
+        await page.getByText('Loading transaction history…', { exact: true }).waitFor({
+          state: 'hidden',
+        });
         const row = page
           .getByRole('row')
           .filter({ has: page.getByText(entry.reference, { exact: true }) });
