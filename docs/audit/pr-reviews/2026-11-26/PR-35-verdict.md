@@ -66,3 +66,13 @@ role definitions, grants and dashboards for the seeded roles behaved as before. 
    (jest worker SIGKILL); this was a harness/resource artefact, not an assertion failure. CI's isolated full run
    at the exact head is green and the targeted suites above were rerun successfully.
 4. Both PRs remain unmerged.
+
+## Refreshed integration tip check (2026-11-26, later in the session)
+
+The integration ref advanced from `85b8a953…` to `39e0811d928c54537d120a5efad94cc76afb71ca`
+(Transaction History integration). `git merge-tree --write-tree 39e0811d… 87141000…` exits 0 with tree
+`a1e9a3a4235c1c61a7a667db35ebc98ab0261fb4`. The target diff remains exactly the same three files,
++78/−33, and none of the new integration commits touch `DashboardSettingsScreen.tsx`,
+`dashboard.test.tsx` or `m2-dashboard-settings.test.tsx`. The reviewed merge result is therefore
+unchanged; no affected-check rerun was triggered by this tip change. PR #35 head and state remain
+unchanged (`87141000…`, OPEN, DRAFT, UNMERGED); CI at that exact head remains all-green.

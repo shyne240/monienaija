@@ -1,0 +1,571 @@
+{
+  "generatedAt": "2026-11-26T16:10:01.901Z",
+  "gitCommit": "e96a984962e2c04b4d8af7de11bfaac76c4c0ffe",
+  "run": "130DC568",
+  "bootstrap": "isolated test bootstrap: real AppModule/Fastify/guards/route policies, readiness gate skipped",
+  "database": {
+    "host": "127.0.0.1",
+    "port": "55436",
+    "name": "pf33http2"
+  },
+  "assertions": [
+    {
+      "name": "LOGIN-FINANCE_PREPARER",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-FINANCE_CONTROLLER",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-FINANCE_AUDITOR",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-TREASURY",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-SUPER_ADMIN",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "EMPTY-BOOKS-PREVIEW-ZERO-EXPECTED",
+      "ok": true,
+      "detail": "HTTP 201, expected=0"
+    },
+    {
+      "name": "STAGE-1-FUNDING-EXPECTED-EQUALS-FUND-INS",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "STAGE-2-COMMISSION-ACCRUED-NOT-YET-IN-WALLET",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "STAGE-3-COMMISSION-COUNTED-ONCE-IN-AGENT-FLOAT",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "STAGE-4-FEE-DOES-NOT-MOVE-BANK-EXPECTATION",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "CASE-1-RESERVE-LEAVES-EXPECTED-BANK-UNCHANGED",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "CASE-2-SETTLEMENT-REDUCES-EXPECTED-EXACTLY-ONCE",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "CASE-1-SECOND-RESERVE-STILL-UNCHANGED",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "CASE-3-RELEASE-RESTORES-WALLET-NO-BANK-OUTFLOW",
+      "ok": true,
+      "detail": "breakdown as expected"
+    },
+    {
+      "name": "SETTLEMENT-ACCOUNTS-LIST-INCLUDES-PLATFORM-SETTLEMENT-ASSET",
+      "ok": true,
+      "detail": "HTTP 200, items=1"
+    },
+    {
+      "name": "COMPARISON-CREATED-CONSERVED-ZERO-DIFFERENCE",
+      "ok": true,
+      "detail": "HTTP 201, diff=0, hashMatch=true"
+    },
+    {
+      "name": "BANK-BALANCE-UPDATE-RECOMPUTES-DIFFERENCE",
+      "ok": true,
+      "detail": "HTTP 200, diff=50000, unexplained=50000"
+    },
+    {
+      "name": "ZERO-TIMING-ITEM-REJECTED",
+      "ok": true,
+      "detail": "HTTP 400"
+    },
+    {
+      "name": "TIMING-ITEM-ABSORBS-THE-DIFFERENCE",
+      "ok": true,
+      "detail": "HTTP 201, timingTotal=50000, unexplained=0"
+    },
+    {
+      "name": "CONTROLLER-CANNOT-SUBMIT-AS-MAKER",
+      "ok": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "name": "PREPARER-CANNOT-REVIEW-AS-CHECKER",
+      "ok": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "name": "MAKER-SUBMITS-FOR-REVIEW",
+      "ok": true,
+      "detail": "HTTP 201, status=SUBMITTED"
+    },
+    {
+      "name": "TIMING-ITEMS-FREEZE-AFTER-SUBMIT",
+      "ok": true,
+      "detail": "HTTP 409"
+    },
+    {
+      "name": "DOUBLE-SUBMIT-REFUSED",
+      "ok": true,
+      "detail": "HTTP 409"
+    },
+    {
+      "name": "INDEPENDENT-CONTROLLER-APPROVES",
+      "ok": true,
+      "detail": "HTTP 201, status=APPROVED, approval=APPROVED"
+    },
+    {
+      "name": "SNAPSHOTS-RECORDED-CREATED-UPDATED-SUBMITTED-APPROVED",
+      "ok": true,
+      "detail": "HTTP 200, reasons=CREATED,UPDATED,SUBMITTED,REVIEW_APPROVED"
+    },
+    {
+      "name": "SNAPSHOT-TAMPERING-REFUSED-BY-DATABASE",
+      "ok": true,
+      "detail": "refused: Comparison snapshots are immutable evidence"
+    },
+    {
+      "name": "DRIFT-COMPARISON-CREATED",
+      "ok": true,
+      "detail": "HTTP 201, id=5b92c9e7-5c46-4997-9af3-46f6fce1e807"
+    },
+    {
+      "name": "DRIFT-COMPARISON-SUBMITTED",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "APPROVAL-REFUSED-AFTER-LEDGER-EVIDENCE-DRIFT",
+      "ok": true,
+      "detail": "HTTP 409"
+    },
+    {
+      "name": "UNMAPPED-ACCOUNT-SURFACES-BLOCKER-BUT-CONSERVES",
+      "ok": true,
+      "detail": "HTTP 201, blockers=ACCOUNT_NOT_MAPPED, gap=0"
+    },
+    {
+      "name": "SIGN-OFF-BLOCKED-WHILE-MAPPING-INCOMPLETE",
+      "ok": true,
+      "detail": "HTTP 409"
+    },
+    {
+      "name": "UNAUTHENTICATED-READ-DENIED",
+      "ok": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "name": "TREASURY-WITHOUT-LEDGER-VIEW-DENIED",
+      "ok": true,
+      "detail": "comparisons HTTP 403, settlement-accounts HTTP 403"
+    },
+    {
+      "name": "CONTROLLER-CANNOT-CREATE-AS-MAKER",
+      "ok": true,
+      "detail": "HTTP 403"
+    },
+    {
+      "name": "AUDITOR-CAN-READ-COMPARISONS",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "SUPER-ADMIN-CAN-READ-SETTLEMENT-ACCOUNTS",
+      "ok": true,
+      "detail": "HTTP 200"
+    }
+  ],
+  "transcript": [
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-preparer@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"4ac8293e-674a-4d09-88f3-99e045d87ef1\",\"expiresAt\":\"2026-11-26T16:25:00.827Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"sessionId\":\"4ac8293e-674a-4d09-88f3-99e045d87ef1\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_PREPARER\"},\"scopes\":{\"0\":\"ba"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-controller@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"10c8f9b7-7c5b-405c-bf77-6ee1d71468da\",\"expiresAt\":\"2026-11-26T16:25:00.862Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04\",\"sessionId\":\"10c8f9b7-7c5b-405c-bf77-6ee1d71468da\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_CONTROLLER\"},\"scopes\":{\"0\":\""
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-auditor@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"5144ea95-7cf5-4e9a-8261-f6fcfffb485d\",\"expiresAt\":\"2026-11-26T16:25:00.890Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:67bff13ab7604d1e1c1189be5ab7eb06\",\"sessionId\":\"5144ea95-7cf5-4e9a-8261-f6fcfffb485d\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_AUDITOR\"},\"scopes\":{\"0\":\"age"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "treasury@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"c88b28d5-9b50-417f-a79d-6fbd5c85ea6f\",\"expiresAt\":\"2026-11-26T16:25:00.916Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://idp.example.com:local-admin-credential:45e965e8f17dfaae1d8866c38ecdcd9c\",\"sessionId\":\"c88b28d5-9b50-417f-a79d-6fbd5c85ea6f\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"TREASURY\"},\"scopes\":{\"0\":\"reconcilia"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "super-admin@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"e7d34408-fb04-4952-bd0a-f560e47f5956\",\"expiresAt\":\"2026-11-26T16:25:00.939Z\",\"principal\":{\"type\":\"PRIVILEGED\",\"principalId\":\"https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"sessionId\":\"e7d34408-fb04-4952-bd0a-f560e47f5956\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"SUPER_ADMIN\"},\"scopes\":{\"0\":\"agent"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"0\",\"debitMi"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1500000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1500000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1500000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1500000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1500000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1200000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1200000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1200000\",\"d"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/settlement-accounts",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"currency\":\"NGN\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionCode\":null,\"selectable\":true,\"unavailableReason\":null}}}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z",
+        "bankCutoff": "2026-11-26T16:09:58.067Z",
+        "statementReference": "STMT-PF-ACC-130DC568",
+        "bankBalanceMinor": "1200000"
+      },
+      "responsePreview": "{\"id\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:58."
+    },
+    {
+      "method": "PATCH",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7",
+      "status": 200,
+      "body": {
+        "bankBalanceMinor": "1250000"
+      },
+      "responsePreview": "{\"id\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:58."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/timing-items",
+      "status": 400,
+      "body": {
+        "title": "Zero line explains nothing",
+        "reference": "STMT-LINE-0",
+        "explanation": "Attempting a zero timing item",
+        "amountMinor": "0"
+      },
+      "responsePreview": "{\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"amountMinor must not be zero\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-26T16:10:01.337Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/timing-items\",\"requestId\":\"req-i\",\"correlationId\":\"req-i\",\"traceId\":\"e3cc4081-dd6c-49e0-b0e9-3df615fcf3ab\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/timing-items",
+      "status": 201,
+      "body": {
+        "title": "Deposit in transit per statement line 12",
+        "reference": "STMT-PF-ACC-130DC568:line12",
+        "explanation": "Customer deposit reached the bank after the ledger cutoff; bank shows it, ledger expectation does not yet.",
+        "amountMinor": "50000"
+      },
+      "responsePreview": "{\"id\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:58."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/submit",
+      "status": 403,
+      "body": {
+        "reason": "Checker must not be the maker"
+      },
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Recording or submitting a platform funds comparison requires the FINANCE_PREPARER role\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-26T16:10:01.380Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/submit\",\"requestId\":\"req-k\",\"correlationId\":\"req-k\",\"traceId\":\"9f79bb17-64d1-4b0f-82dc-152786"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/review",
+      "status": 403,
+      "body": {
+        "decision": "APPROVE",
+        "reason": "Maker must not approve"
+      },
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Reviewing a platform funds comparison requires the FINANCE_CONTROLLER role\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-26T16:10:01.394Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/review\",\"requestId\":\"req-l\",\"correlationId\":\"req-l\",\"traceId\":\"afdd911e-d0a1-4c6a-a2d7-d044dfcbfc19\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/submit",
+      "status": 201,
+      "body": {
+        "reason": "Books conserved; difference fully explained by one timing item"
+      },
+      "responsePreview": "{\"id\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"SUBMITTED\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/timing-items",
+      "status": 409,
+      "body": {
+        "title": "Late timing item",
+        "reference": "STMT-LATE",
+        "explanation": "Too late; items freeze on submit",
+        "amountMinor": "1000"
+      },
+      "responsePreview": "{\"statusCode\":409,\"code\":\"CONFLICT\",\"message\":\"Timing items can only change while the comparison is a DRAFT\",\"error\":\"Conflict\",\"timestamp\":\"2026-11-26T16:10:01.475Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/timing-items\",\"requestId\":\"req-n\",\"correlationId\":\"req-n\",\"traceId\":\"f4401ce7-1168-4b07-9c22-dc01898c85a6\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/submit",
+      "status": 409,
+      "body": {
+        "reason": "Second submit must be refused"
+      },
+      "responsePreview": "{\"statusCode\":409,\"code\":\"CONFLICT\",\"message\":\"Only a DRAFT comparison can be submitted for review\",\"error\":\"Conflict\",\"timestamp\":\"2026-11-26T16:10:01.493Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/submit\",\"requestId\":\"req-o\",\"correlationId\":\"req-o\",\"traceId\":\"ef9350de-4332-415a-8263-26b27e06e5ed\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/review",
+      "status": 201,
+      "body": {
+        "decision": "APPROVE",
+        "reason": "Reviewed evidence, timing item verified against statement line 12"
+      },
+      "responsePreview": "{\"id\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"APPROVED\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons/eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7/snapshots",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"04877beb-2317-4637-9f76-2aeec9caf523\",\"comparisonId\":\"eeb3b4ea-8d5c-4cef-9c2f-b48ae0b406a7\",\"version\":1,\"reason\":\"CREATED\",\"snapshot\":{\"lines\":{\"0\":{\"key\":\"CUSTOMER_WALLETS\",\"kind\":\"CUSTOMER_FUNDS\",\"note\":\"Ledger liability of customer-owned wallet accounts.\",\"group\":\"CUSTOMER_FUNDS\",\"label\":\"Customer wallets\",\"accounts\":{\"0\":{\"code\":\"PF-130DC568-CWALLET\",\"name\":\"Acceptance cus"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z",
+        "bankCutoff": "2026-11-26T16:09:58.067Z",
+        "statementReference": "STMT-PF-ACC-130DC568-DRIFT",
+        "bankBalanceMinor": "1275000"
+      },
+      "responsePreview": "{\"id\":\"5b92c9e7-5c46-4997-9af3-46f6fce1e807\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:58."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/5b92c9e7-5c46-4997-9af3-46f6fce1e807/submit",
+      "status": 201,
+      "body": {
+        "reason": "Submit before ledger evidence moves"
+      },
+      "responsePreview": "{\"id\":\"5b92c9e7-5c46-4997-9af3-46f6fce1e807\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"SUBMITTED\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/5b92c9e7-5c46-4997-9af3-46f6fce1e807/review",
+      "status": 409,
+      "body": {
+        "decision": "APPROVE",
+        "reason": "Must be refused: evidence moved"
+      },
+      "responsePreview": "{\"statusCode\":409,\"code\":\"CONFLICT\",\"message\":\"The ledger evidence changed since this comparison was submitted (posted journals at or before the cutoff moved). The maker must revise and resubmit it before it can be signed off.\",\"error\":\"Conflict\",\"timestamp\":\"2026-11-26T16:10:01.723Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/5b92c9e7-5c46-4997-9af3-46f6fce1e807/review"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/preview",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z"
+      },
+      "responsePreview": "{\"scope\":\"PLATFORM\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"settlementAccount\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"normalBalance\":\"DEBIT\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionalPurpose\":null,\"expectedMinor\":\"1300000\",\"d"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 201,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z",
+        "bankCutoff": "2026-11-26T16:09:58.067Z",
+        "statementReference": "STMT-PF-ACC-130DC568-BLOCKED",
+        "bankBalanceMinor": "1300000"
+      },
+      "responsePreview": "{\"id\":\"4a5c4244-e16d-4c67-b43c-8159fa02aa7f\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-11-26T16:09:58."
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons/4a5c4244-e16d-4c67-b43c-8159fa02aa7f/submit",
+      "status": 409,
+      "body": {
+        "reason": "Sign-off must be blocked"
+      },
+      "responsePreview": "{\"statusCode\":409,\"code\":\"CONFLICT\",\"message\":\"Sign-off is blocked: the ledger mapping is incomplete or ambiguous. Resolve the listed blockers, then submit again.\",\"error\":\"CONFLICT\",\"timestamp\":\"2026-11-26T16:10:01.806Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons/4a5c4244-e16d-4c67-b43c-8159fa02aa7f/submit\",\"requestId\":\"req-w\",\"correlationId\":\"req-w\",\"traceId\":\"d97cb28"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 401,
+      "body": null,
+      "responsePreview": "{\"statusCode\":401,\"code\":\"REQUEST_ERROR\",\"message\":\"Authentication required\",\"error\":\"Unauthorized\",\"timestamp\":\"2026-11-26T16:10:01.810Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons\",\"requestId\":\"req-x\",\"correlationId\":\"req-x\",\"traceId\":\"2106e9d6-cd30-4f6b-95fc-8e027e28b893\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 403,
+      "body": null,
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied: FUNCTION_MISSING\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-26T16:10:01.822Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons\",\"requestId\":\"req-y\",\"correlationId\":\"req-y\",\"traceId\":\"bda20969-3cb5-47e6-aaec-7d9967d2e8a4\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/settlement-accounts",
+      "status": 403,
+      "body": null,
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied: FUNCTION_MISSING\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-26T16:10:01.833Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/settlement-accounts\",\"requestId\":\"req-z\",\"correlationId\":\"req-z\",\"traceId\":\"8124b847-b01c-4a4e-b1e8-5c4e9929d884\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 403,
+      "body": {
+        "settlementAccountId": "00000000-0000-4000-8000-000000000201",
+        "ledgerCutoff": "2026-11-26T16:10:28.067Z",
+        "bankCutoff": "2026-11-26T16:09:58.067Z",
+        "statementReference": "STMT-PF-ACC-130DC568-CHECKER",
+        "bankBalanceMinor": "1200000"
+      },
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Recording or submitting a platform funds comparison requires the FINANCE_PREPARER role\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-26T16:10:01.845Z\",\"path\":\"/api/v1/internal/finance-operations/platform-funds/comparisons\",\"requestId\":\"req-10\",\"correlationId\":\"req-10\",\"traceId\":\"b60d00b9-290d-4f97-8c5d-aa76405146f5\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/comparisons",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"4a5c4244-e16d-4c67-b43c-8159fa02aa7f\",\"scope\":\"PLATFORM\",\"institutionId\":null,\"settlementAccountId\":\"00000000-0000-4000-8000-000000000201\",\"settlementAccountCode\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"settlementAccountName\":\"Payment settlement asset NGN\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"DRAFT\",\"ledgerCutoff\":\"2026-11-26T16:10:28.067Z\",\"bankCutoff\":\"2026-1"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/platform-funds/settlement-accounts",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"00000000-0000-4000-8000-000000000201\",\"code\":\"PAYMENT-SETTLEMENT_ASSET-NGN\",\"name\":\"Payment settlement asset NGN\",\"accountType\":\"ASSET\",\"currency\":\"NGN\",\"scope\":\"UNATTRIBUTED\",\"institutionId\":null,\"institutionCode\":null,\"selectable\":true,\"unavailableReason\":null}}}"
+    }
+  ]
+}

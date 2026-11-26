@@ -1,35 +1,44 @@
-# PR #33 — "Finance: Platform Funds vs. Bank Balance" — independent readiness verdict
+# PR #33 — “Finance: Platform Funds vs. Bank Balance” — refreshed readiness verdict
 
-**Verdict: FUNCTIONALLY READY, HOLD for branch/evidence decisions.** Every behavioural, authorization,
-accounting and browser check passed at the exact head against the real backend on disposable PostgreSQL.
-Merge readiness is blocked only by governance/hygiene items: the stacked base should be retargeted, the
-attached browser evidence predates the head, and the PR is still draft. **No branch or PR base was changed;
-the PR remains unmerged.**
+**Verdict: FUNCTIONALLY READY; HOLD only for owner merge authorisation.** The Platform Funds change now
+merges cleanly onto the latest integration tip after resolving migration-pin conflicts in a candidate
+commit. The retargeted tree preserves integrated Finance #25 and Transaction History #23, and its
+targeted Finance, migration, HTTP and real-browser checks pass. The PR remains OPEN, DRAFT and UNMERGED.
 
 ## Exact refs
 
-- Review date: 2026-11-26.
-- Integration target tip: `arena/5-main-web-integration` @ `85b8a953eb3563d800f5a50118c4dddbdaf04965`.
-- PR head: `arena/751ace82-monienaija` @ `f729f185d2cd4c4f4c6626acd8c165b7b8885320`.
-- Declared base: `arena/76e596b2-monienaija` @ `4c007f007bbaa20596a16efdf154361aed7b1589` (PR #25 head).
-  PR #25 is already merged into integration as `7ecbb71522a2092ea2e0f0cb9a7f4a36200414e5`.
-- Merge base PR #33 ↔ integration: `4c007f0...` (so the PR is stacked on already-integrated Finance code).
-- Clean target merge tree (test only): `04e60f2b98b4b8b354aeb3f0be1ca00422b19939`.
-- Clean target diff: **42 files, +9064/−46**, byte-identical to `git diff 4c007f0..f729f18`.
-  `git merge-tree --write-tree 85b8a95 f729f18` exits 0 with no conflicts; later integration merges
-  (#26/#29/#30/#31) are preserved. The misleading 172-file/+9367/−24318 `git diff 85b8a95..f729f18`
-  is purely the stale base showing those later commits in reverse.
-- PR: https://github.com/shyne240/monienaija/pull/33.
+| Item | SHA / ref |
+| --- | --- |
+| Integration target (reviewed tip) | `39e0811d928c54537d120a5efad94cc76afb71ca` |
+| Earlier reviewed integration tip | `85b8a953eb3563d800f5a50118c4dddbdaf04965` |
+| Original PR head | `f729f185d2cd4c4f4c6626acd8c165b7b8885320` |
+| Original declared base | `arena/76e596b2-monienaija` @ `4c007f007bbaa20596a16efdf154361aed7b1589` (Finance #25 head) |
+| Finance #25 merge into integration | `7ecbb71522a2092ea2e0f0cb9a7f4a36200414e5` |
+| Conflicted test tree on new tip | `2054e920f35da4a899fae413d5e3067cb214d75d` (`merge-tree` exit 1) |
+| Retarget candidate head (current PR head) | `e96a984962e2c04b4d8af7de11bfaac76c4c0ffe` |
+| PR base after retarget | `arena/5-main-web-integration` @ `39e0811d928c54537d120a5efad94cc76afb71ca` |
+| Candidate merge parents | `39e0811d…` (integration) + `f729f185…` (original PR head) |
 
-## Verification against Finance code already integrated from #25
+PR: https://github.com/shyne240/monienaija/pull/33
 
-- Overlap with later integration commits is limited to `menu-visibility-11-roles.test.tsx`, `Layout.tsx`,
-  `navigation-access.ts` and `route-policy-registry.ts`; the clean merge preserves their integrated form.
-- Targeted backend suite included the PR #25 finance-operations unit/route-policy specs together with the new
-  platform-funds specs: **6 suites / 76 tests passed** at head.
-- The real-backend HTTP and browser runs used a fully migrated database containing the integrated
-  `finance-operations` module and its route policies; no provider reconciliation or banking exception code was
-  altered.
+## Retarget and scope proof
+
+- A direct retarget of `f729f185…` onto `39e0811d…` was **not clean**: conflicts in
+  `production-readiness.service.ts` and nine migration/integration expectation specs. Integration #23
+  advanced the schema head to `1785753600807` (`CaptureCustomerFundingScope`) while #33 pinned `0813`
+  (`CreatePlatformFundsBankComparisons`). Both sides were preserved: the candidate expects
+  `0805 → 0806 → 0807 → 0813`, with a 172-migration inventory (169 + 0806 + 0807 + 0813).
+- Candidate diff against `39e0811d…`: **42 files, +9068/−51** — the same paths as the original PR’s
+  42-file, +9064/−46 diff against `4c007f0…`. The extra five changed lines are the integrated
+  `0806`/`0807` identities retained in head-pinning assertions; nothing else was added.
+- No `node_modules` gitlinks, generated evidence rewrites, transaction-history source changes, or
+  unrelated source files are in the candidate diff. Integrated #25 finance-operations code and #23
+  transaction-history code are intact.
+- `npm run lint` passes (one pre-existing unused eslint-disable warning in `b9-custom-role.integration.spec.ts`);
+  `npm run format:check` passes; backend `nest build` and Admin Web `tsc`/Vite build pass.
+- Retarget mechanics: PR base changed via `gh api PATCH /pulls/33` because `gh pr edit` fails with a
+  GitHub Projects-classic deprecation GraphQL error. Head branch advanced by fast-forward push from
+  `f729f185…` to `e96a9849…`. Both PRs remain unmerged.
 
 ## Required CI (from `.github/workflows/ci.yml`; branch-protection API returned 403 to this token)
 
@@ -37,59 +46,49 @@ Classify changes; Backend (lint, format, build, unit tests); Backend (real Postg
 Backend (container image builds); Backend (isolated PostgreSQL suites); Admin Web (types, tests, build);
 Agent Mobile (types, tests); Customer Mobile (types, tests).
 
-- CI at exact head: https://github.com/shyne240/monienaija/actions/runs/45736462417 — all eight jobs SUCCESS
-  (second push-triggered run: https://github.com/shyne240/monienaija/actions/runs/45736456064).
-  `gh pr view 33` also reports all checks SUCCESS.
+- CI at the original head `f729f185…`: https://github.com/shyne240/monienaija/actions/runs/45736462417 — all eight jobs SUCCESS.
+- CI at the updated candidate `e96a9849…`: https://github.com/shyne240/monienaija/actions/runs/45856239360
+  (push run https://github.com/shyne240/monienaija/actions/runs/45856227480).
+  Seven of eight jobs had completed SUCCESS at last check; **Backend (real PostgreSQL integration) was still
+  running**. Final status is recorded in `00-checkpoint.md` once finished.
+- GitHub’s configured required-check list could not be read with this token (HTTP 403); job names are
+  inferred from the workflow file.
 
-## Checks independently run at the exact head
+## Checks independently run on the combined candidate tree
 
-- `npm run build` (backend) and production Vite build: pass.
-- Admin Web full Jest suite: **99 suites / 1000 tests passed**.
-- Targeted backend Jest: **6 suites / 76 tests passed** (mapping, payout cases, platform-funds route policy,
-  governed-action registry, finance-operations service and route policy).
-- Disposable-PG HTTP acceptance `scripts/platform-funds-http-acceptance.cjs`: **37/37 passed** at head
-  (evidence: `pr33-http/platform-funds-http-acceptance.json`). It proves:
-  - reserve leaves ledger-expected bank unchanged; settle reduces it once by exactly the reserved amount;
-    release restores the wallet with no bank outflow (second reserve also unchanged);
-  - commission accrued → credited to agent wallet is counted once, in `UNPAID_AGENT_COMMISSIONS` then
-    `AGENT_FLOAT`, never both; fee transfer to earnings leaves expected bank unchanged;
-  - staff-entered bank balance recomputes the difference (50,000), a referenced timing item absorbs it to
-    unexplained 0, zero-value timing item refused (400), items freeze at submit (409), double submit refused (409);
-  - maker `FINANCE_PREPARER` create/submit → independent `FINANCE_CONTROLLER` review; controller-as-maker and
-    preparer-as-checker refused (403); self-approval prohibited; unauthenticated 401; TREASURY without
-    `ledger.view` 403; auditor/SUPER_ADMIN reads 200; snapshots CREATED→UPDATED→SUBMITTED→REVIEW_APPROVED;
-  - unmapped account surfaces `ACCOUNT_NOT_MAPPED`, conserves the ledger and blocks sign-off (409);
-    ledger-evidence drift after submission refuses approval (409); snapshot tampering rejected by DB trigger.
-- Institution-scope HTTP acceptance `scripts/platform-funds-institution-scope-acceptance.cjs`: **22/22 passed**
-  (evidence: `pr33-http/platform-funds-institution-scope-acceptance.json`), including 404 anti-probe after grant
-  revocation and own-institution create/read/patch/timing/snapshot flows.
-- Fixture browser harness `scripts/platform-funds-browser-acceptance.cjs`: **17/17 passed** at the current head
-  (`pr33-browser-fixture/`). It drives the production bundle in Chromium with the API stubbed at the browser
-  network layer: **no assertion claims anything about the server**. The PR's committed browser JSON was generated
-  at older commit `3c26f7cfe7681c30c64c30541376dc89de45bbc2`, not at `f729f18`.
-- **Real-backend browser run**: **11/11 passed** (`pr33-browser-real/report.json`, four screenshots) using the
-  production bundle, real Nest AppModule/Fastify, same-origin `/api/v1` proxy, and a fresh disposable PostgreSQL
-  database with the eleven seeded accounts. FINANCE_PREPARER signed in through the UI, opened Finance →
-  Platform funds vs. bank, selected the real settlement account, entered 50,000 minor units as the verified
-  bank balance (expected 0), recorded a referenced +50,000 timing item with explanation, submitted with a note,
-  saw the self-approval prohibition, and an independent FINANCE_CONTROLLER signed off in a second browser
-  context (HTTP 201, “Signed off” visible). Eleven accounts still authenticate; zero page errors.
-  An earlier real-backend attempt against the HTTP-acceptance database correctly refused sign-off because that
-  fixture deliberately leaves an unmapped account; the clean run used a fresh database to isolate the happy path.
+- Admin Web full Jest: **107 suites / 1088 tests passed** (the new tip adds tests versus the earlier 1000).
+- Targeted backend Jest: **6 suites / 76 tests passed**, including Finance #25 `finance-operations.service`
+  and `finance-operations.route-policy` specs alongside the Platform Funds suite.
+- Migration inventory: **10/10**; disposable PG reported **172 migrations** applied, head `0813`.
+- Real-PostgreSQL integration specs touched by conflict resolution: **9 suites / 144 tests passed**
+  (`a8`, `a19`, `a20`, arena5 consolidation, `migration-0804`, `migration-chain`, `stage10`, `stage8`,
+  `v1-customer-onboarding-03`). One earlier candidate attempt failed `migration-chain` because the
+  integrated `0806/0807` rows had been dropped; it was fixed by preserving both, then the full nine-suite
+  set was rerun green.
+- Disposable-PG HTTP acceptance: **37/37** (`pr33-combined-candidate/platform-funds-http-acceptance.json`).
+- Institution-scope HTTP acceptance: **22/22**
+  (`pr33-combined-candidate/platform-funds-institution-scope-acceptance.json`).
+- **Primary real-browser evidence**: production Admin Web bundle + real Nest AppModule/Fastify + same-origin
+  `/api/v1` proxy + fresh migrated disposable PostgreSQL, 11 accounts unchanged, **11/11 passed**
+  (`pr33-combined-candidate/browser-report.json` and four screenshots). FINANCE_PREPARER recorded a
+  50,000-minor staff-entered balance against a 0 ledger expectation, added a referenced timing item,
+  submitted (self-approval prohibited), and an independent FINANCE_CONTROLLER signed off (HTTP 201,
+  “Signed off” visible). No page errors.
+- Earlier real-browser evidence at the original head: `pr33-browser-real/report.json`, 11/11.
+- **Historical, non-primary evidence**: `pr33-browser-fixture/` 17/17 drives the production bundle with
+  the API stubbed at the browser network layer. It asserts UI behaviour only and proves nothing about
+  the server. The fixture JSON committed in the PR itself predates the reviewed head (`3c26f7c…`).
 
 ## Scope and controls observed
 
-No bank API calls, payouts, ledger adjustments or provider statement changes. Bank balance is staff-entered with
-a statement reference. Institution scope is re-resolved per request. Maker/checker, MFA, self-approval,
-mapping blocker and immutable evidence controls all behaved as claimed. All eleven workforce accounts/passwords
-and configurable permissions were preserved; no mobile code was touched.
+No bank API calls, payouts, ledger adjustments, provider statement changes, mobile edits, or password
+changes. Bank balance is staff-entered with a statement reference. Institution scope is re-resolved per
+request; maker/checker, MFA, self-approval prohibition, mapping blocker and immutable evidence controls
+behaved as claimed. All eleven workforce accounts/passwords and configurable permissions were preserved.
 
 ## Outstanding decisions
 
-1. **Retarget base** from `arena/76e596b2-monienaija` to `arena/5-main-web-integration` (clean, recommended) so
-   GitHub and CI review the 42-file delta rather than a stale 172-file delta. Not done in this review.
-2. Replace the stale attached browser evidence (`3c26f7c`) with head-specific fixture **and** real-backend runs,
-   or explicitly label the committed JSON as historical. New evidence is in this directory.
-3. Decide whether to take the PR out of draft once 1–2 are complete.
-4. GitHub branch-protection required-check list could not be read (403); workflow jobs are all green.
-5. Both PRs remain unmerged.
+1. Owner must explicitly authorise merging the now-draft PR #33; this review leaves it UNMERGED.
+2. Owner should replace or relabel the PR’s committed historical fixture browser JSON; the refreshed
+   real-backend run is the authoritative evidence. PR body has been updated accordingly.
+3. GitHub branch-protection required-check list remains unverifiable (403); workflow job results are reported.
