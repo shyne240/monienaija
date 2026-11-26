@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -45,6 +46,9 @@ export class AgentApplicationService {
     private readonly classRepository: Repository<AgentClass>,
     @InjectRepository(Agent)
     private readonly agentRepository: Repository<Agent>,
+    // Undecorated: `@InjectRepository` only carries meaning when Nest constructs this class.
+    // Trusted in-process scripts (scripts/local-dev-*.js) build it by hand, where a parameter
+    // decorator on a missing metadata key would throw at class definition time.
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
   ) {}
@@ -131,12 +135,15 @@ export class AgentApplicationService {
     });
   }
 
-  async getById(id: string): Promise<AgentApplication> {
+  async getById(
+    id: string,
+    actor?: string,
+  ): Promise<AgentApplication & { selfSubmitted?: boolean }> {
     this.assertUuid(id, 'id');
     const app = await this.applicationRepository.findOne({ where: { id } });
     if (!app || app.deletedAt !== null)
       throw new NotFoundException(`AgentApplication ${id} not found`);
-    return app;
+    return this.annotateSelfSubmitted([app], actor)[0]!;
   }
 
   async assertApplicantAccess(id: string, accessToken: string | undefined): Promise<void> {
@@ -161,13 +168,27 @@ export class AgentApplicationService {
     }
   }
 
+  /**
+   * `selfSubmitted` lets the console explain why a row has no Approve button WITHOUT shipping other
+   * operators' principal ids to the browser. The comparison happens here, against the requesting
+   * principal's own actor, and only the boolean crosses the wire.
+   */
+  private annotateSelfSubmitted<T extends AgentApplication>(rows: T[], actor?: string): T[] {
+    if (!actor) return rows.map((row) => Object.assign(row, { selfSubmitted: false }));
+    const normalized = this.normalizeActor(actor);
+    return rows.map((row) => Object.assign(row, { selfSubmitted: row.submittedBy === normalized }));
+  }
+
   async list(
     includeAgentStatus = false,
-  ): Promise<Array<AgentApplication & { linkedAgentStatus?: AgentStatus | null }>> {
+    actor?: string,
+  ): Promise<
+    Array<AgentApplication & { linkedAgentStatus?: AgentStatus | null; selfSubmitted?: boolean }>
+  > {
     const applications = this.applicationRepository
       .createQueryBuilder('application')
       .orderBy('application.createdAt', 'DESC');
-    if (!includeAgentStatus) return applications.getMany();
+    if (!includeAgentStatus) return this.annotateSelfSubmitted(await applications.getMany(), actor);
     const { entities, raw } = await applications
       .leftJoin(Agent, 'agent', 'agent.id = application.agentId')
       .addSelect('application.id', 'application_id')
@@ -176,10 +197,13 @@ export class AgentApplicationService {
     const statusByApplication = new Map(
       raw.map((row) => [row.application_id, row.linked_agent_status]),
     );
-    return entities.map((application) => ({
-      ...application,
-      linkedAgentStatus: statusByApplication.get(application.id) ?? null,
-    }));
+    return this.annotateSelfSubmitted(
+      entities.map((application) => ({
+        ...application,
+        linkedAgentStatus: statusByApplication.get(application.id) ?? null,
+      })),
+      actor,
+    );
   }
 
   async updateDraft(id: string, command: UpdateDraftCommand): Promise<AgentApplication> {
@@ -244,6 +268,7 @@ export class AgentApplicationService {
       const previous = this.values(app);
       app.status = AgentApplicationStatus.SUBMITTED;
       app.submittedAt = new Date();
+      app.submittedBy = normalizedActor;
       app.updatedBy = normalizedActor;
       // Immediately move to UNDER_REVIEW to satisfy "Submitted application enters the correct review state"
       // This mirrors Customer onboarding where SUBMITTED → AWAITING_REVIEW
@@ -300,13 +325,57 @@ export class AgentApplicationService {
     });
   }
 
+  /**
+   * The one thing an approver must not be is the person whose submission they are deciding.
+   *
+   * Enforced here, in the service, inside the approval transaction — not at the controller. A
+   * controller-only check is bypassed by every other caller (the lifecycle service, the local
+   * scripts, a future consumer of this service), and the whole point of the rule is that it cannot
+   * be routed around. Function and institution-scope checks stay exactly where they are in
+   * `AgentApplicationAdminController`; this compares identities and nothing else.
+   *
+   * Comparisons are on the persisted principal id, so the same operator is refused regardless of
+   * which session (browser tab, refreshed token, second device) the attempt comes from.
+   */
+  private assertNotSelfApproval(app: AgentApplication, normalizedActor: string): void {
+    const submitter = app.submittedBy;
+    if (submitter === null) {
+      /*
+       * Legacy / genuinely-public rows have no recorded submitter (see the entity comment and
+       * migration 1785753600809): `created_by` holds `agent-application:<id>` because workforce
+       * drafts are created through the public applicant endpoint. Independence cannot be verified,
+       * and guessing one from `created_by` would manufacture the very evidence being checked, so
+       * the approval is refused. The remedy is the documented re-attribution path, not a bypass.
+       */
+      /*
+       * There is deliberately no "approve anyway" branch and no in-place attribution repair: an
+       * unverified approval is indistinguishable from a self-approval, and writing a submitter onto
+       * the row now would manufacture the evidence this guard exists to check.
+       *
+       * The message names a remedy that actually exists. There is no withdraw operation in this
+       * product — `reject` is the only terminal transition available to staff, and a re-created
+       * application carries attribution honestly because it is submitted by an authenticated
+       * principal. Saying "withdraw and resubmit" would send staff looking for a button that does
+       * not exist.
+       */
+      throw new ConflictException(
+        'This application predates submitter attribution, so approval independence cannot be verified ' +
+          'and it cannot be approved. A different operator must reject it with a reason, and a new ' +
+          'application must be submitted by an authenticated principal so its submitter is recorded.',
+      );
+    }
+    if (submitter === normalizedActor) {
+      throw new ForbiddenException(
+        'Separation of duties: the operator who submitted this application cannot approve it. ' +
+          'A different operator holding agent.review_application must decide it.',
+      );
+    }
+  }
+
   async approve(id: string, actor: string): Promise<AgentApplication> {
     this.assertUuid(id, 'id');
     const normalizedActor = this.normalizeActor(actor);
-    // Approval is privileged; AGENT cannot approve itself — enforced at controller
-    // Fail-closed: if no maker-checker rule exists for AGENT_APPLICATION_APPROVE, we do not invent one.
-    // This method implements the domain foundation; the privileged approval boundary is checked at controller.
-    // See docs/agent-approval-blocker.md for missing action key documentation.
+    // Approval is privileged and function-gated at the controller; independence is enforced below.
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
@@ -323,6 +392,8 @@ export class AgentApplicationService {
           `Only SUBMITTED or UNDER_REVIEW applications can be approved (current: ${app.status})`,
         );
       }
+      // Before any state is touched: the approver must not be the submitter.
+      this.assertNotSelfApproval(app, normalizedActor);
       // Ensure class is still active at approval time
       const cls = await manager
         .getRepository(AgentClass)
@@ -443,6 +514,8 @@ export class AgentApplicationService {
       payload: app.payload,
       agentId: app.agentId,
       submittedAt: app.submittedAt,
+      // Audited so the separation-of-duties decision can be reconstructed from the trail alone.
+      submittedBy: app.submittedBy,
       reviewedAt: app.reviewedAt,
       approvedAt: app.approvedAt,
       rejectedAt: app.rejectedAt,

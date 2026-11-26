@@ -53,11 +53,35 @@ export class AgentServiceCapabilityService {
     return this.internalEvaluate(agentId, rawService, principal);
   }
 
+  /**
+   * V1-AGENT-CLASS-LIFECYCLE-01 — silent, optionally what-if evaluation for projections.
+   *
+   * Readiness and impact preview must answer "is/would this Agent be permitted to perform this
+   * service (under class X)?" without a second, drifting copy of the deny ordering. The only
+   * differences from `evaluate()` are (a) the class row consulted, when one is supplied, and
+   * (b) nothing is audited — a projection is not an authorization attempt, and recording seven
+   * `DENIED` rows every time an operator opens a drawer would fabricate an authorization history
+   * that never happened. Lifecycle, existence, fail-closed and service-normalization rules are the
+   * very same code path, so a preview can never disagree with enforcement.
+   */
+  async evaluatePreview(
+    agentId: string,
+    rawService: string,
+    projectedClass?: AgentClass | null,
+  ): Promise<AgentServiceCapabilityEvaluation> {
+    return this.internalEvaluate(agentId, rawService, undefined, {
+      projectedClass: projectedClass ?? undefined,
+      auditDenials: false,
+    });
+  }
+
   private async internalEvaluate(
     agentId: string,
     rawService: string,
     principal: { type: string; agentId?: string; customerId?: string } | undefined,
+    options: { projectedClass?: AgentClass; auditDenials?: boolean } = {},
   ): Promise<AgentServiceCapabilityEvaluation> {
+    const auditDenials = options.auditDenials !== false;
     // 1. Validate agentId
     if (!this.isUuid(agentId)) {
       return this.denied(agentId, rawService, null, 'INVALID_AGENT_ID');
@@ -76,23 +100,23 @@ export class AgentServiceCapabilityService {
       const type = principal.type?.toUpperCase?.() ?? '';
       if (type === 'CUSTOMER') {
         const evalRes = this.denied(agentId, rawService, canonical, 'PRINCIPAL_NOT_AGENT');
-        await this.auditDenied(evalRes, principal.type);
+        await this.denialAudit(evalRes, principal.type, auditDenials);
         return evalRes;
       }
       if (type === 'AGENT') {
         if (!principal.agentId || principal.agentId.toLowerCase() !== agentId.toLowerCase()) {
           const evalRes = this.denied(agentId, rawService, canonical, 'PRINCIPAL_MISMATCH');
-          await this.auditDenied(evalRes, principal.type);
+          await this.denialAudit(evalRes, principal.type, auditDenials);
           return evalRes;
         }
         // principal is correct AGENT — continue to eligibility checks
       } else if (['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)) {
         const evalRes = this.denied(agentId, rawService, canonical, 'WORKFORCE_NOT_PERMITTED');
-        await this.auditDenied(evalRes, principal.type);
+        await this.denialAudit(evalRes, principal.type, auditDenials);
         return evalRes;
       } else if (type) {
         const evalRes = this.denied(agentId, rawService, canonical, 'PRINCIPAL_NOT_AGENT');
-        await this.auditDenied(evalRes, principal.type);
+        await this.denialAudit(evalRes, principal.type, auditDenials);
         return evalRes;
       }
     }
@@ -101,7 +125,7 @@ export class AgentServiceCapabilityService {
     const agent = await this.agentRepository.findOne({ where: { id: agentId } });
     if (!agent) {
       const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_NOT_FOUND');
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (agent.deletedAt !== null) {
@@ -113,7 +137,7 @@ export class AgentServiceCapabilityService {
         agent.status,
         agent.agentClassId ?? null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
 
@@ -128,7 +152,7 @@ export class AgentServiceCapabilityService {
         status,
         agent.agentClassId ?? null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (status === AgentStatus.SUSPENDED) {
@@ -141,7 +165,7 @@ export class AgentServiceCapabilityService {
         status,
         agent.agentClassId ?? null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (status === AgentStatus.TERMINATED) {
@@ -153,7 +177,7 @@ export class AgentServiceCapabilityService {
         status,
         agent.agentClassId ?? null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (status !== AgentStatus.ACTIVE) {
@@ -165,7 +189,7 @@ export class AgentServiceCapabilityService {
         status,
         agent.agentClassId ?? null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
 
@@ -179,12 +203,16 @@ export class AgentServiceCapabilityService {
         status,
         null,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
-    const agentClass = await this.agentClassRepository.findOne({
-      where: { id: agent.agentClassId },
-    });
+    // A projected class replaces the stored lookup only AFTER the Agent's own existence/status
+    // checks, so a projection can never mask a non-ACTIVE or deleted Agent.
+    const agentClass =
+      options.projectedClass ??
+      (await this.agentClassRepository.findOne({
+        where: { id: agent.agentClassId },
+      }));
     if (!agentClass) {
       const evalRes = this.denied(
         agentId,
@@ -194,7 +222,7 @@ export class AgentServiceCapabilityService {
         status,
         agent.agentClassId,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (agentClass.deletedAt !== null) {
@@ -206,7 +234,7 @@ export class AgentServiceCapabilityService {
         status,
         agentClass.id,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (!agentClass.isActive) {
@@ -221,7 +249,7 @@ export class AgentServiceCapabilityService {
         agentClass.applicableServices,
         agentClass.applicableLimits,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
 
@@ -240,7 +268,7 @@ export class AgentServiceCapabilityService {
         applicable,
         agentClass.applicableLimits,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (!Array.isArray(applicable)) {
@@ -255,7 +283,7 @@ export class AgentServiceCapabilityService {
         applicable,
         agentClass.applicableLimits,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     if (applicable.length === 0) {
@@ -270,7 +298,7 @@ export class AgentServiceCapabilityService {
         applicable,
         agentClass.applicableLimits,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
     // Validate that applicableServices is an array of known services (after normalization)
@@ -291,7 +319,7 @@ export class AgentServiceCapabilityService {
           applicable,
           agentClass.applicableLimits,
         );
-        await this.auditDenied(evalRes, principal?.type);
+        await this.denialAudit(evalRes, principal?.type, auditDenials);
         return evalRes;
       }
       normalizedApplicable.push(n);
@@ -309,7 +337,7 @@ export class AgentServiceCapabilityService {
         applicable,
         agentClass.applicableLimits,
       );
-      await this.auditDenied(evalRes, principal?.type);
+      await this.denialAudit(evalRes, principal?.type, auditDenials);
       return evalRes;
     }
 
@@ -353,6 +381,20 @@ export class AgentServiceCapabilityService {
       applicableServices,
       applicableLimits,
     };
+  }
+
+  /**
+   * Audit a denial unless the caller explicitly asked for a silent projection. Readiness windows
+   * evaluate the same Agent across many services; recording each judgement as a `DENIED` attempt
+   * would fabricate an authorization history that never happened.
+   */
+  private denialAudit(
+    evaluation: AgentServiceCapabilityEvaluation,
+    principalType: string | undefined,
+    auditDenials: boolean,
+  ): Promise<void> {
+    if (!auditDenials) return Promise.resolve();
+    return this.auditDenied(evaluation, principalType);
   }
 
   private async auditDenied(

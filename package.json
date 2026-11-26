@@ -42,7 +42,8 @@
     "test:local-safety": "node --test test/local-preflight.test.cjs",
     "test:pg:bounded": "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 node scripts/run-pg-integration-tests.js",
     "test:pg:isolated-kyc": "node scripts/run-isolated-kyc-tests.js",
-    "test:pg:isolated-kyc:ci": "KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js"
+    "test:pg:isolated-kyc:ci": "KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js",
+    "local:api": "LOCAL_DB_CONFIRMED_ISOLATED=yes A5_PILOT_EMERGENCY_STOP=true LOCAL_DEV_API_CONFIRM=disposable-local-database KYC_TIER_WORKER_ENABLED=false node scripts/local-dev-api-server.js"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",

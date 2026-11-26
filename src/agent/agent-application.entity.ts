@@ -64,6 +64,20 @@ export class AgentApplication {
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submittedAt!: Date | null;
 
+  /**
+   * The workforce principal that submitted this application (or the public applicant principal for
+   * a genuine public submission). This is the principal an approver must differ from.
+   *
+   * `created_by` cannot serve this purpose: workforce drafts are created through the public
+   * applicant endpoint, which attributes the row to `agent-application:<id>`, so every historical
+   * row is unattributed with respect to review. NULL therefore means "submitter not recorded",
+   * never "nobody submitted it", and the approval boundary refuses to guess.
+   *
+   * Immutable after first write (enforced by a database trigger).
+   */
+  @Column({ name: 'submitted_by', type: 'varchar', length: 160, nullable: true })
+  submittedBy!: string | null;
+
   @Column({ name: 'reviewed_at', type: 'timestamptz', nullable: true })
   reviewedAt!: Date | null;
 

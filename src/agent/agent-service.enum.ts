@@ -52,6 +52,29 @@ export const CANONICAL_AGENT_SERVICES = new Set<string>([
 ]);
 
 /**
+ * Agent services → the COMMERCIAL PRODUCT codes the fee/commission/limit engines key on.
+ *
+ * Two different vocabularies name the same movement. An Agent class grants `AgentService` values
+ * (`CASH_IN`), while `fee_rules`, `commission_rules` and limit enforcement are keyed on product
+ * codes (`CASH_TO_WALLET`). Resolving "is configuration missing for this class?" by comparing the
+ * two directly would report every service as uncovered, so the mapping is declared once here.
+ *
+ * `AGENT_FUNDING`/`AGENT_DEFUNDING` fund the Agent's own operating wallet rather than moving a
+ * customer's money, and `EXTERNAL_BANK_TRANSFER` settles outside the product catalogue; neither has
+ * a customer-facing product code, so they intentionally resolve to an empty list and are never
+ * reported as missing fee/commission configuration.
+ */
+export const PRODUCT_CODES_BY_SERVICE: Readonly<Record<AgentService, readonly string[]>> = {
+  [AgentService.WALLET_TRANSFER]: ['WALLET_TRANSFER'],
+  [AgentService.CASH_IN]: ['CASH_TO_WALLET'],
+  [AgentService.CASH_OUT]: ['WALLET_TO_CASH'],
+  [AgentService.CASH_TO_CASH]: ['CASH_TO_CASH'],
+  [AgentService.AGENT_FUNDING]: [],
+  [AgentService.AGENT_DEFUNDING]: [],
+  [AgentService.EXTERNAL_BANK_TRANSFER]: [],
+};
+
+/**
  * Normalizes a raw service string to canonical or null if unknown.
  * Trims, uppercases, then resolves alias.
  */

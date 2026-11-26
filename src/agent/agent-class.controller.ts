@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req } from '@nestj
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentClassService } from './agent-class.service';
+import { AgentClassTransitionService } from './agent-class-transition.service';
 import { CreateAgentClassDto } from './dto/create-agent-class.dto';
 import { UpdateAgentClassDto } from './dto/update-agent-class.dto';
 
@@ -16,7 +17,22 @@ export class AgentClassController {
   constructor(
     private readonly classService: AgentClassService,
     private readonly authorizationService: AuthorizationService,
+    private readonly classDefaults: AgentClassTransitionService,
   ) {}
+
+  /**
+   * The class, if any, that an approved policy/configuration record appoints as the onboarding
+   * default.
+   *
+   * This exists so the console does not have to BELIEVE anything. `approvedDefault` is `null` until
+   * such a record exists; the accompanying basis string says which record is missing rather than
+   * leaving an operator to wonder. Declared BEFORE `@Get(':id')` so the literal path wins.
+   */
+  @Get('default')
+  async default(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'agent.view');
+    return this.classDefaults.getOnboardingDefault();
+  }
 
   @Post()
   @HttpCode(201)

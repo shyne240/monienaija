@@ -19,14 +19,17 @@ export class AgentApplicationAdminController {
 
   @Get()
   async list(@Req() req: AuthenticatedRequest) {
-    await this.requirePrivileged(req);
-    return this.applicationService.list(req.authorizationPrincipal?.scopes.includes('agent.view'));
+    const actor = await this.requirePrivileged(req);
+    return this.applicationService.list(
+      req.authorizationPrincipal?.scopes.includes('agent.view'),
+      actor,
+    );
   }
 
   @Get(':id')
   async getOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    await this.requirePrivileged(req);
-    return this.applicationService.getById(id);
+    const actor = await this.requirePrivileged(req);
+    return this.applicationService.getById(id, actor);
   }
 
   @Post(':id/review')
