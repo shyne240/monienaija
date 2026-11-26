@@ -85,8 +85,6 @@ const COMMERCIAL_CAP_MINOR = '1000000000'; // NGN 10,000,000 — the HIGHER comm
 const HIGH_OTHER_LIMIT = '900000000000';
 const BELOW_TIER = '499000000'; // NGN 4,990,000 — under the ceiling
 const ABOVE_TIER = '501000000'; // NGN 5,010,000 — over the ceiling, under the commercial cap
-const TIER_PROFILE = 'T1_INSTITUTION_TIER_CAP';
-const COMMERCIAL_PROFILE = 'T1_COMMERCIAL_HIGH';
 
 describe('Tier 1 runtime ceiling probe (fully migrated disposable PG)', () => {
   let dataSource: DataSource;
@@ -98,31 +96,6 @@ describe('Tier 1 runtime ceiling probe (fully migrated disposable PG)', () => {
   beforeAll(async () => {
     process.env.KYC_TIER_LIMIT_ENFORCEMENT_ENABLED = 'true';
 
-// Governed maker/checker principals for the policy fixtures. The fixture authorization stub is
-// the same shape the verified PR #34 proof uses: the role-catalogue lookup is short-circuited
-// because this probe runs outside a workforce session, while every governed state transition
-// (proposal, protected-authority head versioning, distinct maker/checker, approval) still runs.
-const maker: AuthorizationPrincipal = {
-  type: 'PRIVILEGED',
-  principalId: 'tier1-ceiling-probe-maker',
-  sessionId: randomUUID(),
-  roles: ['SUPER_ADMIN'],
-  scopes: ['kyc.policy.propose', 'kyc.provider.propose', 'limit.view', 'limit.modify'],
-  customerAccess: 'NONE',
-  assuranceLevel: 'MFA',
-};
-const checker: AuthorizationPrincipal = {
-  type: 'OPERATOR',
-  principalId: 'tier1-ceiling-probe-checker',
-  sessionId: randomUUID(),
-  roles: ['COMPLIANCE'],
-  scopes: ['kyc.policy.approve', 'kyc.provider.approve', 'limit.view', 'limit.modify'],
-  customerAccess: 'NONE',
-  assuranceLevel: 'MFA',
-};
-const fixtureAuthorization = {
-  authorize: () => Promise.resolve({ allowed: true }),
-} as unknown as AuthorizationService;
     process.env.NODE_ENV = 'test';
     process.env.PG_TEST_CONFIRM_DISPOSABLE_CLUSTER = 'yes';
     const { AppModule } = await import('../src/app.module');
