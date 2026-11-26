@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-11-26T15:06:58.455Z",
+  "database": "monienaija_t1",
+  "tierCapMinor": "500000000",
+  "commercialCapMinor": "1000000000",
+  "displayed": {
+    "limitValueMinor": "500000000",
+    "source": "TIER_POLICY",
+    "isUnlimited": false
+  },
+  "belowCap": {
+    "amountMinor": "499000000",
+    "status": "COMPLETED",
+    "transferId": "50ad958b-af8d-4745-a867-d7a5802a34bd"
+  },
+  "aboveCap": {
+    "amountMinor": "501000000",
+    "status": 422,
+    "code": "LIMIT_MAX_AMOUNT_EXCEEDED"
+  }
+}

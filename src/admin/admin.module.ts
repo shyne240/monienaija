@@ -30,6 +30,7 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
 import { CustomerClassModule } from '../customer-class/customer-class.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import { InstitutionModule } from '../institution/institution.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
 
@@ -52,6 +53,11 @@ import { ProductCatalogModule } from '../product-catalog/product-catalog.module'
     KycTierModule,
     LimitCatalogModule,
     ProductCatalogModule,
+    // The registration-review and effective-configuration reads are institution-scoped record
+    // reads and delegate that decision to the single authoritative scope service. Without this
+    // import the controller's `@Optional()` scope dependency resolves to nothing, the guard
+    // silently returns, and every staff principal can read every enrolled customer.
+    InstitutionModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.

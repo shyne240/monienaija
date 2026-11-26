@@ -1,0 +1,492 @@
+[
+  {
+    "method": "POST",
+    "status": 201,
+    "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=1"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend?period=30d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/metrics"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20&search=t1-sender-bc1e64b7"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customer-classes"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/class"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/class/history"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/phone-verification"
+  },
+  {
+    "method": "GET",
+    "status": 404,
+    "url": "/api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/eligibility"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/onboarding-readiness"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/transactions?page=1&limit=5"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/wallets"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/registration-review"
+  },
+  {
+    "method": "PATCH",
+    "status": 200,
+    "url": "/api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20&search=t1-sender-bc1e64b7"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20&search=t1-sender-bc1e64b7"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customer-classes"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/class/history"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/phone-verification"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/class"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/wallets"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/onboarding-readiness"
+  },
+  {
+    "method": "GET",
+    "status": 404,
+    "url": "/api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/eligibility"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/transactions?page=1&limit=5"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/registration-review"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=1"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend?period=30d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/metrics"
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets"
+  },
+  {
+    "method": "POST",
+    "status": 201,
+    "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=1"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend?period=30d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/metrics"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers?page=1&limit=20&search=t1-unconfigured-e44ac1af"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customer-classes"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/phone-verification"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class/history"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/onboarding-readiness"
+  },
+  {
+    "method": "GET",
+    "status": 404,
+    "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/eligibility"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/transactions?page=1&limit=5"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/wallets"
+  },
+  {
+    "method": "GET",
+    "status": 200,
+    "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/registration-review"
+  },
+  {
+    "method": "PATCH",
+    "status": 409,
+    "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41"
+  }
+]

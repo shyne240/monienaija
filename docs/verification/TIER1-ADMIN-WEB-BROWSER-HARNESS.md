@@ -1,18 +1,124 @@
-# Tier 1 Admin Web Browser Harness (PR #24)
+# Tier 1 Admin Web Browser Harness (PR #24 + #34 follow-up)
 
-## Verification status (follow-up)
+## Verification status
 
-- [x] **Tier 1 HTTP claim evidence preserved (sandbox, no browser):** staff completion leaves the account unclaimed/ready-to-claim for wallet provisioning; pre-claim registration session cannot provision a wallet (`POST /api/v1/customers/me/activation` with registration-session bearer + Idempotency-Key returned `401 Authentication required`); the existing claim flow issues a working customer session (`claim-match` MATCH, `claim-credentials` SET_UP, onboarding-login returned customer-api session, `/customers/me`, `/customers/me/profile`, `/customers/me/wallets`, `/customers/me/activation` returned 200 with expected ACTIVE/LEVEL_1 profile and no provisioned wallet). See "HTTP evidence captured in sandbox (no browser)" below.
-- [x] **Runtime ceiling proof (fully migrated disposable PostgreSQL):** approved synthetic institution Tier 1 transaction cap controls runtime admission when a higher commercial transaction cap is configured. Effective configuration reports the Tier 1 cap as the controlling `MAX_AMOUNT_PER_TX` (`source=TIER_POLICY`, not unlimited). A WALLET_TRANSFER just below the Tier 1 cap succeeds; a transfer just above the Tier 1 cap is denied with `LIMIT_MAX_AMOUNT_EXCEEDED` (422). Other required limits set high to isolate the cap. Proof: `test/tier1-runtime-ceiling.integration.spec.ts` (passes on disposable PG).
-- [ ] **Admin Web browser walkthrough:** pending. Chromium/Playwright browser download was unavailable in the Arena sandbox; run the harness below on a machine with browser access.
+- [x] **Admin Web browser walkthrough — RAN, 14 checks passed.** Chromium (Playwright, headless,
+      `HeadlessChrome/153.0.8010.0`) against the production Admin Web bundle served at
+      `http://127.0.0.1:4501` with `/api/*` proxied to the real NestJS `AppModule` on port 4500, over a
+      fully migrated disposable PostgreSQL (`monienaija_t1`). A real workforce session was established
+      through the normal login form. Evidence, screenshots and the API call log:
+      `docs/integration/evidence/tier1-admin-web/` (`tier1-browser-result.json`, `api-calls.json`,
+      `fixture.json`, `ceiling.json`, `01`–`04` screenshots).
+- [x] **Tier 1 registration exercised end to end through the UI:** the Registration review panel
+      showed `Verified tier LEVEL_1` and the 9 requirement rows; the `Activate` control issued
+      `PATCH /api/v1/customers/:id` → `200 status=ACTIVE`; the reopened record showed the approved
+      default class `STANDARD — Standard (TIER_DEFAULT) · Eligible for verified tier`, the resolved
+      `WALLET_TRANSFER` fee with its worked quote (NGN 100.00 fee / NGN 0.00 VAT / NGN 1,100.00 total on
+      NGN 1,000.00), and the effective limit table.
+- [x] **Runtime ceiling proof (fully migrated disposable PostgreSQL):** approved synthetic
+      institution Tier 1 cap (NGN 5,000,000) governs over a higher commercial cap (NGN 10,000,000).
+      Displayed `MAX_AMOUNT_PER_TX` is the tier cap with `source=TIER_POLICY`. Runtime: NGN 4,990,000
+      transfer `COMPLETED`; NGN 5,010,000 transfer denied `422 LIMIT_MAX_AMOUNT_EXCEEDED`.
+      Proof: `test/tier1-runtime-ceiling.integration.spec.ts` and `test/tier1-runtime-ceiling-probe.integration.spec.ts`.
+- [x] **Staff completion leaves the account ready to claim, and unclaimed:** after activation the DB
+      has wallets `0`, transaction PINs `0`, `customer-api` sessions `0`, claim-issued credentials `0`;
+      the staff wallet read returns 0 wallets. The fixture's only credential is the pre-claim onboarding
+      session's decorative placeholder hash (marker `tier1fixture`), which authenticates nobody. No
+      mobile passcode and no transaction PIN were issued by staff completion.
+- [x] **Same-request retry:** replaying the browser's own activation body returns `200` as a no-op,
+      and a repeated registration-review read returns the identical class and ceiling — no forked state.
+- [x] **Institution access denial:** an assigned COMPLIANCE principal reads both scoped reads (`200`);
+      a CUSTOMER_SERVICE principal holding the same `customer.view` function but no assignment gets
+      `404` on both, while still reading an unenrolled platform customer (`200`) — scope, not function.
+- [x] **Missing required configuration blocks staff completion:** `409 ACTIVATION_CONFIGURATION_INCOMPLETE`,
+      two issues (`WALLET_TO_CASH:FEE_NOT_CONFIGURED`, `WALLET_TRANSFER:FEE_NOT_CONFIGURED`). The refusal
+      is rendered to staff naming the missing products and stating nothing changed; the customer stayed
+      `DRAFT`.
+- [ ] **Tier 2 and Tier 3 browser coverage: NOT run.** See "Tier 2 / Tier 3" below for what remains.
+- [ ] **Customer App claim journey: NOT run here by design.** Owned by the separate Customer App
+      Arena session; this repository only supplies the backend contract and fixture (see "Customer App
+      contract" below).
 
-Chromium/Playwright browser download was unavailable in the Arena sandbox (`npx playwright install chromium` failed with `ECONNRESET`; no system browser present). This document provides a repeatable harness and fixture setup so the Admin Web UI step can be verified elsewhere against the same branch/head.
+## Defects this run found (both fixed and pinned by tests)
+
+1. **Staff saw the commercial ceiling instead of the governed institution cap.**
+   `CustomerEffectiveConfigurationService` resolved the institution only from
+   `wallet_accounts.institution_id`. Between staff completion and the customer's claim there is no
+   wallet, so the panel showed NGN 10,000,000 while the customer's first transfer would be governed
+   by the approved NGN 5,000,000 tier cap. The read now falls back to the ACTIVE
+   `customer_institution_enrolments` row (the institutional relationship that predates the wallet),
+   so display and enforcement agree at every stage.
+2. **Institution scope was not enforced on the staff reads.**
+   `AdminCustomerController` takes `InstitutionWorkforceScopeService` as `@Optional()`, but
+   `AdminModule` never imported `InstitutionModule`. The dependency resolved to `undefined`, the
+   guard returned immediately, and any staff principal could read any enrolled customer. Fixed by
+   importing the module.
+3. **The activation refusal told staff to "refresh",** which can never fix a missing fee rule. The
+   server already returned the exact issues; `ApiError` now carries them and the confirm dialog
+   renders them.
+
+Pinned by `test/tier1-effective-configuration-institution-scope.unit.spec.ts` (both new assertions
+fail without the fixes) and `apps/admin-web/__tests__/api-client-request.test.ts`.
 
 ## Branch / head
 
-- Branch: `arena/52ff58d1-monienaija`
-- PR: https://github.com/shyne240/monienaija/pull/24 (draft)
-- Head at time of writing: `ed62f417` (includes lint+format fixes and tier-default eligibility fix `0e5a2d3b`)
+- Branch: `arena/0f3ce003-monienaija` (the single integration path for PR #24 + the verified PR #34 follow-up)
+- PRs #24 and #34 remain open and unmerged; this branch carries their combined history plus the fixes above.
+
+## Reproduce this run
+
+```bash
+# 1. disposable PostgreSQL + migrations, then seed the workforce accounts
+node scripts/prepare-pg-test-env.js --create-if-missing
+npm run build
+node scripts/local-dev-seed-admin.js
+LOCAL_DEV_SEED_CONFIRM=disposable-local-database node scripts/local-dev-seed-11-roles.js
+
+# 2. build and serve Admin Web + the real API behind one origin
+(cd apps/admin-web && ADMIN_WEB_API_BASE_URL=/api/v1 npx vite build --outDir /tmp/tier1-admin-dist)
+DB_NAME=monienaija_t1 TIER1_FIXTURE_CONFIRM=disposable-database \
+  npx ts-node -r tsconfig-paths/register scripts/tier1-admin-web-fixture.ts
+node scripts/tier1-admin-web-server.cjs /tmp/tier1-admin-dist    # ports 4500 (API) / 4501 (preview)
+
+# 3. the runtime ceiling probe (writes ceiling.json the harness requires)
+DB_NAME=monienaija_t1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=tier1 \
+  node -r ./test/support/mission-25c-network-guard.cjs ./node_modules/jest/bin/jest.js \
+  --runInBand --config jest.integration.config.js test/tier1-runtime-ceiling-probe.integration.spec.ts
+
+# 4. the browser acceptance run
+TIER1_BASE_URL=http://127.0.0.1:4501 node scripts/tier1-admin-web-browser-acceptance.cjs
+```
+
+The fixture is idempotent: it rewinds only what staff completion itself writes (the lifecycle status
+and the `TIER_DEFAULT` class assignment), so the run is repeatable rather than passing once.
+
+## Tier 2 / Tier 3 — what is still unproven
+
+- **Tier 2 and Tier 3 were not exercised in a browser.** The fixture approves LEVEL_1 evidence only;
+  no LEVEL_2/LEVEL_3 customer, evidence set or tier-specific cap was seeded.
+- Consequently unproven in a browser: that a LEVEL_2/LEVEL_3 customer is shown its own tier, the
+  tier default class for that level, and a per-tier cap that differs from LEVEL_1's.
+- Also unproven in a browser: the KYC tier _transition_ path (LEVEL_1 → LEVEL_2) driven from the
+  Compliance screen, and automatic tier-class reassignment on transition. The transition service is
+  covered by `test/kyc-tier-transition.isolated-pg.test.ts` and the workforce review suites, not by
+  a browser walkthrough.
+- The runtime ceiling proof covers LEVEL_1 only.
+
+## Customer App contract (hand-off to the parallel session)
+
+The backend contract the Customer App session must accept, all synthetic:
+
+- Customer reference `t1-sender-<uuid8>`, phone `+2348099000001`, `is_synthetic = FALSE`,
+  `status = ACTIVE`, `kyc_level = LEVEL_1`, `kyc_status = APPROVED`.
+- Identity evidence: one APPROVED current `customer_kyc_assessments` row, a verified primary phone,
+  a verified ownership claim and a provider `MATCH` attempt bound to the current identity revision.
+- Nothing claimable exists yet: `wallet_accounts` 0 rows, `customer_transaction_pins` 0 rows,
+  `customer-api` sessions 0 rows. The claim flow must therefore provision the mobile passcode, the
+  transaction PIN, the customer session and the wallet itself.
+- Institution: the customer is enrolled (ACTIVE) with the synthetic institution, whose approved
+  policy maps `WALLET_TRANSFER`/NGN at every tier to profile `T1_INSTITUTION_TIER_CAP`
+  (`MAX_AMOUNT_PER_TX` NGN 5,000,000). A transfer above that ceiling must be denied
+  `422 LIMIT_MAX_AMOUNT_EXCEEDED` after claim, so the two sessions agree on the governing cap.
 
 ## Preconditions
 
@@ -44,51 +150,41 @@ VITE_API_PROXY_TARGET=http://localhost:3000 npm run dev -- --host 0.0.0.0 --port
 
 ## Fixture (disposable DB only)
 
-Run the fixture scripts in `/tmp` created during this session on a fresh disposable migrated DB (do not run against production):
+`scripts/tier1-admin-web-fixture.ts` seeds the entire Tier 1 state in one idempotent run. It refuses
+to run without `DB_NAME` and `TIER1_FIXTURE_CONFIRM=disposable-database`, and it writes
+`docs/integration/evidence/tier1-admin-web/fixture.json` for the acceptance run to consume (no
+number in the harness is hand-written).
 
-1. `seed-policy.cjs` - approves KYC tier policy v1.
-2. `create-tier1b.cjs` - creates DRAFT customer `804207c1-75cc-4127-be1d-29b6c4fa4d69` (`t1-804207c1`, +2348012345001).
-3. `seed-evidence2.cjs` + `fix-rev*.cjs` - seeds verified BVN evidence aligned to evidence reader identity revision.
-4. `fix-config.cjs` - seeds STANDARD class, approved tier defaults L1-3, WALLET_TRANSFER configured, fee rule (10000 flat/0 bps/min 0/max NULL/VAT 0), `T1_STANDARD_PROFILE` limits.
-5. `fix-ownership.cjs` - aligns ownership key state and claim MAC for synthetic BVN `22222222222`.
-6. Activate via governed workforce API: `PATCH /api/v1/customers/:id {"status":"ACTIVE"}` with workforce bearer.
-7. For claimable state: ensure no active passcode/pin credentials for the probe customer.
+What it seeds, through the product's own governed services wherever a governed route exists:
 
-Expected probe customer (disposable DB):
+- KYC tier policy v1 and an APPROVED synthetic institution (the lifecycle trigger is disabled only
+  for that single INSERT, because no governed route approves an institution without a live ceremony).
+- The institution tier policy through `InstitutionKycLimitPolicyService.propose` + `.decide` — real
+  proposal, protected-authority head versioning, distinct maker and checker, approval state machine.
+  Mappings: `WALLET_TRANSFER`/NGN at LEVEL_1–3 → profile `T1_INSTITUTION_TIER_CAP` (cap NGN 5,000,000).
+- A higher commercial profile `T1_COMMERCIAL_HIGH` (cap NGN 10,000,000) assigned globally, so the
+  lower institution cap is the one that must govern.
+- `STANDARD` customer class, approved tier-default mappings for LEVEL_1–3, and fee rules
+  (`WALLET_TRANSFER` flat 10000, 0 bps, 0 VAT; `WALLET_TO_CASH` explicit zero fee).
+- The synthetic sender and receiver customers, the sender KYC-approved via `approveKycEvidence`
+  (profile identity, verified primary phone, consent, provider `MATCH` attempt, VERIFIED ownership
+  claim bound to the current identity revision, APPROVED assessment) and enrolled with the
+  institution.
+- A deliberately misconfigured control customer on an approved class with no effective fee rule,
+  plus the workforce assignment used for the institution-scope matrix.
+- After seeding it **rewinds only what staff completion writes** (lifecycle status and the
+  `TIER_DEFAULT` class assignment), so the acceptance run is repeatable rather than passing once.
 
-- id: `804207c1-75cc-4127-be1d-29b6c4fa4d69`
-- reference: `t1-804207c1`
-- phone: `8012345001` / `+2348012345001`
-- status: ACTIVE, kyc LEVEL_1/APPROVED, not synthetic
-- verified trusted evidence: BVN
-- assigned class: STANDARD (TIER_DEFAULT)
-- effective WALLET_TRANSFER fee: RESOLVED flat 10000, 0bps, min0, maxFee null, vat0; quote 100000->10000/0/110000
-- effective limits: MAX_AMOUNT_PER_TX 5,000,000 (default), DAILY 20,000,000, WEEKLY 50,000,000, MONTHLY 100,000,000, WALLET_BALANCE_MAX 200,000,000
-- outstanding after activation: wallet (ready-to-claim before credentials set)
+Expected state after the fixture (see `fixture.json` for the exact ids of the current run):
 
-## Browser steps (manual or Playwright)
-
-1. Open Admin Web `http://localhost:5173`.
-2. Sign in with local workforce admin: `admin@monienaija.local` / `MonieNaijaAdmin123!`.
-3. Navigate to Customer Directory -> open customer `t1-804207c1` / `804207c1-75cc-4127-be1d-29b6c4fa4d69`.
-4. Open Registration Review / effective configuration view and capture:
-   - Verified tier: LEVEL_1 APPROVED
-   - Assigned default class: STANDARD, source TIER_DEFAULT, eligible for verified tier
-   - Effective fees and limits: WALLET_TRANSFER RESOLVED fee rule + resolved limits
-   - Ready-to-claim/onboarding state: activatable true, outstanding wallet (pre-claim), no wallet provisioned
-5. For ceiling test, update MAX_AMOUNT_PER_TX commercial rule above 5,000,000 (e.g. 10,000,000) or set explicitly unlimited (not `maximumFeeMinor:null`) and capture Admin Web amount limit vs runtime behavior just above tier cap.
-
-## Automated Playwright harness
-
-See `scripts/tier1-admin-web-harness.spec.ts` (Playwright test skeleton) and `scripts/run-tier1-admin-web-harness.sh`.
-Run after installing browsers on a machine with browser access:
-
-```bash
-cd apps/admin-web
-npm i -D @playwright/test
-npx playwright install chromium
-npx playwright test ../../scripts/tier1-admin-web-harness.spec.ts --config=../../scripts/tier1-admin-web.playwright.config.ts
-```
+- sender: `t1-sender-<uuid8>`, `+2348099000001`, DRAFT → ACTIVE after activation, LEVEL_1/APPROVED,
+  not synthetic, enrolled ACTIVE with the synthetic institution
+- assigned class: `STANDARD` (`TIER_DEFAULT`), eligible for the verified tier
+- effective `WALLET_TRANSFER` fee: RESOLVED flat 10000, 0 bps, VAT 0; quote 100000 → fee 10000 /
+  VAT 0 / total 110000
+- effective limits: `MAX_AMOUNT_PER_TX` NGN 5,000,000 with `source=TIER_POLICY` (the institution
+  cap, not the NGN 10,000,000 commercial cap)
+- before claim: wallets 0, transaction PINs 0, `customer-api` sessions 0
 
 ## HTTP evidence captured in sandbox (no browser)
 

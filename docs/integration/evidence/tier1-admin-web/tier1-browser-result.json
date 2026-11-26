@@ -1,0 +1,485 @@
+{
+  "generatedAt": "2026-11-26T15:08:03.884Z",
+  "base": "http://127.0.0.1:4501",
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.0 Safari/537.36",
+  "steps": [
+    {
+      "check": "Real workforce session established in the Admin Web browser",
+      "evidence": "Signed in as admin@monienaija.local through the normal login form; the server issued a workforce session and the desktop navigation rendered 33 sections. Login used POST /api/v1/internal/a2/workforce/local-admin-sessions.",
+      "data": {
+        "sections": 33
+      }
+    },
+    {
+      "check": "Registration review renders for the synthetic customer",
+      "evidence": "Customer 360 opened from the customer directory for t1-sender-bc1e64b7; the Registration review panel loaded from GET /api/v1/internal/customers/:id/registration-review."
+    },
+    {
+      "check": "Verified tier and requirements shown to staff before activation",
+      "evidence": "Verified tier reported by the panel: LEVEL_1. Requirements list includes the verified primary phone row, which the fixture satisfied.",
+      "data": {
+        "tier": "LEVEL_1"
+      }
+    },
+    {
+      "check": "Staff completion leaves the account ACTIVE and ready to claim",
+      "evidence": "The Activate control issued PATCH /api/v1/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d and the server answered 200 with status=ACTIVE. No wallet was provisioned and no mobile passcode, PIN or customer session was created by this step.",
+      "data": {
+        "activationStatus": 200,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "check": "Approved default class applied by activation, and shown to staff",
+      "evidence": "Registration review reports: STANDARD — Standard (TIER_DEFAULT) · Eligible for verified tier",
+      "data": {
+        "classRow": "STANDARD — Standard (TIER_DEFAULT) · Eligible for verified tier",
+        "activationClass": null
+      }
+    },
+    {
+      "check": "Effective fees shown to staff (resolved rule + quote)",
+      "evidence": "The panel resolves the WALLET_TRANSFER fee from its governing rule and shows the worked quote: fee NGN 100.00, VAT NGN 0.00, total NGN 1,100.00 on an NGN 1,000.00 transfer."
+    },
+    {
+      "check": "Effective limits shown to staff",
+      "evidence": "Effective limits table for WALLET_TRANSFER (per-transaction row): Max amount per transaction NGN 5,000,000.00 c8c6b728-8572-4cec-b103-1b04a08566b9 (T1_INSTITUTION_TIER_CAP) · TIER_POLICY",
+      "data": {
+        "maxTxRow": "Max amount per transaction NGN 5,000,000.00 c8c6b728-8572-4cec-b103-1b04a08566b9 (T1_INSTITUTION_TIER_CAP) · TIER_POLICY"
+      }
+    },
+    {
+      "check": "Verified tier, approved default class and effective configuration read back over HTTP",
+      "evidence": "GET registration-review (workforce bearer) → verifiedTier=LEVEL_1, assignedClass=STANDARD/TIER_DEFAULT, fee=RESOLVED 10000 minor, all five required limit dimensions RESOLVED.",
+      "data": {
+        "verifiedTier": "LEVEL_1",
+        "assignedClass": {
+          "classCode": "STANDARD",
+          "className": "Standard",
+          "source": "TIER_DEFAULT",
+          "eligibleForVerifiedTier": true,
+          "classId": "788bb11e-03df-49c1-8ba5-650c655a53af"
+        },
+        "fee": {
+          "status": "RESOLVED",
+          "flatFeeMinor": "10000",
+          "quote": {
+            "amountMinor": "100000",
+            "feeMinor": "10000",
+            "vatMinor": "0",
+            "totalMinor": "110000"
+          }
+        },
+        "limits": [
+          {
+            "dimension": "MAX_AMOUNT_PER_TX",
+            "status": "RESOLVED",
+            "value": "500000000",
+            "source": "TIER_POLICY"
+          },
+          {
+            "dimension": "DAILY_AMOUNT",
+            "status": "RESOLVED",
+            "value": "900000000000",
+            "source": "ASSIGNMENT"
+          },
+          {
+            "dimension": "WEEKLY_AMOUNT",
+            "status": "RESOLVED",
+            "value": "900000000000",
+            "source": "ASSIGNMENT"
+          },
+          {
+            "dimension": "MONTHLY_AMOUNT",
+            "status": "RESOLVED",
+            "value": "900000000000",
+            "source": "ASSIGNMENT"
+          },
+          {
+            "dimension": "WALLET_BALANCE_MAX",
+            "status": "RESOLVED",
+            "value": "900000000000",
+            "source": "ASSIGNMENT"
+          }
+        ]
+      }
+    },
+    {
+      "check": "Account is ready to claim — and unclaimed",
+      "evidence": "After staff completion the customer is ACTIVE with an approved default class; database state shows wallets=0, transaction PINs=0, customer sign-ins=0, claim-issued credentials=0. The staff wallet read returns 0 wallets. The fixture's single pre-claim onboarding credential is a decorative placeholder hash (marker \"tier1fixture\") that authenticates nobody, not a passcode. The phone OTP → BVN match → passcode/PIN → sign-in → wallet activation journey is owned by the separate Customer App session.",
+      "data": {
+        "wallets": 0,
+        "customerSignIns": 0,
+        "transactionPins": 0,
+        "claimCredentials": 0
+      }
+    },
+    {
+      "check": "The lower tier ceiling governs over the higher commercial limit at runtime",
+      "evidence": "Displayed/effective per-transaction ceiling = NGN 5000000 (source TIER_POLICY) while the commercial profile allows NGN 10000000. Runtime: NGN 4990000 transfer completed; NGN 5010000 transfer denied 422 LIMIT_MAX_AMOUNT_EXCEEDED. The higher commercial cap did not govern.",
+      "data": {
+        "tierCapMinor": "500000000",
+        "commercialCapMinor": "1000000000",
+        "belowCap": {
+          "amountMinor": "499000000",
+          "status": "COMPLETED",
+          "transferId": "50ad958b-af8d-4745-a867-d7a5802a34bd"
+        },
+        "aboveCap": {
+          "amountMinor": "501000000",
+          "status": 422,
+          "code": "LIMIT_MAX_AMOUNT_EXCEEDED"
+        },
+        "displayedSource": "TIER_POLICY"
+      }
+    },
+    {
+      "check": "Same-request retry is safe (no forked state, no forked figures)",
+      "evidence": "Repeating PATCH /api/v1/customers/:id with the same body/version returned 200 (no-op), and a repeated registration-review read returned the identical assigned class (STANDARD) and controlling ceiling (500000000).",
+      "data": {
+        "retryActivationStatus": 200,
+        "retryCode": null
+      }
+    },
+    {
+      "check": "Institution-scoped staff CAN read the enrolled customer (assigned principal)",
+      "evidence": "A COMPLIANCE principal holding an ACTIVE workforce assignment to the synthetic institution read GET registration-review → 200 and GET effective-configuration → 200. The same principal reads the KYC review workspace, which is the authoritative scoped read.",
+      "data": {
+        "registrationReview": 200,
+        "effectiveConfiguration": 200
+      }
+    },
+    {
+      "check": "Institution access denial on the registration-review and effective-configuration reads",
+      "evidence": "A CUSTOMER_SERVICE principal holding the same customer.view function but NO assignment to the synthetic institution is denied both scoped reads with 404 (registration-review → 404, effective-configuration → 404), while the same principal reads an unenrolled platform customer with 200. The denial is institution scope, not a missing function.",
+      "data": {
+        "registrationReview": 404,
+        "effectiveConfiguration": 404,
+        "platformControl": 200
+      }
+    },
+    {
+      "check": "Missing required configuration blocks staff completion (and says what is missing)",
+      "evidence": "Activating the customer whose approved default class has no effective fee rule was refused with 409 ACTIVATION_CONFIGURATION_INCOMPLETE; the server enumerated 2 issue(s): WALLET_TO_CASH:FEE_NOT_CONFIGURED, WALLET_TRANSFER:FEE_NOT_CONFIGURED. The Admin Web rendered the refusal to staff with the missing products named and \"nothing was changed\" stated (verified from the rendered document text: true). Read back afterwards, the customer is still DRAFT.",
+      "data": {
+        "status": 409,
+        "code": "ACTIVATION_CONFIGURATION_INCOMPLETE",
+        "issues": [
+          "WALLET_TO_CASH:FEE_NOT_CONFIGURED",
+          "WALLET_TRANSFER:FEE_NOT_CONFIGURED"
+        ],
+        "renderedInBrowser": true,
+        "statusAfterRefusal": "DRAFT"
+      }
+    }
+  ],
+  "apiCalls": [
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/bc1e64b7-fba4-4dc7-8d25-25f20f4bcc0d/registration-review"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers?page=1&limit=1"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend?period=30d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/metrics"
+    },
+    {
+      "method": "POST",
+      "status": 201,
+      "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+    },
+    {
+      "method": "POST",
+      "status": 201,
+      "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets"
+    },
+    {
+      "method": "POST",
+      "status": 201,
+      "url": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers?page=1&limit=1"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend?period=30d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/metrics"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers?page=1&limit=20"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers?page=1&limit=20&search=t1-unconfigured-e44ac1af"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customer-classes"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/phone-verification"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class/history"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/onboarding-readiness"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/eligibility"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/transactions?page=1&limit=5"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/wallets"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/registration-review"
+    },
+    {
+      "method": "PATCH",
+      "status": 409,
+      "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41"
+    }
+  ],
+  "consoleErrors": [],
+  "statuses": {
+    "activationStatus": 200,
+    "retryActivationStatus": 200,
+    "assigned": 200,
+    "denied": 404
+  }
+}

@@ -68,6 +68,8 @@ export interface CustomerEffectiveConfiguration {
   evaluatedAt: string;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const REQUIRED_DIMENSIONS = [
   'MAX_AMOUNT_PER_TX',
   'DAILY_AMOUNT',
@@ -188,13 +190,31 @@ export class CustomerEffectiveConfigurationService {
     }
 
     // Resolve institution and trusted tier for regulatory ceiling application.
+    //
+    // The attributed wallet is authoritative once one exists, because that is exactly the
+    // institution runtime admission reads (`transfer-participant-limit` → `participant.wallet`).
+    // Before the wallet exists — i.e. between staff completion and the customer's own claim — a
+    // wallet lookup finds nothing, and falling back to "no institution" would show staff the
+    // commercial ceiling while the customer's first transfer would be governed by the lower
+    // institution cap. The ACTIVE enrolment is the institutional relationship that predates the
+    // wallet, so it is the correct fallback: display and enforcement then agree at every stage
+    // instead of only after claim.
     const institutionRows = await manager.query<Array<{ institution_id: string | null }>>(
       `SELECT institution_id FROM wallet_accounts
         WHERE lower(customer_id)=lower($1) AND institution_id IS NOT NULL
         ORDER BY created_at ASC, id ASC LIMIT 1`,
       [customerId],
     );
-    const institutionId = institutionRows[0]?.institution_id ?? null;
+    let institutionId = institutionRows[0]?.institution_id ?? null;
+    if (!institutionId && UUID_PATTERN.test(customerId)) {
+      const enrolmentRows = await manager.query<Array<{ institution_id: string }>>(
+        `SELECT institution_id FROM customer_institution_enrolments
+          WHERE customer_id = $1::uuid AND status = 'ACTIVE'
+          ORDER BY effective_from ASC, created_at ASC, id ASC LIMIT 1`,
+        [customerId],
+      );
+      institutionId = enrolmentRows[0]?.institution_id ?? null;
+    }
     let trustedTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null = null;
     if (
       institutionId &&
