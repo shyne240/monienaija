@@ -43,7 +43,11 @@ describe('Banking webhook — outbound disbursement recovery', () => {
     return { service, enquiries, submissions };
   }
 
-  function request(eventType: string, eventData: Record<string, unknown>, reference = 'OP-KNOWN-0001') {
+  function request(
+    eventType: string,
+    eventData: Record<string, unknown>,
+    reference = 'OP-KNOWN-0001',
+  ) {
     const rawBody = JSON.stringify({
       eventType,
       eventData: {
@@ -76,9 +80,9 @@ describe('Banking webhook — outbound disbursement recovery', () => {
     const late = request('SUCCESSFUL_DISBURSEMENT', { status: 'SUCCESS' });
     expect((await service.handleMonnify(late)).status).toBe('ACCEPTED');
     expect((await service.handleMonnify(late)).status).toBe('ACCEPTED');
-    expect((await service.handleMonnify(request('FAILED_DISBURSEMENT', { status: 'FAILED' }))).status).toBe(
-      'ACCEPTED',
-    );
+    expect(
+      (await service.handleMonnify(request('FAILED_DISBURSEMENT', { status: 'FAILED' }))).status,
+    ).toBe('ACCEPTED');
     expect(enquiries).toHaveLength(3);
     expect(submissions).toEqual([]);
   });

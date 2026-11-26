@@ -169,10 +169,10 @@ export class BankToWalletReturnExecutionService {
       return this.toView(record);
     }
     const provider = this.registry.find(BankToWalletReturnExecutionService.PROVIDER_KEY);
-    if (!provider?.getRefundStatus || !this.registry.supports(
-      BankToWalletReturnExecutionService.PROVIDER_KEY,
-      'REFUND_INITIATION',
-    )) {
+    if (
+      !provider?.getRefundStatus ||
+      !this.registry.supports(BankToWalletReturnExecutionService.PROVIDER_KEY, 'REFUND_INITIATION')
+    ) {
       throw new ServiceUnavailableException('No registered provider can enquire on refunds');
     }
     const reference = record.refund_reference ?? record.return_reference;

@@ -736,7 +736,8 @@ export class MonnifyProvider implements BankingProvider {
       };
     }
     if (
-      (request.destinationAccountNumber === undefined) !== (request.destinationBankCode === undefined)
+      (request.destinationAccountNumber === undefined) !==
+      (request.destinationBankCode === undefined)
     ) {
       return {
         ok: false,
@@ -791,9 +792,7 @@ export class MonnifyProvider implements BankingProvider {
       value: {
         outcome: this.mapRefundSubmissionStatus(status),
         refundReference:
-          typeof body.refundReference === 'string'
-            ? body.refundReference
-            : request.refundReference,
+          typeof body.refundReference === 'string' ? body.refundReference : request.refundReference,
         originalProviderReference:
           typeof body.transactionReference === 'string'
             ? body.transactionReference
@@ -862,9 +861,7 @@ export class MonnifyProvider implements BankingProvider {
     };
   }
 
-  private mapRefundSubmissionStatus(
-    status: string,
-  ): RefundInitiationResult['outcome'] {
+  private mapRefundSubmissionStatus(status: string): RefundInitiationResult['outcome'] {
     if (status === 'COMPLETED') return 'ACCEPTED';
     if (status === 'FAILED') return 'REJECTED';
     if (status === 'PENDING' || status === 'IN_PROGRESS' || status === '') return 'PENDING';

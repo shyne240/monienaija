@@ -12,7 +12,6 @@
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
-import type { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
@@ -29,12 +28,7 @@ import { BankingCommitmentBridgeService } from '../src/banking/banking-commitmen
 import { BankingFeeBindingService } from '../src/banking/banking-fee-binding.service';
 import { BankingOutboundService } from '../src/banking/banking-outbound.service';
 import { BankingProviderRegistry, capabilitiesOf } from '../src/banking/banking-provider.registry';
-import type {
-  BankingProvider,
-  BankingProviderResult,
-  OutboundTransferSubmissionResult,
-  TransferStatusResult,
-} from '../src/banking/banking-provider.types';
+import type { BankingProvider, TransferStatusResult } from '../src/banking/banking-provider.types';
 import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import { PasswordHashVerificationService } from '../src/customer-authentication/password-hash-verification.service';
@@ -52,15 +46,8 @@ import {
   type TierEvidenceSnapshot,
 } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { KycTierWorker } from '../src/kyc-verification/kyc-tier-worker.service';
-import {
-  FinancialInstitutionType,
-  InstitutionAffiliationChangeKind,
-  InstitutionAffiliationEvidenceType,
-  InstitutionAttributionEvidenceType,
-} from '../src/institution/institution.enums';
 import { FinancialInstitutionService } from '../src/institution/financial-institution.service';
-import { InstitutionAffiliationService } from '../src/institution/institution-affiliation.service';
-import { WalletInstitutionAttributionService } from '../src/institution/wallet-institution-attribution.service';
+import { FinancialInstitutionType } from '../src/institution/institution.enums';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
@@ -68,9 +55,7 @@ import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
 import { AuditService } from '../src/operations/audit.service';
 import { IdempotencyService } from '../src/operations/idempotency.service';
 import { OutboxService } from '../src/operations/outbox.service';
-import {
-  ExternalOperationLifecycleState,
-} from '../src/partner/external-operation-lifecycle.enums';
+import { ExternalOperationLifecycleState } from '../src/partner/external-operation-lifecycle.enums';
 import { ExternalOperationLifecycleService } from '../src/partner/external-operation-lifecycle.service';
 import { ExternalOperationReferenceType } from '../src/partner/external-operation.enums';
 import { ExternalOperationReferenceSource } from '../src/partner/external-operation.enums';
@@ -121,23 +106,17 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
   let registry: BankingProviderRegistry;
   let institutionId: string;
   let assetAccountId: string;
-  let customerLedgerAccountId: string;
   let submissionMode: SubmissionMode;
   let statusOutcome: TransferStatusResult['outcome'];
   let verificationState: VerificationState;
-  let submissions: OutboundTransferSubmissionResult[];
   let submittedReferences: string[];
   let enquiries: string[];
   let nameEnquiries: number;
   const snapshots = new Map<string, TierEvidenceSnapshot>();
   const agentSessions = new Map<string, string>();
   let approvals: PrivilegedActionApprovalService;
-  let attributions: WalletInstitutionAttributionService;
   let institutions: FinancialInstitutionService;
   let institutionMaker: AuthorizationPrincipal;
-  let affiliationMaker: AuthorizationPrincipal;
-  let affiliations: InstitutionAffiliationService;
-  let attributionMaker: AuthorizationPrincipal;
   let attributionChecker: AuthorizationPrincipal;
   let agentClassService: AgentClassService;
   let agentApplicationService: AgentApplicationService;
@@ -243,34 +222,12 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     operationsService = app.get(ExternalOperationService);
     approvals = app.get(PrivilegedActionApprovalService);
     institutions = app.get(FinancialInstitutionService);
-    affiliations = app.get(InstitutionAffiliationService);
     institutionMaker = {
       type: 'OPERATOR',
       principalId: 'w2b-institution-maker',
       sessionId: randomUUID(),
       roles: ['OPERATIONS'],
       scopes: ['institution.lifecycle.prepare'],
-      customerAccess: 'NONE',
-      agentAccess: 'NONE',
-      assuranceLevel: 'MFA',
-    } as AuthorizationPrincipal;
-    attributions = app.get(WalletInstitutionAttributionService);
-    affiliationMaker = {
-      type: 'OPERATOR',
-      principalId: 'w2b-affiliation-maker',
-      sessionId: randomUUID(),
-      roles: ['AGENT_NETWORK_MANAGER'],
-      scopes: ['institution.affiliation.prepare'],
-      customerAccess: 'NONE',
-      agentAccess: 'NONE',
-      assuranceLevel: 'MFA',
-    } as AuthorizationPrincipal;
-    attributionMaker = {
-      type: 'OPERATOR',
-      principalId: 'w2b-attribution-maker',
-      sessionId: randomUUID(),
-      roles: ['FINANCE_PREPARER'],
-      scopes: ['institution.attribution.prepare'],
       customerAccess: 'NONE',
       agentAccess: 'NONE',
       assuranceLevel: 'MFA',
@@ -321,12 +278,12 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
       // the synthetic institution id so that the unattributed ledger accounts remain in one scope.
       {
         createDispatchIntentInTransaction: (manager: never, input: never) =>
-          app.get(BankingCommitmentBridgeService).createDispatchIntentInTransaction(
-            manager as never,
-            { ...(input as { institutionId: string }), institutionId } as never,
-          ),
+          app.get(BankingCommitmentBridgeService).createDispatchIntentInTransaction(manager, {
+            ...(input as { institutionId: string }),
+            institutionId,
+          } as never),
         recordObservation: (manager: never, input: never) =>
-          app.get(BankingCommitmentBridgeService).recordObservation(manager as never, input as never),
+          app.get(BankingCommitmentBridgeService).recordObservation(manager, input),
       } as never,
       app.get(BankingFeeBindingService),
       app.get(AgentTransactionAuthorizationService),
@@ -428,7 +385,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     await seeded('PAYMENT-WITHDRAWAL_RESERVE-NGN');
     assetAccountId = await seeded('PAYMENT-SETTLEMENT_ASSET-NGN');
     await seeded('PAYMENT-SETTLEMENT_CLEARING-NGN');
-    customerLedgerAccountId = await seeded('PAYMENT-SYSTEM_SUSPENSE-NGN');
+    await seeded('PAYMENT-SYSTEM_SUSPENSE-NGN');
     await dataSource.query(
       `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status)
        VALUES($1,'W2BBANK','Lifecycle Test Bank','W2B',true,'ACTIVE') ON CONFLICT DO NOTHING`,
@@ -445,58 +402,10 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     submissionMode = 'accepted';
     statusOutcome = 'SUCCESSFUL';
     verificationState = 'VERIFIED_SETTLED';
-    submissions = [];
     submittedReferences = [];
     enquiries = [];
     nameEnquiries = 0;
   });
-
-  /** Governed wallet attribution through the shared maker/checker approval service. */
-  async function attributeWallet(walletId: string): Promise<void> {
-    const input = {
-      walletId,
-      institutionId,
-      evidenceType: InstitutionAttributionEvidenceType.INSTITUTION_AGREEMENT,
-      evidenceReference: `W2B-AGR-${randomUUID()}`,
-      reason: 'Wallet attributed under executed institution custody agreement',
-    };
-    const request = await attributions.requestAttribution({ ...input, principal: attributionMaker });
-    const decision = await approvals.approve({
-      principal: attributionChecker,
-      approvalId: request.approvalId,
-      comment: 'Independently checked institution attribution',
-    });
-    if (!decision.approved) throw new Error(`Attribution approval failed: ${decision.reason}`);
-    await attributions.executeAttribution({
-      ...input,
-      approvalId: request.approvalId,
-      principal: attributionChecker,
-    });
-  }
-
-  /** Governed agent affiliation, required before an agent wallet can be institution-attributed. */
-  async function affiliateAgent(agentId: string): Promise<void> {
-    const input = {
-      agentId,
-      institutionId,
-      changeKind: InstitutionAffiliationChangeKind.ASSIGN,
-      evidenceType: InstitutionAffiliationEvidenceType.INSTITUTION_APPROVAL_LETTER,
-      evidenceReference: `W2B-AFF-${randomUUID()}`,
-      reason: 'Agent assigned under the controlled test institution agreement',
-    };
-    const request = await affiliations.requestAffiliation({ ...input, principal: affiliationMaker });
-    const decision = await approvals.approve({
-      principal: attributionChecker,
-      approvalId: request.approvalId,
-      comment: 'Independently checked agent affiliation',
-    });
-    if (!decision.approved) throw new Error(`Affiliation approval failed: ${decision.reason}`);
-    await affiliations.executeAffiliation({
-      ...input,
-      approvalId: request.approvalId,
-      principal: attributionChecker,
-    });
-  }
 
   async function createCustomerCommitment(amountMinor = '1000') {
     const suffix = randomUUID().slice(0, 8);
@@ -542,7 +451,11 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
       reference: `w2b-fund-${suffix}`,
       lines: [
         { accountId: assetAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '10000' },
-        { accountId: ledgerAccount.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '10000' },
+        {
+          accountId: ledgerAccount.id,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '10000',
+        },
       ],
     });
     await dataSource.query(
@@ -639,7 +552,11 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
         { accountId: assetAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '10000' },
-        { accountId: walletRows[0]!.ledger_account_id, direction: LedgerEntryDirection.CREDIT, amountMinor: '10000' },
+        {
+          accountId: walletRows[0]!.ledger_account_id,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '10000',
+        },
       ],
     });
     const beneficiaryId = randomUUID();
@@ -708,7 +625,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     return initiated.commitment;
   }
 
-  async function dispatchIntent(commitmentId: string, name = '') {
+  async function dispatchIntent(commitmentId: string) {
     const rows: Array<{
       id: string;
       operation_reference: string;
@@ -727,7 +644,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     return rows[0];
   }
 
-  async function commandFor(intent: Awaited<ReturnType<typeof dispatchIntent>>) {
+  function commandFor(intent: Awaited<ReturnType<typeof dispatchIntent>>) {
     return {
       institutionId: intent.institution_id,
       walletId: intent.wallet_id,
@@ -764,8 +681,12 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     });
   }
 
-  async function settle(operationId: string, providerReference: string, prepared?: Awaited<ReturnType<typeof prepareForVerification>>) {
-    const pending = prepared ?? await prepareForVerification(operationId, providerReference);
+  async function settle(
+    operationId: string,
+    providerReference: string,
+    prepared?: Awaited<ReturnType<typeof prepareForVerification>>,
+  ) {
+    const pending = prepared ?? (await prepareForVerification(operationId, providerReference));
     return settlement.settleVerifiedOutcome({
       externalOperationId: operationId,
       expectedVersion: pending.version,
@@ -801,7 +722,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
   it('customer transfer: timeout prompts one status lookup, retries cannot resend, and one journal posts', async () => {
     const commitment = await createCustomerCommitment();
     const intent = await dispatchIntent(commitment.external_operation_id);
-    const command = await commandFor(intent);
+    const command = commandFor(intent);
 
     submissionMode = 'timeout';
     const uncertain = await outbound.dispatch(intent.id, command);
@@ -824,10 +745,15 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     const record = await bankRecord(commitment.external_operation_id);
     expect(record.destination_account_name).toBe('VERIFIED BENEFICIARY');
     expect(nameEnquiries).toBe(1);
-    expect(record.provider_transaction_reference).toBe(`MNFY|LIFECYCLE|${intent.operation_reference}`);
+    expect(record.provider_transaction_reference).toBe(
+      `MNFY|LIFECYCLE|${intent.operation_reference}`,
+    );
 
     const providerReference = `MNFY|LIFECYCLE|${intent.operation_reference}`;
-    const pending = await prepareForVerification(commitment.external_operation_id, providerReference);
+    const pending = await prepareForVerification(
+      commitment.external_operation_id,
+      providerReference,
+    );
     const first = await settle(commitment.external_operation_id, providerReference, pending);
     expect(first.decision).toBe(ExternalSettlementDecision.SETTLE);
     expect(first.settlement?.journalId).toBeTruthy();
@@ -854,14 +780,17 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     const intent = await dispatchIntent(commitment.external_operation_id);
     submissionMode = 'accepted';
     statusOutcome = 'FAILED';
-    await outbound.dispatch(intent.id, await commandFor(intent));
+    await outbound.dispatch(intent.id, commandFor(intent));
     const resolved = await outbound.enquire(intent.id, context.correlationId);
     expect(resolved.state).toBe('FAILED');
     expect(resolved.provider_status).toBe('FAILED');
     expect(resolved.operation_reference).toBe(intent.operation_reference);
 
     const providerReference = `MNFY|LIFECYCLE|${intent.operation_reference}`;
-    const pending = await prepareForVerification(commitment.external_operation_id, providerReference);
+    const pending = await prepareForVerification(
+      commitment.external_operation_id,
+      providerReference,
+    );
     verificationState = 'VERIFIED_REJECTED';
     const released = await settlement.releaseReservedWithdrawal({
       externalOperationId: commitment.external_operation_id,
@@ -886,14 +815,17 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     const intent = await dispatchIntent(commitment.external_operation_id);
     submissionMode = 'accepted';
     statusOutcome = 'REVERSED';
-    await outbound.dispatch(intent.id, await commandFor(intent));
+    await outbound.dispatch(intent.id, commandFor(intent));
     const resolved = await outbound.enquire(intent.id, context.correlationId);
     expect(resolved.state).toBe('REVERSED');
     expect(resolved.provider_status).toBe('REVERSED');
     expect(resolved.operation_reference).toBe(intent.operation_reference);
 
     const providerReference = `MNFY|LIFECYCLE|${intent.operation_reference}`;
-    const pending = await prepareForVerification(commitment.external_operation_id, providerReference);
+    const pending = await prepareForVerification(
+      commitment.external_operation_id,
+      providerReference,
+    );
     verificationState = 'UNKNOWN';
     await expect(
       settlement.releaseReservedWithdrawal({
@@ -915,7 +847,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
   it('agent transfer uses the same atomic reservation, verified status and single posting controls', async () => {
     const commitment = await createAgentCommitment();
     const intent = await dispatchIntent(commitment.external_operation_id);
-    const command = await commandFor(intent);
+    const command = commandFor(intent);
     submissionMode = 'accepted';
     statusOutcome = 'SUCCESSFUL';
     const submitted = await outbound.dispatch(intent.id, command);
@@ -930,7 +862,10 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     );
     expect(owner[0]?.owner_class).toBe('AGENT');
     const providerReference = `MNFY|LIFECYCLE|${intent.operation_reference}`;
-    const pending = await prepareForVerification(commitment.external_operation_id, providerReference);
+    const pending = await prepareForVerification(
+      commitment.external_operation_id,
+      providerReference,
+    );
     const result = await settle(commitment.external_operation_id, providerReference, pending);
     expect(result.settlement?.journalId).toBeTruthy();
     const replay = await settle(commitment.external_operation_id, providerReference, pending);
@@ -943,7 +878,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
     const intent = await dispatchIntent(commitment.external_operation_id);
     submissionMode = 'accepted';
     statusOutcome = 'SUCCESSFUL';
-    await outbound.dispatch(intent.id, await commandFor(intent));
+    await outbound.dispatch(intent.id, commandFor(intent));
     await outbound.enquire(intent.id, context.correlationId);
     const result = await settle(
       commitment.external_operation_id,
@@ -960,7 +895,7 @@ describe('Wallet → Bank lifecycle (real PostgreSQL, deterministic Monnify tran
           customerAccess: 'NONE',
           agentAccess: 'NONE',
         } as never,
-        journalId: result.settlement!.journalId!,
+        journalId: result.settlement.journalId!,
         reason: 'Generic admin correction attempt',
       }),
     ).rejects.toThrow('governed provider recovery');

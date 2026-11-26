@@ -110,8 +110,11 @@ describe('Bank to Wallet governed RETURN refunds (real PostgreSQL)', () => {
     await db.query(
       `INSERT INTO financial_institutions (id,reference,code,legal_name,institution_type,created_by,status)
        VALUES ($1,$2,$3,'Return fixture institution','PARTNER','fixture','REGISTERED')`,
-      [institutionId, `RET-${institutionId.slice(0, 8).toUpperCase()}`,
-        `RET_${institutionId.replace(/-/g, '').slice(0, 8).toUpperCase()}`],
+      [
+        institutionId,
+        `RET-${institutionId.slice(0, 8).toUpperCase()}`,
+        `RET_${institutionId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      ],
     );
   }, 180_000);
 
@@ -177,12 +180,15 @@ describe('Bank to Wallet governed RETURN refunds (real PostgreSQL)', () => {
   it('timeout resolves by status lookup; retries never send a second refund', async () => {
     const exceptionId = await seedException();
     await approveReturn(exceptionId);
-    const original: Array<{ business_reference: string; provider_transaction_reference: string; state: string }> =
-      await db.query(
-        `SELECT business_reference,provider_transaction_reference,state
+    const original: Array<{
+      business_reference: string;
+      provider_transaction_reference: string;
+      state: string;
+    }> = await db.query(
+      `SELECT business_reference,provider_transaction_reference,state
            FROM bank_to_wallet_exceptions WHERE id=$1`,
-        [exceptionId],
-      );
+      [exceptionId],
+    );
     const prepared = await refunds.prepare(exceptionId);
     expect(prepared.state).toBe('APPROVED');
     expect(prepared.originalProviderReference).toBe(original[0]!.provider_transaction_reference);
@@ -205,12 +211,16 @@ describe('Bank to Wallet governed RETURN refunds (real PostgreSQL)', () => {
     expect(confirmed.refundReference).toBe(prepared.returnReference);
     expect(lookups).toEqual([prepared.returnReference]);
 
-    const after: Array<{ business_reference: string; provider_transaction_reference: string; state: string; notes: string }> =
-      await db.query(
-        `SELECT business_reference,provider_transaction_reference,state,notes
+    const after: Array<{
+      business_reference: string;
+      provider_transaction_reference: string;
+      state: string;
+      notes: string;
+    }> = await db.query(
+      `SELECT business_reference,provider_transaction_reference,state,notes
            FROM bank_to_wallet_exceptions WHERE id=$1`,
-        [exceptionId],
-      );
+      [exceptionId],
+    );
     expect(after[0]).toMatchObject({
       business_reference: original[0]!.business_reference,
       provider_transaction_reference: original[0]!.provider_transaction_reference,

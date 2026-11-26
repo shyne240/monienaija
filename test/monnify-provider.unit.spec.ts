@@ -14,7 +14,10 @@ import type {
 
 type Handler = (req: MonnifyHttpRequest) => Promise<MonnifyHttpResponse> | MonnifyHttpResponse;
 
-function providerWith(handler: Handler, overrides: Partial<ConstructorParameters<typeof MonnifyProvider>[0]> = {}) {
+function providerWith(
+  handler: Handler,
+  overrides: Partial<ConstructorParameters<typeof MonnifyProvider>[0]> = {},
+) {
   const requests: MonnifyHttpRequest[] = [];
   const http: MonnifyHttpClient = {
     send: async (req) => {
@@ -471,7 +474,10 @@ describe('Monnify documented refund contract', () => {
           status: 200,
           body: {
             requestSuccessful: true,
-            responseBody: { refundStatus: 'COMPLETED', transactionReference: refundRequest.originalProviderReference },
+            responseBody: {
+              refundStatus: 'COMPLETED',
+              transactionReference: refundRequest.originalProviderReference,
+            },
           },
         };
       },
