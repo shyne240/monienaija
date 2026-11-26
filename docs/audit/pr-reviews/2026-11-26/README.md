@@ -36,3 +36,9 @@ Evidence is strictly separated:
   (22/22) at retarget candidate `e96a9849…` integrated with #25 and #23.
 
 [00-checkpoint.md](00-checkpoint.md) records exact refs, CI runs, clean/conflicted merge trees and commands.
+
+## Merge outcome
+
+PR #35 was authorised by the owner, marked ready and merged into `arena/5-main-web-integration` as
+`de83c7b3047a47627b702c283ea03b3c32af7c9d` (merged tree `a1e9a3a4235c1c61a7a667db35ebc98ab0261fb4`).
+PR #33 remains OPEN, DRAFT and UNMERGED.

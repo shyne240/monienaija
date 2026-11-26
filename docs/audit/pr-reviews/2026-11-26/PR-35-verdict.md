@@ -76,3 +76,15 @@ The integration ref advanced from `85b8a953…` to `39e0811d928c54537d120a5efad9
 `dashboard.test.tsx` or `m2-dashboard-settings.test.tsx`. The reviewed merge result is therefore
 unchanged; no affected-check rerun was triggered by this tip change. PR #35 head and state remain
 unchanged (`87141000…`, OPEN, DRAFT, UNMERGED); CI at that exact head remains all-green.
+
+## Owner-authorised merge (2026-11-26)
+
+With owner authorisation, PR #35 was marked ready and merged with GitHub’s merge-commit method. Verified
+immediately before merging: head `871410000514972a1c8819ff7e7ac42cbc88b798`, base
+`39e0811d928c54537d120a5efad94cc76afb71ca`, merge-tree tree `a1e9a3a4235c1c61a7a667db35ebc98ab0261fb4`,
+3-file +78/−33 delta, all eight workflow jobs SUCCESS, GitHub `MERGEABLE/CLEAN`.
+
+- Merge commit: `de83c7b3047a47627b702c283ea03b3c32af7c9d`
+- Parents: `39e0811d928c54537d120a5efad94cc76afb71ca` and `871410000514972a1c8819ff7e7ac42cbc88b798`
+- Merged tree: `a1e9a3a4235c1c61a7a667db35ebc98ab0261fb4` (identical to the reviewed merge result)
+- PR #35: CLOSED / MERGED at 2026-11-26T17:07:54Z. PR #33 remains OPEN, DRAFT and UNMERGED.
