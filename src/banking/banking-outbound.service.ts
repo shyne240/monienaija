@@ -203,6 +203,58 @@ export class BankingOutboundService {
       return existing;
     }
 
+    // Monnify's current disbursement contract requires the verified beneficiary name. The A6
+    // commitment binds the destination by immutable reference and deliberately stores no display
+    // name, so resolve it from the provider's documented name enquiry HERE, once, before submission.
+    // Nothing has been sent at this point, so an unresolved name may fail closed without creating
+    // an uncertain financial outcome. The name is persisted on the same durable record so retries
+    // reuse the same verified value rather than re-enquiring a different one.
+    if (!command.destinationAccountName.trim()) {
+      if (!provider.enquireAccountName) {
+        await this.db.query(
+          `UPDATE banking_outbound_operations
+              SET state='FAILED',last_failure_code='DESTINATION_NAME_UNAVAILABLE',
+                  resolved_at=clock_timestamp()
+            WHERE id=$1 AND state='CREATED'`,
+          [id],
+        );
+        return this.record(this.db.manager, id);
+      }
+      let enquiry;
+      try {
+        enquiry = await provider.enquireAccountName(
+          {
+            providerBankCode: command.destinationBankCode,
+            accountNumber: command.destinationAccountNumber,
+          },
+          { correlationId: command.correlationId },
+        );
+      } catch {
+        enquiry = undefined;
+      }
+      const name =
+        enquiry && enquiry.ok && enquiry.value.outcome === 'RESOLVED'
+          ? enquiry.value.accountName?.trim()
+          : undefined;
+      if (!name) {
+        // No money moved. FAILED is truthful here, and NOT an instruction to resubmit with a
+        // guessed name from a beneficiary label.
+        await this.db.query(
+          `UPDATE banking_outbound_operations
+              SET state='FAILED',last_failure_code='DESTINATION_NAME_UNRESOLVED',
+                  resolved_at=clock_timestamp()
+            WHERE id=$1 AND state='CREATED'`,
+          [id],
+        );
+        return this.record(this.db.manager, id);
+      }
+      await this.db.query(
+        `UPDATE banking_outbound_operations SET destination_account_name=$2 WHERE id=$1`,
+        [id, name.slice(0, 160)],
+      );
+      command = { ...command, destinationAccountName: name.slice(0, 160) };
+    }
+
     await this.db.query(
       `UPDATE banking_outbound_operations
           SET state='SUBMITTING',attempts=attempts+1,last_attempted_at=clock_timestamp()
@@ -306,6 +358,20 @@ export class BankingOutboundService {
   }
 
   /**
+   * Resolves one of OUR operation references to the durable dispatch record. Used only by an
+   * authenticated webhook to locate the record whose authoritative status must be re-read; it is
+   * deliberately not a way to submit or settle anything.
+   */
+  async findByOperationReference(reference: string): Promise<string | null> {
+    if (typeof reference !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(reference)) return null;
+    const rows = await this.db.query<Array<{ id: string }>>(
+      'SELECT id FROM banking_outbound_operations WHERE operation_reference=$1 LIMIT 1',
+      [reference],
+    );
+    return rows[0]?.id ?? null;
+  }
+
+  /**
    * Asks the provider what happened to an operation.
    *
    * This is the only sanctioned path out of UNKNOWN. It never submits, never mints a reference, and
@@ -330,6 +396,18 @@ export class BankingOutboundService {
       return this.record(this.db.manager, id);
     }
     if (!result.ok) return this.record(this.db.manager, id);
+
+    // The provider's reference is evidence, not an alternative identifier. Persist it on first
+    // authoritative observation so a later replay, status enquiry or Finance review always sees
+    // the original value rather than whatever a retry happened to return.
+    if (result.value.providerReference) {
+      await this.db.query(
+        `UPDATE banking_outbound_operations
+            SET provider_transaction_reference=COALESCE(provider_transaction_reference, $2)
+          WHERE id=$1`,
+        [id, result.value.providerReference.slice(0, 128)],
+      );
+    }
 
     switch (result.value.outcome) {
       case 'SUCCESSFUL':

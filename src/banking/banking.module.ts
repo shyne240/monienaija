@@ -224,12 +224,14 @@ export interface BankingRuntime {
         ConfigService,
         PostgresWebhookAttribution,
         BankToWalletService,
+        BankingOutboundService,
       ],
       useFactory: (
         inbound: BankingInboundService,
         config: ConfigService<Environment, true>,
         attribution: PostgresWebhookAttribution,
         bankToWallet: BankToWalletService,
+        outbound: BankingOutboundService,
       ): BankingWebhookService =>
         // One endpoint serves every institution: the provider key is fixed (this is Monnify's
         // endpoint) but the institution is resolved per payment from the receiving account.
@@ -244,6 +246,7 @@ export interface BankingRuntime {
             resolveAttribution: (input) => attribution.resolve(input),
           },
           bankToWallet,
+          outbound,
         ),
     },
     {
