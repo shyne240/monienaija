@@ -136,6 +136,9 @@ export class PrivilegedActionApprovalService {
       );
     }
 
+    if (query.approvalId) {
+      qb.andWhere('approval.id = :approvalId', { approvalId: query.approvalId });
+    }
     if (query.status) {
       qb.andWhere('approval.status = :status', { status: query.status });
     }
@@ -162,6 +165,32 @@ export class PrivilegedActionApprovalService {
       items: rows.map((a) => this.toAuthorizedListView(a, principal)),
       total,
     };
+  }
+
+  /**
+   * Single-approval read for an authorized checker (Arena B9).
+   *
+   * WHY THIS EXISTS
+   *   The Approvals workspace must be able to answer, from authoritative state, "was this decision
+   *   recorded, and has it been applied?" — including after a request whose outcome was
+   *   unconfirmed (network loss, 5xx, session change). Without it a checker could only guess
+   *   between "approved", "rejected", "stale", "already applied" or "not recorded at all".
+   *
+   * WHY IT CANNOT WIDEN VISIBILITY
+   *   It is `listApprovals` with an id filter: the same approval-scope membership, MFA assurance,
+   *   SUPER_ADMIN agent-funding exclusion and per-action approving-role filters all still apply,
+   *   and the same `toAuthorizedListView` redaction runs. An approval outside the caller's scope is
+   *   reported as not found (indistinguishable from a nonexistent id), so this cannot be used as an
+   *   enumeration or existence oracle.
+   */
+  async getVisibleApproval(
+    approvalId: string,
+    principal: AuthorizationPrincipal,
+  ): Promise<PrivilegedActionApprovalView | null> {
+    const id = String(approvalId ?? '').trim();
+    if (!UUID_PATTERN.test(id)) return null;
+    const { items } = await this.listApprovals({ principal, approvalId: id, limit: 1, offset: 0 });
+    return items[0] ?? null;
   }
 
   private toAuthorizedListView(

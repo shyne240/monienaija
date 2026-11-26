@@ -4,7 +4,7 @@ import { RoleAssignmentScreen } from '../src/screens/authenticated/RoleAssignmen
 import { ApiClient } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 jest.mock('../src/services/api-client', () => ({
-  ApiClient: { post: jest.fn(), delete: jest.fn() },
+  ApiClient: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 const principal = (id: string, scopes: string[]) =>
   useAuthStore.setState({
@@ -283,4 +283,130 @@ test('local summary tracks the governed draft without implying a current assignm
   expect(summary.textContent).toContain('synthetic-target');
   expect(ApiClient.post).not.toHaveBeenCalled();
   expect(ApiClient.delete).not.toHaveBeenCalled();
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Arena B9 — an operator must see the target's current roles before preparing a change.
+ * ---------------------------------------------------------------------------------------- */
+
+const targetDetail = (roleStatus: 'ACTIVE' | 'REVOKED' | null, roleKey = 'OPERATIONS') => ({
+  principalId: 'synthetic-target',
+  principalType: 'WORKFORCE',
+  accountStatus: roleStatus === 'ACTIVE' ? 'ACTIVE' : 'NO_CURRENT_GRANT',
+  roles: roleStatus
+    ? [{ roleKey, status: roleStatus, readOnly: roleKey === 'FINANCE_AUDITOR' }]
+    : [],
+  readOnlyPrincipal: false,
+  institutionScope: {
+    mode: 'INSTITUTIONS',
+    platformFunctionGranted: false,
+    active: [
+      {
+        institutionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        institutionName: 'Example Bank',
+        code: 'EXB',
+      },
+    ],
+    revokedCount: 1,
+  },
+  sessions: [
+    {
+      id: 'session-1',
+      status: 'ACTIVE',
+      assuranceLevel: 'MFA',
+      audience: 'workforce-admin',
+      lastSeenAt: '2026-11-22T06:00:00Z',
+      expiresAt: '2026-11-22T06:15:00Z',
+      revokedAt: null,
+    },
+  ],
+  effectivePermissions: [
+    {
+      functionCode: 'customer.view',
+      accessType: 'VIEW',
+      domain: 'CUSTOMER',
+      name: 'View customer',
+      sensitivity: 'READ',
+    },
+  ],
+  administrativeAuthorizations: [],
+  boundaries: { readOnly: true, note: 'read-only projection' },
+});
+
+const fillWindow = () => {
+  fireEvent.change(screen.getByLabelText('Effective From'), {
+    target: { value: '2026-10-23T10:00' },
+  });
+  fireEvent.change(screen.getByLabelText('Effective To'), {
+    target: { value: '2027-10-23T10:00' },
+  });
+};
+
+test("a prefilled target's current roles, permissions and institution scope are read before a change", async () => {
+  principal('admin-one', [
+    'workforce.role.assign_operational',
+    'workforce.role.revoke_operational',
+    'workforce.role.view',
+  ]);
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    expect(path).toBe('/internal/workforce/directory/synthetic-target');
+    return Promise.resolve(targetDetail(null));
+  });
+  render(<RoleAssignmentScreen initialTargetPrincipalId="synthetic-target" />);
+  const identity = await screen.findByTestId('role-target-identity');
+  expect(identity.textContent).toContain('No catalogue role assignment');
+  expect(identity.textContent).toContain('1 total');
+  expect(identity.textContent).toContain('Example Bank');
+  expect(identity.textContent).toContain('1 revoked in history');
+  expect(screen.getByText('Prefilled from the workforce directory.')).toBeTruthy();
+  // Nothing is written by reading an identity.
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(ApiClient.delete).not.toHaveBeenCalled();
+});
+
+test('an identity that already holds the selected role blocks a duplicate assignment', async () => {
+  principal('admin-one', ['workforce.role.assign_operational', 'workforce.role.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(targetDetail('ACTIVE'));
+  render(<RoleAssignmentScreen initialTargetPrincipalId="synthetic-target" />);
+  expect(await screen.findByTestId('role-target-identity')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toContain(
+    'already holds an active OPERATIONS assignment',
+  );
+  const submit = screen.getByRole('button', { name: 'Commit Role Assignment' });
+  expect((submit as HTMLButtonElement).disabled).toBe(true);
+  fillWindow();
+  fireEvent.click(submit);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('revoking a role the target does not hold is blocked with the reason stated', async () => {
+  principal('admin-one', [
+    'workforce.role.assign_operational',
+    'workforce.role.revoke_operational',
+    'workforce.role.view',
+  ]);
+  (ApiClient.get as jest.Mock).mockResolvedValue(targetDetail('REVOKED'));
+  render(<RoleAssignmentScreen initialTargetPrincipalId="synthetic-target" />);
+  expect(await screen.findByTestId('role-target-identity')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke Operational Role' }));
+  expect(screen.getByRole('alert').textContent).toContain('nothing to revoke');
+  expect(
+    (screen.getByRole('button', { name: 'Execute Revocation' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(ApiClient.delete).not.toHaveBeenCalled();
+});
+
+test('without workforce.role.view the form says the identity is unverified and still allows the governed request', async () => {
+  principal('admin-one', ['workforce.role.assign_operational']);
+  render(<RoleAssignmentScreen initialTargetPrincipalId="synthetic-target" />);
+  const problem = await screen.findByTestId('role-target-identity-problem');
+  expect(problem.textContent).toContain(
+    'Identity lookup requires the workforce.role.view function',
+  );
+  expect(ApiClient.get).not.toHaveBeenCalled();
+  fillWindow();
+  fireEvent.click(screen.getByRole('button', { name: 'Commit Role Assignment' }));
+  expect(screen.getByRole('dialog', { name: 'Confirm role assignment' })).toBeTruthy();
+  expect(screen.getByRole('dialog').textContent).toContain('Not verified in this form');
 });

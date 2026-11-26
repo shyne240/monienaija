@@ -75,6 +75,12 @@ function getFocusable(root: HTMLElement | null): HTMLElement[] {
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  /**
+   * Principal selected in the Workforce Directory for a governed access change. It is a UI
+   * hand-off only: the value identifies WHICH identity the operator inspected, and every grant or
+   * revocation still goes through the existing server-enforced role routes.
+   */
+  const [roleTargetPrincipalId, setRoleTargetPrincipalId] = useState('');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -528,6 +534,9 @@ export const Layout: React.FC = () => {
     setNotificationGuard(false);
     setNotificationBusy(false);
     setNavigationQuery('');
+    // A directory hand-off prefill belongs to one visit only: leaving Role governance (or moving
+    // to any other view) drops it, while the hand-off's own navigation INTO roleGovernance keeps it.
+    if (canonicalAdminView(view) !== 'roleGovernance') setRoleTargetPrincipalId('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -795,9 +804,19 @@ export const Layout: React.FC = () => {
           />
         );
       case 'workforceAccess':
-        return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
+        return (
+          <WorkforceAdminScreen
+            onWorkforceGuardChange={reportWorkforceGuard}
+            onOpenDirectory={() => handleNav('workforceDirectory')}
+          />
+        );
       case 'roleGovernance':
-        return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
+        return (
+          <RoleAssignmentScreen
+            onRoleGuardChange={reportRoleGuard}
+            initialTargetPrincipalId={roleTargetPrincipalId || undefined}
+          />
+        );
       case 'approvalsInbox':
         return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
       case 'superAdminRecovery':
@@ -817,7 +836,15 @@ export const Layout: React.FC = () => {
       case 'notificationOperations':
         return <NotificationOperationsScreen />;
       case 'workforceDirectory':
-        return <WorkforceDirectoryScreen />;
+        return (
+          <WorkforceDirectoryScreen
+            onGovernAccess={(principalId) => {
+              if (!canAccessAdminView('roleGovernance', principal.scopes, principal.roles)) return;
+              setRoleTargetPrincipalId(principalId);
+              performNav('roleGovernance');
+            }}
+          />
+        );
       case 'auditInspection':
         return <AuditInspectionScreen />;
       case 'institutions':

@@ -9,6 +9,9 @@ import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
 import { CommercialApprovalInbox } from '../../components/CommercialApprovalInbox';
 import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
+import { ApprovalEvaluationInbox } from '../../components/ApprovalEvaluationInbox';
+import { Arena4OperationsApi, describeHttpError } from '../../services/arena4-operations-api';
+import { ApprovalRecord, evaluateApproval, formatInstant } from '../../utils/approval-evaluation';
 
 export const ApprovalsScreen: React.FC<{
   onApprovalGuardChange?: (guarded: boolean, busy: boolean) => void;
@@ -69,6 +72,21 @@ const ApprovalsWorkspace: React.FC<{
 }) => {
   const canWrite = !principal?.readOnlyPrincipal;
   const [unconfirmedIds, setUnconfirmedIds] = useState<Record<string, boolean>>({});
+  const [unconfirmedActions, setUnconfirmedActions] = useState<
+    Record<string, 'approve' | 'reject'>
+  >({});
+  const [inboxRefreshToken, setInboxRefreshToken] = useState(0);
+  /**
+   * Authoritative re-read of one approval after an unconfirmed outcome. `record` is exactly what
+   * `GET /internal/a2/workforce/approvals/:id` returned for THIS session — never a locally inferred
+   * status — and is only cleared by a new read or a new selection.
+   */
+  const [recheck, setRecheck] = useState<{
+    id: string;
+    loading: boolean;
+    error: string;
+    record: ApprovalRecord | null;
+  } | null>(null);
   const decisionGeneration = useRef(0);
   useEffect(
     () => () => {
@@ -219,6 +237,7 @@ const ApprovalsWorkspace: React.FC<{
         response.approval?.id !== id
       ) {
         setUnconfirmedIds((current) => ({ ...current, [id]: true }));
+        setUnconfirmedActions((current) => ({ ...current, [id]: action }));
         setError(
           response?.reason
             ? `Decision not confirmed: ${response.reason}. Check the approval and audit trail before retrying.`
@@ -230,9 +249,12 @@ const ApprovalsWorkspace: React.FC<{
       setReceiptId(id);
       setApprovalId('');
       setComment('');
+      setRecheck(null);
+      setInboxRefreshToken((current) => current + 1);
     } catch (err: any) {
       if (request === decisionGeneration.current) {
         setUnconfirmedIds((current) => ({ ...current, [id]: true }));
+        setUnconfirmedActions((current) => ({ ...current, [id]: action }));
         setError(
           `Decision outcome not confirmed. Check the approval and audit trail before retrying. ${err?.message || 'Service unavailable.'}`,
         );
@@ -244,6 +266,59 @@ const ApprovalsWorkspace: React.FC<{
         setDecisionAction(null);
         setPendingDecision(null);
       }
+    }
+  };
+
+  /**
+   * Re-read the authoritative approval record for an unconfirmed decision.
+   *
+   * A decision can be lost after the server committed it (network loss, 5xx, session change), so
+   * the only safe way out of the local lock is to ask the server what it recorded. This never
+   * asserts success on its own: it reports the record's real status and releases the lock only when
+   * that record shows THIS principal's decision in the direction that was submitted.
+   */
+  const recheckOutcome = async (id: string) => {
+    const action = unconfirmedActions[id];
+    setRecheck({ id, loading: true, error: '', record: null });
+    try {
+      const record = await Arena4OperationsApi.approval(id);
+      const status = String(record?.status ?? '').toUpperCase();
+      setRecheck({ id, loading: false, error: '', record: record ?? null });
+      const recordedByMe =
+        Boolean(record) &&
+        record.approvedBy === principal?.principalId &&
+        (action === 'approve'
+          ? status === 'APPROVED' || status === 'CONSUMED'
+          : status === 'REJECTED');
+      if (recordedByMe) {
+        setUnconfirmedIds((current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+        setUnconfirmedActions((current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+        setError('');
+        setSuccess(action ?? 'approve');
+        setReceiptId(id);
+        setInboxRefreshToken((current) => current + 1);
+      }
+    } catch (err: any) {
+      const notVisible = err?.status === 404;
+      setRecheck({
+        id,
+        loading: false,
+        record: null,
+        error: notVisible
+          ? 'The service does not expose this approval to your session (unknown id, or outside your approval scope). The outcome of your decision remains unconfirmed.'
+          : describeHttpError(
+              err,
+              'The authoritative approval record could not be read. The outcome remains unconfirmed.',
+            ),
+      });
     }
   };
 
@@ -383,6 +458,21 @@ const ApprovalsWorkspace: React.FC<{
         </section>
       )}
 
+      <ApprovalEvaluationInbox
+        currentPrincipalId={principal?.principalId}
+        selectedId={approvalId.trim()}
+        canDecide={canApprove && canWrite && principal?.assuranceLevel === 'MFA'}
+        refreshToken={inboxRefreshToken}
+        onSelect={(record) => {
+          setApprovalId(record.id);
+          setComment('');
+          setError('');
+          setSuccess(null);
+          setReceiptId('');
+          setRecheck(null);
+        }}
+      />
+
       {canApprove && (
         <section
           id="generic-checker-workspace"
@@ -423,17 +513,51 @@ const ApprovalsWorkspace: React.FC<{
           )}
           {unconfirmedIds[approvalId.trim()] && (
             <div className="approvals-redesign__boundary" role="status">
-              <strong>Decision review required</strong>
+              <strong>Decision outcome unconfirmed — re-check the record</strong>
               <span>
-                The decision may already have occurred. This screen has no generic approval read
-                endpoint; inspect the authoritative approval and audit trail elsewhere before
-                another action. This local lock is lost when leaving or changing session, and review
-                cannot exclude a late commit.
+                The decision may or may not have been recorded. Re-read the authoritative approval
+                record for this ID; the local lock is released only when the server shows your
+                decision in the direction you submitted. A read cannot exclude a late commit, so
+                confirm the audit trail before acting again.
               </span>
+              <button
+                type="button"
+                disabled={recheck?.loading}
+                onClick={() => void recheckOutcome(approvalId.trim())}
+              >
+                {recheck?.loading ? 'Re-checking…' : 'Re-check approval state'}
+              </button>
+              {recheck?.id === approvalId.trim() && recheck.loading ? (
+                <span role="note">Reading the authoritative approval record…</span>
+              ) : null}
+              {recheck?.id === approvalId.trim() && recheck.error ? (
+                <span role="alert">{recheck.error}</span>
+              ) : null}
+              {recheck?.id === approvalId.trim() && recheck.record ? (
+                <span data-testid="approval-recheck-result">
+                  Server state: <strong>{recheck.record.status}</strong>
+                  {recheck.record.approvedBy ? (
+                    <>
+                      {' '}
+                      · decided by <code>{recheck.record.approvedBy}</code>
+                    </>
+                  ) : null}
+                  {recheck.record.consumedAt
+                    ? ` · applied ${formatInstant(recheck.record.consumedAt)}`
+                    : ' · no application recorded'}
+                  .{' '}
+                  {evaluateApproval(recheck.record, new Date(), principal?.principalId).explanation}
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
                   setUnconfirmedIds((current) => {
+                    const next = { ...current };
+                    delete next[approvalId.trim()];
+                    return next;
+                  });
+                  setUnconfirmedActions((current) => {
                     const next = { ...current };
                     delete next[approvalId.trim()];
                     return next;
