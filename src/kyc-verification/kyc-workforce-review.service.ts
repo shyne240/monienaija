@@ -522,12 +522,15 @@ export class KycWorkforceReviewService {
           provider: string;
           policy_version: string;
           outcome: string;
+          consent_id: string;
+          provider_route_version: number | null;
           created_at: Date;
           completed_at: Date | null;
           expires_at: Date | null;
         }>
       >(
-        `SELECT id, kind, provider, policy_version, outcome, created_at, completed_at, expires_at
+        `SELECT id, kind, provider, policy_version, outcome, consent_id,
+                provider_route_version, created_at, completed_at, expires_at
            FROM kyc_verification_attempts
           WHERE customer_id = $1::uuid
           ORDER BY created_at DESC
@@ -556,15 +559,27 @@ export class KycWorkforceReviewService {
           kind: string;
           notice_version: string;
           provider: string | null;
+          route_version: number | null;
+          provenance: 'CUSTOMER_SESSION' | 'WORKFORCE_MFA' | 'UNVERIFIED';
           granted_at: Date;
           expires_at: Date;
           withdrawn_at: Date | null;
         }>
       >(
-        `SELECT id, kind, notice_version, provider, granted_at, expires_at, withdrawn_at
-           FROM kyc_consents
-          WHERE customer_id = $1::uuid
-          ORDER BY granted_at DESC
+        `SELECT c.id, c.kind, c.notice_version, c.provider, c.route_version,
+                CASE
+                  WHEN c.session_id IS NOT NULL THEN 'CUSTOMER_SESSION'
+                  WHEN EXISTS (
+                    SELECT 1 FROM kyc_private_audit a
+                     WHERE a.resource_id = c.id AND a.customer_id = c.customer_id
+                       AND a.action = 'CONSENT_GRANTED' AND a.outcome = 'WORKFORCE_MFA'
+                  ) THEN 'WORKFORCE_MFA'
+                  ELSE 'UNVERIFIED'
+                END AS provenance,
+                c.granted_at, c.expires_at, c.withdrawn_at
+           FROM kyc_consents c
+          WHERE c.customer_id = $1::uuid
+          ORDER BY c.granted_at DESC
           LIMIT 20`,
         [normalizedCustomerId],
       ),
@@ -575,7 +590,15 @@ export class KycWorkforceReviewService {
       const evidence = await this.evidenceReader.read(manager, normalizedCustomerId, {
         lockMode: 'NONE',
       });
-      return evidence !== null;
+      return Boolean(
+        evidence &&
+          evidence.evidence.some(
+            (item) =>
+              item.status === 'VERIFIED' &&
+              item.provenance === 'VERIFIED_PROVIDER' &&
+              (item.type === 'BVN' || item.type === 'NIN'),
+          ),
+      );
     });
 
     // 3. Permission-bounded Customer Evidence Sub-resources
@@ -850,6 +873,8 @@ export class KycWorkforceReviewService {
             provider: row.provider,
             policyVersion: row.policy_version,
             outcome: row.outcome,
+            consentId: row.consent_id,
+            routeVersion: row.provider_route_version,
             createdAt: row.created_at.toISOString(),
             completedAt: row.completed_at?.toISOString() ?? null,
             expiresAt: row.expires_at?.toISOString() ?? null,
@@ -866,6 +891,8 @@ export class KycWorkforceReviewService {
             kind: row.kind,
             noticeVersion: row.notice_version,
             provider: row.provider,
+            routeVersion: row.route_version,
+            provenance: row.provenance,
             grantedAt: row.granted_at.toISOString(),
             expiresAt: row.expires_at.toISOString(),
             withdrawnAt: row.withdrawn_at?.toISOString() ?? null,

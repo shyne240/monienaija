@@ -596,9 +596,23 @@ export const RegistrationScreen: React.FC = () => {
           { sessionId: session.id, passcode, passcodeConfirmation, pin, pinConfirmation },
           session.token,
         );
+        let latestState = onboardingState;
+        if (claimFlow) {
+          try {
+            latestState = await mobileOnboardingStateApi.read(session.id, session.token);
+            setOnboardingState(latestState);
+            setOnboardingStateError('');
+          } catch {
+            // Preserve prior onboarding state if reload is unavailable.
+          }
+        }
+        const claimReadyForFinancialSignIn =
+          claimFlow && latestState?.customer?.status === 'ACTIVE';
         setResult(
           claimFlow
-            ? 'Credentials saved. Continue to onboarding sign in; financial services remain unavailable.'
+            ? claimReadyForFinancialSignIn
+              ? 'Credentials saved. Your account is approved — sign in to set up your NGN wallet.'
+              : 'Credentials saved. Continue to onboarding sign in; financial services remain unavailable.'
             : 'Test credentials saved. You can sign in to onboarding only; financial services remain unavailable.',
         );
         setStep('RESULT');
@@ -1014,25 +1028,71 @@ export const RegistrationScreen: React.FC = () => {
       )}
       {step === 'ACTIVATED' && (
         <View>
-          <Text style={styles.message}>
-            Your account is activated. Sign in with your passcode to use financial services.
-          </Text>
-          <Button label="Go to sign in" onPress={() => navigation.navigate('Login')} />
+          {onboardingState?.credentials?.mobileOtpRequired ? (
+            <>
+              <Text style={styles.message}>
+                {onboardingState.nextAction ||
+                  'Your account is activated. Enter your passcode to sign in.'}
+              </Text>
+              <Text>Enter your passcode</Text>
+              <Input
+                testID="onboarding-passcode"
+                label="Login passcode"
+                secureTextEntry
+                keyboardType="number-pad"
+                maxLength={6}
+                value={passcode}
+                onChangeText={setPasscode}
+              />
+              <Button label="Sign in" loading={busy} onPress={onboardingLogin} />
+              <Button label="Start again" variant="text" onPress={() => void reset()} />
+            </>
+          ) : (
+            <>
+              <Text style={styles.message}>
+                Your account is activated. Sign in with your passcode to use financial services.
+              </Text>
+              <Button label="Go to sign in" onPress={() => navigation.navigate('Login')} />
+            </>
+          )}
         </View>
       )}
       {step === 'ONBOARDING_LOGIN' && (
         <View>
-          <Text>Enter your passcode</Text>
-          <Input
-            testID="onboarding-passcode"
-            label="Login passcode"
-            secureTextEntry
-            keyboardType="number-pad"
-            maxLength={6}
-            value={passcode}
-            onChangeText={setPasscode}
-          />
-          <Button label="Sign in to onboarding" loading={busy} onPress={onboardingLogin} />
+          {onboardingState?.credentials?.rotationRequired ? (
+            <>
+              <Text style={styles.message}>{onboardingState.nextAction}</Text>
+              <Button
+                label="Sign in with temporary password"
+                onPress={() => navigation.navigate('Login')}
+              />
+            </>
+          ) : (
+            <>
+              {onboardingState?.customer?.status === 'ACTIVE' ? (
+                <Text style={styles.message}>{onboardingState.nextAction}</Text>
+              ) : null}
+              <Text>Enter your passcode</Text>
+              <Input
+                testID="onboarding-passcode"
+                label="Login passcode"
+                secureTextEntry
+                keyboardType="number-pad"
+                maxLength={6}
+                value={passcode}
+                onChangeText={setPasscode}
+              />
+              <Button
+                label={
+                  onboardingState?.customer?.status === 'ACTIVE'
+                    ? 'Sign in'
+                    : 'Sign in to onboarding'
+                }
+                loading={busy}
+                onPress={onboardingLogin}
+              />
+            </>
+          )}
           <Button label="Start again" variant="text" onPress={() => void reset()} />
         </View>
       )}
@@ -1072,23 +1132,38 @@ export const RegistrationScreen: React.FC = () => {
             result.startsWith('Credentials saved')) && (
             <>
               <RemainingRequirements
-                rows={[
-                  { label: 'Phone verified', done: true },
-                  {
-                    label: 'Identity (BVN/NIN) verified',
-                    done: claimFlow || !!session?.matchedAttemptId,
-                  },
-                  { label: 'Verification consent recorded', done: true },
-                  { label: 'Login passcode set', done: true },
-                  { label: 'Transaction PIN set', done: true },
-                  {
-                    label: 'KYC assessment approved (financial access)',
-                    done: false,
-                  },
-                ]}
+                rows={
+                  claimFlow && onboardingState?.customer?.status === 'ACTIVE'
+                    ? [
+                        { label: 'Login passcode set', done: true },
+                        { label: 'Transaction PIN set', done: true },
+                        ...onboardingState.requirements.map((requirement) => ({
+                          label: requirement.label,
+                          done: requirement.state === 'MET',
+                        })),
+                      ]
+                    : [
+                        { label: 'Phone verified', done: true },
+                        {
+                          label: 'Identity (BVN/NIN) verified',
+                          done: claimFlow || !!session?.matchedAttemptId,
+                        },
+                        { label: 'Verification consent recorded', done: true },
+                        { label: 'Login passcode set', done: true },
+                        { label: 'Transaction PIN set', done: true },
+                        {
+                          label: 'KYC assessment approved (financial access)',
+                          done: false,
+                        },
+                      ]
+                }
               />
               <Button
-                label="Continue to onboarding sign in"
+                label={
+                  claimFlow && onboardingState?.customer?.status === 'ACTIVE'
+                    ? 'Continue to sign in'
+                    : 'Continue to onboarding sign in'
+                }
                 onPress={() => setStep('ONBOARDING_LOGIN')}
               />
             </>

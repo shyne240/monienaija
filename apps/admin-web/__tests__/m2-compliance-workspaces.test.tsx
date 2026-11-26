@@ -24,6 +24,91 @@ function deferred() {
   return { promise, resolve };
 }
 beforeEach(() => jest.resetAllMocks());
+
+test('MFA KYC workspace records governed consent before identity verification and surfaces linkage', async () => {
+  const customerId = 'c1234567-1234-4234-8234-123456789abc';
+  principal(['kyc.view', 'kyc.review', 'customer.view_identity_documents']);
+  const dossier = {
+    customer: {
+      id: customerId,
+      reference: 'synthetic-customer',
+      status: 'DRAFT',
+      kycLevel: 'NONE',
+    },
+    consentNotice: {
+      version: 'notice-v1',
+      text: 'Synthetic customer consent notice for testing purposes.',
+    },
+    evidenceStatus: {
+      trustedVerificationEngine: {
+        readerStatus: 'READY',
+        verificationAttempts: [
+          {
+            id: 'attempt-1',
+            kind: 'BVN',
+            provider: 'PREMBLY',
+            outcome: 'MATCH',
+            consentId: 'consent-1',
+            routeVersion: 4,
+          },
+        ],
+        consents: [{ id: 'consent-1', kind: 'BVN', routeVersion: 4, provenance: 'WORKFORCE_MFA' }],
+        identityClaims: [
+          { id: 'claim-1', kind: 'BVN', status: 'VERIFIED', attemptId: 'attempt-1' },
+        ],
+      },
+      identityDocuments: {
+        access: 'GRANTED',
+        items: [{ id: 'document-1', type: 'BVN', maskedDocumentNumber: '••••••••123' }],
+      },
+    },
+    supportedDecisions: { approvalEligibleNow: true },
+    blockers: [],
+  };
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+    String(path).includes('/internal/kyc/review-workspace/customers/')
+      ? Promise.resolve(dossier)
+      : Promise.resolve({ customerId, level: 'NONE', status: 'NOT_STARTED' }),
+  );
+  const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: { randomUUID: jest.fn().mockReturnValue('44444444-4444-4444-8444-444444444444') },
+  });
+  (ApiClient.post as jest.Mock).mockResolvedValue({
+    id: 'attempt-1',
+    consentId: 'consent-1',
+    kind: 'BVN',
+    status: 'MATCH',
+    provider: 'PREMBLY',
+    routeVersion: 4,
+    identityRevision: '1',
+    expiresAt: null,
+  });
+  render(<ComplianceScreen mode="kyc" initialCustomerId={customerId} liveWorkspace />);
+  const consentCheck = await screen.findByTestId('workforce-consent-confirmed');
+  expect(screen.getByTestId('governed-consent-notice').textContent).toContain('notice');
+  fireEvent.click(consentCheck);
+  fireEvent.click(screen.getByRole('button', { name: 'Record consent & verify BVN' }));
+  expect((await screen.findByTestId('workforce-verification-result')).textContent).toMatch(
+    /consent consent-1 → attempt attempt-1/,
+  );
+  expect(ApiClient.post).toHaveBeenCalledWith(
+    `/internal/kyc/review-workspace/customers/${customerId}/verify-identity`,
+    expect.objectContaining({
+      kind: 'BVN',
+      customerConsentConfirmed: true,
+      noticeVersion: 'notice-v1',
+      consentRequestId: expect.any(String),
+      requestId: expect.any(String),
+    }),
+  );
+  expect((await screen.findByTestId('identity-claim-linkage')).textContent).toContain(
+    'claim claim-1 ← attempt attempt-1',
+  );
+  if (originalCrypto) Object.defineProperty(globalThis, 'crypto', originalCrypto);
+  else Reflect.deleteProperty(globalThis, 'crypto');
+});
 test('KYC response for a previous lookup cannot appear after changing the customer', async () => {
   principal(['kyc.view']);
   const old = deferred();

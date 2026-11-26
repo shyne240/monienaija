@@ -15,6 +15,9 @@ import type { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import type { KycTierPolicyService } from './kyc-tier-policy.service';
 import { decideTier, planTierTransition, type TierLevel } from './kyc-tier-decision';
 import { UUID } from './kyc-orchestrator';
+import type { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
+import type { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
+import type { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 
 type CustomerRow = {
   id: string;
@@ -33,6 +36,9 @@ export class KycTierTransitionService {
     private readonly audit: AuditService,
     private readonly authorization: AuthorizationService,
     private readonly sessions?: Pick<AuthenticationSessionService, 'revokeAllForCustomerInManager'>,
+    private readonly customerClasses?: CustomerClassResolverService,
+    private readonly tierDefaults?: CustomerTierDefaultClassService,
+    private readonly effectiveConfiguration?: CustomerEffectiveConfigurationService,
   ) {}
   setInstitutionScope(institutionScope?: InstitutionWorkforceScopeService): this {
     this.institutionScope = institutionScope;
@@ -307,8 +313,8 @@ export class KycTierTransitionService {
         await m.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [customerId]);
       }
       let assessmentId: string | null = null,
-        newLevel: string | null = null;
-      let candidate =
+        newLevel: TierLevel | null = null;
+      let candidate: TierLevel | null =
         plan.action === 'PROPOSE_TRANSITION'
           ? plan.newTier
           : plan.action === 'NO_CHANGE' && decision.status === 'ELIGIBLE'
@@ -412,6 +418,9 @@ export class KycTierTransitionService {
           },
         });
       }
+      if (newLevel && newLevel !== c.kyc_level) {
+        await this.handleTierChangeInManager(m, customerId, c.kyc_level, newLevel, context.actor);
+      }
       await m.query(
         `INSERT INTO kyc_tier_evaluations(id,customer_id,revision,policy_version,outcome,reason,old_level,new_level,evidence_ids,assessment_id,actor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid[],$10,$11)`,
         [
@@ -443,6 +452,202 @@ export class KycTierTransitionService {
       return { state: 'PROCESSED' as const };
     });
   }
+  private async handleTierChangeInManager(
+    manager: EntityManager,
+    customerId: string,
+    previousLevel: TierLevel,
+    newLevel: TierLevel,
+    actor: string,
+  ): Promise<void> {
+    if (!this.customerClasses || !this.tierDefaults) {
+      return;
+    }
+    const eligibleTiers = new Set(['LEVEL_1', 'LEVEL_2', 'LEVEL_3']);
+    const rows = await manager.query<
+      Array<{
+        id: string;
+        class_id: string;
+        class_code: string;
+        class_status: string;
+        source: string;
+      }>
+    >(
+      `SELECT a.id, a.class_id, cc.code AS class_code, cc.status AS class_status, a.source
+         FROM customer_class_assignments a
+         JOIN customer_classes cc ON cc.id = a.class_id
+        WHERE a.customer_id = $1 AND a.is_active = true
+        ORDER BY a.updated_at DESC, a.id DESC
+        LIMIT 1
+        FOR UPDATE OF a`,
+      [customerId],
+    );
+    const current = rows[0] ?? null;
+
+    const isManual = current?.source === 'MANUAL' || current?.source === 'SWITCH';
+    const isAutomatic =
+      current?.source === 'TIER_DEFAULT' || current?.source === 'REGISTRATION_DEFAULT';
+
+    if (isAutomatic && eligibleTiers.has(newLevel)) {
+      const tierDefault = await this.tierDefaults.getApprovedDefaultForTier(manager, newLevel);
+      if (tierDefault) {
+        await manager.query(
+          `UPDATE customer_class_assignments
+              SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
+            WHERE customer_id = $1 AND is_active = true AND id <> $2`,
+          [customerId, current?.id ?? null],
+        );
+        const existing = await manager.query<Array<{ id: string }>>(
+          `SELECT id FROM customer_class_assignments
+            WHERE customer_id = $1 AND class_id = $2 AND source = 'TIER_DEFAULT' AND effective_to IS NULL
+            ORDER BY updated_at DESC, id DESC LIMIT 1`,
+          [customerId, tierDefault.classId],
+        );
+        if (existing[0]) {
+          await manager.query(
+            `UPDATE customer_class_assignments
+                SET is_active = true, effective_from = clock_timestamp(), effective_to = NULL,
+                    updated_by = $2, updated_at = clock_timestamp()
+              WHERE id = $1`,
+            [existing[0].id, actor],
+          );
+          if (current?.id && current.id !== existing[0].id) {
+            await manager.query(
+              `UPDATE customer_class_assignments SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp() WHERE id = $1`,
+              [current.id],
+            );
+          }
+        } else {
+          await manager.query(
+            `UPDATE customer_class_assignments
+                SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
+              WHERE customer_id = $1 AND is_active = true`,
+            [customerId],
+          );
+          await manager.query(
+            `INSERT INTO customer_class_assignments
+              (id, customer_id, class_id, source, reason, is_active, effective_from, effective_to,
+               precedence, created_by, updated_by, version, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', $3, true, clock_timestamp(), NULL,
+                     100, $4, $4, 1, clock_timestamp(), clock_timestamp())`,
+            [customerId, tierDefault.classId, `Approved default for ${newLevel}`, actor],
+          );
+        }
+      } else {
+        // No approved default for new tier: leave assignment but configuration becomes reviewable.
+      }
+    }
+
+    // Manual/SWITCH assignments are preserved; eligibility is surfaced by effective config/readiness.
+
+    await this.applyTierConfigurationReviewRestriction(manager, customerId, newLevel, actor);
+
+    await this.audit.record(manager, {
+      entityType: 'CUSTOMER_KYC_TRANSITION',
+      entityId: customerId,
+      action: 'TIER_CHANGE_CLASS_REEVALUATED',
+      actor,
+      previousValues: {
+        previousLevel,
+        assignmentSource: current?.source ?? null,
+        classCode: current?.class_code ?? null,
+      },
+      newValues: {
+        newLevel,
+        preservedManual: isManual,
+        reevaluatedAutomatic: isAutomatic,
+      },
+    });
+  }
+
+  private async applyTierConfigurationReviewRestriction(
+    manager: EntityManager,
+    customerId: string,
+    newLevel: TierLevel,
+    actor: string,
+  ): Promise<void> {
+    if (!this.effectiveConfiguration) return;
+    if (!['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(newLevel)) {
+      await manager.query(
+        `UPDATE customer_restrictions
+            SET is_active = false, reason = $2, updated_at = clock_timestamp(), version = version + 1
+          WHERE customer_id = $1 AND type = 'CONFIGURATION_REVIEW' AND is_active = true AND deleted_at IS NULL`,
+        [customerId, 'Tier is not financially eligible'],
+      );
+      return;
+    }
+    let incomplete = false;
+    let detail = 'Tier configuration incomplete';
+    try {
+      const eff = await this.effectiveConfiguration.evaluateInManager(manager, customerId);
+      const issues: string[] = [];
+      if (!eff.assignedClass) issues.push('missing class');
+      for (const p of eff.products) {
+        if (p.fee.status === 'NOT_CONFIGURED' || p.fee.status === 'AMBIGUOUS') {
+          issues.push(`${p.productCode}:fee`);
+        }
+        for (const l of p.limits) {
+          if (l.status === 'MISSING') issues.push(`${p.productCode}:${l.dimension}`);
+        }
+      }
+      // Do not apply CONFIGURATION_REVIEW when the environment has no enabled customer products
+      // configured; that is an environment/catalog state, not a customer-tier configuration gap.
+      // Initial DRAFT->ACTIVE activation is separately guarded in CustomerService.
+      incomplete = eff.products.length > 0 && issues.length > 0;
+      if (incomplete)
+        detail = `Tier configuration incomplete: ${issues.slice(0, 6).join(', ')}`.slice(0, 500);
+    } catch {
+      incomplete = true;
+      detail = 'Tier configuration evaluation failed';
+    }
+
+    const existing = await manager.query<Array<{ id: string; is_active: boolean }>>(
+      `SELECT id, is_active FROM customer_restrictions
+        WHERE customer_id = $1 AND type = 'CONFIGURATION_REVIEW' AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC LIMIT 1
+        FOR UPDATE`,
+      [customerId],
+    );
+    if (incomplete) {
+      if (existing[0]) {
+        await manager.query(
+          `UPDATE customer_restrictions
+              SET is_active = true, reason = $2, updated_at = clock_timestamp(), version = version + 1
+            WHERE id = $1`,
+          [existing[0].id, detail],
+        );
+      } else {
+        await manager.query(
+          `INSERT INTO customer_restrictions (id, customer_id, type, is_active, reason, version, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, 'CONFIGURATION_REVIEW', true, $2, 1, clock_timestamp(), clock_timestamp())`,
+          [customerId, detail],
+        );
+      }
+      await this.audit.record(manager, {
+        entityType: 'CUSTOMER_KYC_TRANSITION',
+        entityId: customerId,
+        action: 'TIER_CONFIGURATION_REVIEW_REQUIRED',
+        actor,
+        previousValues: { previousRestrictionActive: existing[0]?.is_active ?? false },
+        newValues: { newLevel, reason: detail },
+      });
+    } else if (existing[0]?.is_active) {
+      await manager.query(
+        `UPDATE customer_restrictions
+            SET is_active = false, reason = $2, updated_at = clock_timestamp(), version = version + 1
+          WHERE id = $1`,
+        [existing[0].id, 'Tier configuration complete'],
+      );
+      await this.audit.record(manager, {
+        entityType: 'CUSTOMER_KYC_TRANSITION',
+        entityId: customerId,
+        action: 'TIER_CONFIGURATION_REVIEW_CLEARED',
+        actor,
+        previousValues: { previousRestrictionActive: true },
+        newValues: { newLevel },
+      });
+    }
+  }
+
   async processBatch(limit = 50): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new ConflictException('Invalid batch');

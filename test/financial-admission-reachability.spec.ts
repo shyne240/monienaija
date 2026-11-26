@@ -216,7 +216,7 @@ describe('financial admission reachability (ARENA 5 §6)', () => {
   it('keeps restriction admission inside the eligibility gate, not in individual controllers', () => {
     const gate = source('src/kyc-verification/customer-financial-eligibility.service.ts');
     expect(gate).toContain('FROM customer_restrictions');
-    expect(gate).toContain("type IN ('BLACKLISTED','FROZEN')");
+    expect(gate).toContain("type IN ('BLACKLISTED','FROZEN','CONFIGURATION_REVIEW')");
     expect(gate).toContain('is_active=true');
     expect(gate).toContain('deleted_at IS NULL');
     // Reusing the caller's lock strength keeps the admission serialization contract intact.

@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-11-26T16:58:25.746Z",
+  "database": "monienaija_t1",
+  "tier": "LEVEL_2",
+  "tierCapMinor": "1000000000",
+  "commercialCapMinor": "5000000000",
+  "corroboratedTier": "LEVEL_2",
+  "displayed": {
+    "limitValueMinor": "1000000000",
+    "source": "TIER_POLICY"
+  },
+  "belowCap": {
+    "amountMinor": "999000000",
+    "status": "COMPLETED"
+  },
+  "aboveCap": {
+    "amountMinor": "1001000000",
+    "status": 422
+  }
+}

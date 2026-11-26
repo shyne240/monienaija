@@ -63,9 +63,9 @@ export class KycTierEvidenceReader {
           row_number() OVER (PARTITION BY a.kind ORDER BY a.completed_at DESC NULLS LAST,a.created_at DESC,a.id DESC) AS position
         FROM kyc_verification_attempts a
         JOIN kyc_consents c ON c.id=a.consent_id AND c.customer_id=a.customer_id AND c.kind=a.kind
-          AND c.actor_id=a.customer_id AND c.identity_revision=a.identity_revision
+          AND c.identity_revision=a.identity_revision
           AND c.provider=a.provider AND c.route_version=a.provider_route_version
-        JOIN authentication_sessions owner_session ON owner_session.id=c.session_id
+        LEFT JOIN authentication_sessions owner_session ON owner_session.id=c.session_id
           AND owner_session.customer_id=a.customer_id
           AND owner_session.audience IN ('customer-api','customer-onboarding')
         JOIN kyc_identity_claims ic ON ic.attempt_id=a.id AND ic.customer_id=a.customer_id
@@ -73,7 +73,13 @@ export class KycTierEvidenceReader {
         WHERE a.customer_id=$1 AND a.identity_revision=$2::bigint
           AND a.provider IN ('MONNIFY','DOJAH','PREMBLY')
           AND a.provider_route_version IS NOT NULL
-          AND c.session_id IS NOT NULL AND c.withdrawn_at IS NULL
+          AND ((c.session_id IS NOT NULL AND c.actor_id=a.customer_id AND owner_session.id IS NOT NULL)
+            OR (c.session_id IS NULL AND c.actor_id<>a.customer_id AND EXISTS (
+              SELECT 1 FROM kyc_private_audit pa
+              WHERE pa.customer_id=a.customer_id AND pa.resource_id=c.id
+                AND pa.action='CONSENT_GRANTED' AND pa.actor_id=c.actor_id AND pa.outcome='WORKFORCE_MFA'
+            )))
+          AND c.withdrawn_at IS NULL
           AND c.expires_at>clock_timestamp()
           AND a.outcome IN ('MATCH','REVIEW','UNKNOWN')
           AND ic.status IN ('VERIFIED','REVIEW','UNKNOWN')

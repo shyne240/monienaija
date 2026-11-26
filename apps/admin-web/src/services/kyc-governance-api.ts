@@ -11,6 +11,21 @@ export const KYC_PROVIDER_CAPABILITIES: readonly KycProviderCapability[] = [
 ];
 export type KycProviderCode = 'MONNIFY' | 'DOJAH' | 'PREMBLY' | 'SYNTHETIC';
 
+export interface WorkforceKycConsentNotice {
+  version: string;
+  text: string;
+}
+export interface WorkforceIdentityVerificationResult {
+  id: string;
+  consentId: string;
+  kind: KycIdentityKind;
+  status: 'MATCH' | 'REVIEW' | 'UNKNOWN';
+  provider: Exclude<KycProviderCode, 'SYNTHETIC'>;
+  routeVersion: number;
+  identityRevision: string;
+  expiresAt: string | null;
+}
+
 export interface KycProviderSetting {
   enabled: boolean;
   capabilities: KycProviderCapability[];
@@ -206,6 +221,29 @@ export const PremblyCredentialApi = {
     ApiClient.post<PremblyConnectionTestResult>(
       '/internal/kyc/providers/prembly/test-connection',
       {},
+    ),
+};
+
+export const KycWorkforceReviewApi = {
+  inspectCustomer: (customerId: string) =>
+    ApiClient.get<Record<string, any>>(
+      `/internal/kyc/review-workspace/customers/${encodeURIComponent(customerId)}`,
+    ),
+  verifyRegisteredIdentity: (
+    customerId: string,
+    input: {
+      kind: KycIdentityKind;
+      customerConsentConfirmed: true;
+      noticeVersion: string;
+      consentRequestId: string;
+      requestId: string;
+      expectedProvider?: Exclude<KycProviderCode, 'SYNTHETIC'>;
+      expectedRouteVersion?: number;
+    },
+  ) =>
+    ApiClient.post<WorkforceIdentityVerificationResult>(
+      `/internal/kyc/review-workspace/customers/${encodeURIComponent(customerId)}/verify-identity`,
+      input,
     ),
 };
 

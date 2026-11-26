@@ -28,7 +28,7 @@ export const WelcomeScreen: React.FC = () => {
           label="Log In to Account"
           style={styles.button}
           variant="primary"
-          onPress={() => navigation.navigate('Registration')}
+          onPress={() => navigation.navigate('Login')}
         />
         <Button
           label="Create New Wallet"

@@ -28,7 +28,12 @@ export interface MobileOnboardingState {
     kycStatus: string;
   } | null;
   claim: { available: boolean; matchedThisSession: boolean } | null;
-  credentials: { passcodeSet: boolean; pinSet: boolean };
+  credentials: {
+    passcodeSet: boolean;
+    pinSet: boolean;
+    rotationRequired?: boolean;
+    mobileOtpRequired?: boolean;
+  };
   requirements: MobileOnboardingRequirement[];
   outstanding: string[];
   wallet: { provisioned: boolean; currency: string | null } | null;

@@ -80,26 +80,21 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('migration 0804 remains beneath customer classes and inbound identity', async () => {
+  it('migration 0804 remains applied beneath customer classes, inbound identity, and branch head', async () => {
     const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(
-      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 4`,
+      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`,
     );
-    expect(rows[0]).toEqual({
-      timestamp: '1785753600807',
-      name: 'CaptureCustomerFundingScope1785753600807',
+    const names = rows.map((r) => r.name);
+    expect(rows.at(-1)).toEqual({
+      timestamp: '1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
-    expect(rows[1]).toEqual({
-      timestamp: '1785753600806',
-      name: 'DurableInboundIdentity1785753600806',
-    });
-    expect(rows[2]).toEqual({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
-    });
-    expect(rows[3]).toEqual({
-      timestamp: '1785753600804',
-      name: 'GeneralizeExternalOperationsForAgents1785753600804',
-    });
+    expect(names).toContain('DurableInboundIdentity1785753600806');
+    expect(names).toContain('CaptureCustomerFundingScope1785753600807');
+    const idx0804 = names.indexOf('GeneralizeExternalOperationsForAgents1785753600804');
+    const idx0805 = names.indexOf('CreateCustomerClasses1785753600805');
+    expect(idx0804).toBeGreaterThan(-1);
+    expect(idx0805).toBeGreaterThan(idx0804);
   });
 
   it('historical customer financial_authorizations still readable', async () => {

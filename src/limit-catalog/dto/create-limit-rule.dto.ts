@@ -48,6 +48,10 @@ export class CreateLimitRuleDto {
   limitValueCount?: number | null;
 
   @IsOptional()
+  @IsBoolean()
+  isUnlimited?: boolean;
+
+  @IsOptional()
   @IsString()
   effectiveFrom?: string | null; // ISO date string
 

@@ -535,3 +535,145 @@ test('never fabricates a state when the projection is unavailable', async () => 
     v.getByText(/could not load your registration status. Nothing was approved or rejected/i),
   ).toBeTruthy();
 });
+
+test('shows approved post-claim status and signs into customer-api when claiming an ACTIVE account', async () => {
+  useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
+  let claimed = false;
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/start')) return { id: 'session-id', token: 'pending-token' };
+    if (path.endsWith('/status')) return { status: 'PENDING', expiresAt: future };
+    if (path.endsWith('/otp/verify')) return { authorization: 'verified-token' };
+    if (path.endsWith('/onboarding-state')) {
+      return onboardingState(claimed ? 'LOGIN' : 'CLAIM', {
+        nextAction: claimed
+          ? 'Your account is approved. Sign in with your passcode to activate your NGN wallet.'
+          : 'This phone number already has an account. Verify a registered identity document to claim it.',
+        customer: {
+          referenceMasked: 'mn-••••5678',
+          status: 'ACTIVE',
+          kycLevel: 'LEVEL_1',
+          kycStatus: 'APPROVED',
+        },
+        claim: claimed ? null : { available: true, matchedThisSession: false },
+        credentials: { passcodeSet: claimed, pinSet: claimed },
+        requirements: [
+          { code: 'phone_verified', label: 'Phone verified', state: 'MET' },
+          { code: 'identity_evidence', label: 'Identity evidence verified', state: 'MET' },
+          { code: 'kyc_assessment', label: 'KYC assessment approved', state: 'MET' },
+          { code: 'account_active', label: 'Account active', state: 'MET' },
+          { code: 'wallet', label: 'Primary NGN wallet provisioned', state: 'OUTSTANDING' },
+        ],
+        outstanding: ['wallet'],
+        wallet: { provisioned: false, currency: null },
+      });
+    }
+    if (path.endsWith('/claim-match')) return { status: 'MATCH' };
+    if (path.endsWith('/claim-credentials')) {
+      claimed = true;
+      return { status: 'SET_UP' };
+    }
+    if (path.endsWith('/onboarding-login')) {
+      return {
+        accessToken: 'financial-token',
+        audience: 'customer-api',
+        customerId: 'customer-id',
+        sessionId: 'financial-session',
+        expiresAt: future,
+      };
+    }
+    return {};
+  });
+  const v = render(<RegistrationScreen />);
+  fireEvent.changeText(await v.findByPlaceholderText('e.g. 08012345678'), '08012345678');
+  fireEvent.press(v.getByText('Send Verification Code'));
+  fireEvent.changeText(await v.findByPlaceholderText('123456'), '123456');
+  fireEvent.press(v.getByText('Verify Code'));
+  fireEvent.changeText(await v.findByTestId('claim-identifier'), '12345678901');
+  fireEvent.press(v.getByText('Match verified identifier'));
+  fireEvent.changeText(await v.findByTestId('test-passcode'), '112233');
+  fireEvent.changeText(v.getByTestId('test-passcode-confirm'), '112233');
+  fireEvent.changeText(v.getByTestId('test-pin'), '334455');
+  fireEvent.changeText(v.getByTestId('test-pin-confirm'), '334455');
+  fireEvent.press(v.getByText('Save credentials'));
+  expect(
+    await v.findByText(
+      'Credentials saved. Your account is approved — sign in to set up your NGN wallet.',
+    ),
+  ).toBeTruthy();
+  expect(v.queryByText(/financial services remain unavailable/i)).toBeNull();
+  fireEvent.press(v.getByText('Continue to sign in'));
+  fireEvent.changeText(await v.findByTestId('onboarding-passcode'), '112233');
+  fireEvent.press(v.getByText('Sign in'));
+  await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
+  expect(useAuthStore.getState().session?.audience).toBe('customer-api');
+  useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
+});
+
+test('routes an account with an admin temporary password to LoginScreen for rotation', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-state')) {
+      return onboardingState('LOGIN', {
+        nextAction:
+          'Staff issued a temporary password for your account. Sign in to set your permanent password.',
+        customer: {
+          referenceMasked: 'mn-••••5678',
+          status: 'ACTIVE',
+          kycLevel: 'LEVEL_1',
+          kycStatus: 'APPROVED',
+        },
+        credentials: { passcodeSet: true, pinSet: false, rotationRequired: true },
+        outstanding: ['wallet'],
+      });
+    }
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(await v.findByText(/Staff issued a temporary password/i)).toBeTruthy();
+  fireEvent.press(v.getByText('Sign in with temporary password'));
+  expect(mockNavigate).toHaveBeenCalledWith('Login');
+});
+
+test('lets an activated mobile-claimed customer sign back in with phone OTP + 6-digit passcode', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(verifiedSessionStorage);
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-state')) {
+      return onboardingState('ACTIVATED', {
+        nextAction: 'Your account is active. Sign in with your phone number and passcode.',
+        customer: {
+          referenceMasked: 'mn-••••5678',
+          status: 'ACTIVE',
+          kycLevel: 'LEVEL_1',
+          kycStatus: 'APPROVED',
+        },
+        credentials: { passcodeSet: true, pinSet: true, mobileOtpRequired: true },
+        outstanding: [],
+        wallet: { provisioned: true, currency: 'NGN' },
+      });
+    }
+    if (path.endsWith('/onboarding-login')) {
+      return {
+        accessToken: 'active-customer-token',
+        sessionId: 'session-id',
+        customerId: '11111111-1111-4111-8111-111111111199',
+        audience: 'customer-api',
+        expiresAt: future,
+      };
+    }
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(
+    await v.findByText('Your account is active. Sign in with your phone number and passcode.'),
+  ).toBeTruthy();
+  expect(v.queryByText('Go to sign in')).toBeNull();
+  fireEvent.changeText(await v.findByTestId('onboarding-passcode'), '246810');
+  fireEvent.press(v.getByText('Sign in'));
+  await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
+  expect(useAuthStore.getState().session?.audience).toBe('customer-api');
+  useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
+});
+

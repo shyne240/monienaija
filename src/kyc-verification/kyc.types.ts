@@ -67,6 +67,8 @@ export interface Reservation {
   kind: IdentityKind;
   provider: string;
   sessionToken: string;
+  /** Authenticated MFA workforce session UUID for governed staff-assisted registration verification. */
+  workforceSessionId?: string;
   /** Internal audience selected by the route, never supplied by a customer request body. */
   audience?: string;
   /** Revision read with the authoritative profile; reservation rejects if it has since changed. */

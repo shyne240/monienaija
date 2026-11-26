@@ -4,7 +4,7 @@ jest.mock('../src/config', () => ({
   DEFAULT_INTERNAL_AUDIENCE: 'workforce-admin',
 }));
 
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 
 describe('Admin Web API client requests', () => {
   const storage: Record<string, string> = { admin_workforce_token: 'workforce-token-123' };
@@ -92,5 +92,34 @@ describe('Admin Web API client requests', () => {
     };
     expect(jsonInit.headers['Content-Type']).toBe('application/json');
     expect(jsonInit.body).toBe(JSON.stringify({ applicantReference: 'AGT-001' }));
+  });
+
+  it('carries the server refusal code and enumerated issues on a 409', async () => {
+    // Activation answers 409 ACTIVATION_CONFIGURATION_INCOMPLETE with the exact products whose
+    // configuration is missing. Dropping that detail leaves staff with a generic "conflict"
+    // message that tells them to refresh, which can never fix a missing fee rule.
+    fetchSpy.mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        message: 'Customer activation blocked: configuration is incomplete',
+        code: 'ACTIVATION_CONFIGURATION_INCOMPLETE',
+        issues: [
+          { code: 'FEE_NOT_CONFIGURED', message: 'No fee rule configured for WALLET_TRANSFER' },
+        ],
+      }),
+    });
+
+    const failure = await ApiClient.patch('/customers/customer-1', { status: 'ACTIVE' }).catch(
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).status).toBe(409);
+    expect((failure as ApiError).code).toBe('ACTIVATION_CONFIGURATION_INCOMPLETE');
+    expect((failure as ApiError).issues).toEqual([
+      { code: 'FEE_NOT_CONFIGURED', message: 'No fee rule configured for WALLET_TRANSFER' },
+    ]);
   });
 });

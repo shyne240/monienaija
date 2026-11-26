@@ -16,12 +16,62 @@ export interface RegistrationReviewRequirement {
   detail?: string;
 }
 
+export interface EffectiveLimitValue {
+  dimension: string;
+  status: 'RESOLVED' | 'UNLIMITED' | 'MISSING';
+  limitValueMinor: string | null;
+  limitValueCount: number | null;
+  ruleId: string | null;
+  profileCode: string | null;
+  source: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  isUnlimited: boolean;
+}
+
+export interface EffectiveFeeValue {
+  status: 'RESOLVED' | 'ZERO' | 'NOT_CONFIGURED' | 'AMBIGUOUS';
+  ruleId: string | null;
+  ruleVersion: number | null;
+  flatFeeMinor: string | null;
+  percentageBps: number | null;
+  minimumFeeMinor: string | null;
+  maximumFeeMinor: string | null;
+  vatBps: number | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  priority: number | null;
+  quote?: {
+    amountMinor: string;
+    feeMinor: string;
+    vatMinor: string;
+    totalMinor: string;
+  } | null;
+  ambiguousRuleIds?: string[];
+}
+
+export interface EffectiveProductConfiguration {
+  productCode: string;
+  productName: string;
+  currency: string;
+  fee: EffectiveFeeValue;
+  limits: EffectiveLimitValue[];
+}
+
 export interface RegistrationReview {
   customerId: string;
   reference: string;
   customerType: string;
   customerStatus: string;
   isSynthetic: boolean;
+  verifiedTier?: string | null;
+  assignedClass?: {
+    configured: boolean;
+    classCode: string | null;
+    className: string | null;
+    source: string | null;
+    effectiveFrom: string | null;
+  } | null;
   defaults: {
     customerClass: {
       configured: boolean;
@@ -50,6 +100,19 @@ export interface RegistrationReview {
   requirements: RegistrationReviewRequirement[];
   outstanding: string[];
   activatable: boolean;
+  effectiveConfiguration?: {
+    customerId: string;
+    verifiedTier: string | null;
+    assignedClass: {
+      classCode: string;
+      className: string;
+      source: string;
+      eligibleForVerifiedTier?: boolean | null;
+      classId?: string | null;
+    } | null;
+    products: EffectiveProductConfiguration[];
+    evaluatedAt: string;
+  } | null;
   activationRoute: string;
   evaluatedAt: string;
 }
@@ -60,6 +123,34 @@ const STATE_LABEL: Record<RegistrationReviewRequirementState, string> = {
   UNAVAILABLE: 'Cannot be determined',
   BLOCKED: 'Blocked',
 };
+
+function formatMinor(minor: string | null | undefined, currency = 'NGN'): string {
+  if (minor == null || minor === '') return '—';
+  if (!/^-?\d+$/.test(minor)) return String(minor);
+  const neg = minor.startsWith('-');
+  const abs = neg ? minor.slice(1) : minor;
+  const padded = abs.padStart(3, '0');
+  const whole = padded.slice(0, -2);
+  const frac = padded.slice(-2);
+  return `${neg ? '-' : ''}${currency} ${Number(whole).toLocaleString('en-US')}.${frac}`;
+}
+
+function limitLabel(dim: string): string {
+  switch (dim) {
+    case 'MAX_AMOUNT_PER_TX':
+      return 'Max amount per transaction';
+    case 'DAILY_AMOUNT':
+      return 'Daily limit';
+    case 'WEEKLY_AMOUNT':
+      return 'Weekly limit';
+    case 'MONTHLY_AMOUNT':
+      return 'Monthly limit';
+    case 'WALLET_BALANCE_MAX':
+      return 'Maximum wallet balance';
+    default:
+      return dim;
+  }
+}
 
 /**
  * Read-only registration review for the DRAFT → ACTIVE decision.
@@ -152,11 +243,21 @@ export const CustomerRegistrationReviewPanel: React.FC<{
           <dt>Customer class</dt>
           <dd>
             {review.defaults.customerClass.configured
-              ? (review.defaults.customerClass.className ??
-                review.defaults.customerClass.classCode ??
-                'Configured')
+              ? `${review.defaults.customerClass.classCode ?? ''} — ${review.defaults.customerClass.className ?? 'Configured'}`
               : 'No class assigned'}
+            {review.defaults.customerClass.source
+              ? ` (${review.defaults.customerClass.source})`
+              : ''}
+            {review.effectiveConfiguration?.assignedClass?.eligibleForVerifiedTier === false
+              ? ' · Not eligible for verified tier'
+              : review.effectiveConfiguration?.assignedClass?.eligibleForVerifiedTier === true
+                ? ' · Eligible for verified tier'
+                : ''}
           </dd>
+        </div>
+        <div>
+          <dt>Verified tier</dt>
+          <dd>{review.verifiedTier ?? review.defaults.kyc.level}</dd>
         </div>
         <div>
           <dt>KYC assessment</dt>
@@ -243,6 +344,75 @@ export const CustomerRegistrationReviewPanel: React.FC<{
           </ul>
         </section>
       ) : null}
+
+      <section aria-labelledby="cm-regreview-effective-title" className="cm-regreview__section">
+        <div className="cm-regreview__section-heading">
+          <div>
+            <p className="cm-regreview__eyebrow">RUNTIME COMMERCIAL CONFIGURATION</p>
+            <h3 id="cm-regreview-effective-title">Effective fees and limits</h3>
+          </div>
+        </div>
+        {!review.effectiveConfiguration ? (
+          <p className="cm-muted">Effective commercial configuration is unavailable.</p>
+        ) : review.effectiveConfiguration.products.length === 0 ? (
+          <p className="cm-muted">No enabled customer products are configured.</p>
+        ) : (
+          <div className="cm-regreview__effective">
+            {review.effectiveConfiguration.products.map((product) => (
+              <div key={product.productCode} className="cm-regreview__effective-product">
+                <h4>
+                  {product.productName} ({product.productCode})
+                </h4>
+                <p>
+                  <strong>Fee:</strong>{' '}
+                  {product.fee.status === 'NOT_CONFIGURED'
+                    ? 'Missing configuration'
+                    : product.fee.status === 'AMBIGUOUS'
+                      ? `Ambiguous (${(product.fee.ambiguousRuleIds ?? []).join(', ')})`
+                      : product.fee.status === 'ZERO'
+                        ? `Explicit zero fee (rule ${product.fee.ruleId ?? '—'})`
+                        : `Resolved (rule ${product.fee.ruleId ?? '—'}, v${product.fee.ruleVersion ?? '—'}, priority ${product.fee.priority ?? '—'})`}
+                  {product.fee.quote
+                    ? ` · Quote on ${formatMinor(product.fee.quote.amountMinor, product.currency)}: fee ${formatMinor(product.fee.quote.feeMinor, product.currency)}, VAT ${formatMinor(product.fee.quote.vatMinor, product.currency)}, total ${formatMinor(product.fee.quote.totalMinor, product.currency)}`
+                    : ''}
+                </p>
+                <table className="cm-table" aria-label={`Effective limits for ${product.productCode}`}>
+                  <thead>
+                    <tr>
+                      <th>Limit</th>
+                      <th>Value</th>
+                      <th>Source rule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {product.limits.map((limit) => (
+                      <tr key={limit.dimension}>
+                        <td>{limitLabel(limit.dimension)}</td>
+                        <td>
+                          {limit.status === 'MISSING'
+                            ? 'Missing configuration'
+                            : limit.isUnlimited
+                              ? 'Unlimited (explicit)'
+                              : limit.limitValueMinor != null
+                                ? formatMinor(limit.limitValueMinor, product.currency)
+                                : limit.limitValueCount != null
+                                  ? `${limit.limitValueCount} count`
+                                  : '—'}
+                        </td>
+                        <td>
+                          {limit.ruleId
+                            ? `${limit.ruleId}${limit.profileCode ? ` (${limit.profileCode})` : ''}${limit.source ? ` · ${limit.source}` : ''}`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <p className="cm-regreview__footer">
         {mustFix.length > 0

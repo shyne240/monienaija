@@ -33,7 +33,12 @@ export class CustomerEligibilityController {
   ) {}
 
   @Post(':id/eligibility')
-  createEligibility(@Param('id') id: string, @Body() dto: CreateCustomerEligibilityDto) {
+  async createEligibility(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerEligibilityDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.createEligibility(id, dto);
   }
 
@@ -52,61 +57,97 @@ export class CustomerEligibilityController {
   }
 
   @Patch(':id/eligibility')
-  updateEligibility(@Param('id') id: string, @Body() dto: UpdateCustomerEligibilityDto) {
+  async updateEligibility(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerEligibilityDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.updateEligibility(id, dto);
   }
 
   @Post(':id/limit-profile')
-  createLimitProfile(@Param('id') id: string, @Body() dto: CreateCustomerLimitProfileDto) {
+  async createLimitProfile(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerLimitProfileDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.createLimitProfile(id, dto);
   }
 
   @Get(':id/limit-profile')
-  getLimitProfile(@Param('id') id: string) {
+  async getLimitProfile(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.eligibilityService.getLimitProfile(id);
   }
 
   @Patch(':id/limit-profile')
-  updateLimitProfile(@Param('id') id: string, @Body() dto: UpdateCustomerLimitProfileDto) {
+  async updateLimitProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerLimitProfileDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.updateLimitProfile(id, dto);
   }
 
   @Post(':id/product-enrollment')
-  createEnrollment(@Param('id') id: string, @Body() dto: CreateCustomerProductEnrollmentDto) {
+  async createEnrollment(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerProductEnrollmentDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.createEnrollment(id, dto);
   }
 
   @Get(':id/product-enrollments')
-  listEnrollments(@Param('id') id: string) {
+  async listEnrollments(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.eligibilityService.listEnrollments(id);
   }
 
   @Patch(':id/product-enrollments/:enrollmentId')
-  updateEnrollment(
+  async updateEnrollment(
     @Param('id') id: string,
     @Param('enrollmentId') enrollmentId: string,
     @Body() dto: UpdateCustomerProductEnrollmentDto,
+    @Req() req: AuthenticatedRequest,
   ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.updateEnrollment(id, enrollmentId, dto);
   }
 
   @Post(':id/permission')
-  createPermission(@Param('id') id: string, @Body() dto: CreateCustomerOperatingPermissionDto) {
+  async createPermission(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerOperatingPermissionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.createPermission(id, dto);
   }
 
   @Get(':id/permissions')
-  listPermissions(@Param('id') id: string) {
+  async listPermissions(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.eligibilityService.listPermissions(id);
   }
 
   @Post(':id/restriction')
-  createRestriction(@Param('id') id: string, @Body() dto: CreateCustomerRestrictionDto) {
+  async createRestriction(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerRestrictionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceGovernance(req);
     return this.eligibilityService.createRestriction(id, dto);
   }
 
   @Get(':id/restrictions')
-  listRestrictions(@Param('id') id: string) {
+  async listRestrictions(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.eligibilityService.listRestrictions(id);
   }
 
@@ -122,6 +163,14 @@ export class CustomerEligibilityController {
       canOperate: operatingStatus.canOperate,
       eligibilityStatus: operatingStatus.eligibilityStatus,
     };
+  }
+
+  private async requireWorkforceGovernance(req: AuthenticatedRequest): Promise<void> {
+    await this.auth.requireFunction(req.authorizationPrincipal, 'customer.activate', 'customer', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 
   private async requireCustomerView(req: AuthenticatedRequest): Promise<void> {

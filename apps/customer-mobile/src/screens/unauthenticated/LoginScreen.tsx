@@ -225,6 +225,11 @@ export const LoginScreen: React.FC = () => {
             variant="outline"
             onPress={() => navigation.navigate('Registration')}
           />
+          <Button
+            label="Claim a staff-created account"
+            variant="outline"
+            onPress={() => navigation.navigate('Registration')}
+          />
         </View>
 
         <Text style={styles.footnote}>

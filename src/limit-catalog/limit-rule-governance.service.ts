@@ -107,6 +107,7 @@ export class LimitRuleGovernanceService {
         dimension: String(payload.dimension),
         limitValueMinor: payload.limitValueMinor as string | null,
         limitValueCount: payload.limitValueCount as number | null,
+        isUnlimited: payload.isUnlimited as boolean | undefined,
         effectiveFrom: payload.effectiveFrom as string,
         effectiveTo: payload.effectiveTo as string | null,
         isActive: payload.isActive as boolean,
@@ -163,6 +164,9 @@ export class LimitRuleGovernanceService {
           : {}),
         ...(payload.limitValueCount !== undefined
           ? { limitValueCount: payload.limitValueCount as number | null }
+          : {}),
+        ...(payload.isUnlimited !== undefined
+          ? { isUnlimited: payload.isUnlimited as boolean }
           : {}),
         ...(payload.effectiveFrom !== undefined
           ? { effectiveFrom: payload.effectiveFrom as string | null }
@@ -236,6 +240,7 @@ export class LimitRuleGovernanceService {
       dimension: dto.dimension,
       limitValueMinor: dto.limitValueMinor ?? null,
       limitValueCount: dto.limitValueCount ?? null,
+      isUnlimited: dto.isUnlimited ?? false,
       effectiveFrom: dto.effectiveFrom,
       effectiveTo: dto.effectiveTo ?? null,
       isActive: dto.isActive ?? true,
@@ -254,6 +259,7 @@ export class LimitRuleGovernanceService {
       dimension: dto.dimension,
       limitValueMinor: dto.limitValueMinor,
       limitValueCount: dto.limitValueCount,
+      isUnlimited: dto.isUnlimited,
       effectiveFrom: dto.effectiveFrom,
       effectiveTo: dto.effectiveTo,
       isActive: dto.isActive,
