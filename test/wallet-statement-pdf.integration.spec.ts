@@ -214,9 +214,10 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
    *
    * Issued by the real `A2WorkforceSessionService` (the same service the sign-in endpoint uses), so
    * the bearer token and its function resolution are the production ones rather than a
-   * hand-constructed object.
+   * hand-constructed object. `roleKey` selects the catalogue role, which is how a caller that is
+   * permitted by principal type and institution but holds no customer function is produced.
    */
-  const seedScopedOperator = async (institutionId: string) => {
+  const seedScopedOperator = async (institutionId: string, roleKey = 'OPERATIONS') => {
     const sessions = app.get(A2WorkforceSessionService);
     const principalId = `stmt-scoped:${randomUUID()}`.slice(0, 160);
     const now = new Date();
@@ -225,7 +226,7 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
       assignmentReference: principalId,
       assignmentVersion: 1,
       principalId,
-      roleKey: 'OPERATIONS',
+      roleKey,
       scopes: [],
       status: 'ACTIVE',
       initiatedScope: 'SUPER_ADMIN_SCOPE',
@@ -536,6 +537,36 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
 
     // A malformed period is a 400 before any ledger read.
     const operator = (await fixture.workforce()).operator;
+
+    /*
+     * The missing-function refusal, asserted rather than assumed.
+     *
+     * `withoutFunction` is accepted by the route on principal type (`OPERATOR`) and holds a real
+     * ACTIVE assignment to this wallet's institution, so neither principal type nor institutional
+     * scope can explain a refusal. Its role (TREASURY) holds exactly one unrelated function, so
+     * `customer.view_wallets` is absent: the function check must answer 403 with no document on
+     * both formats. A regression that served either response here would fail this suite.
+     */
+    const withoutFunction = await seedScopedOperator(ownInstitution, 'TREASURY');
+    for (const tail of ['statement', 'statement.pdf']) {
+      const denied = await get(
+        `${url(walletId, tail)}?from=2026-10-01&to=2026-10-31`,
+        withoutFunction.token,
+      );
+      expect(denied.status).toBe(403);
+      expect(denied.headers['content-disposition']).toBeUndefined();
+      expect(denied.text ?? '').not.toContain('%PDF');
+    }
+
+    // Control: the same wallet and period, called by a principal that holds the function, is
+    // served — so the 403 above is the missing function and not the route, wallet or period.
+    const served = await get(
+      `${url(walletId, 'statement.pdf')}?from=2026-10-01&to=2026-10-31`,
+      operator.token,
+    );
+    expect(served.status).toBe(200);
+    expect(served.body.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
     for (const query of [
       '?from=2026-02-30&to=2026-03-01',
       '?from=2026-10-31&to=2026-10-01',

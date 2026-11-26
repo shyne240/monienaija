@@ -57,7 +57,7 @@ plus a single-day 30 September statement whose closing equals 1 October's openin
 | -------------------------------------------------- | ----------------------------------------------- |
 | Period longer than **366 Lagos days**              | `400`, before any ledger read                   |
 | Malformed, reversed or missing dates               | `400`                                           |
-| More than **2,000** posted rows in the period      | `422` with a narrow-your-range message; no file |
+| More than **2,000** posted rows in the period      | `413` with a narrow-your-range message; no file |
 | Wallet does not belong to the customer in the path | `404` (no existence oracle)                     |
 | Caller lacks `customer.view_wallets`               | `403`                                           |
 | Anonymous                                          | `401`                                           |
