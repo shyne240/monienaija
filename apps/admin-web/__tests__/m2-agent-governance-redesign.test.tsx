@@ -14,8 +14,11 @@ test('production-style class panel identifies the current class and keeps reclas
   );
   expect(screen.getByText('Current assigned class')).toBeTruthy();
   expect(screen.getByText('Standard (STANDARD)')).toBeTruthy();
+  // Without an injected reclassification workflow the panel stays a presentational boundary — it
+  // explains that the governed switch is not wired into THIS session rather than claiming the
+  // backend endpoint does not exist (it does: POST /internal/agents/:id/class).
   expect(screen.getByTestId('agent-reclassify-dependency').textContent).toContain(
-    'not enabled in V1 policy',
+    'not enabled in this console session',
   );
   expect(
     (screen.getByRole('button', { name: 'Reclassify Agent (Policy blocked)' }) as HTMLButtonElement)

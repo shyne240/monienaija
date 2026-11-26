@@ -78,9 +78,14 @@ const CHECKER_SCOPES = [
 
 function mockRoutes(overrides: Record<string, unknown> = {}) {
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-    for (const [prefix, value] of Object.entries(overrides)) {
-      if (path === prefix || path.startsWith(prefix)) return Promise.resolve(value);
-    }
+    // Exact matches win, then the longest prefix. Without this an override for a specific
+    // institution would be swallowed by the generic `/internal/institutions` list override.
+    if (Object.prototype.hasOwnProperty.call(overrides, path))
+      return Promise.resolve(overrides[path]);
+    const prefixed = Object.entries(overrides)
+      .filter(([prefix]) => path.startsWith(prefix))
+      .sort((left, right) => right[0].length - left[0].length)[0];
+    if (prefixed) return Promise.resolve(prefixed[1]);
     if (path === '/internal/institutions') return Promise.resolve([INSTITUTION]);
     if (path === `/internal/institutions/${INSTITUTION_ID}`) return Promise.resolve(INSTITUTION);
     if (path === '/internal/institution-ledger/coverage') return Promise.resolve([]);
@@ -165,7 +170,219 @@ describe('ARENA 4 institutional console — directory', () => {
         licenceReference: undefined,
       }),
     );
-    expect(await screen.findByText(/holds no financial authority until/i)).toBeTruthy();
+    // The registration receipt (the mocked INSTITUTION is EVIDENCE_SUBMITTED) must name the
+    // authority position AND the next step rather than a bare "created" claim.
+    expect(await screen.findByText(/no financial authority yet/i)).toBeTruthy();
+    // The receipt AND the refreshed directory row both carry the next step.
+    expect(screen.getAllByText(/other than the requester must decide/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe('ARENA 4 institutional console — registration → evidence → approval', () => {
+  test('a freshly registered institution is reported as holding no authority with a named next step', async () => {
+    // The real backend returns REGISTERED with operationalAuthority=false for a registration.
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      ...INSTITUTION,
+      reference: 'INST-003',
+      status: 'REGISTERED',
+      evidenceReference: null,
+      operationalAuthority: false,
+    });
+    render(<InstitutionDirectoryScreen onOpenInstitution={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Register institution' }));
+    fireEvent.change(screen.getByLabelText('Reference'), { target: { value: 'INST-003' } });
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'psp3' } });
+    fireEvent.change(screen.getByLabelText('Legal name'), {
+      target: { value: 'Third Example PSP' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+
+    // Never "created successfully" — always "registered, no financial authority yet", plus what to
+    // do next and who has to do it.
+    expect(await screen.findByText(/no financial authority yet/i)).toBeTruthy();
+    expect(screen.getAllByText(/Record regulatory evidence/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/principal other than the requester must decide/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  test('each lifecycle status states its authority position and its exact next action', async () => {
+    mockRoutes({
+      '/internal/institutions': [
+        {
+          ...INSTITUTION,
+          reference: 'INST-REG',
+          status: 'REGISTERED',
+          operationalAuthority: false,
+        },
+        {
+          ...INSTITUTION,
+          reference: 'INST-EV',
+          status: 'EVIDENCE_SUBMITTED',
+          operationalAuthority: false,
+        },
+        { ...INSTITUTION, reference: 'INST-OK', status: 'APPROVED', operationalAuthority: true },
+      ],
+    });
+    render(<InstitutionDirectoryScreen onOpenInstitution={jest.fn()} />);
+    await screen.findAllByText(/INST-REG/);
+
+    expect(screen.getByTestId('inst-next-action-INST-REG').textContent).toMatch(
+      /Record regulatory evidence/,
+    );
+    expect(screen.getByTestId('inst-next-action-INST-EV').textContent).toMatch(
+      /other than the requester must decide/,
+    );
+    expect(screen.getByTestId('inst-next-action-INST-OK').textContent).toMatch(
+      /Affiliations, enrolments and attribution/,
+    );
+    // Only the APPROVED row claims authority.
+    expect(screen.getAllByText('Operational authority')).toHaveLength(1);
+    expect(screen.getAllByText('No financial authority')).toHaveLength(2);
+  });
+
+  test('the workspace states status, authority and next action before offering any lifecycle form', async () => {
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    await screen.findByRole('heading', { name: 'Example MMO' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle & approvals' }));
+
+    const guidance = await screen.findByTestId('institution-lifecycle-guidance');
+    expect(guidance.textContent).toMatch(/Still no financial authority/i);
+    expect(screen.getByTestId('institution-next-action').textContent).toMatch(
+      /other than the requester must decide/,
+    );
+    expect(guidance.textContent).toMatch(/not held/i);
+    // Maker-side guidance: self-approval is impossible, not merely discouraged.
+    expect(guidance.textContent).toMatch(/can never be self-approved/i);
+  });
+
+  test('an authority flag that contradicts the lifecycle status is surfaced as a warning', async () => {
+    // APPROVED without operationalAuthority is a contradictory record; the console must not
+    // reassure the operator by quietly trusting either half.
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}`]: {
+        ...INSTITUTION,
+        status: 'APPROVED',
+        operationalAuthority: false,
+      },
+    });
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    await screen.findByRole('heading', { name: 'Example MMO' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle & approvals' }));
+    expect(await screen.findByText(/Authority flag disagrees with status/i)).toBeTruthy();
+    expect(screen.getByTestId('institution-lifecycle-guidance').textContent).toMatch(
+      /investigate before acting/i,
+    );
+  });
+
+  test('the checker sees the approval action only with the approving function, role and MFA', async () => {
+    const pending = [
+      {
+        approvalId: APPROVAL_ID,
+        actionType: 'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
+        resourceType: 'FINANCIAL_INSTITUTION',
+        resourceId: INSTITUTION_ID,
+        status: 'REQUESTED',
+        requesterPrincipalId: 'issuer:maker',
+        approvedBy: null,
+        reason: 'Promote to operational authority',
+        approvalScope: 'privileged:approve',
+        requiredAssurance: 'MFA',
+        policy: {},
+        requestedAt: '2026-11-02T10:00:00.000Z',
+        expiresAt: '2026-11-02T11:00:00.000Z',
+        approvedAt: null,
+        awaitingChecker: true,
+      },
+    ];
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}/pending-approvals`]: pending,
+    });
+
+    // Maker: can request, must NOT see an approve control.
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}/pending-approvals`]: pending,
+      [`/internal/institutions/${INSTITUTION_ID}`]: INSTITUTION,
+    });
+    const maker = render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    await screen.findByRole('heading', { name: 'Example MMO' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle & approvals' }));
+    expect(await screen.findByText(/Institution lifecycle change/)).toBeTruthy();
+    // The maker SEES the control but it is disabled with the reason — hiding it outright would
+    // leave the requester wondering why nothing happens.
+    const makerApprove = (await screen.findByRole('button', {
+      name: /^Approve$/,
+    })) as HTMLButtonElement;
+    expect(makerApprove.disabled).toBe(true);
+    expect(makerApprove.getAttribute('title')).toMatch(/different, MFA-authenticated principal/i);
+    maker.unmount();
+
+    // Checker: holds the approving function, the FINANCE_CONTROLLER role and MFA.
+    setPrincipal({
+      scopes: CHECKER_SCOPES,
+      roles: ['FINANCE_CONTROLLER'],
+      principalId: 'issuer:checker',
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      approvalId: APPROVAL_ID,
+      status: 'APPROVED',
+    });
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    await screen.findByRole('heading', { name: 'Example MMO' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle & approvals' }));
+    const approve = await screen.findByRole('button', { name: /^Approve$/ });
+    fireEvent.click(approve);
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        `/internal/a2/workforce/approvals/${APPROVAL_ID}/approve`,
+        { comment: undefined },
+      ),
+    );
+    expect(await screen.findByText(/Approval .* recorded/i)).toBeTruthy();
+  });
+
+  test('a PASSWORD-assurance checker is told approval needs MFA instead of being offered it', async () => {
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}/pending-approvals`]: [
+        {
+          approvalId: APPROVAL_ID,
+          actionType: 'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
+          resourceType: 'FINANCIAL_INSTITUTION',
+          resourceId: INSTITUTION_ID,
+          status: 'REQUESTED',
+          requesterPrincipalId: 'issuer:maker',
+          approvedBy: null,
+          reason: 'Promote to operational authority',
+          approvalScope: 'privileged:approve',
+          requiredAssurance: 'MFA',
+          policy: {},
+          requestedAt: '2026-11-02T10:00:00.000Z',
+          expiresAt: '2026-11-02T11:00:00.000Z',
+        },
+      ],
+    });
+    setPrincipal({
+      scopes: CHECKER_SCOPES,
+      roles: ['FINANCE_CONTROLLER'],
+      principalId: 'issuer:checker',
+      assuranceLevel: 'PASSWORD',
+    });
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    await screen.findByRole('heading', { name: 'Example MMO' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle & approvals' }));
+    expect(await screen.findByText(/MFA-authenticated session/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Approve$/ })).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 });
 

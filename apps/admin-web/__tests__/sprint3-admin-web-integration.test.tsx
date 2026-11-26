@@ -250,7 +250,9 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     expect(superAdminView.getByTestId('funding-inbox-unauthorized').textContent).toContain(
       'SUPER_ADMIN',
     );
-    expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining("/internal/agents/funding-requests"));
+    expect(ApiClient.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/internal/agents/funding-requests'),
+    );
     superAdminView.unmount();
 
     // Case B: Non-MFA session blocked pre-flight
@@ -261,7 +263,9 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     );
     const passwordView = render(<ApprovalsScreen />);
     expect(passwordView.getByTestId('funding-inbox-unauthorized').textContent).toContain('MFA');
-    expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining("/internal/agents/funding-requests"));
+    expect(ApiClient.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/internal/agents/funding-requests'),
+    );
     passwordView.unmount();
 
     // Case C: Error -> Retry -> Atomic Rejection -> Inbox auto-refresh
@@ -554,15 +558,11 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     fireEvent.click(netView.getByRole('button', { name: 'View' }));
     await netView.findByText('wallet-ops-1');
 
-    // Policy-blocked buttons are visibly rendered & disabled with zero speculative backend calls;
-    // Unified history is now live and enabled via GET /internal/agents/:id/transactions
-    expect(
-      (
-        netView.getByRole('button', {
-          name: 'Reclassify Agent (Policy blocked)',
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    // Governed reclassification is live for a holder of `agent.manage_classes`; the PIN unlock
+    // boundary remains blocked because no unlock action exists in V1.
+    // Unified history is enabled via GET /internal/agents/:id/transactions.
+    expect(await netView.findByLabelText('Target Agent class')).toBeTruthy();
+    expect(netView.queryByRole('button', { name: 'Reclassify Agent (Policy blocked)' })).toBeNull();
     expect(
       (
         netView.getByRole('button', {

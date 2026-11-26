@@ -158,11 +158,16 @@ test('malformed draft creation receipt cannot advance to submission or display s
   render(<AgentNetworkScreen />);
   fireEvent.click(screen.getByRole('button', { name: 'New Agent Application' }));
   fireEvent.change(screen.getByLabelText('Applicant reference'), { target: { value: 'AG-NEW' } });
-  await waitFor(() =>
-    expect((screen.getByLabelText('Application Agent class') as HTMLSelectElement).value).toBe(
-      'class-1',
-    ),
-  );
+  /*
+   * Nothing is pre-selected: the class governs the Agent's services, fees, commissions and limits,
+   * and no policy/configuration record appoints a default. The operator chooses explicitly.
+   */
+  const classSelect = (await screen.findByLabelText(
+    'Application Agent class',
+  )) as HTMLSelectElement;
+  expect(classSelect.value).toBe('');
+  fireEvent.change(classSelect, { target: { value: 'class-1' } });
+  expect(classSelect.value).toBe('class-1');
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
   expect(await screen.findByText(/Draft outcome not confirmed/)).toBeTruthy();
   expect(
@@ -205,11 +210,16 @@ test('a session change after creating a draft stops the chained submit', async (
   (ApiClient.post as jest.Mock).mockReturnValue(pending.promise);
   render(<AgentNetworkScreen />);
   fireEvent.click(screen.getByRole('button', { name: 'New Agent Application' }));
-  await waitFor(() =>
-    expect((screen.getByLabelText('Application Agent class') as HTMLSelectElement).value).toBe(
-      'class-1',
-    ),
-  );
+  /*
+   * Nothing is pre-selected: the class governs the Agent's services, fees, commissions and limits,
+   * and no policy/configuration record appoints a default. The operator chooses explicitly.
+   */
+  const classSelect = (await screen.findByLabelText(
+    'Application Agent class',
+  )) as HTMLSelectElement;
+  expect(classSelect.value).toBe('');
+  fireEvent.change(classSelect, { target: { value: 'class-1' } });
+  expect(classSelect.value).toBe('class-1');
   for (const [label, value] of [
     ['Applicant reference', 'AG-NEW'],
     ['Business / trading name', 'Business'],
@@ -255,11 +265,16 @@ test('uncertain new application requires fresh queue and explicit review before 
   render(<AgentNetworkScreen onAgentGuardChange={report} />);
   fireEvent.click(screen.getByRole('button', { name: 'New Agent Application' }));
   fireEvent.change(screen.getByLabelText('Applicant reference'), { target: { value: 'AG-NEW' } });
-  await waitFor(() =>
-    expect((screen.getByLabelText('Application Agent class') as HTMLSelectElement).value).toBe(
-      'class-1',
-    ),
-  );
+  /*
+   * Nothing is pre-selected: the class governs the Agent's services, fees, commissions and limits,
+   * and no policy/configuration record appoints a default. The operator chooses explicitly.
+   */
+  const classSelect = (await screen.findByLabelText(
+    'Application Agent class',
+  )) as HTMLSelectElement;
+  expect(classSelect.value).toBe('');
+  fireEvent.change(classSelect, { target: { value: 'class-1' } });
+  expect(classSelect.value).toBe('class-1');
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
   await screen.findByText(/Draft outcome not confirmed/);
   fireEvent.click(screen.getByRole('button', { name: 'Load applications' }));

@@ -88,7 +88,12 @@ export class InstitutionController {
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterInstitutionDto, @Req() req: AuthenticatedRequest) {
     const principal = this.requirePrincipal(req);
-    await this.requirePlatform(principal, 'institution-register');
+    // Registration is an administrative write, so the service layer binds it to the SAME catalogue
+    // function the route policy (and the Admin Web form) already require for POST /institutions:
+    // `institution.manage`. Passing no function here silently fell back to
+    // `institution.attribution.view` — a read-only platform marker — which made the service layer
+    // MORE permissive than the route guard instead of equally strict.
+    await this.requirePlatform(principal, 'institution-register', 'institution.manage');
     return this.institutions.register({
       reference: dto.reference,
       code: dto.code,

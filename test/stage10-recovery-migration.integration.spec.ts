@@ -85,10 +85,10 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       const positions = ordered.map((id) => position.get(id)!);
       expect(positions.every((value) => value !== undefined)).toBe(true);
       expect(positions).toEqual([...positions].sort((left, right) => left - right));
-      // The customer-class migration follows the Arena 5 dual-lane migrations.
+      // The submitter-attribution migration follows the customer-class migration.
       expect(rows.at(-1)).toEqual({
-        timestamp: '1785753600805',
-        name: 'CreateCustomerClasses1785753600805',
+        timestamp: '1785753600809',
+        name: 'AgentApplicationSubmitterAttribution1785753600809',
       });
     });
 
@@ -206,7 +206,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('CreateCustomerClasses1785753600805');
+        expect(applied.at(-1)).toBe('AgentApplicationSubmitterAttribution1785753600809');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
@@ -382,13 +382,13 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       if (db) await destroyIntegrationDataSource(db);
     }, 60_000);
 
-    it('22. reports the chain compatible, head 0503, and still refuses on financial dependencies', async () => {
+    it('22. reports the chain compatible, head 0806, and still refuses on financial dependencies', async () => {
       const result = await readiness.getReadiness();
       expect(result.migrations.compatible).toBe(true);
       expect(result.migrations.missing).toEqual([]);
       expect(result.migrations.unexpected).toEqual([]);
       // Tracks the readiness service's expected parity head.
-      expect(result.migrations.latestTimestamp).toBe('1785753600805');
+      expect(result.migrations.latestTimestamp).toBe('1785753600809');
       expect(result.status).toBe('error');
       expect(result.reason).toBe('financial_dependencies_not_ready');
     }, 120_000);
