@@ -1,0 +1,600 @@
+{
+  "acceptance": "PASS: both canonical round trips and authorization checks on the #23 integration candidate",
+  "diagnosticChecks": "PASS",
+  "pr23": "f9b14d589707989db517bdf0899157fc90a87d87",
+  "pr25": "integrated-in-#23-via-d175c115",
+  "testedTree": "a3cb2dc58ebb27c361c93ce5afc88874c20f4e0b",
+  "pr23Head": "f9b14d589707989db517bdf0899157fc90a87d87",
+  "integrationBase": "85b8a953eb3563d800f5a50118c4dddbdaf04965",
+  "financeSource": "merged into #23 by d175c115",
+  "integrationResolution": "git merge base->#23; textually clean (Layout.tsx, route-policy-registry auto-merged)",
+  "spec": "committed fixture docs/transaction-history/fixtures/finance25-journal-open.integration.spec.ts.template, copied to test/ with SHA/provenance-path parameters only",
+  "realWorkforceSignIn": true,
+  "fullyMigrated": true,
+  "database": {
+    "version": "PostgreSQL 18.4 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0, 64-bit"
+  },
+  "migrations": [
+    {
+      "name": "CreateWalletAndLedger1785753600000"
+    },
+    {
+      "name": "CreateTransfers1785753600001"
+    },
+    {
+      "name": "CreatePaymentCapabilities1785753600002"
+    },
+    {
+      "name": "CreateExpandedFinancialProducts1785753600003"
+    },
+    {
+      "name": "RepairM6UuidDefaults1785753600004"
+    },
+    {
+      "name": "CreateOperationalResilience1785753600005"
+    },
+    {
+      "name": "CreateProductionMaturityMetadata1785753600006"
+    },
+    {
+      "name": "CreateProductGovernance1785753600007"
+    },
+    {
+      "name": "CreateCustomerFoundation1785753600008"
+    },
+    {
+      "name": "CreateCustomerOnboarding1785753600009"
+    },
+    {
+      "name": "CreateCustomerEligibility1785753600010"
+    },
+    {
+      "name": "CreateCustomerWalletProvisioning1785753600011"
+    },
+    {
+      "name": "CreateCustomerFundingInstruments1785753600012"
+    },
+    {
+      "name": "CreateCustomerBeneficiaries1785753600013"
+    },
+    {
+      "name": "CreateCustomerPreferences1785753600014"
+    },
+    {
+      "name": "CreateCustomerAuthentication1785753600015"
+    },
+    {
+      "name": "CreateCustomerComplianceCases1785753600016"
+    },
+    {
+      "name": "CreateCustomerRiskAssessments1785753600017"
+    },
+    {
+      "name": "CreateAuthenticationSessions1785753600018"
+    },
+    {
+      "name": "CreateMfaChallenges1785753600019"
+    },
+    {
+      "name": "CreatePrivilegedActionApprovals1785753600020"
+    },
+    {
+      "name": "CreateCustomerFinancialAccountBindings1785753600021"
+    },
+    {
+      "name": "CreateCapabilityPolicyPersistence1785753600022"
+    },
+    {
+      "name": "AddTransferLifecycle1785753600023"
+    },
+    {
+      "name": "AddOutboxEventContract1785753600024"
+    },
+    {
+      "name": "CreatePilotControls1785753600025"
+    },
+    {
+      "name": "CreateExternalOperations1785753600026"
+    },
+    {
+      "name": "CreateExternalCallbackReceipts1785753600027"
+    },
+    {
+      "name": "AddExternalOperationLifecycle1785753600028"
+    },
+    {
+      "name": "CreateExternalSettlementTables1785753600029"
+    },
+    {
+      "name": "CreateExternalDataMinimizationTables1785753600030"
+    },
+    {
+      "name": "CreateB1CommercialCatalogTables1785753600031"
+    },
+    {
+      "name": "CreateB1CommercialDecisionTables1785753600032"
+    },
+    {
+      "name": "CreateB1BillingDocumentTables1785753600033"
+    },
+    {
+      "name": "CreateB1CampaignDecisionTables1785753600034"
+    },
+    {
+      "name": "CreateB1ReferralDecisionTables1785753600035"
+    },
+    {
+      "name": "CreateB1RevenueRecognitionDecisionTables1785753600036"
+    },
+    {
+      "name": "CreateB1CommercialAnalyticsDecisionTables1785753600037"
+    },
+    {
+      "name": "CreateB1CommercialGovernanceDecisionTables1785753600038"
+    },
+    {
+      "name": "CreateB2CustomerActivationReadinessTables1785753600039"
+    },
+    {
+      "name": "CreateB2MerchantAgentActivationReadinessTables1785753600040"
+    },
+    {
+      "name": "CreateB2ActivationWorkflowTables1785753600041"
+    },
+    {
+      "name": "CreateB2ConsentTables1785753600042"
+    },
+    {
+      "name": "CreateB2ApiConsumerTables1785753600043"
+    },
+    {
+      "name": "CreateB2WebhookTables1785753600044"
+    },
+    {
+      "name": "CreateB2PublicApiAuthenticationTables1785753600045"
+    },
+    {
+      "name": "CreateB2FFinanceFiscalPeriodTables1785753600046"
+    },
+    {
+      "name": "CreateB2FFinanceJournalGovernance1785753600047"
+    },
+    {
+      "name": "CreateB2FFinanceControlTables1785753600048"
+    },
+    {
+      "name": "CreateB2FFinanceAccountingTreatments1785753600049"
+    },
+    {
+      "name": "CreateB2FFinanceAccountMappings1785753600050"
+    },
+    {
+      "name": "CreateB1PaymentTermTables1785753600051"
+    },
+    {
+      "name": "CreateA2WorkforceAuthenticationTables1785753600052"
+    },
+    {
+      "name": "CreateAgentAuthenticationTables1785753600053"
+    },
+    {
+      "name": "CreateAgentClassAndApplicationTables1785753600054"
+    },
+    {
+      "name": "CreateAgentReceivingNumbers1785753600055"
+    },
+    {
+      "name": "CreateCustomerTransactionPins1785753600056"
+    },
+    {
+      "name": "CreateCashToCashTransfers1785753600057"
+    },
+    {
+      "name": "AddClaimToCashToCash1785753600058"
+    },
+    {
+      "name": "AddExpiryToCashToCash1785753600059"
+    },
+    {
+      "name": "CreateAggregators1785753600060"
+    },
+    {
+      "name": "CreateAgentFundingPool1785753600061"
+    },
+    {
+      "name": "CreateAgentOutletsAndTerminals1785753600062"
+    },
+    {
+      "name": "CreateCustomerFundingRequests1785753600063"
+    },
+    {
+      "name": "CreateSupportTickets1785753600064"
+    },
+    {
+      "name": "CreateNotificationDeliveries1785753600065"
+    },
+    {
+      "name": "CreateCapabilityRegistry1785753600066"
+    },
+    {
+      "name": "CreateLimitProfileCatalogue1785753600067"
+    },
+    {
+      "name": "CreateLimitAssignments1785753600068"
+    },
+    {
+      "name": "CreateLimitUsages1785753600069"
+    },
+    {
+      "name": "CreateCommercialDecisionSnapshots1785753600070"
+    },
+    {
+      "name": "CreateProductCatalogue1785753600071"
+    },
+    {
+      "name": "CreateFeeRules1785753600072"
+    },
+    {
+      "name": "CreateCommissionRules1785753600073"
+    },
+    {
+      "name": "CreateRewardRules1785753600074"
+    },
+    {
+      "name": "AddTransferFeeColumns1785753600075"
+    },
+    {
+      "name": "ProvisionV1CommercialAccountingFamilies1785753600076"
+    },
+    {
+      "name": "AddAgentCredentialRotation1785753600077"
+    },
+    {
+      "name": "CreateCustomerRegistrationPhoneChallenges1785753600078"
+    },
+    {
+      "name": "AddCustomerCredentialRotation1785753600079"
+    },
+    {
+      "name": "AddMfaChallengePurpose1785753600080"
+    },
+    {
+      "name": "CreateSupportWorkforceAuthentication1785753600081"
+    },
+    {
+      "name": "CreateLocalAdminAuthentication1785753600082"
+    },
+    {
+      "name": "CreateAuthorizationCatalogue1785753600083"
+    },
+    {
+      "name": "RenameWorkforceBootstrapRoleToSuperAdmin1785753600084"
+    },
+    {
+      "name": "AddAdministratorRoleAssignmentScope1785753600085"
+    },
+    {
+      "name": "CreateRoleDefinitionGovernance1785753600086"
+    },
+    {
+      "name": "CreateDashboardPlatform1785753600087"
+    },
+    {
+      "name": "CreateSuperAdminRecoveryConsumptions1785753600088"
+    },
+    {
+      "name": "WidenAuthorizationActorColumns1785753600089"
+    },
+    {
+      "name": "CreateAgentFundingRequests1785753600090"
+    },
+    {
+      "name": "AddCustomerProfileNameParts1785753600091"
+    },
+    {
+      "name": "AllowMultipleCustomerIdentityDocuments1785753600092"
+    },
+    {
+      "name": "CreateCustomerProofOfAddressWorkflows1785753600093"
+    },
+    {
+      "name": "AddSecureCustomerProofOfAddressUploads1785753600094"
+    },
+    {
+      "name": "SecureAgentApplicationAccess1785753600095"
+    },
+    {
+      "name": "CreateCashToCashLocators1785753600096"
+    },
+    {
+      "name": "AddEmailNotificationChannel1785753600097"
+    },
+    {
+      "name": "CreateNotificationTemplateRegistry1785753600098"
+    },
+    {
+      "name": "AllowPhoneNotificationRecipients1785753600099"
+    },
+    {
+      "name": "CreateNotificationProviderConfiguration1785753600100"
+    },
+    {
+      "name": "NotificationReliability1785753600101"
+    },
+    {
+      "name": "AddNotificationCredentialBinding1785753600102"
+    },
+    {
+      "name": "ConfigureTransactionNotificationEvents1785753600103"
+    },
+    {
+      "name": "CreateKycFoundation1785753600104"
+    },
+    {
+      "name": "KycSessionAndOwnership1785753600105"
+    },
+    {
+      "name": "KycReconciliationReview1785753600106"
+    },
+    {
+      "name": "KycRegistrationSessions1785753600107"
+    },
+    {
+      "name": "KycRegistrationAttempts1785753600108"
+    },
+    {
+      "name": "KycProviderGovernance1785753600109"
+    },
+    {
+      "name": "KycTierPolicy1785753600110"
+    },
+    {
+      "name": "KycRegistrationSyntheticProfile1785753600111"
+    },
+    {
+      "name": "KycSyntheticAttemptBinding1785753600112"
+    },
+    {
+      "name": "KycSyntheticDraft1785753600113"
+    },
+    {
+      "name": "AuthenticationSessionCredentialBinding1785753600114"
+    },
+    {
+      "name": "MobileAccountClaim1785753600115"
+    },
+    {
+      "name": "WalletOwnerClassification1785753600116"
+    },
+    {
+      "name": "CreateGovernedLedgerReversalExecutions1785753600117"
+    },
+    {
+      "name": "GovernedWalletOwnershipResolution1785753600118"
+    },
+    {
+      "name": "DeskMfaAttemptLimit1785753600120"
+    },
+    {
+      "name": "CashOutExecutionRecords1785753600130"
+    },
+    {
+      "name": "CashOutOtpBudgets1785753600131"
+    },
+    {
+      "name": "CashOutIntents1785753600132"
+    },
+    {
+      "name": "CreateFinancialCommitments1785753600140"
+    },
+    {
+      "name": "BindWithdrawalDestination1785753600141"
+    },
+    {
+      "name": "CreateInboundFundingReceipts1785753600142"
+    },
+    {
+      "name": "RecordVerifiedInboundObservations1785753600143"
+    },
+    {
+      "name": "CreateA7AuthoritativePersistence1785753600144"
+    },
+    {
+      "name": "AddA7InboundIntendedAmount1785753600145"
+    },
+    {
+      "name": "LinkA7InboundExecution1785753600146"
+    },
+    {
+      "name": "CashOutReconciliationHandoffs1785753600200"
+    },
+    {
+      "name": "CashToCashClaimChallengeBindings1785753600201"
+    },
+    {
+      "name": "CashToCashFundingEvidence1785753600202"
+    },
+    {
+      "name": "CashToCashCancellation1785753600203"
+    },
+    {
+      "name": "CashToCashReconciliationHandoffs1785753600204"
+    },
+    {
+      "name": "CashToCashOperationHandoffs1785753600205"
+    },
+    {
+      "name": "KycGovernanceProtectedAuthority1785753600300"
+    },
+    {
+      "name": "CreateInstitutionFoundation1785753600400"
+    },
+    {
+      "name": "CreateInstitutionalFinancialOwnership1785753600401"
+    },
+    {
+      "name": "CreateCustomerCredentialRecoveryChallenges1785753600402"
+    },
+    {
+      "name": "InstitutionGovernanceExecutionIntegrity1785753600500"
+    },
+    {
+      "name": "ProtectedAuthorityBoundary1785753600501"
+    },
+    {
+      "name": "ProtectedAuthorityInstitutionalOwnership1785753600502"
+    },
+    {
+      "name": "CashOutInstitutionalScope1785753600503"
+    },
+    {
+      "name": "InstitutionKycTierLimitGovernance1785753600504"
+    },
+    {
+      "name": "KycIdentityRevisionAndEvidenceRead1785753600505"
+    },
+    {
+      "name": "FeeRuleTargeting1785753600506"
+    },
+    {
+      "name": "PremblyKycCredentialGovernance1785753600507"
+    },
+    {
+      "name": "BankingProviderGovernance1785753600600"
+    },
+    {
+      "name": "BankingOperationRecords1785753600601"
+    },
+    {
+      "name": "BankingReconciliation1785753600602"
+    },
+    {
+      "name": "BankingDispatchLeases1785753600603"
+    },
+    {
+      "name": "BankingFeeBinding1785753600604"
+    },
+    {
+      "name": "CreateInstitutionAgentFloatFunding1785753600605"
+    },
+    {
+      "name": "OutboxLeasesAndDeadLetters1785753600606"
+    },
+    {
+      "name": "IntegritySnapshots1785753600607"
+    },
+    {
+      "name": "EmergencyAccessReviewRequirement1785753600608"
+    },
+    {
+      "name": "FraudRiskSignals1785753600609"
+    },
+    {
+      "name": "ComplianceRegister1785753600610"
+    },
+    {
+      "name": "ComplaintsAndDisputes1785753600611"
+    },
+    {
+      "name": "MobileClientSupport1785753600612"
+    },
+    {
+      "name": "NotificationDeliveryReceipts1785753600613"
+    },
+    {
+      "name": "PrivacyAndRetention1785753600614"
+    },
+    {
+      "name": "BindWalletTransferQuotes1785753600800"
+    },
+    {
+      "name": "AgentVerifiedPhone1785753600801"
+    },
+    {
+      "name": "ExtendBeneficiaryOwnership1785753600802"
+    },
+    {
+      "name": "GeneralizeFinancialAuthorizationsForAgents1785753600803"
+    },
+    {
+      "name": "GeneralizeExternalOperationsForAgents1785753600804"
+    },
+    {
+      "name": "CreateCustomerClasses1785753600805"
+    },
+    {
+      "name": "DurableInboundIdentity1785753600806"
+    },
+    {
+      "name": "CaptureCustomerFundingScope1785753600807"
+    }
+  ],
+  "authorizationChecks": {
+    "ownerHistory": 200,
+    "auditorJournal": 200,
+    "operationsJournal": 403,
+    "foreignOperationsHistory": 404,
+    "foreignPreparerJournal": 404,
+    "journalEndpoints": [
+      "ledger/journals/:id",
+      "internal/finance-operations/ledger/journals/:id"
+    ],
+    "browserDirectJournalRequests": true
+  },
+  "records": [
+    {
+      "type": "WALLET_TRANSFER",
+      "id": "5ba31bfb-7fdc-4ba9-aab5-ebfcea14bc6c",
+      "journalId": "79382a75-4c98-47f4-b905-3e4ea301f189",
+      "reference": "FIN25-WALLET"
+    },
+    {
+      "type": "BANK_TO_WALLET",
+      "id": "7ec2a085-600f-4fff-9006-7d725535f242",
+      "journalId": "5e02a6dd-b29d-408c-a88b-b4c8b8f53665",
+      "reference": "MNFY-0cd87929"
+    }
+  ],
+  "sources": [
+    {
+      "type": "TRANSFER",
+      "id": "5ba31bfb-7fdc-4ba9-aab5-ebfcea14bc6c",
+      "reference": "FIN25-WALLET",
+      "status": "COMPLETED",
+      "linkedBy": "JOURNAL_ID",
+      "navigable": true
+    },
+    {
+      "type": "BANK_TO_WALLET",
+      "id": "7ec2a085-600f-4fff-9006-7d725535f242",
+      "reference": "MNFY-0cd87929",
+      "status": "CREDITED",
+      "linkedBy": "DURABLE_INBOUND_LINK",
+      "navigable": true
+    }
+  ],
+  "screenshots": [
+    "WALLET_TRANSFER-history-open-journal.png",
+    "WALLET_TRANSFER-journal-return-link.png",
+    "WALLET_TRANSFER-returned-canonical-detail.png",
+    "BANK_TO_WALLET-history-open-journal.png",
+    "BANK_TO_WALLET-journal-return-link.png",
+    "BANK_TO_WALLET-returned-canonical-detail.png",
+    "WALLET_TRANSFER-no-ledger-permission.png",
+    "BANK_TO_WALLET-no-ledger-permission.png",
+    "WALLET_TRANSFER-foreign-detail-denied.png",
+    "WALLET_TRANSFER-foreign-journal-denied.png",
+    "BANK_TO_WALLET-foreign-detail-denied.png",
+    "BANK_TO_WALLET-foreign-journal-denied.png"
+  ],
+  "hashes": {
+    "apps/admin-web/src/screens/authenticated/Layout.tsx": "86bd9c7e449dbb6413cdd83ba4b89798eb19142aa0a83b1e341f53a6bcc8f498",
+    "apps/admin-web/src/screens/authenticated/TransactionHistoryScreen.tsx": "0214e2d14a5988976756cb09585cea6f5fa6845a878bd49a1a62ab5255cf3dd7",
+    "apps/admin-web/src/screens/authenticated/transaction-history-link.ts": "50d44edcccfc3e06dd1e289a17b0eacc0346d5e2de3eb6553bde21bd85f0cb40",
+    "src/finance-operations/finance-operations.service.ts": "6c3aaa06bbc7a7b53a7a0b90e22851f939a999acd2be2aebefd317d954bbd4ae",
+    "test/finance25-history-roundtrip.integration.spec.ts": "cc7eb1a6069a34b8104da2abe10517c105b88dec7158a90691757fccabb5d5ee"
+  },
+  "blockers": [],
+  "passwords": "all 11 authenticated; hashes and role/function grants unchanged",
+  "executedAt": "2026-11-26T14:52:45.593Z"
+}

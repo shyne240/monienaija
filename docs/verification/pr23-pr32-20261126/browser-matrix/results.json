@@ -1,0 +1,250 @@
+{
+  "result": "PASS",
+  "executedAt": "2026-11-26T14:54:56.861Z",
+  "testedCommit": "a3cb2dc58ebb27c361c93ce5afc88874c20f4e0b",
+  "workingTreeClean": true,
+  "browser": true,
+  "syntheticData": true,
+  "realWorkforceSignIn": true,
+  "schemaHead": "CaptureCustomerFundingScope1785753600807",
+  "boundaries": [
+    "Controlled KYC and sandbox withdrawal authority; real ledger/reservation, governed custody, funding services, role sessions and guards",
+    "No institutional funding execution; customer requests pending/rejected only",
+    "Foreign-institution negative uses same OPERATIONS account after scoped assignment switch and fresh browser sign-in; no role grants/password changes"
+  ],
+  "matrix": [
+    {
+      "type": "WALLET_TO_BANK",
+      "label": "Wallet to Bank",
+      "id": "6d651e7b-7d49-43b5-9011-e564eef1f2e8",
+      "status": "RESERVED",
+      "role": "FINANCE_AUDITOR",
+      "reference": "6d651e7b-7d49-43b5-9011-e564eef1f2e8"
+    },
+    {
+      "type": "CUSTOMER_FUNDING",
+      "label": "Customer Funding",
+      "id": "598a88a4-560f-4c05-92aa-92f68dc2b678",
+      "status": "PENDING",
+      "role": "OPERATIONS",
+      "reference": "CF-598a88a4-560f-4c05-92aa-92f68dc2b678"
+    },
+    {
+      "type": "CUSTOMER_FUNDING",
+      "label": "Customer Funding",
+      "id": "92a0f8d9-542a-4989-936a-3ccf4fe68771",
+      "status": "REJECTED",
+      "role": "OPERATIONS",
+      "reference": "CF-92a0f8d9-542a-4989-936a-3ccf4fe68771"
+    },
+    {
+      "type": "AGENT_FUNDING",
+      "label": "Agent Funding",
+      "id": "facc936d-226c-4ffb-aac0-9383e41dc78b",
+      "status": "EXECUTED",
+      "role": "FINANCE_AUDITOR",
+      "reference": "MATRIX-AGENT-FUND"
+    },
+    {
+      "type": "AGENT_DEFUNDING",
+      "label": "Agent Defunding",
+      "id": "0ea39db0-fdb4-4fa3-93c8-e37ab20c495c",
+      "status": "EXECUTED",
+      "role": "FINANCE_AUDITOR",
+      "reference": "MATRIX-AGENT-DEFUND"
+    },
+    {
+      "type": "BANK_TO_WALLET",
+      "label": "Bank to Wallet",
+      "id": "cb2b108e-0f31-43ec-bdbd-acc044c07655",
+      "status": "UNVERIFIED",
+      "role": "FINANCE_AUDITOR",
+      "reference": "MATRIX-BANK-TO-WALLET"
+    }
+  ],
+  "details": [
+    {
+      "id": "6d651e7b-7d49-43b5-9011-e564eef1f2e8",
+      "type": "WALLET_TO_BANK",
+      "status": "RESERVED",
+      "reference": "6d651e7b-7d49-43b5-9011-e564eef1f2e8",
+      "createdAt": "2026-11-26T14:54:17.396Z",
+      "completedAt": null,
+      "amountMinor": "500",
+      "feeMinor": null,
+      "vatMinor": null,
+      "currency": "NGN",
+      "institutionId": null,
+      "investigation": {
+        "partyId": "b01a9cbb-ccc6-4150-9487-a1c44f077404",
+        "walletId": "7ed8c9e6-c09a-4c3d-90f6-b746c955c0d8",
+        "principalType": "AGENT",
+        "providerState": null,
+        "totalDebitMinor": null,
+        "providerReference": null,
+        "externalOperationId": "926a1ed3-75d7-4edd-8587-3270c1a27295"
+      },
+      "journals": [
+        "2be5eccc-3e4b-42ad-bb1f-962e8be11031",
+        null
+      ]
+    },
+    {
+      "id": "598a88a4-560f-4c05-92aa-92f68dc2b678",
+      "type": "CUSTOMER_FUNDING",
+      "status": "PENDING",
+      "reference": "CF-598a88a4-560f-4c05-92aa-92f68dc2b678",
+      "createdAt": "2026-11-26T14:54:17.855Z",
+      "completedAt": null,
+      "amountMinor": "12500",
+      "feeMinor": null,
+      "vatMinor": null,
+      "currency": "NGN",
+      "institutionId": "702dd936-eeda-446d-8e46-c5b97eeb0034",
+      "investigation": {
+        "channel": null,
+        "makerId": "test-agent-network-manager",
+        "checkerId": null,
+        "customerId": "094c48b1-cbd0-478d-9eb6-52f816fb5a8b",
+        "rejectionReason": null,
+        "scopeCapturedAt": "2026-11-26T14:54:17.858399+00:00",
+        "scopeEvidenceId": "1b479b90-192a-44c6-a866-9921549a7eac",
+        "externalReference": null
+      },
+      "journals": null
+    },
+    {
+      "id": "92a0f8d9-542a-4989-936a-3ccf4fe68771",
+      "type": "CUSTOMER_FUNDING",
+      "status": "REJECTED",
+      "reference": "CF-92a0f8d9-542a-4989-936a-3ccf4fe68771",
+      "createdAt": "2026-11-26T14:54:17.869Z",
+      "completedAt": "2026-11-26T14:54:17.879Z",
+      "amountMinor": "15000",
+      "feeMinor": null,
+      "vatMinor": null,
+      "currency": "NGN",
+      "institutionId": "702dd936-eeda-446d-8e46-c5b97eeb0034",
+      "investigation": {
+        "channel": null,
+        "makerId": "test-agent-network-manager",
+        "checkerId": "test-finance-controller",
+        "customerId": "094c48b1-cbd0-478d-9eb6-52f816fb5a8b",
+        "rejectionReason": "Synthetic acceptance rejection; no funds moved",
+        "scopeCapturedAt": "2026-11-26T14:54:17.870813+00:00",
+        "scopeEvidenceId": "1b479b90-192a-44c6-a866-9921549a7eac",
+        "externalReference": null
+      },
+      "journals": null
+    },
+    {
+      "id": "facc936d-226c-4ffb-aac0-9383e41dc78b",
+      "type": "AGENT_FUNDING",
+      "status": "EXECUTED",
+      "reference": "MATRIX-AGENT-FUND",
+      "createdAt": "2026-11-26T14:54:17.424Z",
+      "completedAt": "2026-11-26T14:54:17.503Z",
+      "amountMinor": "1000",
+      "feeMinor": null,
+      "vatMinor": null,
+      "currency": "NGN",
+      "institutionId": null,
+      "investigation": {
+        "agentId": "b01a9cbb-ccc6-4150-9487-a1c44f077404",
+        "makerId": "test-agent-network-manager",
+        "checkerId": "test-finance-controller",
+        "approvalId": "facc936d-226c-4ffb-aac0-9383e41dc78b",
+        "rejectionReason": null
+      },
+      "journals": [
+        "6838a0d3-d281-49bb-9d8b-e98556369eeb"
+      ]
+    },
+    {
+      "id": "0ea39db0-fdb4-4fa3-93c8-e37ab20c495c",
+      "type": "AGENT_DEFUNDING",
+      "status": "EXECUTED",
+      "reference": "MATRIX-AGENT-DEFUND",
+      "createdAt": "2026-11-26T14:54:17.514Z",
+      "completedAt": "2026-11-26T14:54:17.589Z",
+      "amountMinor": "500",
+      "feeMinor": null,
+      "vatMinor": null,
+      "currency": "NGN",
+      "institutionId": null,
+      "investigation": {
+        "agentId": "b01a9cbb-ccc6-4150-9487-a1c44f077404",
+        "makerId": "test-agent-network-manager",
+        "checkerId": "test-finance-controller",
+        "approvalId": "0ea39db0-fdb4-4fa3-93c8-e37ab20c495c",
+        "rejectionReason": null
+      },
+      "journals": [
+        "19f2f873-eaa9-407c-b49b-fa458aff96d1"
+      ]
+    },
+    {
+      "id": "cb2b108e-0f31-43ec-bdbd-acc044c07655",
+      "type": "BANK_TO_WALLET",
+      "status": "UNVERIFIED",
+      "reference": "MATRIX-BANK-TO-WALLET",
+      "createdAt": "2026-11-26T14:54:17.886Z",
+      "completedAt": null,
+      "amountMinor": "9900",
+      "feeMinor": "100",
+      "vatMinor": "0",
+      "currency": "NGN",
+      "institutionId": "702dd936-eeda-446d-8e46-c5b97eeb0034",
+      "investigation": {
+        "paidAt": null,
+        "provider": "MONNIFY",
+        "walletId": null,
+        "postingState": "NOT_POSTED",
+        "floatReceiptId": null,
+        "identitySource": "BANK_INTAKE",
+        "grossAmountMinor": "10000",
+        "providerPaymentReference": null
+      },
+      "journals": [
+        null
+      ]
+    }
+  ],
+  "browserChecks": [
+    "FINANCE_AUDITOR: Wallet to Bank/RESERVED type+status+reference filters, one row, detail and saved URL reopened",
+    "OPERATIONS: Customer Funding/PENDING type+status+reference filters, one row, detail and saved URL reopened",
+    "OPERATIONS: Customer Funding/REJECTED type+status+reference filters, one row, detail and saved URL reopened",
+    "FINANCE_AUDITOR: Agent Funding/EXECUTED type+status+reference filters, one row, detail and saved URL reopened",
+    "FINANCE_AUDITOR: Agent Defunding/EXECUTED type+status+reference filters, one row, detail and saved URL reopened",
+    "FINANCE_AUDITOR: Bank to Wallet/UNVERIFIED type+status+reference filters, one row, detail and saved URL reopened",
+    "Institution OPERATIONS cannot list/open platform FUND/DEFUND",
+    "Fresh OPERATIONS browser sign-in scoped only to foreign institution cannot list/open owner PENDING/REJECTED Customer Funding"
+  ],
+  "screenshots": [
+    "0-WALLET_TO_BANK-RESERVED-list.png",
+    "0-WALLET_TO_BANK-RESERVED-detail.png",
+    "1-CUSTOMER_FUNDING-PENDING-list.png",
+    "1-CUSTOMER_FUNDING-PENDING-detail.png",
+    "2-CUSTOMER_FUNDING-REJECTED-list.png",
+    "2-CUSTOMER_FUNDING-REJECTED-detail.png",
+    "3-AGENT_FUNDING-EXECUTED-list.png",
+    "3-AGENT_FUNDING-EXECUTED-detail.png",
+    "4-AGENT_DEFUNDING-EXECUTED-list.png",
+    "4-AGENT_DEFUNDING-EXECUTED-detail.png",
+    "5-BANK_TO_WALLET-UNVERIFIED-list.png",
+    "5-BANK_TO_WALLET-UNVERIFIED-detail.png",
+    "denied-AGENT_FUNDING.png",
+    "denied-AGENT_DEFUNDING.png",
+    "foreign-PENDING-empty.png",
+    "foreign-PENDING-detail-denied.png",
+    "foreign-REJECTED-empty.png",
+    "foreign-REJECTED-detail-denied.png"
+  ],
+  "passwords": "all 11 exact fixture passwords authenticated; hashes unchanged",
+  "roleGrants": "unchanged",
+  "sourceSha256": {
+    "src/admin/transaction-history.controller.ts": "14b372fbbc8398a3f8d1ac3fd9fed2ebf1cd6f7deec7a2183dae9aeb4d0549a8",
+    "apps/admin-web/src/screens/authenticated/TransactionHistoryScreen.tsx": "0214e2d14a5988976756cb09585cea6f5fa6845a878bd49a1a62ab5255cf3dd7",
+    "test/transaction-history-browser-matrix.integration.spec.ts": "e7496d7ade31874b5fe183bb90cfff28b585fed98488a4ac823631f8d96f7ff4"
+  }
+}

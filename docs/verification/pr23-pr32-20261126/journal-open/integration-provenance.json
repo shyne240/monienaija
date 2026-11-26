@@ -1,0 +1,8 @@
+{
+  "testedTree": "a3cb2dc58ebb27c361c93ce5afc88874c20f4e0b",
+  "pr23Head": "f9b14d589707989db517bdf0899157fc90a87d87",
+  "integrationBase": "85b8a953eb3563d800f5a50118c4dddbdaf04965",
+  "financeSource": "merged into #23 by d175c115",
+  "integrationResolution": "git merge base->#23; textually clean (Layout.tsx, route-policy-registry auto-merged)",
+  "spec": "committed fixture docs/transaction-history/fixtures/finance25-journal-open.integration.spec.ts.template, copied to test/ with SHA/provenance-path parameters only"
+}
