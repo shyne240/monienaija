@@ -646,6 +646,20 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     const inputs = Array.from({ length: 5 }, () => baseInput());
     await Promise.all(inputs.map((i) => service.recordDecision(i)));
     expect(await rowCount('commercial_decision_snapshots')).toBe(5);
+
+    // Regression (Arena 7): repeat against a reset empty table after pooled connections are warm
+    // and after ANALYZE (reltuples = 0), where a pre-INSERT SELECT acquired a relation/root-page
+    // SIReadLock and caused distinct-key SERIALIZABLE transactions to abort each other at COMMIT.
+    for (let round = 0; round < 20; round += 1) {
+      await dataSource.query('TRUNCATE commercial_decision_snapshots RESTART IDENTITY CASCADE');
+      if (round % 2 === 1) {
+        await dataSource.query('ANALYZE commercial_decision_snapshots');
+      }
+      const batch = Array.from({ length: 5 }, () => baseInput());
+      const results = await Promise.all(batch.map((i) => service.recordDecision(i)));
+      expect(results.every((r) => !r.replayed)).toBe(true);
+      expect(await rowCount('commercial_decision_snapshots')).toBe(5);
+    }
   }, 70000);
 
   // ── 6. recordDecisionWithManager joins an external SERIALIZABLE boundary ──
