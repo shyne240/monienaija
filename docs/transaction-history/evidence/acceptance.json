@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-25T13:09:23.492Z",
+  "scope": "Disposable minimal PostgreSQL schema; production controller and AuthorizationService; audit sink and browser bearer adapter test-only. NOT full application/session integration.",
+  "checks": [
+    {
+      "name": "mixed history includes all nine supported types",
+      "result": "PASS"
+    },
+    {
+      "name": "added product detail keys and exact-reference filters resolve independently",
+      "result": "PASS"
+    },
+    {
+      "name": "combined Lagos date, type, status and exact reference filters",
+      "result": "PASS"
+    },
+    {
+      "name": "Lagos inclusive start and exclusive next-midnight boundaries",
+      "result": "PASS"
+    },
+    {
+      "name": "keyset pagination preserves microseconds without duplicates or omissions",
+      "result": "PASS"
+    },
+    {
+      "name": "detail counts initiation and claim once, masks phone and gates ledger",
+      "result": "PASS"
+    },
+    {
+      "name": "restricted list and direct detail cannot read foreign institution",
+      "result": "PASS"
+    },
+    {
+      "name": "assignment revocation takes effect on list and detail immediately",
+      "result": "PASS"
+    },
+    {
+      "name": "missing capability and unauthenticated callers denied",
+      "result": "PASS"
+    },
+    {
+      "name": "malformed filters and cursor rejected",
+      "result": "PASS"
+    }
+  ]
+}

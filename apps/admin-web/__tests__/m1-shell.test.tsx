@@ -399,3 +399,48 @@ describe('MonieNaija One workspace search', () => {
     expect(view.getByText('No matching workspaces')).toBeTruthy();
   });
 });
+
+test('unified detail opens the exact journal through the Finance context contract', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const journalId = '22222222-2222-4222-8222-222222222222';
+  const row = {
+    id,
+    type: 'WALLET_TRANSFER',
+    reference: 'SYN-JOURNAL-OPEN',
+    status: 'COMPLETED',
+    createdAt: '2026-11-25T10:00:00Z',
+    amountMinor: '500',
+    feeMinor: '0',
+    currency: 'NGN',
+    journals: [journalId],
+  };
+  window.location.hash = `#transaction-history/WALLET_TRANSFER/${id}`;
+  setPrincipal(['transaction.view', 'ledger.view']);
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.includes('/transaction-history/WALLET_TRANSFER/')) return Promise.resolve(row);
+    if (path.startsWith('/internal/admin/transaction-history?'))
+      return Promise.resolve({ items: [row], nextCursor: null });
+    if (path === `/ledger/journals/${journalId}`)
+      return Promise.resolve({
+        id: journalId,
+        status: 'POSTED',
+        currency: 'NGN',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        lines: [],
+      });
+    return Promise.resolve([]);
+  });
+  const view = render(<Layout />);
+  const open = await view.findByRole('button', { name: 'Open journal' });
+  fireEvent.click(open);
+  await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith(`/ledger/journals/${journalId}`));
+  expect((view.getByLabelText('Audit Journal ID (UUID)') as HTMLInputElement).value).toBe(
+    journalId,
+  );
+  expect(view.queryByRole('dialog')).toBeNull();
+  expect(window.location.hash).toBe('');
+  expect(view.getAllByTestId('nav-transfers').length).toBe(1);
+  expect(view.queryByTestId('nav-cashIn')).toBeNull();
+  expect(view.queryByTestId('nav-cashOut')).toBeNull();
+  window.location.hash = '';
+});

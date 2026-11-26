@@ -1,0 +1,4 @@
+PASS test/finance25-history-roundtrip.integration.spec.ts (70.394 s)
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Time:        70.52 s

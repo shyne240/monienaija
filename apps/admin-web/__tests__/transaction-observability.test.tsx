@@ -1,121 +1,67 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import App from '../src/App';
 import { useAuthStore } from '../src/store/auth-store';
 import { ApiClient } from '../src/services/api-client';
 
 jest.mock('../src/services/api-client', () => ({
-  ApiClient: {
-    get: jest.fn(),
-    post: jest.fn(),
-    delete: jest.fn(),
-  },
+  ApiClient: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 
-// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
-// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
-// dashboard — always the first recorded call. Prefixed onto the sequential
-// `.mockResolvedValueOnce(...)` chain below so it still lines up with this screen's own call order.
-const DASHBOARD_FETCH_STUB = {
-  templateKey: 'DEFAULT_FALLBACK',
-  displayName: 'Default Dashboard',
-  description: '',
-  isFallback: true,
-  widgets: [],
-};
-
-describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', () => {
+describe('Transaction History replaces the legacy global trace and simulator navigation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-
+    window.location.hash = '';
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
-      token: 'controller-bearer',
-      sessionId: 'controller-sess',
+      token: 'synthetic',
+      sessionId: 'synthetic',
       principal: {
         type: 'OPERATOR',
-        principalId: 'iss:back-office-controller',
-        sessionId: 'controller-sess',
+        principalId: 'synthetic',
+        sessionId: 'synthetic',
         audience: 'workforce-admin',
-        roles: ['SUPER_ADMIN'],
-        scopes: ['transaction.view', 'reporting.transaction_summary.view', 'fee_rule.view'],
+        roles: ['OPERATIONS'],
+        scopes: ['transaction.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
     });
-  });
-
-  test('loads deposit details as read-only and never submits a sandbox settlement command', async () => {
-    const mockDeposit = {
-      id: 'dep-uuid-777',
-      status: 'PENDING',
-      currency: 'NGN',
-      amountMinor: '125000',
-      createdAt: new Date().toISOString(),
-      walletId: 'wallet-uuid-123',
-      reference: 'dep-ref-123',
-    };
-
-    (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB)
-      .mockResolvedValueOnce(mockDeposit);
-
-    const { getByText, getByPlaceholderText, findByText, queryByText } = render(<App />);
-
-    fireEvent.click(getByText('Transfers'));
-    fireEvent.click(document.querySelector('[data-testid="nav-cashIn"]')!);
-    fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), {
-      target: { value: 'dep-uuid-777' },
-    });
-    fireEvent.click(getByText('Track'));
-
-    expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/deposits/dep-uuid-777');
-    expect(await findByText('DEPOSIT Detail View')).toBeTruthy();
-    expect(await findByText('dep-ref-123')).toBeTruthy();
-    expect(await findByText('PENDING')).toBeTruthy();
-    expect(
-      await findByText(
-        'This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.',
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('transaction-history')
+          ? { items: [], nextCursor: null }
+          : {
+              templateKey: 'DEFAULT_FALLBACK',
+              displayName: 'Dashboard',
+              description: '',
+              isFallback: true,
+              widgets: [],
+            },
       ),
-    ).toBeTruthy();
-    expect(queryByText('Trigger Sandbox Completion')).toBeNull();
+    );
+  });
+  test('one history destination, no generic deposit/withdrawal navigation or fee simulation', async () => {
+    const view = render(<App />);
+    fireEvent.click(view.getByTestId('nav-transfers'));
+    expect(await view.findByText('No matching transactions')).toBeTruthy();
+    expect(view.getByRole('heading', { name: 'Transaction History' })).toBeTruthy();
+    for (const key of ['cashIn', 'cashOut', 'cashToCashOps'])
+      expect(view.queryByTestId(`nav-${key}`)).toBeNull();
+    expect(view.queryByText('Run Simulation')).toBeNull();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
-
-  test('should run fee simulator calculations and display gross output', async () => {
-    const mockFeeResult = {
-      paymentType: 'VIRTUAL_ACCOUNT',
-      currency: 'NGN',
-      amountMinor: '100000',
-      feeMinor: '6000', // 60 Naira
-      vatMinor: '450', // 4.50 Naira
-      totalMinor: '106450', // 1,064.50 Naira
-    };
-
-    (ApiClient.post as jest.Mock).mockResolvedValue(mockFeeResult);
-
-    const { getByText, getByPlaceholderText, findByText } = render(<App />);
-
-    fireEvent.click(getByText('Transfers'));
-
-    expect(getByText('Pricing Fee Simulator Tool')).toBeTruthy();
-
-    // Submit calculations
-    fireEvent.click(getByText('Run Simulation'));
-
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/fees/calculate', {
-        amountMinor: '100000', // 1000 Naira
-        currency: 'NGN',
-        paymentType: 'VIRTUAL_ACCOUNT',
-        flatFeeMinor: '5000', // 50 Naira
-        percentageBps: '100',
-        vatBps: '750',
-      });
-      expect(getByText('₦60.00')).toBeTruthy();
-      expect(getByText('₦4.50')).toBeTruthy();
-      expect(getByText('₦1,064.50')).toBeTruthy();
-    });
+  test('read errors stay visible and never trigger settlement commands', async () => {
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+      path.includes('transaction-history')
+        ? Promise.reject(new Error('Institution scope unavailable'))
+        : Promise.resolve({ widgets: [] }),
+    );
+    const view = render(<App />);
+    fireEvent.click(view.getByTestId('nav-transfers'));
+    expect(await view.findByText('Institution scope unavailable')).toBeTruthy();
+    expect(view.queryByText('Trigger Sandbox Completion')).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 });

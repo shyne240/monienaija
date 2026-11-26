@@ -677,7 +677,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
   });
 
-  test('Priority 4: connects Dashboard -> Agent Network -> Agent Support Tickets -> Back to Agent, updates Deposit/Withdrawal labels, and displays Cash-to-Cash expiry status', async () => {
+  test('Priority 4: connects Dashboard -> Agent Network -> Agent Support Tickets -> Back to Agent, uses unified transaction navigation, and displays Cash-to-Cash expiry status', async () => {
     setPrincipal(
       ['SUPER_ADMIN'],
       [
@@ -755,10 +755,11 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     const appShell = render(<Layout />);
 
-    // Corrected Money Movement navigation labels (Deposits / Withdrawals instead of misleading C2W/W2C)
+    // Unified history replaces the four money-movement destinations.
     const rail = appShell.getByTestId('desktop-nav');
-    expect(within(rail).getByTestId('nav-cashIn').textContent).toBe('Deposits');
-    expect(within(rail).getByTestId('nav-cashOut').textContent).toBe('Withdrawals');
+    expect(within(rail).getByTestId('nav-transfers').textContent).toBe('Transaction History');
+    for (const key of ['cashIn', 'cashOut', 'cashToCashOps'])
+      expect(within(rail).queryByTestId(`nav-${key}`)).toBeNull();
 
     // Dashboard widget navigates directly to Agent Network Management
     fireEvent.click(await appShell.findByRole('button', { name: 'Agent network' }));

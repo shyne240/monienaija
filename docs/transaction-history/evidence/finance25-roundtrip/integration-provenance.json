@@ -1,0 +1,7 @@
+{
+  "pr23": "3c7f5c98fee27cb7164ee27f75605aeb58226c51",
+  "pr25": "891a1c1777855b9e921cfc50c962f2626d7eecf8",
+  "combinedTree": "94d5de66d2f444ad8749fb244830a561dcc3d5e2",
+  "resolvedTree": "80bd7493d35148bfb37d26296f4d82d0f85540bf",
+  "resolution": "Retain PR23 unified routes; drop obsolete PR25 cashIn/cashOut conflict block; no other product edits"
+}

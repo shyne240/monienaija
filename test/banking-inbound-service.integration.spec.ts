@@ -22,7 +22,9 @@ describe('banking inbound service (real PostgreSQL)', () => {
   let db: DataSource;
   let service: BankingInboundService;
   let institutionId: string;
-  let verifyImpl: () => Promise<BankingProviderResult<InboundPaymentVerificationResult>>;
+  let verifyImpl: (
+    reference: string,
+  ) => Promise<BankingProviderResult<InboundPaymentVerificationResult>>;
   let verifyCalls: number;
 
   const CORRELATION = 'corr-inbound-1';
@@ -64,7 +66,7 @@ describe('banking inbound service (real PostgreSQL)', () => {
       verifyInboundPayment: async (reference: string) => {
         verifyCalls += 1;
         expect(reference).toMatch(/^MNFY\|/);
-        return verifyImpl();
+        return verifyImpl(reference);
       },
     } as BankingProvider;
     const registry = new BankingProviderRegistry();
@@ -74,12 +76,12 @@ describe('banking inbound service (real PostgreSQL)', () => {
 
   beforeEach(() => {
     verifyCalls = 0;
-    verifyImpl = () =>
+    verifyImpl = (reference) =>
       Promise.resolve({
         ok: true,
         value: {
           outcome: 'VERIFIED',
-          providerTransactionReference: 'MNFY|X',
+          providerTransactionReference: reference,
           grossAmountMinor: '7800000',
           providerFeeMinor: '40000',
           currency: 'NGN',
@@ -157,14 +159,31 @@ describe('banking inbound service (real PostgreSQL)', () => {
     expect((await service.view(id)).verification_state).toBe('VERIFIED');
   });
 
-  it('REFUSES to verify when the provider reports a different amount', async () => {
+  it('rejects a VERIFIED response for a different provider reference', async () => {
     const { id } = await service.record(command());
     verifyImpl = () =>
       Promise.resolve({
         ok: true,
         value: {
           outcome: 'VERIFIED',
-          providerTransactionReference: 'MNFY|X',
+          providerTransactionReference: 'MNFY|DIFFERENT',
+          grossAmountMinor: '7800000',
+          currency: 'NGN',
+          correlationId: CORRELATION,
+        },
+      });
+    expect((await service.verify(id, CORRELATION)).state).toBe('REJECTED');
+    expect((await service.view(id)).verification_state).toBe('REJECTED');
+  });
+
+  it('REFUSES to verify when the provider reports a different amount', async () => {
+    const { id } = await service.record(command());
+    verifyImpl = (reference) =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          outcome: 'VERIFIED',
+          providerTransactionReference: reference,
           // The provider says more money arrived than the webhook claimed.
           grossAmountMinor: '9900000',
           correlationId: CORRELATION,
@@ -198,12 +217,12 @@ describe('banking inbound service (real PostgreSQL)', () => {
 
   it('does not treat a pending provider status as verified', async () => {
     const { id } = await service.record(command());
-    verifyImpl = () =>
+    verifyImpl = (reference) =>
       Promise.resolve({
         ok: true,
         value: {
           outcome: 'PENDING',
-          providerTransactionReference: 'MNFY|X',
+          providerTransactionReference: reference,
           correlationId: CORRELATION,
         },
       } as BankingProviderResult<InboundPaymentVerificationResult>);
@@ -214,12 +233,12 @@ describe('banking inbound service (real PostgreSQL)', () => {
 
   it('treats a provider conflict as a dispute, not a payment', async () => {
     const { id } = await service.record(command());
-    verifyImpl = () =>
+    verifyImpl = (reference) =>
       Promise.resolve({
         ok: true,
         value: {
           outcome: 'CONFLICT',
-          providerTransactionReference: 'MNFY|X',
+          providerTransactionReference: reference,
           correlationId: CORRELATION,
         },
       } as BankingProviderResult<InboundPaymentVerificationResult>);

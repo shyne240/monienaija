@@ -1,0 +1,53 @@
+{
+  "fetchedHead": "46e9ff703884dff6aa4d9b520a1b6817c8c5b705",
+  "testedCommit": "7d2c0412494ebdfe6344cffd08cf29dc76484c17",
+  "workingTreeClean": true,
+  "baselineProvenance": "Baseline production controller hash matches fetched head exactly; new volume harness was uncommitted. Final full validation was clean-head; same original rows cloned into a current-run owned disposable database.",
+  "method": "3 EXPLAIN ANALYZE BUFFERS SETTINGS FORMAT JSON samples per case; warm-cache medians, 101-row SQL limit for 100-row API page; no cold-cache or production SLO claim",
+  "rows": 90300,
+  "institutions": 4,
+  "timingsMs": {
+    "platform-combined": {
+      "before": 637.429,
+      "after": 256.8
+    },
+    "platform-reference": {
+      "before": 15.107,
+      "after": 13.64
+    },
+    "platform-typeStatusDate": {
+      "before": 74.439,
+      "after": 30.855
+    },
+    "platform-cursor": {
+      "before": 360.524,
+      "after": 167.225
+    },
+    "institution-combined": {
+      "before": 660.57,
+      "after": 213.599
+    },
+    "institution-reference": {
+      "before": 14.765,
+      "after": 13.584
+    },
+    "institution-typeStatusDate": {
+      "before": 71.255,
+      "after": 28.323
+    },
+    "institution-cursor": {
+      "before": 353.735,
+      "after": 144.525
+    }
+  },
+  "assertions": [
+    "exact reference AND scoped detail foreign404",
+    "type/status/Lagos bounds AND",
+    "1000-row paging per real session matches full ordering including ties and microseconds",
+    "ledger journal IDs preserved",
+    "all11 exact passwords authenticate; hashes and role-function grants unchanged"
+  ],
+  "preservedFrontendTree": "38f92bc93ebc24548ccbd08e58d1c1379c62d028",
+  "schemaUnchanged": true,
+  "indexChanges": []
+}

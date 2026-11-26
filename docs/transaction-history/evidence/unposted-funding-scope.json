@@ -1,0 +1,135 @@
+{
+  "result": "PASS",
+  "authentication": "real persisted MFA workforce sessions; real AppModule and full migration chain",
+  "creationEvidence": "governed wallet attribution receipt, wallet and ledger agree at request INSERT",
+  "savedHash": "#transaction-history/CUSTOMER_FUNDING/cde28825-dfbb-4bf9-b2e7-536db3253968",
+  "before": {
+    "id": "cde28825-dfbb-4bf9-b2e7-536db3253968",
+    "type": "CUSTOMER_FUNDING",
+    "status": "PENDING",
+    "reference": "CF-cde28825-dfbb-4bf9-b2e7-536db3253968",
+    "createdAt": "2026-11-25T13:05:38.790Z",
+    "completedAt": null,
+    "amountMinor": "1000",
+    "feeMinor": "0",
+    "vatMinor": "0",
+    "currency": "NGN",
+    "institutionId": "d24adbe6-d766-47ba-bda8-c7559c8af27a",
+    "investigation": {
+      "channel": null,
+      "makerId": "support-maker-1",
+      "checkerId": null,
+      "customerId": "8392d874-69b8-4a99-a9a5-9bf6ecdab241",
+      "rejectionReason": null,
+      "scopeCapturedAt": "2026-11-25T13:05:38.792042+00:00",
+      "scopeEvidenceId": "e8209c3a-9349-4f4d-96b2-8971fce6662e",
+      "externalReference": null
+    },
+    "journals": null
+  },
+  "after": {
+    "id": "cde28825-dfbb-4bf9-b2e7-536db3253968",
+    "type": "CUSTOMER_FUNDING",
+    "status": "REJECTED",
+    "reference": "CF-cde28825-dfbb-4bf9-b2e7-536db3253968",
+    "createdAt": "2026-11-25T13:05:38.790Z",
+    "completedAt": "2026-11-25T13:05:39.221Z",
+    "amountMinor": "1000",
+    "feeMinor": "0",
+    "vatMinor": "0",
+    "currency": "NGN",
+    "institutionId": "d24adbe6-d766-47ba-bda8-c7559c8af27a",
+    "investigation": {
+      "channel": null,
+      "makerId": "support-maker-1",
+      "checkerId": "operator-checker-1",
+      "customerId": "8392d874-69b8-4a99-a9a5-9bf6ecdab241",
+      "rejectionReason": "Controlled history rejection",
+      "scopeCapturedAt": "2026-11-25T13:05:38.792042+00:00",
+      "scopeEvidenceId": "e8209c3a-9349-4f4d-96b2-8971fce6662e",
+      "externalReference": null
+    },
+    "journals": null
+  },
+  "evidence": {
+    "request_id": "cde28825-dfbb-4bf9-b2e7-536db3253968",
+    "wallet_id": "f6f8b6b3-b921-4b36-b807-fa8af9916aba",
+    "ledger_account_id": "dff9abc9-a49b-41b5-bf28-218d1ff60377",
+    "institution_id": "d24adbe6-d766-47ba-bda8-c7559c8af27a",
+    "attribution_id": "e8209c3a-9349-4f4d-96b2-8971fce6662e",
+    "captured_at": "2026-11-25T13:05:38.792Z"
+  },
+  "platformPosting": {
+    "before": {
+      "id": "34373a98-8e27-4a81-b5a2-c0e31cab6fc9",
+      "type": "CUSTOMER_FUNDING",
+      "status": "PENDING",
+      "reference": "CF-34373a98-8e27-4a81-b5a2-c0e31cab6fc9",
+      "createdAt": "2026-11-25T13:05:39.436Z",
+      "completedAt": null,
+      "amountMinor": "1000",
+      "feeMinor": "0",
+      "vatMinor": "0",
+      "currency": "NGN",
+      "institutionId": null,
+      "investigation": {
+        "channel": null,
+        "makerId": "support-maker-1",
+        "checkerId": null,
+        "customerId": "1a37044e-ddb5-42d5-80c0-f073b8ec2421",
+        "rejectionReason": null,
+        "scopeCapturedAt": null,
+        "scopeEvidenceId": null,
+        "externalReference": null
+      },
+      "journals": [
+        null
+      ]
+    },
+    "after": {
+      "id": "34373a98-8e27-4a81-b5a2-c0e31cab6fc9",
+      "type": "CUSTOMER_FUNDING",
+      "status": "APPROVED",
+      "reference": "CF-34373a98-8e27-4a81-b5a2-c0e31cab6fc9",
+      "createdAt": "2026-11-25T13:05:39.436Z",
+      "completedAt": "2026-11-25T13:05:39.529Z",
+      "amountMinor": "1000",
+      "feeMinor": "0",
+      "vatMinor": "0",
+      "currency": "NGN",
+      "institutionId": null,
+      "investigation": {
+        "channel": null,
+        "makerId": "support-maker-1",
+        "checkerId": "operator-checker-1",
+        "customerId": "1a37044e-ddb5-42d5-80c0-f073b8ec2421",
+        "rejectionReason": null,
+        "scopeCapturedAt": null,
+        "scopeEvidenceId": null,
+        "externalReference": null
+      },
+      "journals": [
+        "cb757a62-71e6-4b15-bdf4-17ca5434c65e"
+      ]
+    }
+  },
+  "checks": [
+    "own pending list/detail allowed",
+    "foreign pending/rejected list/detail denied",
+    "unresolved creation stays withheld after attribution",
+    "governed enrolment change does not change historical access",
+    "rejection preserves request ID and one history row",
+    "captured custody and request identity immutable",
+    "supported platform posting keeps request UUID and one history row (platform auditor only)"
+  ],
+  "postingBoundary": {
+    "message": "Institution-attributed customer wallet cannot be funded from the platform settlement rail. No new rail or settlement authority invented.",
+    "actualRefusal": "Ledger account 00000000-0000-4000-8000-000000000201 is not attributed to the journal's institution"
+  },
+  "schemaHead": "CaptureCustomerFundingScope1785753600807",
+  "sourceSha256": {
+    "src/migrations/1785753600807-CaptureCustomerFundingScope.ts": "15ec8a1b79b320f56473b7ace43a08727860f66866b3a14d1e1a12432df09893",
+    "src/admin/transaction-history.controller.ts": "3159b70913f9d005e56d0fb89ad133f73f9fe0267bb293b279345a749e774aa5",
+    "test/v1-001-customer-funding.integration.spec.ts": "42ff18b55e437a82071d8ea069f10612bff8895d487a57985886d8310f4c1636"
+  }
+}

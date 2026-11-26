@@ -75,6 +75,10 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
+const fs = require('node:fs');
+const os = require('node:os');
+const { skippedSuites } = require('./pg-skipped-results.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const JEST_BIN = path.join(ROOT, 'node_modules', 'jest', 'bin', 'jest.js');
 const CONFIG = path.join(ROOT, 'jest.integration.config.js');
@@ -238,6 +242,8 @@ function runBatch(files, index, total) {
     `\n=== PG integration batch ${index + 1}/${total} (${files.length} files) starting ===\n`,
   );
   return new Promise((resolve) => {
+    const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-jest-'));
+    const reportPath = path.join(reportDir, 'results.json');
     const child = spawn(
       process.execPath,
       [
@@ -247,6 +253,7 @@ function runBatch(files, index, total) {
         '--config',
         CONFIG,
         '--runInBand',
+        '--json', '--outputFile', reportPath,
         ...files,
       ],
       {
@@ -296,6 +303,15 @@ function runBatch(files, index, total) {
       }
       const joined = transcript.join('');
       const parsed = summarizeOutput(transcript);
+      try {
+        const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+        parsed.suites.push(...skippedSuites(report, files, ROOT, parsed.suites));
+      } catch (error) {
+        // Missing/unreadable JSON never creates a synthetic result. The missing-result gate stays active.
+        process.stderr.write(`No usable Jest JSON report: ${error.message}\n`);
+      } finally {
+        fs.rmSync(reportDir, { recursive: true, force: true });
+      }
       resolve({
         ok: code === 0 && !signal,
         files,
@@ -381,6 +397,7 @@ async function main() {
     // passing nor failing, and that difference matters).
     suitesReported: allSuites.length,
     suitesPassed: allSuites.filter((suite) => suite.status === 'PASS').length,
+    suitesSkipped: allSuites.filter((suite) => suite.status === 'SKIP').length,
     suitesFailed: allSuites.filter((suite) => suite.status === 'FAIL').length,
     filesWithoutResult: files
       .map((file) => file.replace(`${ROOT}/`, ''))
@@ -391,7 +408,7 @@ async function main() {
     failures: allFailures,
   };
   process.stdout.write(
-    `\n=== PG integration suites: ${summary.suitesPassed} passed, ${summary.suitesFailed} failed, ` +
+    `\n=== PG integration suites: ${summary.suitesPassed} passed, ${summary.suitesFailed} failed, ${summary.suitesSkipped} skipped, ` +
       `${summary.filesWithoutResult.length} without a result of ${files.length} discovered ===\n`,
   );
   if (Object.keys(categoryCounts).length > 0) {
@@ -408,10 +425,10 @@ async function main() {
   }
   process.stdout.write(
     `\n=== PG integration suite: ${batches.length} batch(es), ${files.length} files, concurrency=${CONCURRENCY} — ${
-      anyFailed ? 'FAILED' : 'all passed'
+      anyFailed || summary.filesWithoutResult.length ? 'FAILED' : 'completed (see passed/skipped counts)'
     } ===\n`,
   );
-  process.exit(anyFailed ? 1 : 0);
+  process.exit(anyFailed || summary.filesWithoutResult.length ? 1 : 0);
 }
 
 main().catch((error) => {

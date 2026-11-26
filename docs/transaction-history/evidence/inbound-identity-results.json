@@ -1,0 +1,87 @@
+{
+  "result": "PASS",
+  "session": "real local-admin login; all 11 passwords authenticated, hashes unchanged",
+  "verifier": "controlled sandbox provider boundary; real BankingInboundService verification",
+  "credit": "real AgentFloatFundingService with controlled sandbox policy authority; balanced posted ledger",
+  "savedHash": "#transaction-history/BANK_TO_WALLET/ac47e29d-72a5-485f-9014-1d8693823aa4",
+  "savedApiPath": "/api/v1/internal/admin/transaction-history/BANK_TO_WALLET/ac47e29d-72a5-485f-9014-1d8693823aa4",
+  "before": {
+    "id": "ac47e29d-72a5-485f-9014-1d8693823aa4",
+    "type": "BANK_TO_WALLET",
+    "status": "UNVERIFIED",
+    "reference": "MNFY-43d7a3ab",
+    "createdAt": "2026-11-25T12:35:37.331Z",
+    "completedAt": null,
+    "amountMinor": "250000",
+    "feeMinor": "0",
+    "vatMinor": "0",
+    "currency": "NGN",
+    "institutionId": "3fe0a32e-05ee-4252-8830-0ae5681ca8c3",
+    "investigation": {
+      "paidAt": null,
+      "provider": "MONNIFY",
+      "walletId": null,
+      "postingState": "NOT_POSTED",
+      "floatReceiptId": null,
+      "identitySource": "BANK_INTAKE",
+      "grossAmountMinor": "250000",
+      "providerPaymentReference": null
+    },
+    "journals": null
+  },
+  "after": {
+    "id": "ac47e29d-72a5-485f-9014-1d8693823aa4",
+    "type": "BANK_TO_WALLET",
+    "status": "CREDITED",
+    "reference": "MNFY-43d7a3ab",
+    "createdAt": "2026-11-25T12:35:37.331Z",
+    "completedAt": "2026-11-25T12:35:41.541Z",
+    "amountMinor": "250000",
+    "feeMinor": "0",
+    "vatMinor": "0",
+    "currency": "NGN",
+    "institutionId": "3fe0a32e-05ee-4252-8830-0ae5681ca8c3",
+    "investigation": {
+      "paidAt": null,
+      "provider": "MONNIFY",
+      "walletId": "edf100c9-1108-4e08-8082-97a480f705de",
+      "postingState": "FLOAT_CREDITED",
+      "floatReceiptId": "22abeefd-0777-44ca-8103-e16a85a0de33",
+      "identitySource": "BANK_INTAKE",
+      "grossAmountMinor": "250000",
+      "providerPaymentReference": null
+    },
+    "journals": null
+  },
+  "listed": [
+    {
+      "id": "ac47e29d-72a5-485f-9014-1d8693823aa4",
+      "type": "BANK_TO_WALLET",
+      "status": "CREDITED",
+      "reference": "MNFY-43d7a3ab",
+      "cursorAt": "2026-11-25T12:35:37.331716Z",
+      "createdAt": "2026-11-25T12:35:37.331Z",
+      "amountMinor": "250000",
+      "feeMinor": "0",
+      "currency": "NGN"
+    }
+  ],
+  "checks": [
+    "original URL survives UNVERIFIED → VERIFIED → CREDITED",
+    "one business row across all types",
+    "legacy AGENT_FUNDING receipt URL aliases canonical payment (including receipt-first arrival)",
+    "another institution list/detail/alias denied",
+    "bank replay and float replay produce one credit",
+    "reference/account/environment/amount/institution mismatch refused",
+    "scope and persisted link immutable"
+  ],
+  "savedBrowserUrl": "http://127.0.0.1:5173/#transaction-history/BANK_TO_WALLET/ac47e29d-72a5-485f-9014-1d8693823aa4",
+  "browser": true,
+  "schemaHead": "DurableInboundIdentity1785753600806",
+  "sourceSha256": {
+    "src/migrations/1785753600806-DurableInboundIdentity.ts": "7f650effa0ce0db420c36a78a14a618e461623fbd2ccadf3847b79850e568574",
+    "src/admin/transaction-history.controller.ts": "7686b04dd78ec20b38646264123f130615fca0db0eada6beeff023e9e6055599",
+    "src/banking/banking-inbound.service.ts": "59c54b2d606df6d5530def38ce5db77d9a3aab186fdb6e78218d720c4897cf16",
+    "test/a3d-agent-float-funding.integration.spec.ts": "4286553bf774ead8bbdfdbdddecd4ffda4c53a92cd1b25dd044e49124d89892e"
+  }
+}
