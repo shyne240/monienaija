@@ -54,6 +54,12 @@ const DISPOSABLE_PATTERN = /(^|[_-])t[0-9]+$|disposable|scratch|fixture/i;
 
 /** Expected figures in minor units (kobo); the acceptance script asserts these exact values. */
 const TIER_CAP_MINOR = '500000000'; // NGN 5,000,000 — approved institution Tier 1 ceiling
+// A DISTINCT cap per tier is what makes tier coverage meaningful. If every tier mapped to one
+// profile, a single profile could stand in for all of them and the browser run would prove nothing
+// about Tier 2. Both tier caps stay below the commercial cap so the commercial profile can never be
+// the rule that governs.
+const LEVEL_2_TIER_CAP_MINOR = '750000000'; // NGN 7,500,000 — approved institution Tier 2 ceiling
+const TIER_PROFILE_LEVEL_2 = 'T1_INSTITUTION_TIER_CAP_L2';
 const COMMERCIAL_CAP_MINOR = '1000000000'; // NGN 10,000,000 — the HIGHER commercial ceiling
 const OTHER_LIMIT_MINOR = '900000000000'; // NGN 9,000,000,000 — keeps MAX_AMOUNT_PER_TX controlling
 const TRANSFER_FEE_FLAT_MINOR = '10000'; // NGN 100 flat
@@ -413,7 +419,7 @@ async function approveInstitutionTierPolicy(institutionId: string): Promise<numb
       serviceClass: null,
       tier,
       disposition: 'PROFILE' as const,
-      profileCode: TIER_PROFILE,
+      profileCode: tier === 'LEVEL_2' ? TIER_PROFILE_LEVEL_2 : TIER_PROFILE,
     })),
   };
   const proposal = await governance.propose(maker, {
@@ -747,41 +753,52 @@ async function approveKycEvidence(
              clock_timestamp() + interval '2 hours', clock_timestamp(), 1)`,
     [sessionId, customerId, credentialId, tokenHash],
   );
-  const consentId = randomUUID();
-  await q(
-    `INSERT INTO kyc_consents
-       (id, customer_id, session_id, kind, notice_version, actor_id, identity_revision, provider,
-        route_version, expires_at)
-     VALUES ($1, $2, $3, 'BVN', 'tier1-admin-web-fixture-v1', $2, $4::bigint, 'MONNIFY', $5,
-             clock_timestamp() + interval '2 hours')`,
-    [consentId, customerId, sessionId, revision, PROVIDER_ROUTE_VERSION],
-  );
-  const attemptId = randomUUID();
-  const identifierMac = createHmac('sha256', `tier1-fixture-${customerId}-${randomUUID()}`)
-    .update(`synthetic-bvn-${customerId.slice(0, 8)}`)
-    .digest('hex');
-  await q(
-    `INSERT INTO kyc_verification_attempts
-       (id, customer_id, consent_id, request_id, kind, provider, policy_version, request_mac,
-        identity_mac, mac_key_version, provider_route_version, outcome, identity_revision,
-        completed_at, expires_at)
-     VALUES ($1, $2, $3, $4, 'BVN', 'MONNIFY', 'tier1-admin-web-fixture-v1', $5, $5, 'fixture-v1',
-             $6, 'MATCH', $7::bigint, clock_timestamp(), clock_timestamp() + interval '2 hours')`,
-    [
-      attemptId,
-      customerId,
-      consentId,
-      randomUUID(),
-      createHash('sha256').update(`${customerId}:${revision}`).digest('hex'),
-      PROVIDER_ROUTE_VERSION,
-      revision,
-    ],
-  );
-  await q(
-    `INSERT INTO kyc_identity_claims (id, kind, identifier_mac, customer_id, attempt_id, status)
-     VALUES ($1, 'BVN', $2, $3, $4, 'VERIFIED')`,
-    [randomUUID(), identifierMac, customerId, attemptId],
-  );
+  // Tier 1 is satisfied by BVN alone; Tier 2 additionally requires NIN. Evidence that does not
+  // match the tier being claimed is never corroborated by the governed reader.
+  // Tier 1 is satisfied by BVN alone; Tier 2 additionally requires NIN. Evidence that does not
+  // match the tier being claimed is never corroborated by the governed reader.
+  const kinds: Array<'BVN' | 'NIN'> = level === 'LEVEL_1' ? ['BVN'] : ['BVN', 'NIN'];
+  for (const kind of kinds) {
+    const consentId = randomUUID();
+    await q(
+      `INSERT INTO kyc_consents
+         (id, customer_id, session_id, kind, notice_version, actor_id, identity_revision, provider,
+          route_version, expires_at)
+       VALUES ($1, $2, $3, $4, 'tier1-admin-web-fixture-v1', $2, $5::bigint, 'MONNIFY', $6,
+               clock_timestamp() + interval '2 hours')`,
+      [consentId, customerId, sessionId, kind, revision, PROVIDER_ROUTE_VERSION],
+    );
+    const attemptId = randomUUID();
+    const identifierMac = createHmac(
+      'sha256',
+      `tier1-fixture-${customerId}-${kind}-${randomUUID()}`,
+    )
+      .update(`synthetic-${kind.toLowerCase()}-${customerId.slice(0, 8)}`)
+      .digest('hex');
+    await q(
+      `INSERT INTO kyc_verification_attempts
+         (id, customer_id, consent_id, request_id, kind, provider, policy_version, request_mac,
+          identity_mac, mac_key_version, provider_route_version, outcome, identity_revision,
+          completed_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, 'MONNIFY', 'tier1-admin-web-fixture-v1', $6, $6, 'fixture-v1',
+               $7, 'MATCH', $8::bigint, clock_timestamp(), clock_timestamp() + interval '2 hours')`,
+      [
+        attemptId,
+        customerId,
+        consentId,
+        randomUUID(),
+        kind,
+        createHash('sha256').update(`${customerId}:${kind}:${revision}`).digest('hex'),
+        PROVIDER_ROUTE_VERSION,
+        revision,
+      ],
+    );
+    await q(
+      `INSERT INTO kyc_identity_claims (id, kind, identifier_mac, customer_id, attempt_id, status)
+       VALUES ($1, $2, $3, $4, $5, 'VERIFIED')`,
+      [randomUUID(), kind, identifierMac, customerId, attemptId],
+    );
+  }
   void identity;
 }
 
@@ -863,6 +880,11 @@ async function main() {
     );
     await assignGlobalProfile(COMMERCIAL_PROFILE);
     await seedLimitProfile(TIER_PROFILE, 'Institution Tier 1 ceiling (lower)', TIER_CAP_MINOR);
+    await seedLimitProfile(
+      TIER_PROFILE_LEVEL_2,
+      'Institution Tier 2 ceiling',
+      LEVEL_2_TIER_CAP_MINOR,
+    );
     const classId = await seedClass();
     await seedFeeRules(customerProducts);
     const institutionId = await seedInstitution();
@@ -871,6 +893,9 @@ async function main() {
     const sender = await seedCustomer('sender', '+2348099000001');
     const receiver = await seedCustomer('receiver', '+2348099000002');
     const unconfigured = await seedCustomer('unconfigured', '+2348099000003');
+    // Tier 2 subject: BVN + NIN evidence, so the governed reader corroborates LEVEL_2 and the
+    // APPROVED Tier 2 mapping — its own profile and its own cap — is what governs this customer.
+    const tierTwo = await seedCustomer('tiertwo', '+2348099000004');
     // Repeated runs must start from the same staff decision. A previous acceptance run leaves the
     // synthetic customers ACTIVE with the TIER_DEFAULT class assignment it committed, so the
     // fixture rewinds exactly that state (never a manual assignment, never a wallet) and the run
@@ -896,6 +921,26 @@ async function main() {
     if (unconfiguredEnrolment.status !== 'ACTIVE') {
       await writeEnrolment(unconfigured.id, institutionId);
     }
+    // Seeded after the rewind above, because resetActivationState returns the synthetic customers to
+    // DRAFT and the harness proves the DRAFT -> ACTIVE decision for the sender through the UI. This
+    // customer is the Tier 2 subject rather than the subject of that check, so it is activated here:
+    // financial eligibility requires an ACTIVE customer, and without it the Tier 2 configuration
+    // would read as though the approved tier policy had not applied at all.
+    await approveKycEvidence(tierTwo.id, 'LEVEL_2', {
+      firstName: 'Tier',
+      lastName: 'Two',
+      dateOfBirth: '1992-07-23',
+      phone: '+2348099000004',
+    });
+    const tierTwoEnrolment = await enrolCustomer(tierTwo.id, institutionId);
+    if (tierTwoEnrolment.status !== 'ACTIVE') {
+      await writeEnrolment(tierTwo.id, institutionId);
+    }
+    await q(
+      `UPDATE customers SET status = 'ACTIVE', updated_at = clock_timestamp()
+        WHERE id = $1 AND status <> 'ACTIVE'`,
+      [tierTwo.id],
+    );
     const workforce = await seedWorkforceScope(institutionId, true);
 
     // Deliberately misconfigured control customer: its own approved default class has no
@@ -1004,6 +1049,10 @@ async function main() {
       customerClass: { code: CLASS_CODE, name: CLASS_NAME, id: classId },
       commercialProfile: { code: COMMERCIAL_PROFILE, maxAmountPerTxMinor: COMMERCIAL_CAP_MINOR },
       institutionTierProfile: { code: TIER_PROFILE, maxAmountPerTxMinor: TIER_CAP_MINOR },
+      institutionTierProfileLevel2: {
+        code: TIER_PROFILE_LEVEL_2,
+        maxAmountPerTxMinor: LEVEL_2_TIER_CAP_MINOR,
+      },
       transferFee: { flatFeeMinor: TRANSFER_FEE_FLAT_MINOR, percentageBps: 0, vatBps: 0 },
       workforce: {
         scopedPrincipal: workforce.scopedPrincipal,
@@ -1024,6 +1073,16 @@ async function main() {
           reference: unconfigured.reference,
           phone: '+2348099000003',
           approvedClass: BROKEN_CLASS_CODE,
+        },
+        tierTwo: {
+          id: tierTwo.id,
+          reference: tierTwo.reference,
+          phone: '+2348099000004',
+          status: 'ACTIVE',
+          expectedTier: 'LEVEL_2',
+          expectedTierProfile: TIER_PROFILE_LEVEL_2,
+          expectedCapMinor: LEVEL_2_TIER_CAP_MINOR,
+          commercialCapMinor: COMMERCIAL_CAP_MINOR,
         },
       },
       walletState,

@@ -3,7 +3,7 @@
   "database": "monienaija_t1",
   "kycTierPolicyVersion": 1,
   "institutionId": "7ec9c345-8cdc-4a3d-a620-c71609fa7682",
-  "institutionPolicyVersion": 32,
+  "institutionPolicyVersion": 41,
   "customerClass": {
     "code": "STANDARD",
     "name": "Standard (Tier 1 default)",
@@ -16,6 +16,10 @@
   "institutionTierProfile": {
     "code": "T1_INSTITUTION_TIER_CAP",
     "maxAmountPerTxMinor": "500000000"
+  },
+  "institutionTierProfileLevel2": {
+    "code": "T1_INSTITUTION_TIER_CAP_L2",
+    "maxAmountPerTxMinor": "750000000"
   },
   "transferFee": {
     "flatFeeMinor": "10000",
@@ -45,6 +49,16 @@
       "reference": "t1-unconfigured-e44ac1af",
       "phone": "+2348099000003",
       "approvedClass": "TIER1_MISCONFIGURED"
+    },
+    "tierTwo": {
+      "id": "60388a70-65bb-4752-bc0e-0dcb9828cfdb",
+      "reference": "t1-tiertwo-60388a70",
+      "phone": "+2348099000004",
+      "status": "ACTIVE",
+      "expectedTier": "LEVEL_2",
+      "expectedTierProfile": "T1_INSTITUTION_TIER_CAP_L2",
+      "expectedCapMinor": "750000000",
+      "commercialCapMinor": "1000000000"
     }
   },
   "walletState": {

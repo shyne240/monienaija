@@ -44,7 +44,8 @@ const OUT = path.resolve(process.env.TIER1_OUT_DIR || 'docs/integration/evidence
 const EXECUTABLE = process.env.TIER1_CHROMIUM || process.env.BROWSER_EXECUTABLE_PATH || '';
 // Screenshots are regenerable artifacts (a few hundred KB each); they are written next to the JSON
 // evidence but not committed. Set TIER1_SCREENSHOTS=keep to retain them in the evidence directory.
-const SHOTS_DIR = process.env.TIER1_SCREENSHOTS === 'keep' ? OUT : path.resolve('/tmp/tier1-admin-web-shots');
+const SHOTS_DIR =
+  process.env.TIER1_SCREENSHOTS === 'keep' ? OUT : path.resolve('/tmp/tier1-admin-web-shots');
 const STEPS = [];
 
 const ADMIN = ['admin@monienaija.local', 'MonieNaijaAdmin123!'];
@@ -83,7 +84,9 @@ function request(method, urlPath, body, token) {
         path: `${url.pathname}${url.search}`,
         method,
         headers: {
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
       },
@@ -151,7 +154,10 @@ async function openCustomer(reference) {
   const openButton = page.getByRole('button', { name: /Open Customer 360°/ }).first();
   await openButton.waitFor({ state: 'visible', timeout: 30_000 });
   await openButton.click();
-  await page.locator('.cm-profile-heading h1, .cm-profile-heading h2').first().waitFor({ state: 'visible', timeout: 30_000 });
+  await page
+    .locator('.cm-profile-heading h1, .cm-profile-heading h2')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 async function main() {
@@ -175,7 +181,11 @@ async function main() {
   page.on('response', (response) => {
     const url = response.url();
     if (url.includes('/api/v1/')) {
-      apiCalls.push({ method: response.request().method(), status: response.status(), url: url.replace(BASE, '') });
+      apiCalls.push({
+        method: response.request().method(),
+        status: response.status(),
+        url: url.replace(BASE, ''),
+      });
     }
   });
 
@@ -199,7 +209,10 @@ async function main() {
   // the class alone would read the placeholder. Wait for the loaded panel instead.
   const reviewSection = page.locator('article.cm-regreview:not([aria-busy="true"])');
   await reviewSection.waitFor({ state: 'visible', timeout: 30_000 });
-  await page.locator('article.cm-regreview h2', { hasText: 'Activation readiness' }).first().waitFor({ state: 'visible', timeout: 30_000 });
+  await page
+    .locator('article.cm-regreview h2', { hasText: 'Activation readiness' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 });
   const reviewText = await reviewSection.innerText();
   record(
     'Registration review renders for the synthetic customer',
@@ -236,7 +249,10 @@ async function main() {
   const activationStatus = activationResponse.status();
   const activationBody = await activationResponse.json().catch(() => ({}));
   assert(activationStatus === 200, `activation must succeed, got ${activationStatus}`);
-  assert(activationBody.status === 'ACTIVE', `customer must be ACTIVE, got ${activationBody.status}`);
+  assert(
+    activationBody.status === 'ACTIVE',
+    `customer must be ACTIVE, got ${activationBody.status}`,
+  );
   record(
     'Staff completion leaves the account ACTIVE and ready to claim',
     `The Activate control issued PATCH /api/v1/customers/${senderId} and the server answered ${activationStatus} with status=${activationBody.status}. No wallet was provisioned and no mobile passcode, PIN or customer session was created by this step.`,
@@ -267,8 +283,14 @@ async function main() {
     new RegExp(summary.customerClass.code).test(classLine[1]),
     `the assigned class must be the approved default ${summary.customerClass.code}, got "${classLine[1]}"`,
   );
-  assert(/TIER_DEFAULT/.test(classLine[1]), `class source must be TIER_DEFAULT, got "${classLine[1]}"`);
-  assert(/Eligible for verified tier/.test(classLine[1]), 'class must be eligible for the verified tier');
+  assert(
+    /TIER_DEFAULT/.test(classLine[1]),
+    `class source must be TIER_DEFAULT, got "${classLine[1]}"`,
+  );
+  assert(
+    /Eligible for verified tier/.test(classLine[1]),
+    'class must be eligible for the verified tier',
+  );
   record(
     'Approved default class applied by activation, and shown to staff',
     `Registration review reports: ${classLine[1].replace(/\s+/g, ' ').trim()}`,
@@ -278,13 +300,18 @@ async function main() {
   const effectiveSection = reviewAfter.locator('.cm-regreview__effective');
   await effectiveSection.waitFor({ state: 'visible', timeout: 30_000 });
   const effectiveText = await effectiveSection.innerText();
-  assert(/WALLET_TRANSFER/.test(effectiveText), 'effective configuration must list WALLET_TRANSFER');
+  assert(
+    /WALLET_TRANSFER/.test(effectiveText),
+    'effective configuration must list WALLET_TRANSFER',
+  );
   assert(
     /Resolved \(rule/.test(effectiveText),
     'the transfer fee must be shown as resolved from a rule',
   );
   assert(
-    /Quote on NGN 1,000\.00: fee NGN 100\.00, VAT NGN 0\.00, total NGN 1,100\.00/.test(effectiveText),
+    /Quote on NGN 1,000\.00: fee NGN 100\.00, VAT NGN 0\.00, total NGN 1,100\.00/.test(
+      effectiveText,
+    ),
     `the displayed fee quote must be NGN 100.00 on NGN 1,000.00, got:\n${effectiveText}`,
   );
   record(
@@ -292,11 +319,11 @@ async function main() {
     'The panel resolves the WALLET_TRANSFER fee from its governing rule and shows the worked quote: fee NGN 100.00, VAT NGN 0.00, total NGN 1,100.00 on an NGN 1,000.00 transfer.',
   );
 
-  const limitsTable = reviewAfter.getByRole('table', { name: /Effective limits for WALLET_TRANSFER/i });
+  const limitsTable = reviewAfter.getByRole('table', {
+    name: /Effective limits for WALLET_TRANSFER/i,
+  });
   const limitsText = await limitsTable.innerText();
-  const maxTxRow = limitsText
-    .split('\n')
-    .find((line) => /Max amount per transaction/.test(line));
+  const maxTxRow = limitsText.split('\n').find((line) => /Max amount per transaction/.test(line));
   assert(maxTxRow, 'the effective limits table must contain the per-transaction row');
   record(
     'Effective limits shown to staff',
@@ -305,13 +332,25 @@ async function main() {
   );
   await shot('registration-review-after-activation');
 
-  const postReview = await request('GET', `/api/v1/internal/customers/${senderId}/registration-review`, undefined, token);
-  assert(postReview.status === 200, `post-activation review must return 200, got ${postReview.status}`);
+  const postReview = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/registration-review`,
+    undefined,
+    token,
+  );
+  assert(
+    postReview.status === 200,
+    `post-activation review must return 200, got ${postReview.status}`,
+  );
   const effectiveConfig = postReview.body.effectiveConfiguration;
   assert(effectiveConfig, 'the review must embed the effective configuration');
-  assert(effectiveConfig.verifiedTier === 'LEVEL_1', `verified tier must be LEVEL_1, got ${effectiveConfig.verifiedTier}`);
   assert(
-    effectiveConfig.assignedClass && effectiveConfig.assignedClass.classCode === summary.customerClass.code,
+    effectiveConfig.verifiedTier === 'LEVEL_1',
+    `verified tier must be LEVEL_1, got ${effectiveConfig.verifiedTier}`,
+  );
+  assert(
+    effectiveConfig.assignedClass &&
+      effectiveConfig.assignedClass.classCode === summary.customerClass.code,
     `assigned class must be ${summary.customerClass.code}`,
   );
   assert(
@@ -325,9 +364,18 @@ async function main() {
     String(wt.fee.flatFeeMinor ?? wt.fee.quote?.feeMinor) === summary.transferFee.flatFeeMinor,
     `fee must be ${summary.transferFee.flatFeeMinor} minor units`,
   );
-  for (const dimension of ['MAX_AMOUNT_PER_TX', 'DAILY_AMOUNT', 'WEEKLY_AMOUNT', 'MONTHLY_AMOUNT', 'WALLET_BALANCE_MAX']) {
+  for (const dimension of [
+    'MAX_AMOUNT_PER_TX',
+    'DAILY_AMOUNT',
+    'WEEKLY_AMOUNT',
+    'MONTHLY_AMOUNT',
+    'WALLET_BALANCE_MAX',
+  ]) {
     const row = wt.limits.find((l) => l.dimension === dimension);
-    assert(row && row.status === 'RESOLVED', `${dimension} must be RESOLVED, got ${row && row.status}`);
+    assert(
+      row && row.status === 'RESOLVED',
+      `${dimension} must be RESOLVED, got ${row && row.status}`,
+    );
   }
   record(
     'Verified tier, approved default class and effective configuration read back over HTTP',
@@ -336,23 +384,39 @@ async function main() {
       verifiedTier: effectiveConfig.verifiedTier,
       assignedClass: effectiveConfig.assignedClass,
       fee: { status: wt.fee.status, flatFeeMinor: wt.fee.flatFeeMinor, quote: wt.fee.quote },
-      limits: wt.limits.map((l) => ({ dimension: l.dimension, status: l.status, value: l.limitValueMinor, source: l.source })),
+      limits: wt.limits.map((l) => ({
+        dimension: l.dimension,
+        status: l.status,
+        value: l.limitValueMinor,
+        source: l.source,
+      })),
     },
   );
 
   // ── 5. ready to claim: no wallet, no passcode, no PIN ─────────────────────────────────────
   const walletRows = summary.walletState;
-  assert(walletRows.wallets === 0, `no wallet may be provisioned before claim, found ${walletRows.wallets}`);
+  assert(
+    walletRows.wallets === 0,
+    `no wallet may be provisioned before claim, found ${walletRows.wallets}`,
+  );
   assert(
     walletRows.customerSignIns === 0,
     `no customer sign-in may exist yet, found ${walletRows.customerSignIns}`,
   );
-  assert(walletRows.transactionPins === 0, `no transaction PIN may exist, found ${walletRows.transactionPins}`);
+  assert(
+    walletRows.transactionPins === 0,
+    `no transaction PIN may exist, found ${walletRows.transactionPins}`,
+  );
   assert(
     walletRows.claimCredentials === 0,
     `no customer sign-in credential may exist yet, found ${walletRows.claimCredentials}`,
   );
-  const wallets = await request('GET', `/api/v1/internal/customers/${senderId}/wallets`, undefined, token);
+  const wallets = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/wallets`,
+    undefined,
+    token,
+  );
   const walletCount = Array.isArray(wallets.body?.data) ? wallets.body.data.length : 0;
   assert(walletCount === 0, `the staff wallet read must also show no wallet, got ${walletCount}`);
   record(
@@ -388,7 +452,8 @@ async function main() {
     `the transfer below the tier ceiling must complete, got ${ceiling.belowCap.status}`,
   );
   assert(
-    ceiling.aboveCap.status === 422 && /LIMIT_MAX_AMOUNT_EXCEEDED|MAX_AMOUNT_EXCEEDED/i.test(ceiling.aboveCap.code || ''),
+    ceiling.aboveCap.status === 422 &&
+      /LIMIT_MAX_AMOUNT_EXCEEDED|MAX_AMOUNT_EXCEEDED/i.test(ceiling.aboveCap.code || ''),
     `the transfer above the tier ceiling must be denied, got ${ceiling.aboveCap.status} ${ceiling.aboveCap.code}`,
   );
   record(
@@ -426,7 +491,12 @@ async function main() {
     retryActivation.body?.status === 'ACTIVE',
     `the replay must leave the customer ACTIVE, got ${retryActivation.body?.status}`,
   );
-  const retryReview = await request('GET', `/api/v1/internal/customers/${senderId}/registration-review`, undefined, token);
+  const retryReview = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/registration-review`,
+    undefined,
+    token,
+  );
   const retryMaxTx = retryReview.body.effectiveConfiguration.products
     .find((p) => p.productCode === 'WALLET_TRANSFER')
     .limits.find((l) => l.dimension === 'MAX_AMOUNT_PER_TX');
@@ -435,19 +505,33 @@ async function main() {
     'a repeated read must return the same controlling ceiling',
   );
   assert(
-    retryReview.body.effectiveConfiguration.assignedClass.classCode === effectiveConfig.assignedClass.classCode,
+    retryReview.body.effectiveConfiguration.assignedClass.classCode ===
+      effectiveConfig.assignedClass.classCode,
     'a repeated read must return the same assigned class',
   );
   record(
     'Same-request retry is safe (no forked state, no forked figures)',
     `Repeating PATCH ${'/api/v1/customers/:id'} with the same body/version returned ${retryActivation.status} (${retryActivation.body?.code ?? retryActivation.body?.message ?? 'no-op'}), and a repeated registration-review read returned the identical assigned class (${effectiveConfig.assignedClass.classCode}) and controlling ceiling (${retryMaxTx.limitValueMinor}).`,
-    { retryActivationStatus: retryActivation.status, retryCode: retryActivation.body?.code ?? null },
+    {
+      retryActivationStatus: retryActivation.status,
+      retryCode: retryActivation.body?.code ?? null,
+    },
   );
 
   // ── 8. institution-scoped registration-review read ───────────────────────────────────────
-    const assignedToken = await signIn(...COMPLIANCE);
-  const assignedReview = await request('GET', `/api/v1/internal/customers/${senderId}/registration-review`, undefined, assignedToken);
-  const assignedEffective = await request('GET', `/api/v1/internal/customers/${senderId}/effective-configuration`, undefined, assignedToken);
+  const assignedToken = await signIn(...COMPLIANCE);
+  const assignedReview = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/registration-review`,
+    undefined,
+    assignedToken,
+  );
+  const assignedEffective = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/effective-configuration`,
+    undefined,
+    assignedToken,
+  );
   record(
     'Institution-scoped staff CAN read the enrolled customer (assigned principal)',
     `A COMPLIANCE principal holding an ACTIVE workforce assignment to the synthetic institution read GET registration-review → ${assignedReview.status} and GET effective-configuration → ${assignedEffective.status}. The same principal reads the KYC review workspace, which is the authoritative scoped read.`,
@@ -455,8 +539,18 @@ async function main() {
   );
 
   const unassignedToken = await signIn(...CUSTOMER_SERVICE);
-  const deniedReview = await request('GET', `/api/v1/internal/customers/${senderId}/registration-review`, undefined, unassignedToken);
-  const deniedEffective = await request('GET', `/api/v1/internal/customers/${senderId}/effective-configuration`, undefined, unassignedToken);
+  const deniedReview = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/registration-review`,
+    undefined,
+    unassignedToken,
+  );
+  const deniedEffective = await request(
+    'GET',
+    `/api/v1/internal/customers/${senderId}/effective-configuration`,
+    undefined,
+    unassignedToken,
+  );
   // Both reads are institution-scoped record reads: an unassigned principal holding the same
   // `customer.view` function must get the same opaque 404 as a record that does not exist, so the
   // response can never be used to prove the customer is enrolled somewhere.
@@ -508,7 +602,10 @@ async function main() {
   assert(blocked, 'the blocked activation must still issue a real request');
   const blockedStatus = blocked.status();
   const blockedBody = await blocked.json().catch(() => ({}));
-  assert(blockedStatus === 409, `misconfigured activation must be refused with 409, got ${blockedStatus}`);
+  assert(
+    blockedStatus === 409,
+    `misconfigured activation must be refused with 409, got ${blockedStatus}`,
+  );
   const blockedCode = blockedBody.code || blockedBody.message?.code;
   assert(
     blockedCode === 'ACTIVATION_CONFIGURATION_INCOMPLETE',
@@ -553,6 +650,100 @@ async function main() {
   );
   await shot('misconfigured-activation-refused');
 
+  // ── Tier 2: a LEVEL_2 record is governed by its own approved cap ─────────────────────────
+  // Tier 1 alone cannot show that tier policy *discriminates*: one profile serving every tier would
+  // produce the same Tier 1 result. This opens the LEVEL_2 customer (BVN + NIN evidence) in the same
+  // UI and proves its own approved ceiling is what staff are shown.
+  const tierTwo = summary.customers.tierTwo;
+  assert(tierTwo, 'the fixture must seed a Tier 2 customer');
+  // The previous section leaves an activation modal in front of the directory. A reload returns to a
+  // clean directory (the session token lives in localStorage) so the next record opens without a
+  // backdrop intercepting the click.
+  await page.reload({ waitUntil: 'networkidle' });
+  await openCustomer(tierTwo.reference);
+  const tierTwoPanel = page.locator('.cm-profile-heading h1, .cm-profile-heading h2').first();
+  await tierTwoPanel.waitFor({ state: 'visible', timeout: 30_000 });
+  // The limits table is the staff-visible statement of the governing ceiling; scroll it into view so
+  // the check reads rendered text rather than a pending panel.
+  await page
+    .locator('text=Max amount per transaction')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 });
+  const tierTwoReview = await request(
+    'GET',
+    `/api/v1/internal/customers/${tierTwo.id}/registration-review`,
+    undefined,
+    token,
+  );
+  assert(
+    tierTwoReview.status === 200,
+    `Tier 2 registration-review must read 200, got ${tierTwoReview.status}`,
+  );
+  const tierTwoBody = tierTwoReview.body ?? {};
+  const tierTwoTier = tierTwoBody.verifiedTier ?? tierTwoBody.kyc?.level;
+  assert(
+    String(tierTwoTier) === 'LEVEL_2',
+    `the Tier 2 customer must corroborate as LEVEL_2, got ${String(tierTwoTier)}`,
+  );
+  const tierTwoConfig = await request(
+    'GET',
+    `/api/v1/internal/customers/${tierTwo.id}/effective-configuration`,
+    undefined,
+    token,
+  );
+  assert(
+    tierTwoConfig.status === 200,
+    `Tier 2 effective-configuration must read 200, got ${tierTwoConfig.status}`,
+  );
+  const tierTwoProduct = (tierTwoConfig.body?.products ?? []).find(
+    (product) => product.productCode === 'WALLET_TRANSFER',
+  );
+  const tierTwoPerTx = tierTwoProduct?.limits?.find(
+    (limit) => limit.dimension === 'MAX_AMOUNT_PER_TX',
+  );
+  assert(tierTwoPerTx, 'the Tier 2 customer must have a per-transaction limit row');
+  assert(
+    String(tierTwoPerTx.limitValueMinor) === String(tierTwo.expectedCapMinor),
+    `Tier 2 ceiling must be its own approved cap ${tierTwo.expectedCapMinor}, got ${tierTwoPerTx.limitValueMinor}`,
+  );
+  assert(
+    tierTwoPerTx.source === 'TIER_POLICY',
+    `Tier 2 ceiling must be governed by the tier policy, got source ${tierTwoPerTx.source}`,
+  );
+  // The Tier 2 cap must differ from Tier 1's, otherwise this check would pass on a single profile.
+  assert(
+    String(tierTwoPerTx.limitValueMinor) !==
+      String(summary.institutionTierProfile.maxAmountPerTxMinor),
+    'Tier 2 and Tier 1 ceilings must be distinct approved caps',
+  );
+  // And the commercial cap must still be the higher, non-governing one.
+  assert(
+    BigInt(String(tierTwoPerTx.limitValueMinor)) < BigInt(String(tierTwo.commercialCapMinor)),
+    'the Tier 2 ceiling must stay below the commercial ceiling so the commercial rule cannot govern',
+  );
+  const tierTwoRendered = await page
+    .locator('body')
+    .innerText()
+    .then((text) => text.includes('7,500,000.00'));
+  assert(
+    tierTwoRendered,
+    'the Tier 2 ceiling must be rendered to staff in the Admin Web limits table',
+  );
+  record(
+    "A Tier 2 customer is governed by its own approved ceiling, not Tier 1's",
+    `Opening the LEVEL_2 customer (BVN + NIN evidence) in the same Admin Web shows verifiedTier=LEVEL_2 and the per-transaction ceiling NGN 7,500,000.00 (source TIER_POLICY, profile ${tierTwo.expectedTierProfile}) rendered to staff. Tier 1's approved ceiling is NGN 5,000,000.00 and the commercial profile allows NGN 10,000,000.00, so neither the Tier 1 cap nor the higher commercial cap governed. Tier 2 is a distinct approved cap, not a shared one.`,
+    {
+      verifiedTier: String(tierTwoTier),
+      tierTwoCapMinor: String(tierTwoPerTx.limitValueMinor),
+      tierOneCapMinor: String(summary.institutionTierProfile.maxAmountPerTxMinor),
+      commercialCapMinor: String(tierTwo.commercialCapMinor),
+      source: tierTwoPerTx.source,
+      profileCode: tierTwoPerTx.profileCode,
+      renderedInBrowser: tierTwoRendered,
+    },
+  );
+  await shot('tier-2-governed-ceiling');
+
   // ── finish ──────────────────────────────────────────────────────────────────────────────
   const result = {
     generatedAt: new Date().toISOString(),
@@ -561,7 +752,12 @@ async function main() {
     steps: STEPS,
     apiCalls: apiCalls.slice(-60),
     consoleErrors,
-    statuses: { activationStatus, retryActivationStatus: retryActivation.status, assigned: assignedReview.status, denied: deniedReview.status },
+    statuses: {
+      activationStatus,
+      retryActivationStatus: retryActivation.status,
+      assigned: assignedReview.status,
+      denied: deniedReview.status,
+    },
   };
   fs.writeFileSync(path.join(OUT, 'tier1-browser-result.json'), JSON.stringify(result, null, 2));
   fs.writeFileSync(path.join(OUT, 'api-calls.json'), JSON.stringify(apiCalls, null, 2));
