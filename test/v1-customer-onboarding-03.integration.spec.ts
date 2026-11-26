@@ -339,7 +339,15 @@ describe('CUSTOMER-ONBOARDING-END-TO-END-01 (real PostgreSQL)', () => {
       // No identifier *values* leak: the projection names evidence types (which is safe and
       // useful) but never MACs, digests, document numbers or provider payloads.
       expect(JSON.stringify(review.body)).not.toMatch(/identityMac|identity_mac|macKeyVersion/i);
-      expect(JSON.stringify(review.body)).not.toMatch(/\d{11}/);
+      // Assert the actual phone number is absent, rather than "no 11 consecutive digits anywhere".
+      // The latter was never a phone-leak test: it scanned the whole projection, so any 11-digit run
+      // inside a random UUID failed it — about 0.8% of runs, unrelated to the property under test.
+      // This fixture's reference is `mn-<canonical>`, so the canonical number is exactly what must
+      // not surface; every form of it is checked.
+      const bodyText = JSON.stringify(review.body);
+      for (const form of [draft.canonical, phoneForms(draft.phone).e164, draft.phone]) {
+        expect(bodyText).not.toContain(form);
+      }
     });
 
     it('is SUPPORT-readable but not SUPPORT-writable, and requires a workforce session', async () => {

@@ -7,7 +7,9 @@ import {
   narrowApplicableLimitRules,
   type ApplicableLimitRuleCandidateRow,
 } from '../limit-catalog/limit-rule-applicability';
+import { limitProductKeysFor } from '../limit-catalog/limit-rule-applicability';
 import { getWindowForDimension } from '../limit-catalog/limit-window.util';
+import { WALLET_TO_BANK } from '../product-catalog/banking-product-identities';
 
 /**
  * Agent-safe read-only projection of the authoritative V1 limit-catalog architecture
@@ -104,7 +106,12 @@ const AGENT_PRODUCTS: Array<{ product: string; direction: 'INCOMING' | 'OUTGOING
   { product: 'AGENT_FUNDING', direction: 'INCOMING' },
   { product: 'AGENT_DEFUNDING', direction: 'OUTGOING' },
   // financial-commitment/financial-commitment.service.ts — agent-initiated bank transfer.
-  { product: 'EXTERNAL_BANK_TRANSFER', direction: 'OUTGOING' },
+  // PR #27: reported under the canonical product the enforcement call now passes. An agent
+  // wallet→bank transfer is the same commercial route as a customer's (PR #23: one
+  // `WALLET_TO_BANK` transaction type, keyed by `financial_commitments.id`), so it does not get a
+  // second product. Rules authored against the legacy `EXTERNAL_BANK_TRANSFER` limit alias still
+  // resolve through `limit-rule-applicability.ts`.
+  { product: WALLET_TO_BANK.productCode, direction: 'OUTGOING' },
 ];
 
 @Injectable()
@@ -364,19 +371,35 @@ export class AgentLimitViewService {
       reserved_amount_minor: string;
       reserved_count: number;
     }> = await this.dataSource.query(
-      `SELECT used_amount_minor::text AS used_amount_minor, used_count,
-                reserved_amount_minor::text AS reserved_amount_minor, reserved_count
+      // PR #27: usage rows are keyed by the PRODUCT SPELLED ON THE RULE that created them, which for
+      // a bank route may be the legacy `EXTERNAL_BANK_TRANSFER` alias rather than the canonical
+      // `WALLET_TO_BANK`. Looking up only the canonical code would report zero consumption for a
+      // limit that was actually spent. The lookup covers every key of the route and sums them: two
+      // spellings of one route are one allowance, never two.
+      `SELECT COALESCE(SUM(used_amount_minor),0)::text AS used_amount_minor,
+                COALESCE(SUM(used_count),0)::int AS used_count,
+                COALESCE(SUM(reserved_amount_minor),0)::text AS reserved_amount_minor,
+                COALESCE(SUM(reserved_count),0)::int AS reserved_count
            FROM limit_usages
           WHERE principal_type = 'AGENT'
             AND principal_id = $1
             AND limit_profile_code = $2
-            AND product = $3
+            AND upper(product) = ANY($3::varchar[])
             AND COALESCE(direction, '') = COALESCE($4, '')
             AND COALESCE(channel, '') = COALESCE($5, '')
             AND dimension = $6
             AND currency = $7
             AND window_key = $8`,
-      [agentId, profileCode, product, ruleDirection, ruleChannel, dimension, currency, windowKey],
+      [
+        agentId,
+        profileCode,
+        limitProductKeysFor(product),
+        ruleDirection,
+        ruleChannel,
+        dimension,
+        currency,
+        windowKey,
+      ],
     );
     return rows[0] ?? null;
   }

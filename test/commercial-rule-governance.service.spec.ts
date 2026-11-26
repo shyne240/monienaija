@@ -87,12 +87,35 @@ class MemoryManager {
 class MemoryDataSource {
   readonly manager: MemoryManager;
 
-  constructor(repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {
+  constructor(private readonly repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {
     this.manager = new MemoryManager(repositories);
   }
 
-  transaction<T>(callback: (manager: EntityManager) => Promise<T>): Promise<T> {
-    return callback(this.manager as unknown as EntityManager);
+  /**
+   * Models a real transaction: repository state is snapshotted before the callback and restored if
+   * it throws, so a failed domain write genuinely rolls back the CONSUMED approval transition.
+   */
+  async transaction<T>(callback: (manager: EntityManager) => Promise<T>): Promise<T> {
+    const snapshot = new Map<unknown, Map<string, ObjectLiteral>>();
+    for (const [target, repository] of this.repositories) {
+      snapshot.set(
+        target,
+        new Map(
+          [...repository.records.entries()].map(([id, entity]) => [id, structuredClone(entity)]),
+        ),
+      );
+    }
+    try {
+      return await callback(this.manager as unknown as EntityManager);
+    } catch (error) {
+      for (const [target, records] of snapshot) {
+        const repository = this.repositories.get(target);
+        if (!repository) continue;
+        repository.records.clear();
+        for (const [id, entity] of records) repository.records.set(id, entity);
+      }
+      throw error;
+    }
   }
 }
 
@@ -115,6 +138,14 @@ const checker: AuthorizationPrincipal = {
   customerAccess: 'NONE',
   assuranceLevel: 'MFA',
 };
+
+/** `newValues` of the most recent audit call, typed so lint does not see an `any` assignment. */
+function lastAuditValues(auditService: { record: jest.Mock }): Record<string, unknown> {
+  const calls = auditService.record.mock.calls as Array<[unknown, { newValues?: unknown }]>;
+  const command = calls[calls.length - 1]?.[1];
+  const values = command?.newValues;
+  return (values ?? {}) as Record<string, unknown>;
+}
 
 const createPayload = {
   productCode: 'CASH_IN',
@@ -278,7 +309,7 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       write,
     });
     expect(result).toEqual({ id: 'rule-1' });
-    expect(write).toHaveBeenCalledWith(null);
+    expect(write).toHaveBeenCalledWith(null, expect.anything());
 
     // Replay is rejected (the approval is consumed).
     await expect(
@@ -371,7 +402,7 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       payload: modifyPayload,
       write,
     });
-    expect(write).toHaveBeenCalledWith('rule-42');
+    expect(write).toHaveBeenCalledWith('rule-42', expect.anything());
   });
 
   it('honours rejection and expiry as 409-style refusals', async () => {
@@ -415,7 +446,7 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 
-  it('audits GOVERNED_CHANGE_EXECUTION_FAILED and rethrows when the domain write fails after consumption', async () => {
+  it('rolls the consumption back and audits GOVERNED_CHANGE_EXECUTION_FAILED when the domain write fails', async () => {
     const { governance, approvals, auditService, approvalRepository } = fixture();
     const view = await governance.requestChange({
       principal: maker,
@@ -435,13 +466,99 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
       }),
     ).rejects.toThrow(/duplicate rule identity/i);
 
+    // The failure audit states the truth: this attempt never consumed the approval, and the
+    // rollback left it usable.
     expect(auditService.record).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: 'GOVERNED_CHANGE_EXECUTION_FAILED' }),
     );
-    // The approval stays consumed — the failure is durable and the maker must re-request.
+    expect(lastAuditValues(auditService)).toMatchObject({
+      approvalRefusedNotConsumed: false,
+      approvalConsumed: false,
+      approvalUsable: true,
+    });
+    // Consumption and write share one transaction: a failed write leaves the approval APPROVED
+    // and therefore usable for the identical approved payload.
     const stored = [...approvalRepository.records.values()][0]!;
-    expect(stored.status).toBe(PrivilegedActionApprovalStatus.CONSUMED);
+    expect(stored.status).toBe(PrivilegedActionApprovalStatus.APPROVED);
+
+    // Retrying the same approved payload after the failure is allowed exactly once.
+    const write = jest.fn().mockResolvedValue({ id: 'rule-retry' });
+    await expect(
+      governance.executeChange({
+        principal: checker,
+        action: 'FEE_RULE_CREATE',
+        approvalId: view.approvalId,
+        payload: createPayload,
+        write,
+      }),
+    ).resolves.toEqual({ id: 'rule-retry' });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect([...approvalRepository.records.values()][0]!.status).toBe(
+      PrivilegedActionApprovalStatus.CONSUMED,
+    );
+  });
+
+  it('passes the transactional manager to the write so the registry write commits with the consumption', async () => {
+    const { governance, approvals } = fixture();
+    const view = await governance.requestChange({
+      principal: maker,
+      action: 'FEE_RULE_CREATE',
+      payload: createPayload,
+      reason: createPayload.reason,
+    });
+    await approvals.approve({ approvalId: view.approvalId, principal: checker });
+
+    const write = jest.fn().mockResolvedValue({ id: 'rule-tx' });
+    await governance.executeChange({
+      principal: checker,
+      action: 'FEE_RULE_CREATE',
+      approvalId: view.approvalId,
+      payload: createPayload,
+      write,
+    });
+    const [, manager] = write.mock.calls[0]! as [string | null, EntityManager];
+    expect(manager).toBeDefined();
+    expect(typeof manager.getRepository).toBe('function');
+  });
+
+  it('does not claim a replayed approval is still usable', async () => {
+    const { governance, approvals, auditService } = fixture();
+    const view = await governance.requestChange({
+      principal: maker,
+      action: 'FEE_RULE_CREATE',
+      payload: createPayload,
+      reason: createPayload.reason,
+    });
+    await approvals.approve({ approvalId: view.approvalId, principal: checker });
+    await governance.executeChange({
+      principal: checker,
+      action: 'FEE_RULE_CREATE',
+      approvalId: view.approvalId,
+      payload: createPayload,
+      write: jest.fn().mockResolvedValue({ id: 'rule-1' }),
+    });
+    auditService.record.mockClear();
+
+    await expect(
+      governance.executeChange({
+        principal: checker,
+        action: 'FEE_RULE_CREATE',
+        approvalId: view.approvalId,
+        payload: createPayload,
+        write: jest.fn(),
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'GOVERNED_CHANGE_EXECUTION_FAILED' }),
+    );
+    expect(lastAuditValues(auditService)).toMatchObject({
+      approvalRefusedNotConsumed: true,
+      approvalConsumed: false,
+      approvalUsable: false,
+    });
   });
 
   it('maps consumption refusals to the established HTTP semantics', () => {

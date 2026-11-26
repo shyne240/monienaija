@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { redactRecord } from '../common/sensitive-data-redaction';
@@ -59,11 +59,13 @@ export interface CommercialChangeExecuteCommand<T> {
   action: string;
   payload: Readonly<Record<string, unknown>>;
   /**
-   * Performs the registry write. Runs only after the approval has been consumed successfully.
+   * Performs the registry write inside the same database transaction as approval consumption.
    * Receives the fingerprint-bound resourceId taken from the approved request (null for
-   * creates) — the caller never re-supplies it.
+   * creates) and the transactional EntityManager. If the write throws, the transaction
+   * (including approval consumption) rolls back so the approval remains usable for the
+   * approved payload.
    */
-  write: (resourceId: string | null) => Promise<T>;
+  write: (resourceId: string | null, manager: EntityManager) => Promise<T>;
   correlationId?: string;
   now?: Date;
 }
@@ -225,6 +227,8 @@ export class CommercialRuleGovernanceService {
 
   async executeChange<T>(command: CommercialChangeExecuteCommand<T>): Promise<T> {
     const definition = this.definition(command.action);
+    // Shape checks that cannot depend on the write happen before the transaction opens: a request
+    // that does not even describe this governed action must not be audited as a failed execution.
     const approval = await this.approvals.getApproval(command.approvalId);
     if (!approval) {
       throw new NotFoundException('Approval not found');
@@ -245,36 +249,54 @@ export class CommercialRuleGovernanceService {
       resourceId,
       command.payload,
     );
-    const consumed = await this.approvals.consume({
-      principal: command.principal,
-      approvalId: command.approvalId,
-      actionType: definition.action,
-      resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
-      actionFingerprint,
-      now: command.now,
-    });
-    if (!consumed.approved) {
-      throw this.consumptionException(consumed.reason, consumed.approval);
-    }
+
+    // Tracks whether this attempt got as far as consuming the approval. It decides what the
+    // failure audit below may honestly claim: a write failure means the approval was rolled back
+    // to APPROVED and is still usable; a consumption refusal (replay, expiry, wrong executor)
+    // means the approval was never this attempt's to use.
+    let consumptionRefused = false;
     try {
-      return await command.write(resourceId);
-    } catch (error) {
-      // The approval is already irreversibly CONSUMED but the write did not take effect
-      // (e.g. a duplicate-identity conflict inside the registry service). The same tradeoff the
-      // finance-role administration flow makes (consume approvals, then persist): no live rule
-      // was written, and the failure is durably auditable so the maker can re-request.
-      await this.audit.record(this.dataSource.manager, {
-        entityType: 'COMMERCIAL_RULE_CHANGE',
-        entityId: command.approvalId,
-        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
-        actor: command.principal.principalId,
-        correlationId: command.correlationId,
-        newValues: {
+      return await this.dataSource.transaction(async (manager) => {
+        const consumed = await this.approvals.consumeInTransaction(manager, {
+          principal: command.principal,
+          approvalId: command.approvalId,
           actionType: definition.action,
-          resourceId,
-          error: error instanceof Error ? error.message.slice(0, 500) : 'unknown',
-        },
+          resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
+          actionFingerprint,
+          now: command.now,
+        });
+        if (!consumed.approved) {
+          consumptionRefused = true;
+          throw this.consumptionException(consumed.reason, consumed.approval);
+        }
+        // Execute the write in the same transaction. If it throws (invalid input, conflict,
+        // persistence failure), the transaction rolls back — including the CONSUMED transition —
+        // so the still-APPROVED approval stays usable for the identical approved payload.
+        return await command.write(resourceId, manager);
       });
+    } catch (error) {
+      // Tampering and entitlement refusals are not "execution failures" and are already audited by
+      // the authorization surface; do not manufacture a second, misleading record.
+      if (error instanceof ForbiddenException) throw error;
+      // Recorded OUTSIDE the rolled-back transaction, so the refusal survives while the approval
+      // does too (or, for a replay, so the duplicate attempt is visible without touching state).
+      await this.audit
+        .record(this.dataSource.manager, {
+          entityType: 'COMMERCIAL_RULE_CHANGE',
+          entityId: command.approvalId,
+          action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
+          actor: command.principal.principalId,
+          correlationId: command.correlationId,
+          newValues: {
+            actionType: definition.action,
+            resourceId,
+            approvalRefusedNotConsumed: consumptionRefused,
+            approvalConsumed: false,
+            approvalUsable: consumptionRefused ? false : true,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+          },
+        })
+        .catch(() => undefined);
       throw error;
     }
   }

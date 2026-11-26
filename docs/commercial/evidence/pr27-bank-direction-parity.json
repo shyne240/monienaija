@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-11-26T09:03:16.540Z",
+  "branch": "arena/41dde913-monienaija",
+  "database": "monienaija",
+  "note": "Preview-vs-runtime parity per banking direction. All reads; zero journals.",
+  "directions": {
+    "WALLET_TO_BANK": {
+      "canonicalProduct": "WALLET_TO_BANK",
+      "authoritativeRecord": "financial_commitments.id",
+      "limitAliasesExercised": ["WITHDRAWAL", "EXTERNAL_BANK_TRANSFER"],
+      "fee": {
+        "previewStatus": "RESOLVED",
+        "previewComputed": {
+          "status": "APPLIED",
+          "feeMinor": "100",
+          "vatMinor": "0",
+          "totalMinor": "250100",
+          "calculationModel": "FLAT_PLUS_PERCENTAGE",
+          "postsJournalLegs": false
+        },
+        "runtimeRuleId": "24f94e0b-aaaf-45e7-8d9f-237794e73a67",
+        "sameRuleRow": true
+      },
+      "statutoryCharges": {
+        "status": "RESOLVED",
+        "lines": [
+          {
+            "charge": "VAT_ON_SERVICE_FEE",
+            "rateBps": 0,
+            "amountMinor": "0",
+            "provenance": "AUTHORED",
+            "note": "An approved rule is in force and states no VAT. This is an explicit zero, not missing configuration."
+          }
+        ],
+        "notModelled": ["STAMP_DUTY", "REGULATORY_LEVY", "PROVIDER_FEE"]
+      },
+      "commission": {
+        "previewStatus": "MISSING",
+        "appliedByRuntime": true,
+        "commissionEvent": "SETTLEMENT (financial_commitments.state RESERVED -> SETTLED)",
+        "runtimeDecision": "CommissionEngine.decideWithManager + recordDecisionWithManager via src/banking/wallet-to-bank-commission.ts; snapshot keyed wallet-to-bank:<commitmentId>",
+        "evidence": "docs/commercial/evidence/pr27-bank-commission.json (test/v1-bank-commission-runtime.integration.spec.ts, 6 cases)",
+        "note": "No commission rule applies to this product, currency and targeting. Commission is decided once, at settlement, for the agent who initiated the transfer. Pending and released transfers carry no commission decision, and a replayed settlement cannot record a second one. When no commission rule is configured the transfer records an explicit NONE decision rather than a zero."
+      },
+      "limits": {
+        "previewStatus": "RESOLVED",
+        "previewRuleIds": ["97b5a26f-b063-4d97-ac00-5d71e245d955"],
+        "runtimeAllowed": true,
+        "runtimeRuleIds": ["97b5a26f-b063-4d97-ac00-5d71e245d955"],
+        "rulesMatch": true
+      }
+    },
+    "BANK_TO_WALLET": {
+      "canonicalProduct": "BANK_TO_WALLET",
+      "authoritativeRecord": "inbound_funding_receipts.id (bank intake UUID)",
+      "feeDisposition": "NOT_APPLICABLE_INBOUND_CREDIT",
+      "executionBlockers": [
+        "A7_INBOUND_EXECUTION_AUTHORITY is bound to UnavailableA7InboundExecutionAuthority in production, so no bank credit can be posted until an approved execution authority is implemented and registered.",
+        "INBOUND_SUSPENSE_POLICY is deliberately unavailable: there is no approved accounting treatment for received funds that cannot be credited."
+      ],
+      "statutoryCharges": {
+        "status": "NOT_APPLICABLE",
+        "lines": [],
+        "note": "No statutory charge other than VAT on our own service fee is modelled. This direction charges no customer service fee, so there is no fee for VAT to attach to. No statutory charge applies to a bank credit."
+      },
+      "commission": {
+        "previewStatus": "NOT_APPLICABLE",
+        "appliedByRuntime": false,
+        "inapplicableBecause": "NO_ELIGIBLE_RECIPIENT — the recipient is the wallet-owning customer; no agent performs the movement and inbound_funding_receipts carries no agent attribution",
+        "runtimeDecision": "NONE — no eligible recipient and no execution event to attach a decision to",
+        "missingPiece": "A receiver-side commission policy decision (who earns on an incoming credit, on what basis) plus an agent attribution column on the inbound receipt."
+      },
+      "limits": {
+        "previewStatus": "RESOLVED",
+        "previewRuleIds": ["d96ed540-d9c1-4194-83f0-665b9cf75a64"],
+        "runtimeKind": "SYNTHETIC (no live credit execution authority)",
+        "runtimeAllowed": true,
+        "runtimeRuleIds": ["d96ed540-d9c1-4194-83f0-665b9cf75a64"],
+        "rulesMatch": true
+      }
+    }
+  },
+  "journalsPosted": "0"
+}

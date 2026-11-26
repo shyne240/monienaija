@@ -14,7 +14,7 @@
  *    Studio OFFERS to do; the backend decides what is allowed, and a refusal renders verbatim.
  */
 
-export type AuthoringDomain = 'fees' | 'commissions' | 'rewards' | 'limits';
+export type AuthoringDomain = 'fees' | 'commissions' | 'rewards' | 'limits' | 'products';
 
 export type AuthoringCapability =
   /** Full governed authoring: request → independent approval → execute. */
@@ -130,6 +130,20 @@ export const AUTHORING_CONTRACTS: Readonly<Record<AuthoringDomain, AuthoringCont
     reasonRequired: true,
     note: 'Governed by LIMIT_RULE_CREATE / LIMIT_RULE_UPDATE. A new rule belongs to an existing limit profile; the Studio does not create or edit profiles.',
   },
+  products: {
+    domain: 'products',
+    resource: 'Product',
+    capability: 'GOVERNED_AUTHORING',
+    reason: null,
+    requestFunction: 'product.modify',
+    executeFunction: 'product.modify',
+    actions: { create: 'PRODUCT_MODIFY', modify: 'PRODUCT_MODIFY' },
+    createPath: '/internal/products',
+    createPathTemplate: '/internal/products',
+    modifyPathTemplate: '/internal/products/{id}',
+    reasonRequired: true,
+    note: 'Product catalogue changes are governed by PRODUCT_MODIFY. Create and modify requests require independent approval before execution; no catalogue change is applied directly by this proposal.',
+  },
 };
 
 // ──────────────────────────────────────────────────────────── enums mirrored from the backend
@@ -218,6 +232,10 @@ export const LIMIT_COUNT_DIMENSIONS = [
   'YEARLY_COUNT',
 ] as const;
 export const LIMIT_DIRECTIONS = ['INCOMING', 'OUTGOING', 'BOTH'] as const;
+export const PRODUCT_DOMAINS = ['CUSTOMER', 'AGENT', 'AGGREGATOR', 'FINANCE', 'SUPPORT', 'PLATFORM'] as const;
+export const PRODUCT_SCOPES = ['V1', 'V2'] as const;
+export const PRODUCT_STATUSES = ['ACTIVE', 'DISABLED', 'DEPRECATED'] as const;
+export const PRODUCT_CONFIG_STATUSES = ['CONFIGURED', 'NOT_CONFIGURED', 'DISABLED'] as const;
 
 // ─────────────────────────────────────────────────────────────── authoring form primitives
 
@@ -551,6 +569,57 @@ export const AUTHORING_FIELDS: Readonly<Record<AuthoringDomain, AuthoringFieldSp
     { key: 'isActive', label: 'Active', type: 'boolean' },
     reasonField,
   ],
+  products: [
+    {
+      key: 'code',
+      uppercase: true,
+      label: 'Product code',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z0-9_]{3,80}',
+      hint: 'Immutable identity. Use A-Z, 0-9, underscore.',
+    },
+    { key: 'name', label: 'Product name', type: 'text', required: true },
+    { key: 'description', label: 'Description', type: 'textarea' },
+    {
+      key: 'domain',
+      label: 'Domain',
+      type: 'select',
+      required: true,
+      options: PRODUCT_DOMAINS,
+    },
+    {
+      key: 'currency',
+      uppercase: true,
+      label: 'Currency',
+      type: 'text',
+      required: true,
+      pattern: '[A-Za-z]{3}',
+    },
+    {
+      key: 'productScope',
+      label: 'Product scope',
+      type: 'select',
+      required: true,
+      options: PRODUCT_SCOPES,
+    },
+    {
+      key: 'status',
+      label: 'Lifecycle status',
+      type: 'select',
+      required: true,
+      options: PRODUCT_STATUSES,
+    },
+    { key: 'enabled', label: 'Enabled', type: 'boolean' },
+    {
+      key: 'configurationStatus',
+      label: 'Configuration status',
+      type: 'select',
+      required: true,
+      options: PRODUCT_CONFIG_STATUSES,
+    },
+    reasonField,
+  ],
 };
 
 /**
@@ -593,6 +662,7 @@ export const IMMUTABLE_ON_MODIFY: Readonly<Record<AuthoringDomain, readonly stri
     'effectiveFrom',
   ],
   limits: ['limitProfileCode'],
+  products: ['code', 'currency', 'productScope'],
 };
 
 export type AuthoringPhase = 'request' | 'approve' | 'execute';
@@ -730,6 +800,23 @@ export function buildAuthoringPayload(
     return base;
   }
 
+  if (domain === 'products') {
+    put('code', trimmed(values.code)?.toUpperCase());
+    put('name', trimmed(values.name));
+    if (values.description !== undefined) {
+      const desc = trimmed(values.description);
+      base.description = desc ?? null;
+    }
+    put('domain', trimmed(values.domain)?.toUpperCase());
+    put('currency', trimmed(values.currency)?.toUpperCase());
+    put('productScope', trimmed(values.productScope)?.toUpperCase());
+    put('status', trimmed(values.status)?.toUpperCase());
+    const enabled = booleanValue(values.enabled);
+    if (enabled !== undefined) base.enabled = enabled;
+    put('configurationStatus', trimmed(values.configurationStatus)?.toUpperCase());
+    return base;
+  }
+
   const productCode = trimmed(values.productCode) ?? trimmed(values.product);
   put('productCode', productCode?.toUpperCase());
   put('currency', trimmed(values.currency)?.toUpperCase());
@@ -834,9 +921,14 @@ export function authoringPath(
   }
   const template = contract.modifyPathTemplate;
   if (!template) throw new Error(`No modification contract exists for ${domain}.`);
-  const id = typeof record?.id === 'string' ? record.id : null;
+  const id =
+    typeof record?.id === 'string'
+      ? record.id
+      : typeof record?.code === 'string'
+        ? record.code
+        : null;
   if (!id)
-    throw new Error('This rule has no readable id, so a governed change cannot be bound to it.');
+    throw new Error('This record has no readable identifier, so a governed change cannot be bound to it.');
   return template.replace('{id}', encodeURIComponent(id));
 }
 

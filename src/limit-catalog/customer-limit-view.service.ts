@@ -3,6 +3,8 @@ import { DataSource } from 'typeorm';
 
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
+import { BANK_TO_WALLET, WALLET_TO_BANK } from '../product-catalog/banking-product-identities';
+import { limitProductKeysFor } from './limit-rule-applicability';
 import { getWindowForDimension } from './limit-window.util';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +90,18 @@ const CUSTOMER_PRODUCTS: Array<{ product: string; direction: 'INCOMING' | 'OUTGO
   { product: 'WALLET_TO_CASH', direction: 'OUTGOING' }, // agent-cash-out.service.ts (customer wallet debited for cash withdrawal)
   { product: 'CASH_TO_CASH', direction: 'INCOMING' }, // agent-cash-to-cash-claim.service.ts (customer claims C2C cash)
   { product: 'CUSTOMER_FUNDING', direction: 'INCOMING' }, // customer-funding.service.ts (approved wallet funding)
+  // PR #27 — the two bank directions. They were absent from this projection even though the
+  // outbound one is a live customer money movement: financial-commitment.service.ts enforces a
+  // limit for a customer wallet→bank transfer, so a customer could be refused by a limit they
+  // could not see. Both are reported under the canonical catalogue product, and the applicable
+  // rules are matched through `limit-rule-applicability.ts`, which also honours the legacy
+  // `WITHDRAWAL` limit alias those rules were authored against.
+  { product: WALLET_TO_BANK.productCode, direction: 'OUTGOING' }, // financial-commitment.service.ts (wallet→bank)
+  // Bank→wallet credits have a real product and a real limit rule set, but no live credit path yet
+  // (production binds UnavailableA7InboundExecutionAuthority). Reporting the product with
+  // `configured: false` when no rule matches is honest about both halves: what would govern a
+  // credit, and that none is configured.
+  { product: BANK_TO_WALLET.productCode, direction: 'INCOMING' }, // inbound-funding.service.ts / a7-product-persistence.service.ts
 ];
 
 @Injectable()
@@ -344,13 +358,20 @@ export class CustomerLimitViewService {
       reserved_amount_minor: string;
       reserved_count: number;
     }> = await this.dataSource.query(
-      `SELECT used_amount_minor::text AS used_amount_minor, used_count,
-                reserved_amount_minor::text AS reserved_amount_minor, reserved_count
+      // PR #27: see the identical note in agent-limit-view.service.ts. A usage row is keyed by the
+      // product spelling on the rule that created it, so a bank route whose rules were authored
+      // against the legacy `WITHDRAWAL` alias must still report its consumption under
+      // `WALLET_TO_BANK`. Every key of the route is included and the rows are summed: two spellings
+      // of one route are one allowance, never two.
+      `SELECT COALESCE(SUM(used_amount_minor),0)::text AS used_amount_minor,
+                COALESCE(SUM(used_count),0)::int AS used_count,
+                COALESCE(SUM(reserved_amount_minor),0)::text AS reserved_amount_minor,
+                COALESCE(SUM(reserved_count),0)::int AS reserved_count
            FROM limit_usages
           WHERE principal_type = 'CUSTOMER'
             AND principal_id = $1
             AND limit_profile_code = $2
-            AND product = $3
+            AND upper(product) = ANY($3::varchar[])
             AND COALESCE(direction, '') = COALESCE($4, '')
             AND COALESCE(channel, '') = COALESCE($5, '')
             AND dimension = $6
@@ -359,7 +380,7 @@ export class CustomerLimitViewService {
       [
         customerId,
         profileCode,
-        product,
+        limitProductKeysFor(product),
         ruleDirection,
         ruleChannel,
         dimension,
