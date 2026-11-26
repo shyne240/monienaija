@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
 import { CustomerStatus } from '../customer/customer.enums';
@@ -18,9 +18,11 @@ import { AuditService } from '../operations/audit.service';
 import { CustomerAgreement } from './customer-agreement.entity';
 import { CustomerApprovalDecision } from './customer-approval-decision.entity';
 import {
+  CustomerAgreementType,
   CustomerApprovalDecisionStatus,
   CustomerOnboardingStatus,
   CustomerOnboardingTaskStatus,
+  CustomerOnboardingTaskType,
   CustomerRiskLevel,
 } from './customer-onboarding.enums';
 import { CustomerOnboarding } from './customer-onboarding.entity';
@@ -115,6 +117,211 @@ export class CustomerOnboardingService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Completes the governed P1.4 onboarding workflow inside an outer customer activation
+   * transaction when no incomplete onboarding workflow pre-exists and all authoritative
+   * registration + verified KYC artifacts are present in PostgreSQL.
+   */
+  async completeVerifiedRegistrationInManager(
+    manager: EntityManager,
+    customer: Customer,
+    actorInput: string,
+  ): Promise<CustomerOnboarding | null> {
+    if (customer.status !== CustomerStatus.ACTIVE || customer.isSynthetic) {
+      return null;
+    }
+    const actor = this.normalizeActor(actorInput);
+    const onboardingRepo = manager.getRepository(CustomerOnboarding);
+    const existing = await this.findLatestOnboarding(onboardingRepo, customer.id);
+    if (existing) {
+      if (existing.status === CustomerOnboardingStatus.COMPLETED) {
+        return existing;
+      }
+      if (existing.status !== CustomerOnboardingStatus.APPROVED) {
+        return null;
+      }
+      const readiness = await this.calculateReadiness(manager, customer, existing);
+      if (!readiness.canComplete) {
+        return null;
+      }
+      const previous = this.onboardingValues(existing);
+      existing.status = CustomerOnboardingStatus.COMPLETED;
+      existing.completedAt = new Date();
+      existing.version += 1;
+      const completed = await onboardingRepo.save(existing);
+      await this.audit(
+        manager,
+        'CUSTOMER_ONBOARDING',
+        completed.id,
+        'STATUS_UPDATED',
+        actor,
+        previous,
+        this.onboardingValues(completed),
+      );
+      return completed;
+    }
+
+    const riskProfile = await this.findCurrentRiskProfile(
+      manager.getRepository(CustomerRiskProfile),
+      customer.id,
+    );
+    if (riskProfile?.riskLevel === CustomerRiskLevel.PROHIBITED) {
+      return null;
+    }
+
+    const profileCount = await manager.getRepository(CustomerProfile).count({
+      where: { customerId: customer.id, isActive: true, deletedAt: IsNull() },
+    });
+    const addressCount = await manager.getRepository(CustomerAddress).count({
+      where: { customerId: customer.id, deletedAt: IsNull() },
+    });
+    const documentCount = await manager.getRepository(CustomerIdentityDocument).count({
+      where: { customerId: customer.id, deletedAt: IsNull() },
+    });
+    const consents = await manager.query<Array<{ notice_version: string; granted_at: Date }>>(
+      `SELECT c.notice_version, c.granted_at
+         FROM kyc_consents c
+         JOIN kyc_customer_identity_revisions r
+           ON r.customer_id = c.customer_id AND c.identity_revision = r.revision
+        WHERE c.customer_id = $1
+          AND c.withdrawn_at IS NULL
+          AND c.expires_at > clock_timestamp()
+        ORDER BY c.granted_at DESC
+        LIMIT 1`,
+      [customer.id],
+    );
+    const assessments = await manager.query<
+      Array<{ assessed_by: string | null; created_at: Date | null }>
+    >(
+      `SELECT assessed_by, created_at
+         FROM customer_kyc_assessments
+        WHERE customer_id = $1
+          AND is_current = true
+          AND kyc_status = 'APPROVED'
+          AND (expires_at IS NULL OR expires_at > clock_timestamp())
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [customer.id],
+    );
+
+    const consent = consents[0];
+    const assessment = assessments[0];
+    if (profileCount < 1 || addressCount < 1 || documentCount < 1 || !consent || !assessment) {
+      return null;
+    }
+
+    const now = new Date();
+    const onboarding = await onboardingRepo.save(
+      onboardingRepo.create({
+        id: randomUUID(),
+        customerId: customer.id,
+        status: CustomerOnboardingStatus.APPROVED,
+        version: 1,
+        startedAt: consent.granted_at ?? now,
+        approvedAt: assessment.created_at ?? now,
+        rejectedAt: null,
+        completedAt: null,
+        deletedAt: null,
+      }),
+    );
+
+    const agreement = await manager.getRepository(CustomerAgreement).save(
+      manager.getRepository(CustomerAgreement).create({
+        id: randomUUID(),
+        customerId: customer.id,
+        onboardingId: onboarding.id,
+        type: CustomerAgreementType.KYC_CONSENT,
+        agreementVersion: consent.notice_version.slice(0, 64),
+        isRequired: true,
+        accepted: true,
+        acceptedAt: consent.granted_at ?? now,
+        acceptedBy: actor,
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+
+    const decidedBy = assessment.assessed_by ? this.normalizeActor(assessment.assessed_by) : actor;
+    const task = await manager.getRepository(CustomerOnboardingTask).save(
+      manager.getRepository(CustomerOnboardingTask).create({
+        id: randomUUID(),
+        customerId: customer.id,
+        onboardingId: onboarding.id,
+        type: CustomerOnboardingTaskType.KYC_REVIEW,
+        status: CustomerOnboardingTaskStatus.COMPLETED,
+        isRequired: true,
+        completedAt: assessment.created_at ?? now,
+        completedBy: decidedBy,
+        notes: 'Verified KYC tier assessment approved during customer registration',
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+
+    const decision = await manager.getRepository(CustomerApprovalDecision).save(
+      manager.getRepository(CustomerApprovalDecision).create({
+        id: randomUUID(),
+        customerId: customer.id,
+        onboardingId: onboarding.id,
+        decision: CustomerApprovalDecisionStatus.APPROVED,
+        reason: 'Verified KYC tier assessment approved for customer activation',
+        decidedBy,
+        isLatest: true,
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+
+    const readiness = await this.calculateReadiness(manager, customer, onboarding);
+    if (!readiness.canComplete) {
+      throw new ConflictException(
+        `Onboarding cannot be completed on activation: ${readiness.missing.join(', ')}`,
+      );
+    }
+    onboarding.status = CustomerOnboardingStatus.COMPLETED;
+    onboarding.completedAt = now;
+    onboarding.version = 2;
+    const completed = await onboardingRepo.save(onboarding);
+
+    await this.audit(
+      manager,
+      'CUSTOMER_AGREEMENT',
+      agreement.id,
+      'CREATED',
+      actor,
+      undefined,
+      this.agreementValues(agreement),
+    );
+    await this.audit(
+      manager,
+      'CUSTOMER_ONBOARDING_TASK',
+      task.id,
+      'CREATED',
+      actor,
+      undefined,
+      this.taskValues(task),
+    );
+    await this.audit(
+      manager,
+      'CUSTOMER_APPROVAL_DECISION',
+      decision.id,
+      'CREATED',
+      decidedBy,
+      undefined,
+      this.approvalValues(decision),
+    );
+    await this.audit(
+      manager,
+      'CUSTOMER_ONBOARDING',
+      completed.id,
+      'COMPLETED_ON_ACTIVATION',
+      actor,
+      undefined,
+      this.onboardingValues(completed),
+    );
+    return completed;
   }
 
   async getOnboarding(customerId: string): Promise<CustomerOnboarding> {

@@ -112,6 +112,50 @@ export class CustomerEligibilityService {
     }
   }
 
+  /**
+   * Records governed ELIGIBLE status inside an outer customer activation transaction when
+   * onboarding is COMPLETED, no eligibility row pre-exists, and the customer is not blacklisted.
+   */
+  async ensureEligibleFromCompletedOnboardingInManager(
+    manager: EntityManager,
+    customerId: string,
+    onboardingId: string,
+    actorInput: string,
+  ): Promise<CustomerEligibility | null> {
+    this.assertUuid(customerId, 'customerId');
+    this.assertUuid(onboardingId, 'onboardingId');
+    const reviewedBy = this.normalizeActor(actorInput);
+    const repository = manager.getRepository(CustomerEligibility);
+    const existing = await this.findActiveEligibility(repository, customerId);
+    if (existing) {
+      return existing;
+    }
+    const onboarding = await this.assertCanBecomeEligible(manager, customerId);
+    const eligibility = await repository.save(
+      repository.create({
+        id: randomUUID(),
+        customerId,
+        onboardingId: onboarding.id,
+        status: CustomerEligibilityStatus.ELIGIBLE,
+        reason: 'Approved customer registration and verified KYC tier satisfied',
+        reviewedBy,
+        statusChangedAt: new Date(),
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+    await this.audit(
+      manager,
+      'CUSTOMER_ELIGIBILITY',
+      eligibility.id,
+      'CREATED',
+      reviewedBy,
+      undefined,
+      this.eligibilityValues(eligibility),
+    );
+    return eligibility;
+  }
+
   async getEligibility(customerId: string): Promise<CustomerEligibility> {
     this.assertUuid(customerId, 'customerId');
     await this.requireCustomer(this.customerRepository, customerId);

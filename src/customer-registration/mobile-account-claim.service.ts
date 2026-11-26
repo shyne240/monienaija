@@ -84,13 +84,21 @@ export class MobileAccountClaimService {
       `SELECT i.id,i.identifier_mac FROM kyc_identity_claims i
       JOIN kyc_verification_attempts a ON a.id=i.attempt_id AND a.customer_id=i.customer_id AND a.kind=i.kind
       JOIN kyc_consents c ON c.id=a.consent_id AND c.customer_id=i.customer_id AND c.kind=i.kind
-        AND c.actor_id=i.customer_id AND c.identity_revision=a.identity_revision
+        AND c.identity_revision=a.identity_revision
         AND c.provider=a.provider AND c.route_version=a.provider_route_version
-      JOIN authentication_sessions owner_session ON owner_session.id=c.session_id AND owner_session.customer_id=i.customer_id AND owner_session.audience='customer-api'
-      WHERE i.customer_id=$1 AND i.kind=$2 AND i.status='VERIFIED' AND a.outcome='MATCH' AND a.provider IN ('MONNIFY','PREMBLY')
+      LEFT JOIN authentication_sessions owner_session ON owner_session.id=c.session_id
+        AND owner_session.customer_id=i.customer_id
+        AND owner_session.audience IN ('customer-api','customer-onboarding')
+      WHERE i.customer_id=$1 AND i.kind=$2 AND i.status='VERIFIED' AND a.outcome='MATCH' AND a.provider IN ('MONNIFY','DOJAH','PREMBLY')
       AND a.provider_route_version IS NOT NULL
       AND a.identity_revision=$4::bigint AND c.identity_revision=$4::bigint
-      AND a.created_at>=c.granted_at AND a.completed_at>=a.created_at AND a.completed_at<=clock_timestamp() AND a.expires_at>clock_timestamp() AND c.session_id IS NOT NULL
+      AND a.created_at>=c.granted_at AND a.completed_at>=a.created_at AND a.completed_at<=clock_timestamp() AND a.expires_at>clock_timestamp()
+      AND ((c.session_id IS NOT NULL AND c.actor_id=i.customer_id AND owner_session.id IS NOT NULL)
+        OR (c.session_id IS NULL AND c.actor_id<>i.customer_id AND EXISTS (
+          SELECT 1 FROM kyc_private_audit pa
+          WHERE pa.customer_id=i.customer_id AND pa.resource_id=c.id
+            AND pa.action='CONSENT_GRANTED' AND pa.actor_id=c.actor_id AND pa.outcome='WORKFORCE_MFA'
+        )))
       AND c.withdrawn_at IS NULL AND c.expires_at>clock_timestamp()
       AND NOT EXISTS(SELECT 1 FROM kyc_identity_conflicts x WHERE x.claim_id=i.id)
       AND ($3::text IS NULL OR i.identifier_mac=$3)
