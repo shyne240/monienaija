@@ -36,6 +36,7 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import {
   assignAgentClassLimitProfile,
+  countAgentAdmissionArtifacts,
   permissiveAgentLimitRules,
 } from './support/agent-limit-fixtures';
 import {
@@ -175,6 +176,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     services: unknown,
     pin: string | null,
     isActive = true,
+    options: { limitRules?: Array<Record<string, unknown>> | null } = {},
   ) {
     const cls = await classService.create({
       reference: `cls-a16-${randomUUID().slice(0, 8)}`,
@@ -185,11 +187,16 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       actor: 'test-actor',
     });
     // Agent money movement now requires a configured limit for the Agent's class. One deliberately
-    // permissive rule per product keeps this suite focused on its own subject.
-    await assignAgentClassLimitProfile(dataSource, {
-      agentClassId: cls.id,
-      rules: permissiveAgentLimitRules(),
-    });
+    // permissive rule per product keeps this suite focused on its own subject; targeted limit
+    // regressions can explicitly create an unconfigured class with `limitRules: null`.
+    const limitRules =
+      options.limitRules === undefined ? permissiveAgentLimitRules() : options.limitRules;
+    if (limitRules) {
+      await assignAgentClassLimitProfile(dataSource, {
+        agentClassId: cls.id,
+        rules: limitRules as never,
+      });
+    }
     const appEntity = await appService.create({
       agentClassId: cls.id,
       applicantReference: `h-${randomUUID()}`,
@@ -3283,12 +3290,20 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     }
   });
 
-  async function locatorHttpFixture(method: 'CUSTOMER_WALLET' | 'AGENT_CASH') {
+  async function locatorHttpFixture(
+    method: 'CUSTOMER_WALLET' | 'AGENT_CASH',
+    claimantOptions: { limitRules?: Array<Record<string, unknown>> | null } = {},
+  ) {
     const senderPhone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const transfer = await initiateTransfer('2000', undefined, undefined, `0${senderPhone}`);
     const { customerId, wallet } = await createBeneficiaryCustomer(transfer.phone, true);
     await createCurrentKycApproval(customerId);
-    const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const claimant = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+      true,
+      claimantOptions,
+    );
     const login = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/sessions',
@@ -3324,6 +3339,116 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       headers: { authorization: `Bearer ${login.json().accessToken}` },
     };
   }
+
+  it('AGENT_CASH payout fails closed without an applicable limit and succeeds exactly once after configuration', async () => {
+    const f = await locatorHttpFixture('AGENT_CASH', { limitRules: null });
+    const destinationId = f.claimant.wallet.ledgerAccountId;
+    const sourceId = f.transfer.wallet.ledgerAccountId;
+    const beforeArtifacts = await countAgentAdmissionArtifacts(dataSource);
+    const beforeBalances = new Map(
+      await Promise.all(
+        [sourceId, unclaimedLedgerAccountId, destinationId].map(
+          async (accountId) =>
+            [accountId, (await ledgerService.getAccountBalance(accountId)).balanceMinor] as const,
+        ),
+      ),
+    );
+    const classAssignments: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM limit_assignments
+        WHERE subject_type='AGENT_CLASS' AND subject_id=$1 AND is_active=true`,
+      [f.claimant.cls.id],
+    );
+    expect(classAssignments[0]!.count).toBe('0');
+
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim-by-number',
+      headers: f.headers,
+      payload: f.payload,
+    });
+    expect(refused.statusCode).toBe(503);
+    expect(refused.json()).toMatchObject({
+      error: 'LIMIT_PROFILE_MISSING',
+      code: 'LIMIT_PROFILE_MISSING',
+    });
+    expect(
+      (
+        await dataSource.query(
+          `SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,
+          [f.transfer.transferId],
+        )
+      )[0],
+    ).toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(beforeArtifacts);
+    for (const [accountId, balanceMinor] of beforeBalances) {
+      expect((await ledgerService.getAccountBalance(accountId)).balanceMinor).toBe(balanceMinor);
+    }
+
+    // Add only the missing payout-side rule, then retry the exact same claim (same locator,
+    // challenge, idempotency key and transfer). The failed transaction must not have consumed
+    // the challenge or created an idempotency/limit reservation.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: f.claimant.cls.id,
+      rules: [
+        {
+          product: 'CASH_TO_CASH',
+          direction: 'INCOMING',
+          dimension: 'MAX_AMOUNT_PER_TX',
+          amountMinor: '5000',
+        },
+      ],
+    });
+    const completed = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim-by-number',
+      headers: f.headers,
+      payload: f.payload,
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({
+      transferId: f.transfer.transferId,
+      redemptionMethod: 'AGENT_CASH',
+      status: 'COMPLETED',
+    });
+
+    const afterFirstCompletion = await countAgentAdmissionArtifacts(dataSource);
+    expect(afterFirstCompletion.journals).toBe(beforeArtifacts.journals + 1);
+    expect(afterFirstCompletion.ledgerLines).toBe(beforeArtifacts.ledgerLines + 2);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim-by-number',
+      headers: f.headers,
+      payload: f.payload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().journalId).toBe(completed.json().journalId);
+    expect(
+      (
+        await dataSource.query(
+          `SELECT status, claim_journal_id::text AS claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,
+          [f.transfer.transferId],
+        )
+      )[0],
+    ).toMatchObject({ status: 'CLAIMED', claim_journal_id: completed.json().journalId });
+    expect(
+      await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+        `claim:${f.transfer.transferId}:${f.payload.idempotencyKey}`,
+      ]),
+    ).toHaveLength(1);
+    expect(await countAgentAdmissionArtifacts(dataSource)).toEqual(afterFirstCompletion);
+    expect((await ledgerService.getAccountBalance(sourceId)).balanceMinor).toBe(
+      beforeBalances.get(sourceId),
+    );
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(
+      (
+        BigInt(beforeBalances.get(unclaimedLedgerAccountId)!) - BigInt(f.transfer.amount)
+      ).toString(),
+    );
+    expect((await ledgerService.getAccountBalance(destinationId)).balanceMinor).toBe(
+      (BigInt(beforeBalances.get(destinationId)!) + BigInt(f.transfer.amount)).toString(),
+    );
+  });
 
   it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
     'authenticated number redemption %s, UUID replay and lost-response recovery share one journal',

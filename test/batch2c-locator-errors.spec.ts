@@ -35,6 +35,18 @@ describe('locator claim errors', () => {
       });
     }
   });
+  it('preserves the deterministic missing-limit refusal through the locator route', async () => {
+    const refusal = new HttpException(
+      {
+        message: 'No applicable Agent limit profile is configured',
+        error: 'LIMIT_PROFILE_MISSING',
+        code: 'LIMIT_PROFILE_MISSING',
+      },
+      503,
+    );
+    await expect(serviceWith(refusal).executeByLocator(input)).rejects.toBe(refusal);
+  });
+
   it.each([
     new ConflictException('Trusted KYC evidence is unavailable'),
     new ConflictException({ code: 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED' }),
