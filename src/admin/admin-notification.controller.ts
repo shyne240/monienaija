@@ -65,6 +65,15 @@ export class AdminNotificationController {
     @Query('search') searchRaw?: string,
     @Query('from') fromRaw?: string,
     @Query('to') toRaw?: string,
+    /**
+     * ARENA 6 — explicit upper-bound semantics. The dashboard exception card aggregates over a
+     * half-open window (`created_at >= from AND created_at < to`), so a drill-down from that card has to
+     * ask for the same interval or the list and the number disagree by exactly the rows stamped at `to`.
+     * Omitting this keeps the long-standing inclusive bound (`<=`), which is what existing API callers and
+     * ordinary queue visits get; the applied bound is echoed in `window` so the screen can say which one it
+     * is showing rather than leaving the reader to infer it.
+     */
+    @Query('toExclusive') toExclusiveRaw?: string,
   ) {
     await this.requireFunction(req, 'notification.view_deliveries');
 
@@ -85,6 +94,7 @@ export class AdminNotificationController {
     if (from && to && from.getTime() > to.getTime()) {
       throw new BadRequestException('from must be before to');
     }
+    const toExclusive = this.parseBooleanFlag(toExclusiveRaw, 'toExclusive');
 
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -124,7 +134,7 @@ export class AdminNotificationController {
       params.push(from);
     }
     if (to) {
-      conditions.push(`created_at <= $${idx++}`);
+      conditions.push(toExclusive ? `created_at < $${idx++}` : `created_at <= $${idx++}`);
       params.push(to);
     }
 
@@ -203,6 +213,24 @@ export class AdminNotificationController {
       limit,
       totalPages,
       hasNextPage,
+      // The interval actually applied, stated with the bound used. A count is only comparable to another
+      // count if the reader can see which edge each one took, and the dashboard card's half-open window is
+      // one edge away from the queue's historical inclusive bound.
+      window: {
+        from: from ? from.toISOString() : null,
+        to: to ? to.toISOString() : null,
+        upperBound: to ? (toExclusive ? 'exclusive' : 'inclusive') : 'none',
+        boundary:
+          !from && !to
+            ? 'no time window applied — every delivery row is in scope'
+            : from && to
+              ? toExclusive
+                ? 'created_at >= from AND created_at < to (half-open, UTC)'
+                : 'created_at >= from AND created_at <= to (inclusive upper bound, UTC)'
+              : from
+                ? 'created_at >= from, no upper bound'
+                : 'created_at < to (half-open, UTC)',
+      },
     };
   }
 
@@ -324,6 +352,18 @@ export class AdminNotificationController {
       throw new BadRequestException(`${field} must be an ISO-8601 timestamp`);
     }
     return value;
+  }
+
+  /**
+   * Strict three-state flag: absent means "the caller did not ask", so the historical behaviour stands;
+   * a value that is neither true nor false is a bad request rather than a silently ignored filter.
+   */
+  private parseBooleanFlag(raw: string | undefined, field: string): boolean {
+    if (raw === undefined || raw === null || raw === '') return false;
+    const trimmed = raw.trim().toLowerCase();
+    if (trimmed === 'true' || trimmed === '1') return true;
+    if (trimmed === 'false' || trimmed === '0') return false;
+    throw new BadRequestException(`${field} must be true or false`);
   }
 
   private parseUuid(raw: string | undefined, field: string): string | undefined {

@@ -27,6 +27,19 @@ export interface ResolvedDashboard {
     supportsPeriodFilter?: boolean;
     kind: string;
     authorized: boolean;
+    /**
+     * The catalogue functions this widget's data requires, echoed so a restricted tile can name
+     * what is missing instead of showing an unexplained lock. Derived server-side from the same
+     * registry the guard consults, so the explanation cannot drift from the rule.
+     */
+    requiredFunctions?: readonly string[];
+    /** Where this card's records live, when an authorized workspace exists to open them. */
+    drilldown?: { view: string; label: string; preset?: string };
+    /**
+     * The endpoint that answers for this card (proxy path or declared direct endpoint), so the
+     * console can state the source of a number rather than implying the dashboard computed it.
+     */
+    dataEndpoint?: string;
   }>;
 }
 
@@ -231,6 +244,14 @@ export class DashboardService {
           supportsPeriodFilter: def.supportsPeriodFilter,
           kind: def.kind,
           authorized,
+          requiredFunctions: def.requiredFunctions,
+          // A drill-down is offered only for a card the caller may actually read: an unauthorized
+          // tile explains its missing grant, it does not advertise the queue behind it.
+          ...(authorized && def.drilldown ? { drilldown: def.drilldown } : {}),
+          dataEndpoint:
+            def.fetchMode === 'proxy'
+              ? `/internal/a2/workforce/dashboard/widgets/${def.widgetKey}`
+              : def.endpoint,
         };
       });
 

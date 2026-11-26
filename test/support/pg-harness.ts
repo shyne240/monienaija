@@ -15,6 +15,10 @@ import {
 import { assertOwnRunDatabaseName, resolveRunIdentifier } from './pg-run-namespace';
 import { restoreKycSingletons } from './kyc-test-fixtures';
 import { assertDisposablePgTestEnvironment } from './pg-test-safety';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../../src/common/serializable-transaction';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -257,6 +261,42 @@ export async function destroyIntegrationDataSource(dataSource: DataSource): Prom
   });
 }
 
+/**
+ * Runs the wholesale `TRUNCATE ... CASCADE` with a bounded retry on PostgreSQL's
+ * `deadlock_detected` (SQLSTATE 40P01).
+ *
+ * `TRUNCATE` needs ACCESS EXCLUSIVE on every application table at once, so it can deadlock with a
+ * session that is still writing — in practice a pooled connection from the app under test finishing a
+ * statement issued by the previous case. PostgreSQL resolves the cycle by aborting one side; without a
+ * retry the abort lands on the harness and the whole suite fails on a condition no test asserted.
+ *
+ * Observed twice on CI (different, unrelated suites, otherwise green heads):
+ * `test/v1-limit-04-limit-runtime.integration.spec.ts` and
+ * `test/v1-notification-provider-configuration-01.integration.spec.ts`, both at this statement.
+ *
+ * The retry is deliberately narrow: only the two retryable transaction SQLSTATEs recognised by
+ * `isRetryableTransactionError` (serialization failure / deadlock) are retried, every other failure
+ * propagates on the first attempt, and the attempt budget is bounded so contention can never turn
+ * into a hang.
+ */
+export async function truncateWithDeadlockRetry(
+  query: (statement: string) => Promise<unknown>,
+  statement: string,
+  options: { attempts?: number; delayMs?: number } = {},
+): Promise<void> {
+  const attempts = options.attempts ?? MAX_SERIALIZABLE_ATTEMPTS;
+  const delayMs = options.delayMs ?? 25;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await query(statement);
+      return;
+    } catch (error) {
+      if (!isRetryableTransactionError(error) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
+
 /** Truncates every application table, leaving the migration ledger intact. */
 export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   const rows: Array<{ tablename: string }> = await dataSource.query(
@@ -264,7 +304,10 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   );
   if (!rows.length) return;
   const list = rows.map((r) => `"${r.tablename}"`).join(', ');
-  await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  await truncateWithDeadlockRetry(
+    (statement) => dataSource.query(statement),
+    `TRUNCATE ${list} RESTART IDENTITY CASCADE`,
+  );
   // V1-ADMIN-AUTHORIZATION-HARDENING-01: `authorization_functions`/`authorization_roles`/
   // `authorization_role_functions` are bootstrap REFERENCE/governance data (seeded exactly once
   // by AuthorizationCatalogueSeedService.onApplicationBootstrap() when the Nest app under test

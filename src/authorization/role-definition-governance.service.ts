@@ -47,6 +47,15 @@ export interface RoleDefinitionFunctionGrantInput {
   accessType: string;
 }
 
+export interface RoleDefinitionFunctionOption {
+  readonly functionCode: string;
+  readonly name: string;
+  readonly domain: string;
+  readonly sensitivity: string;
+  readonly v1Status: string;
+  readonly financeClassRestricted: boolean;
+}
+
 export interface SubmitRoleDefinitionProposalCommand {
   principal: AuthorizationPrincipal;
   proposalType: 'CREATE' | 'MODIFY';
@@ -98,6 +107,35 @@ export class RoleDefinitionGovernanceService {
     private readonly audit: AuditService,
     @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Catalogue functions a role definition may currently grant.
+   *
+   * The editor needs the catalogue, not a fixed list: `validateFunctionGrants` (below) only
+   * accepts assignable, existing codes, so exposing the same rows keeps the picker and the write
+   * path in agreement. Read-only metadata — this never grants anything.
+   */
+  async listAssignableFunctions(): Promise<RoleDefinitionFunctionOption[]> {
+    const rows = await this.functionRepo.find({
+      where: { assignable: true } as never,
+      order: { domain: 'ASC', functionCode: 'ASC' } as never,
+    });
+    return rows
+      .filter(
+        (row) =>
+          !row.functionCode.startsWith('workforce.role.') &&
+          !row.financeClassRestricted &&
+          row.sensitivity !== 'CRITICAL_FINANCIAL',
+      )
+      .map((row) => ({
+        functionCode: row.functionCode,
+        name: row.name,
+        domain: row.domain,
+        sensitivity: row.sensitivity,
+        v1Status: row.v1Status,
+        financeClassRestricted: row.financeClassRestricted,
+      }));
+  }
 
   // ------------------------------------------------------------------ submit
 

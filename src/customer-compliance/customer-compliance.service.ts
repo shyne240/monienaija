@@ -11,8 +11,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import type { CustomerRecordScopeResolution } from '../institution/institution-workforce-scope.service';
 import { AuditService } from '../operations/audit.service';
-import type { ComplianceCaseAccess } from './customer-compliance-access';
+import {
+  type ComplianceCaseAccess,
+  FRAUD_CASE_CATEGORIES,
+  NON_FRAUD_CASE_CATEGORIES,
+} from './customer-compliance-access';
 import { ComplianceCaseAssignment } from './compliance-case-assignment.entity';
 import { ComplianceCaseComment } from './compliance-case-comment.entity';
 import { ComplianceCaseEvidence } from './compliance-case-evidence.entity';
@@ -21,6 +26,7 @@ import { CustomerComplianceCase } from './customer-compliance-case.entity';
 import {
   ComplianceCaseCategory,
   ComplianceCaseHistoryAction,
+  ComplianceCaseSeverity,
   ComplianceCaseStatus,
 } from './customer-compliance.enums';
 import type {
@@ -130,6 +136,276 @@ export class CustomerComplianceService {
       where: { customerId, category: In(categories) },
     });
     return this.sortByCreatedAt(cases.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+  }
+
+  async listQueueCases(options: {
+    domainScope: 'COMPLIANCE' | 'FRAUD';
+    access: ComplianceCaseAccess;
+    recordScope: CustomerRecordScopeResolution;
+    canExecute: boolean;
+    canViewCustomer: boolean;
+    principalId: string;
+    status?: string;
+    severity?: string;
+    category?: string;
+    assignedTo?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const allowedCategories = this.categories(options.access).filter((cat) =>
+      options.domainScope === 'FRAUD'
+        ? FRAUD_CASE_CATEGORIES.includes(cat)
+        : NON_FRAUD_CASE_CATEGORIES.includes(cat),
+    );
+    if (allowedCategories.length === 0) {
+      throw new ForbiddenException('Compliance case queue category not authorized');
+    }
+
+    const baseConditions: string[] = [
+      'cc.deleted_at IS NULL',
+      'cu.deleted_at IS NULL',
+      'cc.category = ANY($1::varchar[])',
+    ];
+    const baseParams: unknown[] = [allowedCategories];
+
+    const { recordScope } = options;
+    if (
+      (recordScope.mode === 'EXPLICIT_INSTITUTION' ||
+        recordScope.mode === 'ASSIGNED_INSTITUTIONS') &&
+      recordScope.enrolmentsTablePresent
+    ) {
+      baseParams.push(recordScope.institutionIds);
+      baseConditions.push(
+        `EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = cc.customer_id AND cie.institution_id = ANY($${baseParams.length}::uuid[]))`,
+      );
+    } else if (
+      recordScope.mode === 'UNASSIGNED_DIRECT_ONLY' &&
+      recordScope.enrolmentsTablePresent
+    ) {
+      baseConditions.push(
+        `NOT EXISTS (SELECT 1 FROM customer_institution_enrolments cie WHERE cie.customer_id = cc.customer_id)`,
+      );
+    }
+
+    const countRows = await this.dataSource.query<
+      Array<{
+        total: string;
+        open_count: string;
+        escalated_count: string;
+        under_review_count: string;
+        pending_customer_count: string;
+        unassigned_count: string;
+        critical_high_count: string;
+      }>
+    >(
+      `SELECT
+         count(*)::text AS total,
+         count(*) FILTER (WHERE cc.status = 'OPEN')::text AS open_count,
+         count(*) FILTER (WHERE cc.status = 'ESCALATED')::text AS escalated_count,
+         count(*) FILTER (WHERE cc.status = 'UNDER_REVIEW')::text AS under_review_count,
+         count(*) FILTER (WHERE cc.status = 'PENDING_CUSTOMER')::text AS pending_customer_count,
+         count(*) FILTER (WHERE cc.assigned_to IS NULL AND cc.status NOT IN ('RESOLVED', 'CLOSED'))::text AS unassigned_count,
+         count(*) FILTER (WHERE cc.severity IN ('CRITICAL', 'HIGH') AND cc.status NOT IN ('RESOLVED', 'CLOSED'))::text AS critical_high_count
+       FROM customer_compliance_cases cc
+       JOIN customers cu ON cu.id = cc.customer_id
+       WHERE ${baseConditions.join(' AND ')}`,
+      baseParams,
+    );
+
+    const conditions = [...baseConditions];
+    const params = [...baseParams];
+
+    const status = options.status?.trim().toUpperCase();
+    if (status && status !== 'ALL') {
+      if (status === 'ACTIVE') {
+        conditions.push(`cc.status NOT IN ('RESOLVED', 'CLOSED')`);
+      } else if (Object.values(ComplianceCaseStatus).includes(status as ComplianceCaseStatus)) {
+        params.push(status);
+        conditions.push(`cc.status = $${params.length}`);
+      } else {
+        throw new BadRequestException('Invalid compliance case status filter');
+      }
+    }
+
+    const severity = options.severity?.trim().toUpperCase();
+    if (severity && severity !== 'ALL') {
+      if (!Object.values(ComplianceCaseSeverity).includes(severity as ComplianceCaseSeverity)) {
+        throw new BadRequestException('Invalid compliance case severity filter');
+      }
+      params.push(severity);
+      conditions.push(`cc.severity = $${params.length}`);
+    }
+
+    const category = options.category?.trim().toUpperCase();
+    if (category && category !== 'ALL') {
+      if (!allowedCategories.includes(category as ComplianceCaseCategory)) {
+        throw new BadRequestException('Invalid or unauthorized compliance case category filter');
+      }
+      params.push(category);
+      conditions.push(`cc.category = $${params.length}`);
+    }
+
+    const assignedTo = options.assignedTo?.trim();
+    if (assignedTo && assignedTo !== 'ALL') {
+      if (assignedTo === 'UNASSIGNED') {
+        conditions.push(`cc.assigned_to IS NULL`);
+      } else if (assignedTo === 'ME') {
+        params.push(options.principalId);
+        conditions.push(`cc.assigned_to = $${params.length}`);
+      } else {
+        params.push(assignedTo);
+        conditions.push(`cc.assigned_to = $${params.length}`);
+      }
+    }
+
+    const search = options.search?.trim();
+    if (search) {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search)) {
+        params.push(search.toLowerCase());
+        const idx = params.length;
+        conditions.push(`(cc.customer_id = $${idx}::uuid OR cc.id = $${idx}::uuid)`);
+      } else {
+        const escaped = `%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+        params.push(escaped);
+        const idx = params.length;
+        conditions.push(
+          `(cc.case_number ILIKE $${idx} ESCAPE '\\' OR cu.reference ILIKE $${idx} ESCAPE '\\')`,
+        );
+      }
+    }
+
+    const page = Math.max(Math.trunc(Number(options.page) || 1), 1);
+    const limit = Math.min(Math.max(Math.trunc(Number(options.limit) || 25), 1), 100);
+    const offset = (page - 1) * limit;
+
+    const filteredTotalRows = await this.dataSource.query<Array<{ count: string }>>(
+      `SELECT count(*)::text AS count
+         FROM customer_compliance_cases cc
+         JOIN customers cu ON cu.id = cc.customer_id
+        WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    const total = Number(filteredTotalRows[0]?.count ?? '0');
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    const rowParams = [...params, limit, offset];
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+
+    const rows = await this.dataSource.query<
+      Array<{
+        id: string;
+        customer_id: string;
+        customer_reference: string;
+        display_name: string | null;
+        legal_name: string | null;
+        case_number: string;
+        category: ComplianceCaseCategory;
+        severity: ComplianceCaseSeverity;
+        status: ComplianceCaseStatus;
+        opened_by: string;
+        assigned_to: string | null;
+        resolution: string | null;
+        opened_at: Date;
+        closed_at: Date | null;
+        version: number;
+        created_at: Date;
+        updated_at: Date;
+      }>
+    >(
+      `SELECT
+         cc.id,
+         cc.customer_id,
+         cu.reference AS customer_reference,
+         cp.display_name,
+         cp.legal_name,
+         cc.case_number,
+         cc.category,
+         cc.severity,
+         cc.status,
+         cc.opened_by,
+         cc.assigned_to,
+         cc.resolution,
+         cc.opened_at,
+         cc.closed_at,
+         cc.version,
+         cc.created_at,
+         cc.updated_at
+       FROM customer_compliance_cases cc
+       JOIN customers cu ON cu.id = cc.customer_id
+       LEFT JOIN LATERAL (
+         SELECT display_name, legal_name
+           FROM customer_profiles p
+          WHERE p.customer_id = cu.id AND p.is_active = TRUE AND p.deleted_at IS NULL
+          ORDER BY p.created_at DESC LIMIT 1
+       ) cp ON TRUE
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY
+         CASE cc.status
+           WHEN 'ESCALATED' THEN 0
+           WHEN 'OPEN' THEN 1
+           WHEN 'UNDER_REVIEW' THEN 2
+           WHEN 'PENDING_CUSTOMER' THEN 3
+           WHEN 'RESOLVED' THEN 4
+           ELSE 5
+         END ASC,
+         CASE cc.severity
+           WHEN 'CRITICAL' THEN 0
+           WHEN 'HIGH' THEN 1
+           WHEN 'MEDIUM' THEN 2
+           ELSE 3
+         END ASC,
+         cc.opened_at DESC,
+         cc.id DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      rowParams,
+    );
+
+    const topCounts = countRows[0];
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        customerId: row.customer_id,
+        customerReference: row.customer_reference,
+        customerDisplayName: options.canViewCustomer
+          ? (row.display_name ?? row.legal_name ?? null)
+          : null,
+        caseNumber: row.case_number,
+        category: row.category,
+        severity: row.severity,
+        status: row.status,
+        openedBy: row.opened_by,
+        assignedTo: row.assigned_to,
+        resolution: row.resolution,
+        openedAt: row.opened_at.toISOString(),
+        closedAt: row.closed_at?.toISOString() ?? null,
+        version: row.version,
+        createdAt: row.created_at.toISOString(),
+        updatedAt: row.updated_at.toISOString(),
+      })),
+      counts: {
+        total: Number(topCounts?.total ?? '0'),
+        open: Number(topCounts?.open_count ?? '0'),
+        escalated: Number(topCounts?.escalated_count ?? '0'),
+        underReview: Number(topCounts?.under_review_count ?? '0'),
+        pendingCustomer: Number(topCounts?.pending_customer_count ?? '0'),
+        unassigned: Number(topCounts?.unassigned_count ?? '0'),
+        criticalOrHigh: Number(topCounts?.critical_high_count ?? '0'),
+      },
+      capabilities: {
+        canExecute: options.canExecute,
+        canViewCustomer: options.canViewCustomer,
+        scopeMode: recordScope.mode,
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
+    };
   }
 
   /** Internal policy evaluation needs the complete evidence set; this is not an HTTP case API. */

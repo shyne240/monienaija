@@ -2,11 +2,20 @@
 export interface CustomerComplianceCaseRow {
   id: string;
   customerId: string;
+  customerReference?: string | null;
+  customerDisplayName?: string | null;
   caseNumber: string;
   category: string;
   severity: string;
   status: string;
+  openedBy?: string;
+  assignedTo?: string | null;
+  resolution?: string | null;
   openedAt?: string;
+  closedAt?: string | null;
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export function validCustomerCase(
@@ -19,6 +28,20 @@ export function validCustomerCase(
   return (
     text(row.id) &&
     row.customerId === customerId &&
+    text(row.caseNumber) &&
+    text(row.category) &&
+    text(row.severity) &&
+    text(row.status)
+  );
+}
+
+export function validQueueComplianceCase(value: unknown): value is CustomerComplianceCaseRow {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as CustomerComplianceCaseRow;
+  const text = (item: unknown) => typeof item === 'string' && !!item.trim();
+  return (
+    text(row.id) &&
+    text(row.customerId) &&
     text(row.caseNumber) &&
     text(row.category) &&
     text(row.severity) &&

@@ -88,7 +88,16 @@ function formatTime(value: unknown): string {
   return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleString();
 }
 
-export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = (props) => {
+export const AuditTrailScreen: React.FC<{
+  initialCustomerId?: string;
+  /**
+   * Set by a dashboard card or an operations screen that already knows which record is in question.
+   * Applied as a search criterion, not as an authorization: the server decides what is readable.
+   */
+  initialEntityId?: string;
+  initialEntityType?: string;
+  initialCorrelationId?: string;
+}> = (props) => {
   const principal = useAuthStore((state) => state.principal);
   const contextKey = JSON.stringify([
     principal?.principalId,
@@ -102,13 +111,21 @@ export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = (props
   ]);
   return <AuditTrailWorkspace key={contextKey} {...props} />;
 };
-const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
+const AuditTrailWorkspace: React.FC<{
+  initialCustomerId?: string;
+  initialEntityId?: string;
+  initialEntityType?: string;
+  initialCorrelationId?: string;
+}> = ({ initialCustomerId, initialEntityId, initialEntityType, initialCorrelationId }) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('audit.search') ?? false;
-  const [filter, setFilter] = useState<AuditFilter>({
+  const initialFilter = (): AuditFilter => ({
     ...emptyFilter(),
-    entityId: initialCustomerId || '',
+    entityId: initialEntityId || initialCustomerId || '',
+    entityType: initialEntityType || '',
+    correlationId: initialCorrelationId || '',
   });
+  const [filter, setFilter] = useState<AuditFilter>(initialFilter);
   const [applied, setApplied] = useState<AuditFilter | null>(null);
   const [events, setEvents] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -180,9 +197,10 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
     setFilter((prev) => ({ ...prev, [key]: value }));
   };
   useEffect(() => {
-    const next = { ...emptyFilter(), entityId: initialCustomerId || '' };
+    const next = initialFilter();
     setFilter(next);
-    if (initialCustomerId && canView) void fetchEvents(next);
+    const prefilled = Boolean(next.entityId || next.correlationId);
+    if (prefilled && canView) void fetchEvents(next);
     else {
       setEvents([]);
       setApplied(null);
@@ -192,7 +210,7 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
     return () => {
       requestId.current += 1;
     };
-  }, [initialCustomerId, canView]);
+  }, [initialCustomerId, initialEntityId, initialEntityType, initialCorrelationId, canView]);
 
   if (!canView)
     return (

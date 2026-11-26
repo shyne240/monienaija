@@ -1,0 +1,29 @@
+diff --git a/src/kyc-verification/kyc-tier-transition.service.ts b/src/kyc-verification/kyc-tier-transition.service.ts
+index f54d08c4..639b58cb 100644
+--- a/src/kyc-verification/kyc-tier-transition.service.ts
++++ b/src/kyc-verification/kyc-tier-transition.service.ts
+@@ -523,11 +523,21 @@ export class KycTierTransitionService {
+               WHERE customer_id = $1 AND is_active = true`,
+             [customerId],
+           );
++          // `customer_class_assignments` (migration 0805) has no `assigned_by` or
++          // `previous_class_id` column: the audit actor is `created_by`, and the superseded row is
++          // identified by the UPDATE above rather than copied into the new row. Writing those two
++          // names raised `column "assigned_by" ... does not exist` and made every approved tier
++          // default transition fail with a 500 after the mapping was approved.
+           await manager.query(
+             `INSERT INTO customer_class_assignments
+-              (id, customer_id, class_id, source, is_active, effective_from, effective_to, assigned_by, previous_class_id, created_at, updated_at)
+-             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', true, clock_timestamp(), NULL, $3, $4, clock_timestamp(), clock_timestamp())`,
+-            [customerId, tierDefault.classId, actor, current?.class_id ?? null],
++              (id, customer_id, class_id, source, is_active, effective_from, effective_to, created_by, precedence, reason, created_at, updated_at)
++             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', true, clock_timestamp(), NULL, $3, 0, $4, clock_timestamp(), clock_timestamp())`,
++            [
++              customerId,
++              tierDefault.classId,
++              actor,
++              `Tier default for ${newLevel} applied by KYC transition`,
++            ],
+           );
+         }
+       } else {

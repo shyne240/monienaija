@@ -68,9 +68,17 @@ async function main() {
       actor,
     });
 
+    /*
+     * Approval independence: `AgentApplicationService.approve()` refuses an approver whose
+     * principal id equals the persisted `submitted_by`, so this helper must not approve under the
+     * principal it just submitted with — the same rule applies to a trusted in-process caller,
+     * because it is enforced in the service rather than at the controller. The checker is a second
+     * synthetic local identity, not a workforce account and not a real credential.
+     */
+    const checker = `${actor}-independent-checker`;
     await applicationService.submit(application.id, actor);
-    await applicationService.markUnderReview(application.id, actor);
-    await applicationService.approve(application.id, actor);
+    await applicationService.markUnderReview(application.id, checker);
+    await applicationService.approve(application.id, checker);
     const agent = await lifecycleService.activateFromApplication(application.id, actor);
 
     const { pbkdf2Sync, randomBytes } = require('node:crypto');

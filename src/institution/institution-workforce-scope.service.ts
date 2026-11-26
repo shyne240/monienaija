@@ -12,6 +12,13 @@ import { AuditService } from '../operations/audit.service';
 import { FinancialInstitutionStatus } from './institution.enums';
 import type { WorkforceInstitutionAssignmentView } from './institution.types';
 
+export interface CustomerRecordScopeResolution {
+  mode: 'PLATFORM' | 'EXPLICIT_INSTITUTION' | 'ASSIGNED_INSTITUTIONS' | 'UNASSIGNED_DIRECT_ONLY';
+  institutionIds: string[];
+  enrolmentsTablePresent: boolean;
+  agentAffiliationsTablePresent: boolean;
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -187,6 +194,150 @@ export class InstitutionWorkforceScopeService {
       [principalId],
     );
     return rows.map((row) => row.institution_id);
+  }
+
+  /**
+   * Resolves request-time institution reach for customer/agent servicing, compliance, fraud, and
+   * support queries.
+   *
+   * - `PLATFORM`: caller holds `institution.attribution.view` and requested no explicit filter.
+   * - `EXPLICIT_INSTITUTION`: caller passed `institutionId` and passed `assertCanAccessInstitution`.
+   * - `ASSIGNED_INSTITUTIONS`: caller lacks `institution.attribution.view` and holds >= 1 ACTIVE
+   *   `workforce_institution_assignments` row; restricted strictly to those institutions.
+   * - `UNASSIGNED_DIRECT_ONLY`: caller lacks both `institution.attribution.view` and any ACTIVE
+   *   `workforce_institution_assignments` row; may reach direct (unenrolled) platform records only
+   *   and is denied any record enrolled/affiliated with a financial institution.
+   */
+  async resolveCustomerRecordScope(
+    principal: AuthorizationPrincipal | undefined,
+    explicitInstitutionId?: string,
+  ): Promise<CustomerRecordScopeResolution> {
+    if (!principal) throw new ForbiddenException('Authentication required');
+    const [enrolmentsTablePresent, agentAffiliationsTablePresent, assignmentsTablePresent] =
+      await Promise.all([
+        this.tableExists('customer_institution_enrolments'),
+        this.tableExists('institution_agent_affiliations'),
+        this.tableExists('workforce_institution_assignments'),
+      ]);
+
+    if (explicitInstitutionId !== undefined && explicitInstitutionId.trim().length > 0) {
+      const normalized = this.uuid(explicitInstitutionId, 'institutionId');
+      await this.assertCanAccessInstitution(principal, normalized);
+      return {
+        mode: 'EXPLICIT_INSTITUTION',
+        institutionIds: [normalized],
+        enrolmentsTablePresent,
+        agentAffiliationsTablePresent,
+      };
+    }
+
+    if (this.hasPlatformAuthority(principal) || !assignmentsTablePresent) {
+      return {
+        mode: 'PLATFORM',
+        institutionIds: [],
+        enrolmentsTablePresent,
+        agentAffiliationsTablePresent,
+      };
+    }
+
+    const assigned = await this.institutionIdsForPrincipal(principal.principalId);
+    if (assigned.length > 0) {
+      return {
+        mode: 'ASSIGNED_INSTITUTIONS',
+        institutionIds: assigned,
+        enrolmentsTablePresent,
+        agentAffiliationsTablePresent,
+      };
+    }
+
+    return {
+      mode: 'UNASSIGNED_DIRECT_ONLY',
+      institutionIds: [],
+      enrolmentsTablePresent,
+      agentAffiliationsTablePresent,
+    };
+  }
+
+  /**
+   * Enforces server-side institution scope for a customer-linked record.
+   * Throws NotFoundException when out of scope so cross-institution records cannot be enumerated.
+   */
+  async assertCanAccessCustomerRecord(
+    principal: AuthorizationPrincipal | undefined,
+    customerId: string,
+  ): Promise<void> {
+    const normalizedCustomerId = this.uuid(customerId, 'customerId');
+    const scope = await this.resolveCustomerRecordScope(principal);
+    if (scope.mode === 'PLATFORM' || !scope.enrolmentsTablePresent) return;
+
+    const rows: Array<{ institution_id: string }> = await this.dataSource.query(
+      `SELECT DISTINCT institution_id FROM customer_institution_enrolments WHERE customer_id=$1`,
+      [normalizedCustomerId],
+    );
+    const enrolledIds = rows.map((row) => row.institution_id);
+
+    if (scope.mode === 'ASSIGNED_INSTITUTIONS') {
+      const allowed = new Set(scope.institutionIds);
+      if (!enrolledIds.some((id) => allowed.has(id))) {
+        throw new NotFoundException('Resource not found');
+      }
+      return;
+    }
+
+    // UNASSIGNED_DIRECT_ONLY: cannot access institution-enrolled customer records
+    if (enrolledIds.length > 0) {
+      throw new NotFoundException('Resource not found');
+    }
+  }
+
+  /**
+   * Enforces server-side institution scope for a support ticket (which may reference a customer,
+   * an agent, both, or neither).
+   */
+  async assertCanAccessSupportTicketRecord(
+    principal: AuthorizationPrincipal | undefined,
+    record: { customerId: string | null; agentId: string | null },
+  ): Promise<void> {
+    const scope = await this.resolveCustomerRecordScope(principal);
+    if (scope.mode === 'PLATFORM') return;
+
+    const recordInstitutionIds = new Set<string>();
+    if (record.customerId && scope.enrolmentsTablePresent) {
+      const rows: Array<{ institution_id: string }> = await this.dataSource.query(
+        `SELECT DISTINCT institution_id FROM customer_institution_enrolments WHERE customer_id=$1`,
+        [record.customerId],
+      );
+      for (const row of rows) recordInstitutionIds.add(row.institution_id);
+    }
+    if (record.agentId && scope.agentAffiliationsTablePresent) {
+      const rows: Array<{ institution_id: string }> = await this.dataSource.query(
+        `SELECT DISTINCT institution_id FROM institution_agent_affiliations
+          WHERE agent_id=$1 AND status='ACTIVE'`,
+        [record.agentId],
+      );
+      for (const row of rows) recordInstitutionIds.add(row.institution_id);
+    }
+
+    if (scope.mode === 'ASSIGNED_INSTITUTIONS') {
+      const allowed = new Set(scope.institutionIds);
+      const hasMatch = Array.from(recordInstitutionIds).some((id) => allowed.has(id));
+      if (!hasMatch) {
+        throw new NotFoundException('Support ticket not found');
+      }
+      return;
+    }
+
+    if (recordInstitutionIds.size > 0) {
+      throw new NotFoundException('Support ticket not found');
+    }
+  }
+
+  private async tableExists(tableName: string): Promise<boolean> {
+    const rows: Array<{ present: boolean }> = await this.dataSource.query(
+      `SELECT to_regclass($1) IS NOT NULL AS present`,
+      [`public.${tableName}`],
+    );
+    return rows[0]?.present === true;
   }
 
   private toView(row: {

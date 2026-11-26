@@ -45,6 +45,8 @@ interface Filters {
   actor: string;
   action: string;
   entityType: string;
+  entityId: string;
+  correlationId: string;
   outcome: string;
   institutionId: string;
   from: string;
@@ -55,11 +57,55 @@ const emptyFilters = (): Filters => ({
   actor: '',
   action: '',
   entityType: '',
+  entityId: '',
+  correlationId: '',
   outcome: '',
   institutionId: '',
   from: '',
   to: '',
 });
+
+/**
+ * Time-window shortcuts. A blank date pair means "no bound", which is not the same question as
+ * "today" — so the presets write real timestamps instead of pretending to be a filter mode, and the
+ * applied-filter line always shows what was actually sent.
+ */
+const rangeFor = (hours: number): { from: string; to: string } => {
+  const to = new Date();
+  const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
+  const local = (value: Date) =>
+    new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  return { from: local(from), to: local(to) };
+};
+
+/**
+ * A page the console cannot verify is reported as a failure, never as an empty result set.
+ *
+ * The distinction is the whole point of this check: `data: []` and `data: undefined` render
+ * identically if nothing looks at them, and only one of them means "the audit store answered and
+ * found nothing". Pagination is verified against the requested page and limit for the same reason the
+ * delivery and receipt reads do it — a response echoed from a different query is not an answer to
+ * this one, and a row without an id or timestamp cannot be opened or aged.
+ */
+const isVerifiedAuditPage = (value: unknown, limit: number): value is AuditInspectionPage => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (!Array.isArray(candidate.data)) return false;
+  if (typeof candidate.total !== 'number' || !Number.isSafeInteger(candidate.total) || candidate.total < 0)
+    return false;
+  if (candidate.page !== 1 || candidate.limit !== limit) return false;
+  if (typeof candidate.totalPages !== 'number' || !Number.isSafeInteger(candidate.totalPages))
+    return false;
+  if (candidate.data.length > limit) return false;
+  return candidate.data.every(
+    (row) =>
+      Boolean(row) &&
+      typeof row === 'object' &&
+      typeof (row as Record<string, unknown>).id === 'string' &&
+      Boolean((row as Record<string, unknown>).id) &&
+      typeof (row as Record<string, unknown>).occurredAt === 'string',
+  );
+};
 
 export const AuditInspectionScreen: React.FC = () => {
   const scopes = useAuthStore((state) => state.principal?.scopes);
@@ -87,19 +133,28 @@ const AuditInspectionWorkspace: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      setPage(
-        await Arena4OperationsApi.auditInspection({
+      const next = await Arena4OperationsApi.auditInspection({
           actor: criteria.actor,
           action: criteria.action,
           entityType: criteria.entityType,
+          entityId: criteria.entityId,
+          correlationId: criteria.correlationId,
           outcome: criteria.outcome,
           institutionId: criteria.institutionId,
           from: criteria.from ? new Date(criteria.from).toISOString() : undefined,
           to: criteria.to ? new Date(criteria.to).toISOString() : undefined,
           page: 1,
           limit: 25,
-        }),
-      );
+        });
+      if (!isVerifiedAuditPage(next, 25)) {
+        // Stated separately from a transport failure on purpose: "the request worked and the answer is
+        // unreadable" and "the request did not work" send the operator to different places.
+        setError(
+          'The audit response could not be verified against this request, so no records are shown. This is a read failure, not a search that found nothing.',
+        );
+        return;
+      }
+      setPage(next);
     } catch (loadError) {
       setError(describeHttpError(loadError, 'Audit records could not be loaded.'));
     } finally {
@@ -173,6 +228,22 @@ const AuditInspectionWorkspace: React.FC = () => {
             }
           />
         </Field>
+        <Field label="Resource ID" htmlFor="a4-audit-entity-id">
+          <input
+            id="a4-audit-entity-id"
+            value={filters.entityId}
+            placeholder="e.g. a customer, agent or assignment id"
+            onChange={(event) => setFilters({ ...filters, entityId: event.target.value })}
+          />
+        </Field>
+        <Field label="Correlation ID" htmlFor="a4-audit-correlation-id">
+          <input
+            id="a4-audit-correlation-id"
+            value={filters.correlationId}
+            placeholder="from an action receipt or a delivery record"
+            onChange={(event) => setFilters({ ...filters, correlationId: event.target.value })}
+          />
+        </Field>
         <Field label="Outcome" htmlFor="a4-audit-outcome">
           <select
             id="a4-audit-outcome"
@@ -209,10 +280,46 @@ const AuditInspectionWorkspace: React.FC = () => {
             onChange={(event) => setFilters({ ...filters, to: event.target.value })}
           />
         </Field>
+        <fieldset className="a4-ops__ranges">
+          <legend>Time window</legend>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setFilters({ ...filters, ...rangeFor(24) })}
+          >
+            Last 24 hours
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setFilters({ ...filters, ...rangeFor(24 * 7) })}
+          >
+            Last 7 days
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setFilters({ ...filters, from: '', to: '' })}
+          >
+            No window
+          </Button>
+        </fieldset>
         <Button type="submit" variant="primary" disabled={loading}>
           Search audit records
         </Button>
       </form>
+
+      <p className="a4-ops__muted" data-testid="a4-audit-applied-filters">
+        Applied: {applied.actor || 'any actor'} · {applied.action || 'any action'} ·{' '}
+        {applied.entityType || 'any resource type'} ·{' '}
+        {applied.entityId ? `resource ${applied.entityId}` : 'any resource id'} ·{' '}
+        {applied.correlationId ? `correlation ${applied.correlationId}` : 'any correlation'} ·{' '}
+        {applied.outcome || 'any outcome'} ·{' '}
+        {applied.from || applied.to
+          ? `${applied.from ? new Date(applied.from).toLocaleString() : 'beginning'} → ${applied.to ? new Date(applied.to).toLocaleString() : 'now'}`
+          : 'no time window'}
+        {applied.institutionId ? ` · institution ${applied.institutionId}` : ''}
+      </p>
 
       {loading ? (
         <p role="status">Loading audit records…</p>

@@ -1,5 +1,7 @@
 # V1-SCOPE-CHALLENGE-01 — Reassessment of Deferred Features Against the Original V1
 
+For the current integration baseline and proposed release scope, see the [Admin Web audit and proposed V1 scope](ADMIN-WEB-AUDIT-AND-PROPOSED-V1-SCOPE.md).
+
 - **Baseline:** `dac889183da78219f57f63c243cc50abab92e454` (`origin/arena/01a0d883-monienaija`)
 - **Type:** AUDIT-ONLY. No source, migration, API, test, or configuration changes accompany this document.
 - **Method:** independently test the seven deferred classifications from the 74-process re-audit against
