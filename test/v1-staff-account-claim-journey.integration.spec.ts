@@ -53,6 +53,7 @@ import { PremblyKycProvider } from '../src/kyc-verification/prembly-kyc.provider
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { RecordingSmsProvider } from './support/desk-otp-fixture';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 
 const { AppModule } = require('../src/app.module') as { AppModule: typeof AppModuleType };
 
@@ -92,6 +93,12 @@ describe('V1 Staff-Created Account Claim Journey (Real HTTP + PostgreSQL)', () =
   beforeAll(async () => {
     smsProvider = new RecordingSmsProvider();
     dataSource = await createIntegrationDataSource('task1staffclaim');
+    // This journey asserts that staff completion succeeds, so the synthetic commercial
+    // configuration the activation gate requires has to exist. Without it the gate correctly
+    // refuses activation (TIER_DEFAULT_NOT_APPROVED / NO_ENABLED_PRODUCTS) and the journey would
+    // never reach the claim it exists to prove. The gate itself is untouched: suites that remove
+    // configuration still observe it.
+    await seedActivationCommercialConfig(dataSource, { actor: 'staff-claim-journey' });
 
     const premblyTransport: PremblyTransport = (_path, options) => {
       const bvn = options.number;
@@ -552,6 +559,20 @@ describe('V1 Staff-Created Account Claim Journey (Real HTTP + PostgreSQL)', () =
         reason: 'Verified BVN matches Tier 1 requirements',
       })
       .expect(201);
+
+    // Regression: approving KYC re-assigns the Level 1 tier-default customer class. That write
+    // named `assigned_by` and `previous_class_id`, columns `customer_class_assignments` has never
+    // had (the actor is recorded in created_by/updated_by), so it raised QueryFailedError and the
+    // endpoint answered 500. Assert the assignment actually landed.
+    const tierDefaultAssignment = await dataSource.query<
+      Array<{ class_id: string; created_by: string; source: string }>
+    >(
+      `SELECT class_id::text AS class_id, created_by, source FROM customer_class_assignments
+        WHERE customer_id = $1 AND source = 'TIER_DEFAULT' AND is_active = true`,
+      [customerId],
+    );
+    expect(tierDefaultAssignment).toHaveLength(1);
+    expect(tierDefaultAssignment[0]?.created_by).toBe(compliance.principalId);
 
     const activateCustomerRes = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}`)
