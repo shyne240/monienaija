@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Optional,
   Param,
   Query,
   Req,
@@ -28,6 +29,7 @@ import { CustomerEffectiveConfigurationService } from '../customer-onboarding/cu
 import { WalletService } from '../wallet/wallet.service';
 import { SupportService } from '../support/support.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -46,6 +48,14 @@ export class AdminCustomerController {
     private readonly auth: AuthorizationService,
     private readonly activationReadiness: CustomerActivationReadinessService,
     private readonly effectiveConfiguration: CustomerEffectiveConfigurationService,
+    /**
+     * Optional so that unit contexts which construct this controller by hand keep compiling; the
+     * runtime module always injects it. When present it is the same authoritative scope service
+     * the KYC review workspace uses, so the registration-review read and the KYC review read of
+     * the same customer cannot disagree about who may see it.
+     */
+    @Optional()
+    private readonly institutionScope?: InstitutionWorkforceScopeService,
   ) {}
 
   @Get()
@@ -392,7 +402,8 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view');
     this.assertUuid(id, 'id');
-    await this.findVisibleCustomer(id);
+    const customer = await this.findVisibleCustomer(id);
+    await this.assertRecordScope(req, customer.id);
     return this.effectiveConfiguration.evaluate(id);
   }
 
@@ -402,6 +413,7 @@ export class AdminCustomerController {
     await this.requireFunction(req, 'customer.view');
     this.assertUuid(id, 'id');
     const customer = await this.findVisibleCustomer(id);
+    await this.assertRecordScope(req, customer.id);
     const [snapshot, effectiveConfiguration] = await Promise.all([
       this.activationReadiness.evaluateOuter(id),
       this.effectiveConfiguration.evaluate(id).catch(() => null),
@@ -439,6 +451,23 @@ export class AdminCustomerController {
       activationRoute: 'PATCH /api/v1/customers/:id',
       evaluatedAt: snapshot.evaluatedAt,
     };
+  }
+
+  /**
+   * Institution scope for the customer-commercial read paths added by the tier/effective-config
+   * work. `findVisibleCustomer` proves the row exists; this proves the caller may see *this*
+   * institution's record. The KYC review workspace already enforces the same rule through
+   * `KycWorkforceReviewService`; without it here, a staff member denied a customer's KYC review
+   * could still read that customer's effective fees and limits through the Admin Web route.
+   *
+   * Denial is a `404`, matching the scope service, so out-of-scope records cannot be enumerated.
+   */
+  private async assertRecordScope(req: AuthenticatedRequest, customerId: string): Promise<void> {
+    if (!this.institutionScope) return;
+    await this.institutionScope.assertCanAccessCustomerRecord(
+      req.authorizationPrincipal,
+      customerId,
+    );
   }
 
   private async findVisibleCustomer(id: string): Promise<Customer> {
