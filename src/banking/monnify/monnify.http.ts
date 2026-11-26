@@ -18,7 +18,9 @@ export type MonnifyPath =
   | '/api/v2/bank-transfer/reserved-accounts'
   | '/api/v2/disbursements/single'
   | '/api/v2/disbursements/single/validate-otp'
-  | '/api/v1/settlements';
+  | '/api/v1/settlements'
+  // Documented merchant transaction query, with transactionReference or paymentReference as a query parameter.
+  | '/api/v2/merchant/transactions/query';
 
 export type MonnifyHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -55,6 +57,9 @@ const EXACT_PATHS = new Set<string>([
   '/api/v2/disbursements/single',
   '/api/v2/disbursements/single/validate-otp',
   '/api/v1/settlements',
+  // Documented server-to-server transaction verification (transactionReference/paymentReference
+  // are query parameters, never path parameters).
+  '/api/v2/merchant/transactions/query',
 ]);
 
 /**
@@ -64,6 +69,11 @@ const EXACT_PATHS = new Set<string>([
  * accept `/.../validateX`, which is a different undocumented endpoint -- the kind of lookalike a
  * naive allowlist lets through. `segment: true` means the next character must be `/` or the end.
  */
+const EXACT_PATHS_WITH_QUERY = new Set<string>([
+  '/api/v1/disbursements/account/validate',
+  '/api/v2/merchant/transactions/query',
+]);
+
 const PREFIX_PATHS: ReadonlyArray<{
   prefix: string;
   allowQuery: boolean;
@@ -84,7 +94,7 @@ export function isAllowedMonnifyPath(path: string): boolean {
   if (/[\s\\]|\.\./.test(pathname)) return false;
 
   if (EXACT_PATHS.has(pathname)) {
-    return hasQuery ? pathname === '/api/v1/disbursements/account/validate' : true;
+    return hasQuery ? EXACT_PATHS_WITH_QUERY.has(pathname) : true;
   }
 
   for (const entry of PREFIX_PATHS) {

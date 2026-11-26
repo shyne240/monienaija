@@ -389,10 +389,10 @@ describe('Monnify inbound verification', () => {
         responseBody: {
           paymentStatus: 'PAID',
           amountPaid: 78000,
+          fee: 400,
           settlementAmount: 77600,
-          currency: 'NGN',
-          destinationAccountNumber: '6254727989',
-          destinationBankCode: '50515',
+          currencyCode: 'NGN',
+          paymentReference: 'MN6254727989',
         },
       },
     }));
@@ -402,6 +402,12 @@ describe('Monnify inbound verification', () => {
       expect(result.value.outcome).toBe('VERIFIED');
       expect(result.value.grossAmountMinor).toBe('7800000');
       expect(result.value.providerFeeMinor).toBe('40000');
+      // Both are documented response fields, not a derived "fee" invented from the settlement.
+      expect(result.value.settlementAmountMinor).toBe('7760000');
+      expect(result.value.currency).toBe('NGN');
+      expect(result.value.paymentReference).toBe('MN6254727989');
+      // paymentSourceInformation/payer account is never used as our receiving account.
+      expect(result.value.receivingAccountNumber).toBeUndefined();
     }
   });
 

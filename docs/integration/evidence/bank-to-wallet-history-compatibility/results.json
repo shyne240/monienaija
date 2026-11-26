@@ -1,0 +1,31 @@
+{
+  "testedSha": "uncommitted working tree",
+  "integrationTip": null,
+  "credited": {
+    "businessReference": "B2W-02CB2A5E419D7C377BB6014BB243E444",
+    "intakeId": "d260a0b6-ccb3-46cb-9db1-6fa9ff46112a",
+    "journalId": "4cbd84ab-9198-4669-83f2-6fd245027c5a",
+    "amountMinor": "982500"
+  },
+  "pendingReference": "B2W-15381261EB82E758BFD98F42E6CE6D2A",
+  "returnedReference": "B2W-9C228F7670988B0FFA41ADB6F72FD243",
+  "institutionId": "656aac35-3e60-475e-a2ba-31caf9f3d521",
+  "checks": [
+    "CREDITED History row → exact intake UUID → Open journal → same-transaction return link",
+    "pending payment absent from CREDITED History in the browser",
+    "return-authorised payment absent from CREDITED History in the browser"
+  ],
+  "screenshots": [
+    "1-credited-list.png",
+    "2-credited-detail.png",
+    "3-credit-journal.png",
+    "4-returned-to-same-transaction.png",
+    "5-pending-not-credited.png",
+    "5-return-authorised-not-credited.png"
+  ],
+  "credentialsUnchanged": true,
+  "productionFlags": {
+    "BANK_TO_WALLET_ENABLED": false,
+    "BANK_TO_WALLET_PRODUCTION_ENABLED": false
+  }
+}

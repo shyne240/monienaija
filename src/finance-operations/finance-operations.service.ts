@@ -75,7 +75,12 @@ interface SourceRow {
   id: string;
   reference: string | null;
   status: string;
-  linked_by: 'JOURNAL_ID' | 'CLAIM_JOURNAL_ID' | 'DURABLE_INBOUND_LINK' | 'LEGACY_RECEIPT_JOURNAL';
+  linked_by:
+    | 'JOURNAL_ID'
+    | 'CLAIM_JOURNAL_ID'
+    | 'DURABLE_INBOUND_LINK'
+    | 'LEGACY_RECEIPT_JOURNAL'
+    | 'DIRECT_CREDIT_JOURNAL';
 }
 
 /**
@@ -1536,10 +1541,46 @@ export class FinanceOperationsService {
     };
   }
 
+  /**
+   * A direct Monnify-funded credit posts its own journal rather than a float receipt. The journal
+   * persists the immutable bank-intake UUID and business reference; neither is inferred from the
+   * reference prefix or from ledger line ids. Legacy float and receipt mappings are unchanged.
+   */
+  private async directCreditSource(journalId: string): Promise<JournalSourceLink | null> {
+    const rows = await this.dataSource.query<SourceRow[]>(
+      `SELECT 'BANK_TO_WALLET'::text AS source_type,
+              b.id::text AS id,
+              COALESCE(j.metadata->>'businessReference',b.provider_transaction_reference) AS reference,
+              'CREDITED'::text AS status,
+              'DIRECT_CREDIT_JOURNAL'::text AS linked_by,
+              b.recorded_at AS created_at
+         FROM ledger_journals j
+         JOIN banking_inbound_payments b ON b.id::text=j.metadata->>'bankIntakeId'
+        WHERE j.id=$1
+          AND j.metadata->>'bankIntakeId' IS NOT NULL
+          AND b.credit_journal_id=j.id
+          AND b.resolution_state='CREDITED'
+        LIMIT 1`,
+      [journalId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      type: 'BANK_TO_WALLET',
+      id: row.id,
+      reference: row.reference,
+      status: row.status,
+      linkedBy: 'DIRECT_CREDIT_JOURNAL',
+      navigable: true,
+    };
+  }
+
   private async sourceFor(journalId: string): Promise<JournalSourceLink | null> {
     // Persisted inbound identity wins; the generic source rows below do not know about float receipts.
     const inbound =
-      (await this.durableInboundSource(journalId)) ?? (await this.legacyInboundSource(journalId));
+      (await this.durableInboundSource(journalId)) ??
+      (await this.legacyInboundSource(journalId)) ??
+      (await this.directCreditSource(journalId));
     if (inbound) return inbound;
     const rows = await this.dataSource.query<SourceRow[]>(
       `SELECT * FROM (

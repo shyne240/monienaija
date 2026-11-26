@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 
 import { BankingProviderRegistry } from './banking-provider.registry';
 import type {
+  BankingProvider,
   VirtualAccountProvisionResult,
   VirtualAccountStatusResult,
 } from './banking-provider.types';
@@ -37,6 +38,20 @@ export interface ProvisionCommand {
   customerEmail: string;
   currency: string;
   correlationId: string;
+  /** Re-presented, verified BVN/NIN. Never written to the database; only digests are retained. */
+  providerBvn?: string;
+  providerNin?: string;
+  bvnMac?: string;
+  ninMac?: string;
+  identityRevision?: string;
+}
+
+export interface IssuedAccount {
+  bankCode: string;
+  bankName: string | null;
+  accountNumber: string;
+  accountName: string;
+  accountReference?: string;
 }
 
 export interface ReservationView {
@@ -90,12 +105,7 @@ export class BankingVirtualAccountService {
     reservationId: string;
     outcome: ReservationView['outcome'] | 'ALREADY_PROVISIONED';
     unknownPending: boolean;
-    accounts: Array<{
-      bankCode: string;
-      bankName: string;
-      accountNumber: string;
-      accountName: string;
-    }>;
+    accounts: IssuedAccount[];
   }> {
     const unknown = await this.openUnknown(command);
     if (unknown) {
@@ -126,11 +136,24 @@ export class BankingVirtualAccountService {
     let reservationId: string;
     if (existing[0]) {
       if (existing[0].outcome === 'PROVISIONED') {
+        // A retry must recover the original account, not an empty success. The database assignment
+        // is authoritative; if a legacy row predates it, ask the provider by the SAME reference and
+        // persist what it returns. No second provisioning submission is ever made here.
+        const assigned = await this.assignedAccounts(command.walletId);
+        if (assigned.length > 0) {
+          return {
+            reservationId: existing[0].id,
+            outcome: 'ALREADY_PROVISIONED',
+            unknownPending: false,
+            accounts: assigned,
+          };
+        }
+        const recovered = await this.recoverAssignedAccounts(command, provider);
         return {
           reservationId: existing[0].id,
-          outcome: 'ALREADY_PROVISIONED',
+          outcome: recovered.length > 0 ? 'ALREADY_PROVISIONED' : 'PENDING',
           unknownPending: false,
-          accounts: [],
+          accounts: recovered,
         };
       }
       reservationId = existing[0].id;
@@ -144,8 +167,9 @@ export class BankingVirtualAccountService {
       const created = await this.db.query<Array<{ id: string }>>(
         `INSERT INTO banking_virtual_account_reservations
           (id,institution_id,wallet_id,provider_key,environment,account_reference,currency,
-           outcome,request_fingerprint,attempts,last_attempted_at)
-         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,'REQUESTED',$7,1,clock_timestamp())
+           outcome,request_fingerprint,attempts,last_attempted_at,
+           bvn_mac,nin_mac,identity_revision)
+         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,'REQUESTED',$7,1,clock_timestamp(),$8,$9,$10)
          RETURNING id`,
         [
           command.institutionId,
@@ -160,6 +184,10 @@ export class BankingVirtualAccountService {
               `${command.institutionId}|${command.walletId}|${command.accountReference}|${command.currency}`,
             )
             .digest('hex'),
+          // Digests only; the raw BVN/NIN exists only in the provider request that follows.
+          command.bvnMac ?? null,
+          command.ninMac ?? null,
+          command.identityRevision ?? null,
         ],
       );
       reservationId = created[0]!.id;
@@ -175,6 +203,8 @@ export class BankingVirtualAccountService {
           customerEmail: command.customerEmail,
           currency: command.currency,
           correlationId: command.correlationId,
+          ...(command.providerBvn ? { providerBvn: command.providerBvn } : {}),
+          ...(command.providerNin ? { providerNin: command.providerNin } : {}),
         },
         { correlationId: command.correlationId },
       );
@@ -197,18 +227,15 @@ export class BankingVirtualAccountService {
 
     const value: VirtualAccountProvisionResult = result.value;
     if (value.outcome === 'PROVISIONED' && value.accounts.length > 0) {
+      const accounts = value.accounts.map((a) => ({
+        bankCode: a.providerBankCode,
+        bankName: a.bankName,
+        accountNumber: a.accountNumber,
+        accountName: a.accountName,
+      }));
+      await this.persistAssignment(command, accounts);
       await this.mark(reservationId, 'PROVISIONED', 'ACTIVE', value.providerReference ?? null);
-      return {
-        reservationId,
-        outcome: 'PROVISIONED',
-        unknownPending: false,
-        accounts: value.accounts.map((a) => ({
-          bankCode: a.providerBankCode,
-          bankName: a.bankName,
-          accountNumber: a.accountNumber,
-          accountName: a.accountName,
-        })),
-      };
+      return { reservationId, outcome: 'PROVISIONED', unknownPending: false, accounts };
     }
     if (value.outcome === 'REJECTED') {
       await this.mark(reservationId, 'REJECTED', 'REJECTED');
@@ -223,6 +250,112 @@ export class BankingVirtualAccountService {
       unknownPending: uncertain,
       accounts: [],
     };
+  }
+
+  /** Only one issued account is exposed: an inbound payment to an unpersisted alias would be unmatched. */
+  private canonical(accounts: IssuedAccount[]) {
+    return [...accounts].sort((a, b) => a.accountNumber.localeCompare(b.accountNumber))[0]!;
+  }
+
+  private async persistAssignment(
+    command: ProvisionCommand,
+    accounts: IssuedAccount[],
+  ): Promise<void> {
+    const account = this.canonical(accounts);
+    await this.db.query(
+      `INSERT INTO virtual_accounts
+        (id,wallet_id,bank_code,account_number,account_name,provider,status,reference,assigned_at)
+       VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'ACTIVE',$6,clock_timestamp())
+       ON CONFLICT ON CONSTRAINT uq_virtual_accounts_provider_number DO NOTHING`,
+      [
+        command.walletId,
+        account.bankCode,
+        account.accountNumber,
+        account.accountName,
+        command.providerKey,
+        // The provider-issued reference is OUR durable account identity for webhook matching.
+        command.accountReference,
+      ],
+    );
+  }
+
+  private async assignedAccounts(walletId: string): Promise<
+    Array<{
+      bankCode: string;
+      bankName: string | null;
+      accountNumber: string;
+      accountName: string;
+      accountReference?: string;
+    }>
+  > {
+    const rows = await this.db.query<
+      Array<{ account_number: string; bank_code: string; account_name: string; reference: string }>
+    >(
+      `SELECT account_number,bank_code,account_name,reference FROM virtual_accounts
+        WHERE wallet_id=$1 AND provider='MONNIFY' AND status='ACTIVE'
+        ORDER BY assigned_at DESC LIMIT 1`,
+      [walletId],
+    );
+    if (!rows[0]) return [];
+    return [
+      {
+        bankCode: rows[0].bank_code,
+        bankName: await this.bankNameOf(rows[0].bank_code),
+        accountNumber: rows[0].account_number,
+        accountName: rows[0].account_name,
+        accountReference: rows[0].reference,
+      },
+    ];
+  }
+
+  private async recoverAssignedAccounts(
+    command: ProvisionCommand,
+    provider: BankingProvider,
+  ): Promise<
+    Array<{
+      bankCode: string;
+      bankName: string | null;
+      accountNumber: string;
+      accountName: string;
+      accountReference?: string;
+    }>
+  > {
+    if (!provider.getVirtualAccountStatus) return [];
+    const result = await provider.getVirtualAccountStatus(command.accountReference, {
+      correlationId: command.correlationId,
+    });
+    if (!result.ok || result.value.outcome !== 'ACTIVE' || result.value.accounts.length === 0) {
+      return [];
+    }
+    const accounts = result.value.accounts.map((a) => ({
+      bankCode: a.providerBankCode,
+      bankName: a.bankName,
+      accountNumber: a.accountNumber,
+      accountName: a.accountName,
+    }));
+    await this.persistAssignment(command, accounts);
+    await this.markByIdentity(command, 'PROVISIONED', 'RECOVERED_BY_ENQUIRY');
+    return [this.canonical(accounts)];
+  }
+
+  private async markByIdentity(
+    command: ProvisionCommand,
+    outcome: 'PROVISIONED' | 'REJECTED' | 'UNKNOWN' | 'PENDING',
+    status: string,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE banking_virtual_account_reservations
+          SET outcome=$2,provider_status=$3,updated_at=clock_timestamp()
+        WHERE institution_id=$1 AND provider_key=$4 AND environment=$5 AND account_reference=$6`,
+      [
+        command.institutionId,
+        outcome,
+        status,
+        command.providerKey,
+        command.environment,
+        command.accountReference,
+      ],
+    );
   }
 
   /** Resolves a reservation by asking the provider, without ever submitting again. */
@@ -286,6 +419,8 @@ export class BankingVirtualAccountService {
     bankName: string | null;
     accountName: string | null;
     providerSupportsProvisioning: boolean;
+    /** Our stable account reference, reused for provider status enquiries and webhook matching. */
+    accountReference: string | null;
   } | null> {
     const wallets = await this.db.query<Array<{ id: string }>>(
       // `wallet_accounts.customer_id` is a VARCHAR owner reference, not a UUID foreign key: the
@@ -300,9 +435,9 @@ export class BankingVirtualAccountService {
     if (!wallets[0]) return null;
 
     const accounts = await this.db.query<
-      Array<{ account_number: string; bank_code: string; account_name: string }>
+      Array<{ account_number: string; bank_code: string; account_name: string; reference: string }>
     >(
-      `SELECT va.account_number,va.bank_code,va.account_name
+      `SELECT va.account_number,va.bank_code,va.account_name,va.reference
          FROM virtual_accounts va
         WHERE va.wallet_id=$1 AND va.status='ACTIVE'
         ORDER BY va.assigned_at DESC LIMIT 1`,
@@ -315,6 +450,7 @@ export class BankingVirtualAccountService {
         bankName: await this.bankNameOf(accounts[0].bank_code),
         accountName: accounts[0].account_name,
         providerSupportsProvisioning: true,
+        accountReference: accounts[0].reference,
       };
     }
 
@@ -331,6 +467,7 @@ export class BankingVirtualAccountService {
         bankName: null,
         accountName: null,
         providerSupportsProvisioning: true,
+        accountReference: null,
       };
     }
     if (outcome === 'PENDING' || outcome === 'REQUESTED') {
@@ -340,6 +477,7 @@ export class BankingVirtualAccountService {
         bankName: null,
         accountName: null,
         providerSupportsProvisioning: true,
+        accountReference: null,
       };
     }
     return {
@@ -348,6 +486,7 @@ export class BankingVirtualAccountService {
       bankName: null,
       accountName: null,
       providerSupportsProvisioning: true,
+      accountReference: null,
     };
   }
 
@@ -402,7 +541,14 @@ export class BankingVirtualAccountService {
       providerKey: 'MONNIFY',
       // A stable reference derived from the wallet, so a retried request addresses the same account
       // rather than creating a second one.
-      accountReference: `MN${createHash('sha256').update(walletId).digest('hex').slice(0, 24).toUpperCase()}`,
+      // virtual_accounts.reference is constrained to MN + digits only. Convert the digest to a
+      // decimal string so the same wallet always produces one valid, stable account reference.
+      accountReference: `MN${BigInt(
+        `0x${createHash('sha256').update(walletId).digest('hex').slice(0, 24)}`,
+      )
+        .toString()
+        .padStart(28, '0')
+        .slice(0, 24)}`,
       accountName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
       customerName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
       // There is no customer email on this platform. The `.invalid` TLD is reserved by RFC 2606 and
@@ -418,21 +564,38 @@ export class BankingVirtualAccountService {
     const rows = await this.db.query<
       Array<{
         id: string;
+        business_reference: string | null;
         provider_transaction_reference: string;
         credited_amount_minor: string;
+        customer_credit_minor: string | null;
+        gross_amount_minor: string;
+        provider_fee_minor: string;
+        settlement_amount_minor: string | null;
+        monienaija_fee_minor: string;
         currency: string;
         paid_at: Date | null;
         recorded_at: Date;
         verification_state: string;
         posted: boolean;
+        exception_reason: string | null;
+        permitted_next_action: string | null;
       }>
     >(
-      `SELECT p.id,p.provider_transaction_reference,p.credited_amount_minor::text AS credited_amount_minor,
+      `SELECT p.id,p.business_reference,p.provider_transaction_reference,
+              p.credited_amount_minor::text AS credited_amount_minor,
+              p.customer_credit_minor::text AS customer_credit_minor,
+              p.gross_amount_minor::text AS gross_amount_minor,
+              p.provider_fee_minor::text AS provider_fee_minor,
+              p.settlement_amount_minor::text AS settlement_amount_minor,
+              p.monienaija_fee_minor::text AS monienaija_fee_minor,
               p.currency,p.paid_at,p.recorded_at,p.verification_state,
-              (p.ledger_transaction_id IS NOT NULL) AS posted
+              (p.credit_journal_id IS NOT NULL) AS posted,
+              e.reason AS exception_reason,e.permitted_next_action
          FROM banking_inbound_payments p
          JOIN virtual_accounts va ON va.account_number = p.receiving_account_number
          JOIN wallet_accounts w ON w.id = va.wallet_id
+         LEFT JOIN bank_to_wallet_credits c ON c.business_reference=p.business_reference
+         LEFT JOIN bank_to_wallet_exceptions e ON e.business_reference=p.business_reference
         WHERE w.customer_id=$1::text AND w.owner_class='CUSTOMER'
         ORDER BY p.recorded_at DESC
         LIMIT $2`,
@@ -440,19 +603,28 @@ export class BankingVirtualAccountService {
     );
     return rows.map((row) => ({
       id: row.id,
+      businessReference: row.business_reference,
       reference: row.provider_transaction_reference,
-      amountMinor: row.credited_amount_minor,
+      amountMinor: row.customer_credit_minor ?? row.credited_amount_minor,
+      grossAmountMinor: row.gross_amount_minor,
+      providerFeeMinor: row.provider_fee_minor,
+      settlementAmountMinor: row.settlement_amount_minor,
+      monienaijaFeeMinor: row.monienaija_fee_minor,
       currency: row.currency,
       receivedAt: row.paid_at ?? row.recorded_at,
-      // Customer-safe vocabulary: an unverified claim is CONFIRMING, never "received".
-      state:
-        row.verification_state === 'VERIFIED'
+      // Customer-safe vocabulary: an unverified claim is CONFIRMING, never "received". A withheld
+      // payment is EXCEPTION with the reason and next action, never silently shown as a credit.
+      state: row.exception_reason
+        ? ('EXCEPTION' as const)
+        : row.verification_state === 'VERIFIED'
           ? row.posted
             ? ('CREDITED' as const)
             : ('CONFIRMED_PENDING_CREDIT' as const)
           : row.verification_state === 'REJECTED'
             ? ('REJECTED' as const)
             : ('CONFIRMING' as const),
+      exceptionReason: row.exception_reason,
+      permittedNextAction: row.permitted_next_action,
     }));
   }
 
@@ -518,11 +690,11 @@ export class BankingVirtualAccountService {
   }
 
   private async bankNameOf(bankCode: string): Promise<string | null> {
-    const rows = await this.db.query<Array<{ name: string }>>(
-      'SELECT name FROM banks WHERE code=$1 LIMIT 1',
+    const rows = await this.db.query<Array<{ bank_name: string }>>(
+      'SELECT bank_name FROM banks WHERE bank_code=$1 LIMIT 1',
       [bankCode],
     );
-    return rows[0]?.name ?? null;
+    return rows[0]?.bank_name ?? null;
   }
 
   private async mark(

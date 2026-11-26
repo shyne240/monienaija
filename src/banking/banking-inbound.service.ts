@@ -44,17 +44,31 @@ export interface RecordInboundCommand {
   providerFeeMinor: string;
   creditedAmountMinor: string;
   paidAt?: string | null;
+  /** Our durable reference, generated once at intake and reused everywhere downstream. */
+  businessReference?: string | null;
+  /** Merchant settlement amount after provider deductions, when the provider reports it. */
+  settlementAmountMinor?: string | null;
+  monienaijaFeeMinor?: string | null;
+  customerCreditMinor?: string | null;
 }
 
 export interface InboundPaymentView {
   id: string;
   provider_transaction_reference: string;
+  business_reference: string | null;
   verification_state: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'UNKNOWN';
+  resolution_state: string;
   gross_amount_minor: string;
   provider_fee_minor: string;
   credited_amount_minor: string;
+  settlement_amount_minor: string | null;
+  monienaija_fee_minor: string;
+  customer_credit_minor: string | null;
   currency: string;
   ledger_transaction_id: string | null;
+  credit_journal_id: string | null;
+  wallet_id: string | null;
+  virtual_account_id: string | null;
 }
 
 const MINOR = /^[0-9]{1,19}$/;
@@ -70,11 +84,14 @@ export class BankingInboundService {
 
   async view(id: string): Promise<InboundPaymentView> {
     const rows = await this.db.query<InboundPaymentView[]>(
-      `SELECT id,provider_transaction_reference,verification_state,
+      `SELECT id,provider_transaction_reference,business_reference,verification_state,resolution_state,
               gross_amount_minor::text AS gross_amount_minor,
               provider_fee_minor::text AS provider_fee_minor,
               credited_amount_minor::text AS credited_amount_minor,
-              currency,ledger_transaction_id
+              settlement_amount_minor::text AS settlement_amount_minor,
+              monienaija_fee_minor::text AS monienaija_fee_minor,
+              customer_credit_minor::text AS customer_credit_minor,
+              currency,ledger_transaction_id,credit_journal_id,wallet_id,virtual_account_id
          FROM banking_inbound_payments WHERE id=$1`,
       [id],
     );
@@ -130,8 +147,9 @@ export class BankingInboundService {
         (id,institution_id,provider_key,environment,provider_transaction_reference,
          provider_payment_reference,reservation_id,receiving_account_number,receiving_bank_code,
          currency,gross_amount_minor,provider_fee_minor,credited_amount_minor,paid_at,
-         verification_state)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'UNVERIFIED')
+         verification_state,business_reference,settlement_amount_minor,monienaija_fee_minor,
+         customer_credit_minor)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'UNVERIFIED',$15,$16,$17,$18)
        ON CONFLICT (institution_id,provider_key,environment,provider_transaction_reference)
        DO NOTHING`,
       [
@@ -149,6 +167,10 @@ export class BankingInboundService {
         command.providerFeeMinor,
         command.creditedAmountMinor,
         command.paidAt ?? null,
+        command.businessReference ?? null,
+        command.settlementAmountMinor ?? null,
+        command.monienaijaFeeMinor ?? '0',
+        command.customerCreditMinor ?? null,
       ],
     );
     const inserted = await this.db.query<Array<{ id: string }>>(
@@ -177,6 +199,8 @@ export class BankingInboundService {
   async verify(
     id: string,
     correlationId: string,
+    /** Re-present a stored VERIFIED payment to obtain fresh evidence for a posting decision. */
+    force = false,
   ): Promise<{
     state: InboundPaymentView['verification_state'];
     verification?: InboundPaymentVerificationResult;
@@ -198,7 +222,7 @@ export class BankingInboundService {
     );
     const row = rows[0];
     if (!row) throw new Error('Inbound payment not found');
-    if (row.verification_state === 'VERIFIED') return { state: 'VERIFIED' };
+    if (row.verification_state === 'VERIFIED' && !force) return { state: 'VERIFIED' };
 
     const provider = this.registry.find(row.provider_key);
     if (
@@ -282,11 +306,14 @@ export class BankingInboundService {
    */
   async verifiedUnposted(institutionId: string, limit = 100): Promise<InboundPaymentView[]> {
     return this.db.query<InboundPaymentView[]>(
-      `SELECT id,provider_transaction_reference,verification_state,
+      `SELECT id,provider_transaction_reference,business_reference,verification_state,resolution_state,
               gross_amount_minor::text AS gross_amount_minor,
               provider_fee_minor::text AS provider_fee_minor,
               credited_amount_minor::text AS credited_amount_minor,
-              currency,ledger_transaction_id
+              settlement_amount_minor::text AS settlement_amount_minor,
+              monienaija_fee_minor::text AS monienaija_fee_minor,
+              customer_credit_minor::text AS customer_credit_minor,
+              currency,ledger_transaction_id,credit_journal_id,wallet_id,virtual_account_id
          FROM banking_inbound_payments
         WHERE institution_id=$1 AND verification_state='VERIFIED' AND ledger_transaction_id IS NULL
         ORDER BY paid_at NULLS LAST, recorded_at

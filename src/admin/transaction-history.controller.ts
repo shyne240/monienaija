@@ -76,13 +76,30 @@ function historySql(includeInvestigation: boolean) {
  LEFT JOIN LATERAL (SELECT x.provider_reference FROM inbound_funding_observations x WHERE x.provider_key=r.provider_key AND x.provider_reference_hash=r.provider_reference_hash AND x.evidence_hash=r.evidence_hash ORDER BY x.created_at,x.id LIMIT 1) o ON true
  WHERE r.status='CREDITED'
  UNION ALL
- SELECT b.id,'BANK_TO_WALLET',CASE WHEN r.id IS NOT NULL THEN 'CREDITED' ELSE b.verification_state END,b.provider_transaction_reference,b.recorded_at,j.posted_at,
+ SELECT b.id,'BANK_TO_WALLET',CASE WHEN r.id IS NOT NULL THEN 'CREDITED' ELSE b.verification_state END,COALESCE(b.business_reference,b.provider_transaction_reference,b.id::text),b.recorded_at,j.posted_at,
  b.credited_amount_minor::text,b.provider_fee_minor::text,'0',b.currency,b.institution_id,ARRAY[COALESCE(r.journal_id,b.ledger_transaction_id)]::uuid[],
  ${includeInvestigation ? `jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,'grossAmountMinor',b.gross_amount_minor::text,'paidAt',b.paid_at,'postingState',CASE WHEN r.id IS NOT NULL THEN 'FLOAT_CREDITED' WHEN b.ledger_transaction_id IS NULL THEN 'NOT_POSTED' ELSE 'POSTED' END,'floatReceiptId',r.id,'walletId',r.wallet_account_id,'identitySource','BANK_INTAKE')` : 'NULL::jsonb'}
  FROM banking_inbound_payments b
  LEFT JOIN banking_inbound_float_links identity ON identity.payment_id=b.id
  LEFT JOIN agent_float_funding_receipts r ON r.id=identity.float_receipt_id
  LEFT JOIN ledger_journals j ON j.id=r.journal_id
+ -- A direct Monnify-funded credit is not a float credit. It keeps its own canonical row below.
+ WHERE b.resolution_state IS DISTINCT FROM 'CREDITED' OR b.credit_journal_id IS NULL
+ UNION ALL
+ SELECT b.id,'BANK_TO_WALLET','CREDITED',COALESCE(b.business_reference,b.provider_transaction_reference,b.id::text),b.recorded_at,cj.posted_at,
+ COALESCE(bc.amount_minor,b.customer_credit_minor,b.credited_amount_minor)::text,b.provider_fee_minor::text,'0',b.currency,cj.institution_id,ARRAY[b.credit_journal_id]::uuid[],
+ ${
+   includeInvestigation
+     ? `jsonb_build_object('provider',b.provider_key,'providerPaymentReference',b.provider_payment_reference,
+ 'businessReference',b.business_reference,'walletId',bc.wallet_id,'providerObservedAt',b.processed_at,
+ 'postingState','DIRECT_CREDIT_JOURNAL','floatReceiptId',NULL::uuid,'identitySource','BANK_INTAKE',
+ 'settlementAmountMinor',b.settlement_amount_minor::text,'monienaijaFeeMinor',b.monienaija_fee_minor::text)`
+     : 'NULL::jsonb'
+ }
+ FROM banking_inbound_payments b
+ JOIN ledger_journals cj ON cj.id=b.credit_journal_id
+ LEFT JOIN bank_to_wallet_credits bc ON bc.inbound_payment_id=b.id
+ WHERE b.resolution_state='CREDITED' AND b.credit_journal_id IS NOT NULL
  UNION ALL
  SELECT r.id,'AGENT_FUNDING','CREDITED',r.provider_transaction_reference,r.credited_at,j.posted_at,r.amount_minor::text,'0','0',r.currency,r.institution_id,ARRAY[r.journal_id]::uuid[],
  ${includeInvestigation ? `jsonb_build_object('agentId',r.agent_id,'walletId',r.wallet_account_id,'provider',r.provider_key,'policyId',r.policy_id,'providerObservedAt',r.provider_observed_at,'fundingSource','INSTITUTION_BANK_RECEIPT')` : 'NULL::jsonb'}

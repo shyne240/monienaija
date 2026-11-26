@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { verifyWebhook } from './monnify/monnify-webhook.signature';
 import type { BankingInboundService } from './banking-inbound.service';
+import type { BankToWalletService } from './bank-to-wallet.service';
 
 /**
  * Webhook ingestion.
@@ -67,6 +68,7 @@ export class BankingWebhookService {
   constructor(
     private readonly inbound: BankingInboundService,
     private readonly config: BankingWebhookConfiguration,
+    private readonly bankToWallet?: BankToWalletService,
   ) {}
 
   /**
@@ -151,30 +153,59 @@ export class BankingWebhookService {
         typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null,
       providerTransactionReference,
     });
+    const receivingAccountNumber =
+      typeof eventData.destinationAccountNumber === 'string'
+        ? eventData.destinationAccountNumber
+        : null;
+    const receivingBankCode =
+      typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null;
+    const providerPaymentReference =
+      typeof eventData.paymentReference === 'string' ? eventData.paymentReference : null;
+    const currency = typeof eventData.currency === 'string' ? eventData.currency : 'NGN';
+
     if (!attribution) {
-      // Acknowledged (so the provider stops retrying) but not recorded, and surfaced: this is the
-      // "unknown receiving account" case, which must be visible to an operator, not silently dropped.
+      // Acknowledged so the provider stops retrying, but now TRACEABLE: the business reference and
+      // the reason are retained for Finance. No institution is invented and no wallet is credited.
+      if (this.bankToWallet) {
+        await this.bankToWallet.recordUnattributed({
+          environment: this.config.environment,
+          providerTransactionReference,
+          providerPaymentReference,
+          receivingAccountNumber,
+          receivingBankCode,
+          currency,
+          grossAmountMinor: grossMinor,
+          providerFeeMinor: feeMinor,
+        });
+      }
       return { status: 'UNRESOLVED', reason: 'Receiving account could not be attributed' };
     }
 
+    let businessReference: string | undefined;
+    if (this.bankToWallet) {
+      businessReference = this.bankToWallet.businessReferenceFor({
+        providerKey: this.config.providerKey,
+        environment: this.config.environment,
+        providerTransactionReference,
+        institutionId: attribution.institutionId,
+        receivingAccountNumber,
+      });
+    }
     const recorded = await this.inbound.record({
       institutionId: attribution.institutionId,
       providerKey: this.config.providerKey,
       environment: this.config.environment,
       providerTransactionReference,
-      providerPaymentReference:
-        typeof eventData.paymentReference === 'string' ? eventData.paymentReference : null,
-      receivingAccountNumber:
-        typeof eventData.destinationAccountNumber === 'string'
-          ? eventData.destinationAccountNumber
-          : null,
-      receivingBankCode:
-        typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null,
-      currency: typeof eventData.currency === 'string' ? eventData.currency : 'NGN',
+      providerPaymentReference,
+      reservationId: null,
+      receivingAccountNumber,
+      receivingBankCode,
+      currency,
       grossAmountMinor: grossMinor,
       providerFeeMinor: feeMinor,
       creditedAmountMinor: grossMinor,
       paidAt: typeof eventData.paidOn === 'string' ? eventData.paidOn : null,
+      businessReference,
     });
 
     // Recorded, not verified. Verification is a separate server-to-server call driven by the

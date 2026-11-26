@@ -32,18 +32,28 @@ export interface ReceivingAccount {
 }
 
 export type DepositState =
-  | 'FLOAT_CREDITED'
-  | 'VERIFIED_AWAITING_FLOAT_CREDIT'
+  | 'CREDITED'
+  | 'CONFIRMED_PENDING_CREDIT'
   | 'CONFIRMING'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'EXCEPTION';
 
 export interface Deposit {
   id: string;
+  /** MonieNaija's durable reference — the same one Finance and Admin Web use. */
+  businessReference: string | null;
+  /** Provider's reference, retained for reconciliation but never used as our identity. */
   reference: string;
   amountMinor: string;
+  grossAmountMinor: string;
+  providerFeeMinor: string;
+  settlementAmountMinor: string | null;
+  monienaijaFeeMinor: string;
   currency: string;
   receivedAt: string;
   state: DepositState;
+  exceptionReason: string | null;
+  permittedNextAction: string | null;
 }
 
 /**

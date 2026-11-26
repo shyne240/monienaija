@@ -261,6 +261,38 @@ const BANKING_ADMIN_ROUTE_POLICIES: ReadonlyArray<{
     allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
     requiredFunctions: ['banking.reconciliation.resolve'],
   },
+  // Bank → Wallet (Monnify interim). Reads use the existing reconciliation view function;
+  // processing and governed decisions use the existing reconciliation resolve function. No new
+  // function code or role grant is introduced by this journey.
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/bank-to-wallet\/transactions$/,
+    resourceType: 'bank-to-wallet-transactions',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['reconciliation.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/bank-to-wallet\/exceptions\/[0-9a-f-]{36}$/i,
+    resourceType: 'bank-to-wallet-exception',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['reconciliation.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/banking\/bank-to-wallet\/process$/,
+    resourceType: 'bank-to-wallet-process',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.reconciliation.resolve'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/banking\/bank-to-wallet\/exceptions\/[0-9a-f-]{36}\/(decision|execute)$/i,
+    resourceType: 'bank-to-wallet-exception-decision',
+    allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+    requiredFunctions: ['banking.reconciliation.resolve'],
+  },
   // Money that arrived and was never credited, plus the sources this deployment cannot answer.
   // Read-only and deliberately on `reconciliation.view`: adding a new catalogue function to serve a
   // screen would widen protected authority for operational convenience, which the mission forbids.
