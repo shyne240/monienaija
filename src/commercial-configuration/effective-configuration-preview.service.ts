@@ -1131,12 +1131,17 @@ export class EffectiveConfigurationPreviewService {
       };
     }
 
+    // PR #27 — a route that DOES evaluate commission states WHEN it does so. Without this an operator
+    // reading "would be allocated for this operation" cannot tell an authorization-time accrual from a
+    // settlement-time one, and for wallet→bank that difference decides whether a released transfer
+    // ever pays commission.
     return {
       status: allocations.length > 0 ? 'RESOLVED' : 'MISSING',
       note:
-        allocations.length > 0
+        (allocations.length > 0
           ? 'Commission that would be allocated for this operation. Nothing is accrued, settled or posted by this preview.'
-          : 'No commission rule applies to this product, currency and targeting.',
+          : 'No commission rule applies to this product, currency and targeting.') +
+        (input.commissionNote ? ` ${input.commissionNote}` : ''),
       allocations,
       ambiguousRuleIds: null,
       ambiguousPriority: null,

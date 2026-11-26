@@ -5,6 +5,9 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { BankModule } from '../bank/bank.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/customer-funding-instrument.module';
+import { CommercialAccountingModule } from '../commercial-accounting/commercial-accounting.module';
+import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
+import { CommissionModule } from '../commission/commission.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -54,6 +57,14 @@ import {
   imports: [
     forwardRef(() => AuthorizationModule),
     BankModule,
+    // PR #27: the settlement path decides wallet→bank commission at SETTLED.
+    // These MUST be lazy. CommissionModule → OperationsModule → ReconciliationModule → PartnerModule
+    // closes a four-module loop, and an eager edge here would read a half-initialised module (Nest then
+    // fails with "module at index [N] is undefined"). `forwardRef` defers the property read until every
+    // module object exists.
+    forwardRef(() => CommercialDecisionModule),
+    forwardRef(() => CommissionModule),
+    forwardRef(() => CommercialAccountingModule),
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
     forwardRef(() => LedgerModule),

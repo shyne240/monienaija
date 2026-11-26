@@ -8,7 +8,7 @@ import { ReconciliationService } from './reconciliation.service';
 import { TransferReconciliationService } from './transfer-reconciliation.service';
 
 @Module({
-  imports: [forwardRef(() => AuthorizationModule), PartnerModule],
+  imports: [forwardRef(() => AuthorizationModule), forwardRef(() => PartnerModule)],
   controllers: [ReconciliationController],
   providers: [ExternalReconciliationService, ReconciliationService, TransferReconciliationService],
   exports: [ExternalReconciliationService, ReconciliationService, TransferReconciliationService],

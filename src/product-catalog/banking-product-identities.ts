@@ -110,14 +110,15 @@ export const WALLET_TO_BANK: BankingProductIdentity = Object.freeze({
   feeDisposition: 'APPROVED_RULE',
   feeNote:
     'Outbound bank transfers price from the approved fee rule in force for WALLET_TO_BANK. No rule means no charge is bound, and the commitment proceeds without one — never a default fee.',
-  // GAP (recorded, not hidden): a wallet→bank commitment evaluates fee and limit inside its
-  // SERIALIZABLE transaction, and `banking_operation_fee_bindings` carries an `agent_commission_minor`
-  // column — but the commitment never populates it and never calls `CommissionEngine`, so no
-  // commercial decision snapshot exists for this route. A commission rule authored against
-  // WALLET_TO_BANK therefore resolves in the preview and would be ignored by the runtime.
-  commissionDisposition: 'NONE',
+  // PR #27: commission IS now evaluated on this route — but at SETTLEMENT, not at authorization.
+  // A commitment is authorized (RESERVED) long before the money provably leaves, so accruing at
+  // authorization would pay commission on transfers that are later released or rejected. The decision
+  // is therefore taken in `external-settlement.service.ts` immediately after the commitment becomes
+  // SETTLED, bound to that commitment as the canonical transaction reference. A RESERVED commitment
+  // has no commission decision, and a RELEASED one never gets one.
+  commissionDisposition: 'COMMISSION_ENGINE',
   commissionNote:
-    'No commission is evaluated or recorded on a wallet→bank transfer. The commitment binds fee and limit only; it never invokes the commission engine, so an authored commission rule for this product would be previewable but never applied or settled.',
+    'Commission is decided once, at settlement, for the agent who initiated the transfer. Pending and released transfers carry no commission decision, and a replayed settlement cannot record a second one. When no commission rule is configured the transfer records an explicit NONE decision rather than a zero.',
   executionEntryPoint: 'financial-commitment/financial-commitment.service.ts',
   executionBlockers: Object.freeze([] as string[]),
 });

@@ -235,14 +235,26 @@ describe('PR27 V1 commercial coverage — Wallet to Bank / Bank to Wallet', () =
   });
 
   describe('commission and statutory charges — the recorded gaps', () => {
-    it('declares that neither bank direction evaluates commission at runtime', () => {
-      expect(WALLET_TO_BANK.commissionDisposition).toBe('NONE');
+    it('evaluates outbound commission at settlement and states why inbound has none', () => {
+      // Outbound: evaluated, but ONLY when the transfer completes — never at authorization.
+      expect(WALLET_TO_BANK.commissionDisposition).toBe('COMMISSION_ENGINE');
       expect(BANK_TO_WALLET.commissionDisposition).toBe('NONE');
-      // The commitment service is where that would happen, and it does not.
+
+      // The commitment step (authorization) must stay commission-free: accruing there would pay
+      // commission on transfers that are later released or rejected.
       const commitment = read('src/financial-commitment/financial-commitment.service.ts');
       expect(commitment).not.toContain('CommissionEngine');
       expect(commitment).not.toContain('agentCommissionMinor');
-      // And the live snapshot path confirms what a wired route looks like.
+
+      // The settlement step is the one that decides, and it does so through the engine + snapshot.
+      const helper = read('src/banking/wallet-to-bank-commission.ts');
+      expect(helper).toContain('decideWithManager');
+      expect(helper).toContain('recordDecisionWithManager');
+      expect(helper).toContain('commissionAllocatedAtAccountingBoundary');
+      // The transaction reference is the commitment — the canonical record for this direction.
+      expect(helper).toContain('transactionReference: input.commitmentId');
+
+      // The pre-existing wired counterexample, unchanged, for contrast.
       expect(read('src/transfer/transfer.service.ts')).toContain('CommissionEngine');
     });
 

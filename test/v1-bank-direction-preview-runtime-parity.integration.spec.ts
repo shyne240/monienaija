@@ -770,7 +770,7 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
       expect(body.statutoryCharges.postsJournalLegs).toBe(false);
     });
 
-    it('states that commission is never evaluated on either bank route', async () => {
+    it('states WHEN commission is evaluated: at settlement outbound, never inbound', async () => {
       const operator = await provisionRole('SUPER_ADMIN');
       const customerId = await seedCustomerWithProfile();
       const profileCode = (seedCustomerWithProfile as unknown as { profileCode?: string })
@@ -791,7 +791,7 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         [WALLET_TO_BANK.productCode],
       );
 
-      const body = await preview(operator.token, {
+      const outbound = await preview(operator.token, {
         productCode: WALLET_TO_BANK.productCode,
         currency: CURRENCY,
         principalType: 'CUSTOMER',
@@ -799,11 +799,26 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         direction: 'OUTGOING',
         amountMinor: '150000',
       });
-      // The rule RESOLVES (it is genuinely authored) — and the preview says it will NOT be applied.
-      expect(body.commission.status).toBe('RESOLVED');
-      expect(body.commission.allocations.length).toBeGreaterThan(0);
-      expect(body.commission.note).toMatch(/NOT applied/i);
-      expect(body.explanation).toEqual(
+      // Outbound: the rule RESOLVES and the route DOES apply it — but only at settlement. The preview
+      // must carry no "never applied" blocker, and must state the event, so an operator knows a
+      // released transfer will not pay this allocation.
+      expect(outbound.commission.status).toBe('RESOLVED');
+      expect(outbound.commission.allocations.length).toBeGreaterThan(0);
+      expect(outbound.commission.note).toMatch(/settlement/i);
+      expect(
+        (outbound.explanation as Array<{ code: string }>).map((entry) => entry.code),
+      ).not.toContain('COMMISSION_NOT_APPLIED_BY_RUNTIME');
+
+      // Inbound: still genuinely unavailable, and the blocker must survive unchanged.
+      const inbound = await preview(operator.token, {
+        productCode: BANK_TO_WALLET.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'INCOMING',
+        amountMinor: '150000',
+      });
+      expect(inbound.explanation).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
@@ -812,13 +827,26 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         ]),
       );
 
-      // The runtime half of the claim: the commitment service has no commission step at all.
+      // The runtime half of the claim, read from the actual sources: the commitment step prices fee
+      // and limit only, and the commission decision lives in the settlement path. Both halves must
+      // hold, or the preview's "at settlement" statement would be a claim about nothing.
       const commitmentSource = readFileSync(
         join(__dirname, '..', 'src/financial-commitment/financial-commitment.service.ts'),
         'utf8',
       );
       expect(commitmentSource).not.toContain('CommissionEngine');
-      expect(commitmentSource).not.toContain('agentCommissionMinor');
+
+      const settlementSource = readFileSync(
+        join(__dirname, '..', 'src/partner/external-settlement.service.ts'),
+        'utf8',
+      );
+      expect(settlementSource).toContain('recordWalletToBankCommissionInTransaction');
+      const helperSource = readFileSync(
+        join(__dirname, '..', 'src/banking/wallet-to-bank-commission.ts'),
+        'utf8',
+      );
+      expect(helperSource).toContain('decideWithManager');
+      expect(helperSource).toContain('recordDecisionWithManager');
       expect(profileCode).toBeTruthy();
     });
 
