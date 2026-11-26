@@ -77,7 +77,7 @@ import { InstitutionModule } from '../institution/institution.module';
   // `NotificationOperationsService` is provided by NotificationModule (imported above) and
   // consumed here by NotificationOperationsController. It is deliberately NOT re-declared here:
   // a second provider would give the delivery-log aggregates two instances with independent
-  // caches. The CSV/statement providers below come from PR #32 and are new to this module.
+  // caches. The CSV/statement providers below are this branch's additions to the module.
   providers: [
     CustomerTransactionHistoryService,
     // CSV export shares the history list's read path; it only serialises and audits.
