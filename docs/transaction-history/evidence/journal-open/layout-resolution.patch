@@ -1,0 +1,120 @@
+--- a/apps/admin-web/src/screens/authenticated/Layout.tsx
++++ b/apps/admin-web/src/screens/authenticated/Layout.tsx
+@@ -16,7 +16,7 @@
+ import { BankingOperationsScreen } from './BankingOperationsScreen';
+ import { AgentNetworkScreen } from './AgentNetworkScreen';
+ import { AgentClassesScreen } from './AgentClassesScreen';
+-import { CashToCashOperationsScreen } from './CashToCashOperationsScreen';
++import { TransactionHistoryScreen } from './TransactionHistoryScreen';
+ import { SupportTicketsScreen } from './SupportTicketsScreen';
+ import { ComplianceScreen } from './ComplianceScreen';
+ import { KycProviderManagementScreen } from './KycProviderManagementScreen';
+@@ -49,6 +49,7 @@
+ type View = AdminView;
+ 
+ interface NavContext {
++  transactionKey?: string;
+   customerId?: string;
+   agentId?: string;
+   openAgentApplications?: boolean;
+@@ -74,7 +75,18 @@
+ 
+ export const Layout: React.FC = () => {
+   const { principal, logout } = useAuthStore();
+-  const [currentView, setCurrentView] = useState<View>('dashboard');
++  const [currentView, setCurrentView] = useState<View>(
++    window.location.hash.startsWith('#transaction-history/') ? 'transfers' : 'dashboard',
++  );
++  const transactionNavigation = useRef<(key: string) => void>(() => {});
++  useEffect(() => {
++    const open = () => {
++      if (window.location.hash.startsWith('#transaction-history/'))
++        transactionNavigation.current(window.location.hash);
++    };
++    window.addEventListener('hashchange', open);
++    return () => window.removeEventListener('hashchange', open);
++  }, []);
+   const [navContext, setNavContext] = useState<NavContext>({});
+   const [mobileOpen, setMobileOpen] = useState(false);
+   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+@@ -366,14 +378,7 @@
+       id: 'money',
+       title: 'Transactions',
+       items: [
+-        { key: 'transfers' as View, label: 'Transfers', visible: isVisible('transfers') },
+-        { key: 'cashIn' as View, label: 'Deposits', visible: isVisible('transfers') },
+-        { key: 'cashOut' as View, label: 'Withdrawals', visible: isVisible('transfers') },
+-        {
+-          key: 'cashToCashOps' as View,
+-          label: 'Cash to cash',
+-          visible: isVisible('cashToCashOps'),
+-        },
++        { key: 'transfers' as View, label: 'Transaction History', visible: isVisible('transfers') },
+       ],
+     },
+     {
+@@ -528,6 +533,8 @@
+     setNotificationGuard(false);
+     setNotificationBusy(false);
+     setNavigationQuery('');
++    if (!context?.transactionKey && window.location.hash.startsWith('#transaction-history/'))
++      window.location.hash = '';
+     setCurrentView(view);
+     // Customer context belongs only to the destination explicitly selected from Customer 360°.
+     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
+@@ -574,6 +581,7 @@
+     }
+     performNav(view, context);
+   };
++  transactionNavigation.current = (transactionKey) => handleNav('transfers', { transactionKey });
+   const requestLogout = () => {
+     if (
+       (customerGuard && canonicalAdminView(currentView) === 'customers') ||
+@@ -656,8 +664,6 @@
+         );
+       case 'agentClasses':
+         return <AgentClassesScreen onClassGuardChange={reportClassGuard} />;
+-      case 'cashToCashOps':
+-        return <CashToCashOperationsScreen />;
+       case 'support':
+         return (
+           <SupportTicketsScreen
+@@ -672,6 +678,12 @@
+           />
+         );
+       case 'transfers':
++        if (!navContext.customerId)
++          return (
++            <TransactionHistoryScreen
++              onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
++            />
++          );
+         return (
+           <TransactionObservabilityScreen
+             initialType="TRANSFER"
+@@ -685,24 +697,7 @@
+             }
+           />
+         );
+-      case 'cashIn':
+-        return (
+-          <TransactionObservabilityScreen
+-            initialType="DEPOSIT"
+-            initialCustomerId={navContext.customerId}
+-            initialTransactionId={navContext.transactionId}
+-            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+-          />
+-        );
+-      case 'cashOut':
+-        return (
+-          <TransactionObservabilityScreen
+-            initialType="WITHDRAWAL"
+-            initialCustomerId={navContext.customerId}
+-            initialTransactionId={navContext.transactionId}
+-            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+-          />
+-        );
++
+       case 'ledgerExplorer':
+         return (
+           <LedgerOperationsScreen

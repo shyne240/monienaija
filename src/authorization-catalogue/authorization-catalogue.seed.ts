@@ -462,17 +462,20 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     functionCode: 'transaction.view',
     domain: 'TRANSACTION',
     name: 'View transaction',
-    description: 'View an individual transaction record.',
+    description:
+      'View transaction records and bounded institution-scoped Transaction History pages.',
     sensitivity: READ,
     v1Status: BACKEND_ONLY,
     assignable: true,
-    notes: 'Blocked today by the internal:access reachability gap; not remediated in this task.',
+    notes:
+      'Transaction History list and detail explicitly reuse this existing read capability; workforce session and historical institution scope remain mandatory. No role grants added.',
   },
   {
     functionCode: 'transaction.search',
     domain: 'TRANSACTION',
     name: 'Search transactions',
-    description: 'Search/filter across transaction records.',
+    description:
+      'Reserved for future broader transaction discovery/export; not required by bounded institution-scoped Transaction History.',
     sensitivity: READ,
     v1Status: FUTURE,
     assignable: false,

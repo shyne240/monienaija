@@ -88,8 +88,24 @@ describe('AgentCashToCashOperationsController', () => {
     expect(result.data[0]).not.toHaveProperty('idempotencyKey');
     expect(result.data[0]).not.toHaveProperty('requestHash');
     expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[0]![1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001']);
-    expect(query.mock.calls[1]![1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001', 50, 50]);
+    expect(query.mock.calls[0]![1]).toEqual([
+      'CLAIMED',
+      agentId,
+      transferId,
+      'C2C-001',
+      principal.principalId,
+    ]);
+    expect(query.mock.calls[1]![1]).toEqual([
+      'CLAIMED',
+      agentId,
+      transferId,
+      'C2C-001',
+      principal.principalId,
+      50,
+      50,
+    ]);
+    expect(query.mock.calls[0]![0]).toContain("scope_a.status='ACTIVE'");
+    expect(query.mock.calls[1]![0]).toContain('workforce_institution_assignments');
     expect(query.mock.calls[1]![0]).not.toMatch(/transfer_code_hash|idempotency_key|request_hash/i);
   });
 

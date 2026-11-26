@@ -1,0 +1,13 @@
+8d0f601e226a4191d526258dcec63435733098d8
+100644 43fc567ffb3ef8db196434dd3b3b2d7667bd73c2 1	apps/admin-web/src/screens/authenticated/Layout.tsx
+100644 02186820c10f26d015e6e860fcbfef5b7ca9fd99 2	apps/admin-web/src/screens/authenticated/Layout.tsx
+100644 68793e0ac6160ca54e706ad3923fcb0a9091926f 3	apps/admin-web/src/screens/authenticated/Layout.tsx
+100644 83060f161472a7de4219153a37aa38d1cda4490d 1	apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+100644 bb9be5747fd43b7af536daf1551188e6fdeee832 2	apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+100644 80482e07976b83953231faaaac6a064191be8276 3	apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+
+Auto-merging apps/admin-web/src/screens/authenticated/Layout.tsx
+CONFLICT (content): Merge conflict in apps/admin-web/src/screens/authenticated/Layout.tsx
+Auto-merging apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+CONFLICT (content): Merge conflict in apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+Auto-merging src/authorization/route-policy-registry.ts

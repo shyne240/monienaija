@@ -1852,7 +1852,9 @@ export class RoutePolicyRegistry {
 
     if (
       lookedUpMethod === 'GET' &&
-      (path === '/api/v1/internal/admin/cash-to-cash/transfers' ||
+      (path === '/api/v1/internal/admin/transaction-history' ||
+        path.startsWith('/api/v1/internal/admin/transaction-history/') ||
+        path === '/api/v1/internal/admin/cash-to-cash/transfers' ||
         path === '/api/v1/internal/admin/cash-to-cash/expiry-status')
     ) {
       return {

@@ -16,7 +16,7 @@ import { ReconciliationObservabilityScreen } from './ReconciliationObservability
 import { BankingOperationsScreen } from './BankingOperationsScreen';
 import { AgentNetworkScreen } from './AgentNetworkScreen';
 import { AgentClassesScreen } from './AgentClassesScreen';
-import { CashToCashOperationsScreen } from './CashToCashOperationsScreen';
+import { TransactionHistoryScreen } from './TransactionHistoryScreen';
 import { SupportTicketsScreen } from './SupportTicketsScreen';
 import { ComplianceScreen } from './ComplianceScreen';
 import { KycProviderManagementScreen } from './KycProviderManagementScreen';
@@ -49,6 +49,7 @@ import './one-shell.css';
 type View = AdminView;
 
 interface NavContext {
+  transactionKey?: string;
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
@@ -83,7 +84,18 @@ function getFocusable(root: HTMLElement | null): HTMLElement[] {
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>(
+    window.location.hash.startsWith('#transaction-history/') ? 'transfers' : 'dashboard',
+  );
+  const transactionNavigation = useRef<(key: string) => void>(() => {});
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash.startsWith('#transaction-history/'))
+        transactionNavigation.current(window.location.hash);
+    };
+    window.addEventListener('hashchange', open);
+    return () => window.removeEventListener('hashchange', open);
+  }, []);
   /**
    * Principal selected in the Workforce Directory for a governed access change. It is a UI
    * hand-off only: the value identifies WHICH identity the operator inspected, and every grant or
@@ -381,14 +393,7 @@ export const Layout: React.FC = () => {
       id: 'money',
       title: 'Transactions',
       items: [
-        { key: 'transfers' as View, label: 'Transfers', visible: isVisible('transfers') },
-        { key: 'cashIn' as View, label: 'Deposits', visible: isVisible('transfers') },
-        { key: 'cashOut' as View, label: 'Withdrawals', visible: isVisible('transfers') },
-        {
-          key: 'cashToCashOps' as View,
-          label: 'Cash to cash',
-          visible: isVisible('cashToCashOps'),
-        },
+        { key: 'transfers' as View, label: 'Transaction History', visible: isVisible('transfers') },
       ],
     },
     {
@@ -543,6 +548,8 @@ export const Layout: React.FC = () => {
     setNotificationGuard(false);
     setNotificationBusy(false);
     setNavigationQuery('');
+    if (!context?.transactionKey && window.location.hash.startsWith('#transaction-history/'))
+      window.location.hash = '';
     // A directory hand-off prefill belongs to one visit only: leaving Role governance (or moving
     // to any other view) drops it, while the hand-off's own navigation INTO roleGovernance keeps it.
     if (canonicalAdminView(view) !== 'roleGovernance') setRoleTargetPrincipalId('');
@@ -592,6 +599,7 @@ export const Layout: React.FC = () => {
     }
     performNav(view, context);
   };
+  transactionNavigation.current = (transactionKey) => handleNav('transfers', { transactionKey });
   const requestLogout = () => {
     if (
       (customerGuard && canonicalAdminView(currentView) === 'customers') ||
@@ -674,8 +682,6 @@ export const Layout: React.FC = () => {
         );
       case 'agentClasses':
         return <AgentClassesScreen onClassGuardChange={reportClassGuard} />;
-      case 'cashToCashOps':
-        return <CashToCashOperationsScreen />;
       case 'support':
         return (
           <SupportTicketsScreen
@@ -705,6 +711,12 @@ export const Layout: React.FC = () => {
           />
         );
       case 'transfers':
+        if (!navContext.customerId)
+          return (
+            <TransactionHistoryScreen
+              onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+            />
+          );
         return (
           <TransactionObservabilityScreen
             initialType="TRANSFER"
@@ -718,24 +730,7 @@ export const Layout: React.FC = () => {
             }
           />
         );
-      case 'cashIn':
-        return (
-          <TransactionObservabilityScreen
-            initialType="DEPOSIT"
-            initialCustomerId={navContext.customerId}
-            initialTransactionId={navContext.transactionId}
-            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
-          />
-        );
-      case 'cashOut':
-        return (
-          <TransactionObservabilityScreen
-            initialType="WITHDRAWAL"
-            initialCustomerId={navContext.customerId}
-            initialTransactionId={navContext.transactionId}
-            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
-          />
-        );
+
       case 'ledgerExplorer':
         return (
           <LedgerOperationsScreen

@@ -125,6 +125,26 @@ jobs:
           NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
         run: npm run test:pg
 
+      - name: Prepare Transaction History browser acceptance
+        run: |
+          npm ci --prefix apps/admin-web
+          npx playwright install --with-deps chromium
+          echo "HISTORY_MATRIX_CHROMIUM_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())")" >> "$GITHUB_ENV"
+          ADMIN_WEB_DEV_PROXY_TARGET=http://127.0.0.1:3099 npm run dev --prefix apps/admin-web -- --host 0.0.0.0 > "$RUNNER_TEMP/history-vite.log" 2>&1 &
+      - name: Five-product real workforce browser acceptance
+        env:
+          PG_TEST_RUN_ID: historybrowser
+          HISTORY_MATRIX_BROWSER: 'yes'
+          HISTORY_MATRIX_OUT: data/validation/transaction-history-browser-matrix
+        run: npx jest --config jest.integration.config.js --runInBand test/transaction-history-browser-matrix.integration.spec.ts
+      - name: Attach exact-checkout browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transaction-history-browser-${{ github.sha }}
+          path: data/validation/transaction-history-browser-matrix/
+          if-no-files-found: warn
+
       # Jest annotations cover individual assertions, but not a suite that cannot start,
       # a child killed by a signal, or a failure in global teardown. Keep the gate mandatory.
       - name: Identify failed PostgreSQL batches
