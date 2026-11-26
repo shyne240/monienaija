@@ -75,6 +75,7 @@ const DashboardSettingsWorkspace: React.FC<{
   const [errorMessage, setErrorMessage] = useState('');
   const [templates, setTemplates] = useState<DashboardTemplateSummary[]>([]);
   const [assignments, setAssignments] = useState<RoleDashboardAssignmentSummary[]>([]);
+  const [eligibleRoleKeys, setEligibleRoleKeys] = useState<string[]>([]);
   const [registry, setRegistry] = useState<WidgetRegistryEntry[]>([]);
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
   const [templateSearch, setTemplateSearch] = useState('');
@@ -130,10 +131,11 @@ const DashboardSettingsWorkspace: React.FC<{
     setState('loading');
     setErrorMessage('');
     try {
-      const [templatesRes, assignmentsRes, registryRes] = await Promise.all([
+      const [templatesRes, assignmentsRes, registryRes, rolesRes] = await Promise.all([
         ApiClient.get<DashboardTemplateSummary[]>(`${DASH}/templates`),
         ApiClient.get<RoleDashboardAssignmentSummary[]>(`${DASH}/assignments`),
         ApiClient.get<WidgetRegistryEntry[]>(`${DASH}/widget-registry`),
+        canAssign ? ApiClient.get<Array<{ roleKey: string }>>(`${DASH}/roles`) : [],
       ]);
       if (
         !Array.isArray(templatesRes) ||
@@ -161,6 +163,10 @@ const DashboardSettingsWorkspace: React.FC<{
             typeof a.templateKey !== 'string' ||
             !a.templateKey.trim(),
         ) ||
+        !Array.isArray(rolesRes) ||
+        rolesRes.some(
+          (role) => !role || typeof role.roleKey !== 'string' || !role.roleKey.trim(),
+        ) ||
         !Array.isArray(registryRes) ||
         registryRes.some(
           (w) => !w || typeof w.widgetKey !== 'string' || typeof w.displayName !== 'string',
@@ -173,6 +179,7 @@ const DashboardSettingsWorkspace: React.FC<{
       if (request !== generation.current) return;
       setTemplates(templatesRes);
       setAssignments(assignmentsRes);
+      setEligibleRoleKeys(rolesRes.map((role) => role.roleKey));
       setRegistry(registryRes);
       setNeedsReview((prev) => {
         const next: Record<string, 'ack'> = {};
@@ -195,7 +202,7 @@ const DashboardSettingsWorkspace: React.FC<{
         setErrorMessage(err?.message || 'Failed to load dashboard configuration.');
       }
     }
-  }, []);
+  }, [canAssign]);
 
   useEffect(() => {
     if (canView) load();
@@ -205,6 +212,13 @@ const DashboardSettingsWorkspace: React.FC<{
   const widgetName = (widgetKey: string) =>
     registry.find((w) => w.widgetKey === widgetKey)?.displayName || widgetKey;
   const activeTemplates = templates.filter((t) => t.isActive);
+  const assignedRoleKeys = new Set(assignments.map((assignment) => assignment.roleKey));
+  const assignmentRows = [
+    ...assignments,
+    ...[...new Set(eligibleRoleKeys)]
+      .filter((roleKey) => !assignedRoleKeys.has(roleKey))
+      .map((roleKey) => ({ roleKey, templateKey: '' })),
+  ].sort((first, second) => first.roleKey.localeCompare(second.roleKey));
   const templateQuery = templateSearch.trim().toLowerCase();
   const visibleTemplates = templates.filter(
     (t) =>
@@ -225,7 +239,11 @@ const DashboardSettingsWorkspace: React.FC<{
       return;
     const current = assignments.find((a) => a.roleKey === roleKey);
     const templateKey = pendingTemplateByRole[roleKey];
-    if (!current || !templateKey || !activeTemplates.some((t) => t.templateKey === templateKey)) {
+    if (
+      (!current && !eligibleRoleKeys.includes(roleKey)) ||
+      !templateKey ||
+      !activeTemplates.some((t) => t.templateKey === templateKey)
+    ) {
       setFeedbackByRole((prev) => ({
         ...prev,
         [roleKey]: { kind: 'error', message: 'Choose a template first.' },
@@ -252,7 +270,9 @@ const DashboardSettingsWorkspace: React.FC<{
       if (request !== generation.current) return;
       if (
         !saved ||
-        saved.id !== current.id ||
+        typeof saved.id !== 'string' ||
+        !saved.id.trim() ||
+        (current && saved.id !== current.id) ||
         saved.roleKey !== roleKey ||
         saved.templateKey !== templateKey ||
         saved.assignedBy !== principal?.principalId ||
@@ -412,20 +432,22 @@ const DashboardSettingsWorkspace: React.FC<{
           <li>
             {principal?.readOnlyPrincipal ? (
               <>
-                <strong>Read-only principal.</strong> This session cannot submit configuration writes
-                at all, independently of the functions above.
+                <strong>Read-only principal.</strong> This session cannot submit configuration
+                writes at all, independently of the functions above.
               </>
             ) : (
-              <>This session is not flagged read-only, so an assignment write is permitted wherever{' '}
-                <code style={styles.code}>workforce.dashboard.assign</code> is held.</>
+              <>
+                This session is not flagged read-only, so an assignment write is permitted wherever{' '}
+                <code style={styles.code}>workforce.dashboard.assign</code> is held.
+              </>
             )}
           </li>
           <li>
             <strong>Not configurable here, by design:</strong> a template&rsquo;s widget list and a
-            widget&rsquo;s required functions live in the source-controlled registry
-            (<code style={styles.code}>dashboard-widget-registry.ts</code>), and assigning a
-            template never grants or revokes a function. Roles and function grants are governed by
-            Workforce access and Role governance, which use their own maker/checker rules.
+            widget&rsquo;s required functions live in the source-controlled registry (
+            <code style={styles.code}>dashboard-widget-registry.ts</code>), and assigning a template
+            never grants or revokes a function. Roles and function grants are governed by Workforce
+            access and Role governance, which use their own maker/checker rules.
           </li>
           <li>
             <strong>Governance of the write itself:</strong> a dashboard assignment is single-actor
@@ -435,9 +457,10 @@ const DashboardSettingsWorkspace: React.FC<{
             stay in those workspaces and are not reachable from here.
           </li>
           <li>
-            Your roles: {principal?.roles.length ? principal.roles.join(', ') : 'none on this session'}
-            . Your dashboard is resolved from the first role with an active assignment, so this
-            screen shows the assignments available to you rather than your own layout.
+            Your roles:{' '}
+            {principal?.roles.length ? principal.roles.join(', ') : 'none on this session'}. Your
+            dashboard is resolved from the first role with an active assignment, so this screen
+            shows the assignments available to you rather than your own layout.
           </li>
         </ul>
       </section>
@@ -501,9 +524,7 @@ const DashboardSettingsWorkspace: React.FC<{
                     </td>
                     <td>
                       <span
-                        style={
-                          visible ? styles.pillOk : styles.pillRestricted
-                        }
+                        style={visible ? styles.pillOk : styles.pillRestricted}
                         data-testid={`registry-visible-${entry.widgetKey}`}
                       >
                         {visible ? 'authorized' : 'restricted'}
@@ -511,7 +532,10 @@ const DashboardSettingsWorkspace: React.FC<{
                     </td>
                     <td>
                       {placed.length === 0 ? (
-                        <span style={styles.pillUnconfigured} data-testid={`registry-placed-${entry.widgetKey}`}>
+                        <span
+                          style={styles.pillUnconfigured}
+                          data-testid={`registry-placed-${entry.widgetKey}`}
+                        >
                           not placed
                         </span>
                       ) : (
@@ -630,10 +654,10 @@ const DashboardSettingsWorkspace: React.FC<{
         aria-label="Role dashboard assignments"
       >
         <p className="mn-dashboard-settings__eyebrow">ROLE CONFIGURATION</p>
-        <h2 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h2>
+        <h2 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignmentRows.length})</h2>
         {!canAssign && <p role="note">Assignment controls are unavailable for this session.</p>}
         {Object.keys(needsReview)
-          .filter((role) => !assignments.some((a) => a.roleKey === role))
+          .filter((role) => !assignmentRows.some((a) => a.roleKey === role))
           .map((role) => (
             <div role="alert" key={role}>
               The refreshed configuration does not contain {role}; its local draft cannot be
@@ -698,14 +722,14 @@ const DashboardSettingsWorkspace: React.FC<{
                 </tr>
               </thead>
               <tbody>
-                {assignments.map((a) => {
+                {assignmentRows.map((a) => {
                   const feedback = feedbackByRole[a.roleKey];
                   return (
                     <tr key={a.roleKey}>
                       <td style={styles.td}>
                         <strong>{a.roleKey}</strong>
                       </td>
-                      <td style={styles.td}>{a.templateKey}</td>
+                      <td style={styles.td}>{a.templateKey || 'No dashboard assigned'}</td>
                       {canAssign && (
                         <>
                           <td style={styles.td}>
@@ -725,11 +749,13 @@ const DashboardSettingsWorkspace: React.FC<{
                                 }))
                               }
                             >
-                              {!activeTemplates.some((t) => t.templateKey === a.templateKey) && (
-                                <option value={a.templateKey} disabled>
-                                  {a.templateKey} (not active)
-                                </option>
-                              )}
+                              {!a.templateKey && <option value="">Choose a dashboard</option>}
+                              {a.templateKey &&
+                                !activeTemplates.some((t) => t.templateKey === a.templateKey) && (
+                                  <option value={a.templateKey} disabled>
+                                    {a.templateKey} (not active)
+                                  </option>
+                                )}
                               {activeTemplates.map((t) => (
                                 <option key={t.templateKey} value={t.templateKey}>
                                   {t.templateKey}
@@ -770,8 +796,8 @@ const DashboardSettingsWorkspace: React.FC<{
                                 savingRole !== null ||
                                 confirmRole !== null ||
                                 !!needsReview[a.roleKey] ||
-                                (pendingTemplateByRole[a.roleKey] ?? a.templateKey) ===
-                                  a.templateKey
+                                !pendingTemplateByRole[a.roleKey] ||
+                                pendingTemplateByRole[a.roleKey] === a.templateKey
                               }
                               onClick={() => setConfirmRole(a.roleKey)}
                             >
@@ -833,7 +859,7 @@ const DashboardSettingsWorkspace: React.FC<{
           >
             <p>
               Change {confirmRole} from{' '}
-              {assignments.find((a) => a.roleKey === confirmRole)?.templateKey} to{' '}
+              {assignments.find((a) => a.roleKey === confirmRole)?.templateKey ?? 'no dashboard'} to{' '}
               {pendingTemplateByRole[confirmRole]}.
             </p>
             <p>Reason: {reasonByRole[confirmRole]?.trim() || 'Not provided'}</p>
