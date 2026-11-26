@@ -13,6 +13,7 @@ run link listed here.
 | Merge base                | `41edf587`                                                                                               |
 | **Combined revision**     | merge commit `df56a4b9dc0ba32c7e7ec2f034ab59de1827d8e5`, tree `d9eec218e89f9ed93b4b1520fa2a255c1977c334` |
 | Branch carrying the merge | `arena/f5629bfa-monienaija`                                                                              |
+| **Fixed combined head**   | `4222ed99b9bb156e96f5db4895e77bffadc131e6` — merge `df56a4b9` + the PR27-BROWSER-01 fix and its tests    |
 
 `aa8b1cf4` is the tip of `arena/5-main-web-integration` at the time of writing, so the combined tree
 above is the tree a reviewer would get by merging #27 today.
@@ -22,9 +23,32 @@ CI:
 - PR head `d953fcc1`: runs [45805907501](https://github.com/shyne240/monienaija/actions/runs/45805907501)
   and [45805919140](https://github.com/shyne240/monienaija/actions/runs/45805919140) — `success`.
 - **Combined revision `df56a4b9`:** run
-  [45880877624](https://github.com/shyne240/monienaija/actions/runs/45880877624) — 7 of 8 jobs
-  `success`; job `Backend (real PostgreSQL integration)` was still `in_progress` when this document
-  was written (see "What still blocks merge review").
+  [45880877624](https://github.com/shyne240/monienaija/actions/runs/45880877624) — **failure**. 7 of 8
+  jobs `success` (classify, backend lint/format/build/unit, admin web, both mobile apps, isolated
+  PostgreSQL suites, container images). `Backend (real PostgreSQL integration)` failed after 2 h 16 m
+  on **one** of 205 batch files:
+
+  ```
+  PostgreSQL: 1 failed, 0 missing of 205; 0 memory failures, 0 timeouts, 0 crashes.
+  Failed batch files: test/a16-agent-cash-to-cash-claim.integration.spec.ts
+
+  A16 Agent Cash→Cash CLAIM › concurrent initiation collisions reserve distinct immutable locator pairs
+  ConflictException: The journal could not be posted after concurrent retries
+    at LedgerService.transactionContentionExhaustedException (src/ledger/ledger.service.ts:1123)
+    at LedgerService.postJournalWithRecoveryAuthority (src/ledger/ledger.service.ts:401)
+    at GovernedFinancialFixture.fundLedgerAccount (test/support/governed-financial-fixture.ts:749)
+  ```
+
+  That suite passes locally on the same tree, twice, 95/95 including the exact test (run ids
+  `a16flaky` and `a16flaky2`), and it passed on the PR head. It exercises ledger contention against a
+  bounded retry budget, so a loaded runner can exhaust the retries without any product regression:
+  recorded as a **flaky concurrency test, not a PR #27 failure** — but it does mean the combined tree
+  has no green real-PostgreSQL run yet.
+
+- **Fixed head `4222ed99`:** run
+  [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) — started when the fix
+  was pushed; its result is the one to read, and it was still running when this document was
+  committed.
 
 ## What this review verified
 
@@ -151,9 +175,10 @@ field. Until then product registration stays an API-only flow.
 2. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
    resolved offline in merge `df56a4b9` (every gate in this document ran on that merge plus the fix),
    but the PR branch itself has not been merged forward, so GitHub cannot merge it as-is.
-3. **A completed `Backend (real PostgreSQL integration)` job on the fixed combined revision.**
-   Run [45880877624](https://github.com/shyne240/monienaija/actions/runs/45880877624) on `df56a4b9`
-   is recorded below; the fixed head carries its own run.
+3. **A green `Backend (real PostgreSQL integration)` job.** On `df56a4b9` the job failed on one flaky
+   contention test (`a16-agent-cash-to-cash-claim`, see above) that passes locally; the fixed head's
+   run [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) is the one to
+   read. Until it lands, no run on the combined code is green end to end.
 
 Out of scope by instruction: live bank enablement, mobile apps (`apps/customer-mobile`,
 `apps/agent-mobile` untouched), any live provider call, and any seeded production rate.
