@@ -6,25 +6,25 @@
       "extra": {
         "sections": 33
       },
-      "at": "2026-11-26T19:04:03.062Z"
+      "at": "2026-11-26T19:08:58.577Z"
     },
     {
       "step": "Synthetic Tier 1 customer registered through the supported staff workflow",
-      "detail": "The Admin Web registration wizard created the customer via POST /api/v1/customers (HTTP 201). Customer id 3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53, reference mn-cus-00bb1616871df06490e79a13. No SQL inserted this customer.",
+      "detail": "The Admin Web registration wizard created the customer via POST /api/v1/customers (HTTP 201). Customer id 7355f1bc-bbf8-48f2-bfff-c50f09bda675, reference mn-cus-6fe6e054c1201a7dabead8ed. No SQL inserted this customer.",
       "extra": {
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+        "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
         "status": 201
       },
-      "at": "2026-11-26T19:04:05.211Z"
+      "at": "2026-11-26T19:09:01.228Z"
     },
     {
       "step": "Primary phone verified through the real registration OTP flow",
       "detail": "\"Send phone OTP\" called POST /api/v1/customers/registration/otp; the server persisted a salted hash of the code (kyc_registration_otps) and delivered the message through the notification provider. The code was read from that delivery boundary as the handset would (JOURNEY_RECORD_SMS), not from the database.",
       "extra": {
-        "otp": "••••11"
+        "otp": "••••13"
       },
-      "at": "2026-11-26T19:04:10.380Z"
+      "at": "2026-11-26T19:09:06.415Z"
     },
     {
       "step": "Phone OTP verified",
@@ -32,42 +32,42 @@
       "extra": {
         "status": 200
       },
-      "at": "2026-11-26T19:04:13.504Z"
+      "at": "2026-11-26T19:09:09.517Z"
     },
     {
       "step": "BVN identity document recorded by the operator through the Admin Web",
-      "detail": "The wizard saved the document via POST /api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document (HTTP 201). This is the identifier the provider will corroborate; it creates no consent row, no verification attempt and no verified claim, so it is not identity evidence.",
+      "detail": "The wizard saved the document via POST /api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/identity-document (HTTP 201). This is the identifier the provider will corroborate; it creates no consent row, no verification attempt and no verified claim, so it is not identity evidence.",
       "extra": {
         "status": 201,
         "response": {
-          "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
-          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "id": "8bf41786-40f5-419e-beac-d6f859ec50fe",
+          "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "type": "BVN",
-          "maskedDocumentNumber": "••••••7661",
+          "maskedDocumentNumber": "••••••7662",
           "issuingCountry": "NG",
           "issuedAt": null,
           "expiresAt": null,
-          "createdAt": "2026-11-26T19:04:16.859Z",
-          "updatedAt": "2026-11-26T19:04:16.859Z"
+          "createdAt": "2026-11-26T19:09:12.830Z",
+          "updatedAt": "2026-11-26T19:09:12.830Z"
         }
       },
-      "at": "2026-11-26T19:04:19.417Z"
+      "at": "2026-11-26T19:09:15.383Z"
     },
     {
       "step": "Registration workflow completed, customer left as an unverified DRAFT",
       "detail": "Profile, contact and residential address were each saved through the wizard. The customer is a DRAFT with a verified primary phone and no KYC assessment, so the registration review must still refuse activation until identity is verified.",
-      "at": "2026-11-26T19:04:55.046Z"
+      "at": "2026-11-26T19:09:51.016Z"
     },
     {
       "step": "Tier 1 default customer class assigned by registration",
-      "detail": "registration-review reports defaults.customerClass = {\"configured\":true,\"classCode\":\"STANDARD\",\"className\":\"Standard\",\"source\":\"REGISTRATION_DEFAULT\",\"effectiveFrom\":\"2026-11-26T19:04:05.047Z\"} and trustedEvidence.state = MISSING. The class comes from the approved LEVEL_1 tier-default mapping, not a per-customer override.",
+      "detail": "registration-review reports defaults.customerClass = {\"configured\":true,\"classCode\":\"STANDARD\",\"className\":\"Standard\",\"source\":\"REGISTRATION_DEFAULT\",\"effectiveFrom\":\"2026-11-26T19:09:01.073Z\"} and trustedEvidence.state = MISSING. The class comes from the approved LEVEL_1 tier-default mapping, not a per-customer override.",
       "extra": {
         "customerClass": {
           "configured": true,
           "classCode": "STANDARD",
           "className": "Standard",
           "source": "REGISTRATION_DEFAULT",
-          "effectiveFrom": "2026-11-26T19:04:05.047Z"
+          "effectiveFrom": "2026-11-26T19:09:01.073Z"
         },
         "trustedEvidence": {
           "state": "MISSING",
@@ -76,16 +76,16 @@
         },
         "activatable": false
       },
-      "at": "2026-11-26T19:04:55.121Z"
+      "at": "2026-11-26T19:09:51.085Z"
     },
     {
       "step": "Compliance operator signed in for the identity decision",
       "detail": "Signed in as compliance@monienaija.local through the same login form. Separation of duties is preserved: KYC identity verification requires the COMPLIANCE role, and the operator who registered the customer is not the operator who verifies identity.",
-      "at": "2026-11-26T19:04:56.804Z"
+      "at": "2026-11-26T19:09:52.670Z"
     },
     {
       "step": "Customer consent notice served to the operator, and approval correctly refused",
-      "detail": "GET /api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53 returned consentNotice version v1.0-ng (\"I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result …\"). supportedDecisions.approvalEligibleNow = false: KYC approval cannot be recorded before the provider verifies identity.",
+      "detail": "GET /api/v1/internal/kyc/review-workspace/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675 returned consentNotice version v1.0-ng (\"I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result …\"). supportedDecisions.approvalEligibleNow = false: KYC approval cannot be recorded before the provider verifies identity.",
       "extra": {
         "consentNotice": {
           "version": "v1.0-ng",
@@ -108,75 +108,102 @@
           "canViewCustomer360": true
         }
       },
-      "at": "2026-11-26T19:04:56.894Z"
+      "at": "2026-11-26T19:09:52.739Z"
     },
     {
       "step": "Customer consent captured and identity verified through the governed request",
-      "detail": "POST verify-identity answered HTTP 200 with status MATCH from provider PREMBLY (route v1). The request carried customerConsentConfirmed=true and noticeVersion v1.0-ng. The server created consent d632dee2-88d8-4977-9ccb-16c02f349fd2 and verification attempt 81663935-53bb-4cb4-ae66-af7e88221425; the consent row is the link between the customer's attestation and this provider attempt. Nothing was seeded: evidenceStatus.consents was [] before this call.",
+      "detail": "POST verify-identity answered HTTP 200 with status MATCH from provider PREMBLY (route v1). The request carried customerConsentConfirmed=true and noticeVersion v1.0-ng. The server created consent b0ca6c13-afed-427c-877b-12d344b11804 and verification attempt c7b6fbd2-e5dd-4198-9682-5356e37bb29d; the consent row is the link between the customer's attestation and this provider attempt. Nothing was seeded: evidenceStatus.consents was [] before this call.",
       "extra": {
-        "consentId": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
-        "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+        "consentId": "b0ca6c13-afed-427c-877b-12d344b11804",
+        "attemptId": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
         "kind": "BVN",
         "status": "MATCH",
         "provider": "PREMBLY",
         "routeVersion": 1
       },
-      "at": "2026-11-26T19:04:56.935Z"
+      "at": "2026-11-26T19:09:52.778Z"
     },
     {
       "step": "Consent is linked to the verification attempt and the verified claim",
-      "detail": "The dossier now reports consents=1, verificationAttempts=1, identityClaims=1, readerStatus=READY. The consent id carried by the attempt equals d632dee2-88d8-4977-9ccb-16c02f349fd2, which is the consent returned by the verification call.",
+      "detail": "The dossier now reports consents=1, verificationAttempts=1, identityClaims=1, readerStatus=READY. The consent id carried by the attempt equals b0ca6c13-afed-427c-877b-12d344b11804, which is the consent returned by the verification call.",
       "extra": {
         "consents": [
           {
-            "id": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+            "id": "b0ca6c13-afed-427c-877b-12d344b11804",
             "kind": "BVN",
             "noticeVersion": "v1.0-ng",
             "provider": "PREMBLY",
-            "grantedAt": "2026-11-26T19:04:56.914Z",
-            "expiresAt": "2026-11-27T19:04:56.913Z",
+            "grantedAt": "2026-11-26T19:09:52.757Z",
+            "expiresAt": "2026-11-27T19:09:52.757Z",
             "withdrawnAt": null
           }
         ],
         "attempts": [
           {
-            "id": "81663935-53bb-4cb4-ae66-af7e88221425",
+            "id": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
             "kind": "BVN",
             "provider": "PREMBLY",
             "policyVersion": "v1",
             "outcome": "MATCH",
-            "createdAt": "2026-11-26T19:04:56.925Z",
-            "completedAt": "2026-11-26T19:04:56.929Z",
-            "expiresAt": "2026-11-27T19:04:56.929Z"
+            "createdAt": "2026-11-26T19:09:52.768Z",
+            "completedAt": "2026-11-26T19:09:52.773Z",
+            "expiresAt": "2026-11-27T19:09:52.773Z"
           }
         ],
         "claims": [
           {
-            "id": "d7ecac44-cbf8-4e0c-b4b9-a661435295a8",
+            "id": "639151b0-8093-4faa-ac0e-173d9850f8d9",
             "kind": "BVN",
-            "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+            "attemptId": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
             "status": "VERIFIED",
-            "createdAt": "2026-11-26T19:04:56.925Z"
+            "createdAt": "2026-11-26T19:09:52.769Z"
           }
         ],
         "readerStatus": "READY",
         "approvalEligibleNow": true
       },
-      "at": "2026-11-26T19:04:56.987Z"
+      "at": "2026-11-26T19:09:52.821Z"
     },
     {
       "step": "Tier 1 KYC approved, tier-default class re-assigned",
-      "detail": "POST /api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/kyc-assessment returned HTTP 201. Approval performs a TIER_DEFAULT class re-assignment; that write is the path PR #41 corrected, and it no longer raises. Response: {\"id\":\"0e5c0c1e-049c-443e-8a97-789458972248\",\"customerId\":\"3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53\",\"level\":\"LEVEL_1\",\"status\":\"APPROVED\"}",
+      "detail": "POST /api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/kyc-assessment returned HTTP 201. Approval performs a TIER_DEFAULT class re-assignment; that write is the path PR #41 corrected, and it no longer raises. Response: {\"id\":\"db6a1ad3-bc4f-4d4f-afac-17495da73795\",\"customerId\":\"7355f1bc-bbf8-48f2-bfff-c50f09bda675\",\"level\":\"LEVEL_1\",\"status\":\"APPROVED\"}",
       "extra": {
         "status": 201,
         "assessment": {
-          "id": "0e5c0c1e-049c-443e-8a97-789458972248",
-          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "id": "db6a1ad3-bc4f-4d4f-afac-17495da73795",
+          "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "level": "LEVEL_1",
           "status": "APPROVED"
         }
       },
-      "at": "2026-11-26T19:04:57.031Z"
+      "at": "2026-11-26T19:09:52.861Z"
+    },
+    {
+      "step": "Tier 1 verified state, ready to claim, with no wallet or credential",
+      "detail": "After approval the registration review reports verifiedTier=LEVEL_1, customerClass=STANDARD, trustedEvidence.state=VERIFIED, activatable=true, wallet=null, outstanding=[\"account_active\",\"wallet\"]. The record is fully verified and still unclaimed: no wallet exists and no customer credential has been issued.",
+      "extra": {
+        "verifiedTier": "LEVEL_1",
+        "customerClass": {
+          "configured": true,
+          "classCode": "STANDARD",
+          "className": "Standard",
+          "source": "TIER_DEFAULT",
+          "effectiveFrom": "2026-11-26T19:09:52.847Z"
+        },
+        "trustedEvidence": {
+          "state": "VERIFIED",
+          "verifiedKinds": [
+            "BVN"
+          ]
+        },
+        "activatable": true,
+        "wallet": null,
+        "outstanding": [
+          "account_active",
+          "wallet"
+        ]
+      },
+      "at": "2026-11-26T19:09:55.479Z"
     }
   ],
   "apiCalls": [
@@ -189,14 +216,14 @@
         "password": "MonieNaijaAdmin123!"
       },
       "response": {
-        "accessToken": "Q4opBeFTX2hJxEtAY0blSLMp8o9K8Mo3-5d3erBh0wY",
+        "accessToken": "gVx7XTLjYjWYrjGu7gaFmTvSOdJ_h4mLandQ-iooWLE",
         "tokenType": "Bearer",
-        "sessionId": "25a224c1-e518-40a4-b959-e40b49e322c6",
-        "expiresAt": "2026-11-26T19:19:02.970Z",
+        "sessionId": "0452c2ec-1d9a-4346-a3b7-d0d56fc452fd",
+        "expiresAt": "2026-11-26T19:23:58.476Z",
         "principal": {
           "type": "PRIVILEGED",
           "principalId": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-          "sessionId": "25a224c1-e518-40a4-b959-e40b49e322c6",
+          "sessionId": "0452c2ec-1d9a-4346-a3b7-d0d56fc452fd",
           "audience": "workforce-admin",
           "roles": [
             "SUPER_ADMIN"
@@ -506,15 +533,15 @@
       "response": {
         "data": [
           {
-            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
-            "reference": "t1-tiertwo-b9661f05",
+            "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+            "reference": "t1-tiertwo-c1cc0afa",
             "type": "INDIVIDUAL",
             "status": "ACTIVE",
             "kycLevel": "LEVEL_2",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.236Z",
-            "displayName": "Synthetic tiertwo 1f05",
-            "legalName": "Synthetic tiertwo 1f05",
+            "createdAt": "2026-11-26T19:08:45.560Z",
+            "displayName": "Synthetic tiertwo 0afa",
+            "legalName": "Synthetic tiertwo 0afa",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0004",
@@ -532,113 +559,13 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
-      "status": 200,
-      "request": null,
-      "response": {
-        "byStatus": [
-          {
-            "status": "APPROVED",
-            "count": 3
-          }
-        ]
-      }
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
-      "status": 200,
-      "request": null,
-      "response": {
-        "period": "7d",
-        "from": "2026-11-19T19:04:03.121Z",
-        "to": "2026-11-26T19:04:03.121Z",
-        "currency": "NGN",
-        "totalCompletedCount": 0,
-        "totalCompletedValueMinor": "0",
-        "totalFailedCount": 0,
-        "totalPendingCount": 0,
-        "successRatePercent": null,
-        "totalFeeRevenueMinor": "0",
-        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
-        "byType": [
-          {
-            "type": "W2W",
-            "completedCount": 0,
-            "completedValueMinor": "0",
-            "failedCount": 0,
-            "pendingCount": 0,
-            "feeRevenueMinor": "0"
-          },
-          {
-            "type": "C2W",
-            "completedCount": 0,
-            "completedValueMinor": "0",
-            "failedCount": 0,
-            "pendingCount": 0,
-            "feeRevenueMinor": null
-          },
-          {
-            "type": "W2C",
-            "completedCount": 0,
-            "completedValueMinor": "0",
-            "failedCount": 0,
-            "pendingCount": 0,
-            "feeRevenueMinor": null
-          },
-          {
-            "type": "C2C",
-            "completedCount": 0,
-            "completedValueMinor": "0",
-            "failedCount": 0,
-            "pendingCount": 0,
-            "feeRevenueMinor": "0"
-          }
-        ],
-        "commission": null,
-        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
-      }
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
-      "status": 200,
-      "request": null,
-      "response": {
-        "period": "7d",
-        "from": "2026-11-19T19:04:03.127Z",
-        "to": "2026-11-26T19:04:03.127Z",
-        "window": {
-          "hours": 168,
-          "from": "2026-11-19T19:04:03.127Z",
-          "to": "2026-11-26T19:04:03.127Z",
-          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
-          "label": "7d window, 2026-11-19T19:04 to 2026-11-26T19:04 UTC"
-        },
-        "availability": "MEASURED",
-        "configuration": "CONFIGURED",
-        "totals": {
-          "deliveries": 0,
-          "exceptions": 0
-        },
-        "policy": {
-          "manualRetrySupported": false,
-          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
-        },
-        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
-        "checkedAt": "2026-11-26T19:04:03.127Z",
-        "source": "NotificationOperationsService.summary() over notification_deliveries"
-      }
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
       "status": 200,
       "request": null,
       "response": {
         "period": "30d",
-        "from": "2026-10-27T19:04:03.165Z",
-        "to": "2026-11-26T19:04:03.165Z",
+        "from": "2026-10-27T19:08:58.654Z",
+        "to": "2026-11-26T19:08:58.654Z",
         "currency": "NGN",
         "definition": "Completed-transaction count and value, summed across all four V1 transaction types (W2W/C2W/W2C/C2C), grouped by calendar day (UTC). Days with no completed transactions appear as zero rather than being omitted.",
         "daily": [
@@ -802,6 +729,106 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:08:58.644Z",
+        "to": "2026-11-26T19:08:58.644Z",
+        "currency": "NGN",
+        "totalCompletedCount": 0,
+        "totalCompletedValueMinor": "0",
+        "totalFailedCount": 0,
+        "totalPendingCount": 0,
+        "successRatePercent": null,
+        "totalFeeRevenueMinor": "0",
+        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
+        "byType": [
+          {
+            "type": "W2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          },
+          {
+            "type": "C2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "W2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "C2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          }
+        ],
+        "commission": null,
+        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:08:58.651Z",
+        "to": "2026-11-26T19:08:58.651Z",
+        "window": {
+          "hours": 168,
+          "from": "2026-11-19T19:08:58.651Z",
+          "to": "2026-11-26T19:08:58.651Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "7d window, 2026-11-19T19:08 to 2026-11-26T19:08 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
+        "totals": {
+          "deliveries": 0,
+          "exceptions": 0
+        },
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
+        },
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-26T19:08:58.651Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/support/tickets",
       "status": 200,
       "request": null,
@@ -827,12 +854,19 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
       "status": 200,
       "request": null,
       "response": [
         {
-          "id": "dc02bfa7-c6bf-4683-887a-d96e43569351",
+          "id": "f63f668c-7743-41b3-8e91-1dc9318f9b90",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -846,7 +880,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.230Z",
+            "evaluatedAt": "2026-11-26T19:08:58.736Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -855,10 +889,10 @@
               "ledger.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.231Z"
+          "occurredAt": "2026-11-26T19:08:58.739Z"
         },
         {
-          "id": "688e7b64-663f-4ef4-a537-6e8597949512",
+          "id": "48310c70-91f8-4c62-85ce-92a919b6759e",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -872,7 +906,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.230Z",
+            "evaluatedAt": "2026-11-26T19:08:58.735Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -881,10 +915,36 @@
               "audit.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.231Z"
+          "occurredAt": "2026-11-26T19:08:58.738Z"
         },
         {
-          "id": "1602420c-9f7f-4762-bf41-190e746949b1",
+          "id": "3540fe2a-c3b4-4db7-b806-010d14a14d1c",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:08:58.720Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:08:58.729Z"
+        },
+        {
+          "id": "25857f00-23f3-468b-97cd-557ee19b4010",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -898,7 +958,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.174Z",
+            "evaluatedAt": "2026-11-26T19:08:58.683Z",
             "resourceType": "internal-support",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -907,36 +967,10 @@
               "customer.manage_support_case"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.176Z"
+          "occurredAt": "2026-11-26T19:08:58.693Z"
         },
         {
-          "id": "45301a30-7d9e-46cc-a2cc-c85dc9aa4c19",
-          "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "00000000-0000-4000-8000-000000000000",
-          "action": "ALLOWED",
-          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-          "correlationId": null,
-          "requestId": null,
-          "previousValues": null,
-          "newValues": {
-            "action": "reporting.transaction_summary.view",
-            "reason": null,
-            "allowed": true,
-            "customerId": null,
-            "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.133Z",
-            "resourceType": "dashboard-widget",
-            "principalType": "PRIVILEGED",
-            "requiredRoles": [],
-            "requiredScopes": [],
-            "requiredFunctions": [
-              "reporting.transaction_summary.view"
-            ]
-          },
-          "occurredAt": "2026-11-26T19:04:03.134Z"
-        },
-        {
-          "id": "81eb1f10-5709-4808-b88b-490f6f9ac22b",
+          "id": "12ab20e7-e9eb-495c-8f88-9ac3dab98d9f",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -950,7 +984,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.129Z",
+            "evaluatedAt": "2026-11-26T19:08:58.654Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -959,10 +993,10 @@
               "kyc.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.132Z"
+          "occurredAt": "2026-11-26T19:08:58.658Z"
         },
         {
-          "id": "8bb4e12f-5ba6-40bc-b67c-8815d3f42aeb",
+          "id": "a8e697d8-fe46-4f0c-81a5-d510ed9dcde2",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -976,7 +1010,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.109Z",
+            "evaluatedAt": "2026-11-26T19:08:58.647Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -985,36 +1019,10 @@
               "reconciliation.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.113Z"
+          "occurredAt": "2026-11-26T19:08:58.650Z"
         },
         {
-          "id": "8fa22747-4aff-4d90-a525-12b76a0d498a",
-          "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "00000000-0000-4000-8000-000000000000",
-          "action": "ALLOWED",
-          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-          "correlationId": null,
-          "requestId": null,
-          "previousValues": null,
-          "newValues": {
-            "action": "notification.view_deliveries",
-            "reason": null,
-            "allowed": true,
-            "customerId": null,
-            "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.109Z",
-            "resourceType": "dashboard-widget",
-            "principalType": "PRIVILEGED",
-            "requiredRoles": [],
-            "requiredScopes": [],
-            "requiredFunctions": [
-              "notification.view_deliveries"
-            ]
-          },
-          "occurredAt": "2026-11-26T19:04:03.112Z"
-        },
-        {
-          "id": "844861f1-69ee-4bf8-8743-4120948f82c5",
+          "id": "4ef520a5-eb50-43d4-b0c9-9dedab373b95",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1028,7 +1036,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.103Z",
+            "evaluatedAt": "2026-11-26T19:08:58.638Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -1037,10 +1045,62 @@
               "reporting.transaction_summary.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.108Z"
+          "occurredAt": "2026-11-26T19:08:58.642Z"
         },
         {
-          "id": "9547d73c-a365-4933-a4c2-8b0473957db4",
+          "id": "93a53a46-9d0d-4cd2-881a-f001f74ef586",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "notification.view_deliveries",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:08:58.623Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:08:58.639Z"
+        },
+        {
+          "id": "1e1aede8-c0a8-430c-9486-42b59770a430",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:08:58.618Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:08:58.621Z"
+        },
+        {
+          "id": "46ea757c-5583-4312-a110-0462117b943f",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1054,7 +1114,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:03.058Z",
+            "evaluatedAt": "2026-11-26T19:08:58.585Z",
             "resourceType": "internal-customers",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -1063,12 +1123,12 @@
               "customer.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:03.066Z"
+          "occurredAt": "2026-11-26T19:08:58.585Z"
         },
         {
-          "id": "500dae13-feee-42fa-a524-f50dcb604138",
+          "id": "b5844ede-2fbf-4f54-a5c6-059b243686c2",
           "entityType": "A2_WORKFORCE_SESSION",
-          "entityId": "25a224c1-e518-40a4-b959-e40b49e322c6",
+          "entityId": "0452c2ec-1d9a-4346-a3b7-d0d56fc452fd",
           "action": "WORKFORCE_SESSION_ESTABLISHED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
@@ -1163,13 +1223,13 @@
             ],
             "subject": "local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
             "audience": "workforce-admin",
-            "expiresAt": "2026-11-26T19:19:02.970Z",
+            "expiresAt": "2026-11-26T19:23:58.476Z",
             "assuranceLevel": "MFA"
           },
-          "occurredAt": "2026-11-26T19:04:02.976Z"
+          "occurredAt": "2026-11-26T19:08:58.482Z"
         },
         {
-          "id": "e6cec6d1-cd3e-429a-8407-3e6de89e39ea",
+          "id": "804d549c-d211-4f69-b8db-a3eabd4cad51",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1183,7 +1243,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:01.257Z",
+            "evaluatedAt": "2026-11-26T19:08:56.743Z",
             "resourceType": "KYC_PROVIDER_CONFIGURATION",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -1192,10 +1252,10 @@
               "kyc.provider.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:01.257Z"
+          "occurredAt": "2026-11-26T19:08:56.743Z"
         },
         {
-          "id": "c2df33d4-2893-479d-ad59-63f4844149b9",
+          "id": "f8a284ca-1941-4267-92ec-769b41ffb4de",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1209,7 +1269,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:01.230Z",
+            "evaluatedAt": "2026-11-26T19:08:56.709Z",
             "resourceType": "KYC_PROVIDER_CONFIGURATION",
             "principalType": "OPERATOR",
             "requiredRoles": [
@@ -1220,10 +1280,10 @@
               "kyc.provider.approve"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:01.231Z"
+          "occurredAt": "2026-11-26T19:08:56.710Z"
         },
         {
-          "id": "f3921664-f4c7-4cce-b6b8-86006287b2cd",
+          "id": "be8ef436-f62a-412c-b692-0154c40ab555",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1237,7 +1297,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:01.216Z",
+            "evaluatedAt": "2026-11-26T19:08:56.691Z",
             "resourceType": "KYC_PROVIDER_CONFIGURATION",
             "principalType": "PRIVILEGED",
             "requiredRoles": [
@@ -1248,10 +1308,10 @@
               "kyc.provider.propose"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:01.217Z"
+          "occurredAt": "2026-11-26T19:08:56.692Z"
         },
         {
-          "id": "50469fb8-0205-48d1-bc79-725a5ca1234a",
+          "id": "d98cc40e-af2d-4713-b804-778f66967d72",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -1265,7 +1325,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:01.203Z",
+            "evaluatedAt": "2026-11-26T19:08:56.675Z",
             "resourceType": "KYC_PROVIDER_CONFIGURATION",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -1274,12 +1334,12 @@
               "kyc.provider.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:01.204Z"
+          "occurredAt": "2026-11-26T19:08:56.676Z"
         },
         {
-          "id": "7e3bb8fb-6af4-4aef-b814-05a303dbae05",
+          "id": "5f1e70ed-aacc-4344-b3d2-c3e08399b35e",
           "entityType": "A2_WORKFORCE_SESSION",
-          "entityId": "127caf34-237f-4f22-8b11-cf2468c4dc9f",
+          "entityId": "4e0314a6-43b0-492a-b3b7-a272aeb476af",
           "action": "WORKFORCE_SESSION_ESTABLISHED",
           "actor": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
           "correlationId": null,
@@ -1313,15 +1373,15 @@
             ],
             "subject": "local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
             "audience": "workforce-admin",
-            "expiresAt": "2026-11-26T19:19:01.185Z",
+            "expiresAt": "2026-11-26T19:23:56.654Z",
             "assuranceLevel": "MFA"
           },
-          "occurredAt": "2026-11-26T19:04:01.190Z"
+          "occurredAt": "2026-11-26T19:08:56.660Z"
         },
         {
-          "id": "85f9a298-7bc2-4d6a-a069-624901f3af41",
+          "id": "1eba97ea-8729-4dd3-b92b-4ec9dff9a63c",
           "entityType": "A2_WORKFORCE_SESSION",
-          "entityId": "fbc2ff31-9314-4afc-bb65-3a4e5f5bc828",
+          "entityId": "d538ec8a-173f-4185-b2cf-f485a90b79ae",
           "action": "WORKFORCE_SESSION_ESTABLISHED",
           "actor": "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
           "correlationId": null,
@@ -1416,15 +1476,15 @@
             ],
             "subject": "local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
             "audience": "workforce-admin",
-            "expiresAt": "2026-11-26T19:19:01.161Z",
+            "expiresAt": "2026-11-26T19:23:56.623Z",
             "assuranceLevel": "MFA"
           },
-          "occurredAt": "2026-11-26T19:04:01.169Z"
+          "occurredAt": "2026-11-26T19:08:56.634Z"
         },
         {
-          "id": "d36bb0ed-0dbf-4e89-ba98-598faed8e100",
+          "id": "57579aeb-54b3-4a92-a508-bb2c88fbd5fb",
           "entityType": "A2_FINANCE_ROLE_ASSIGNMENT",
-          "entityId": "eb693750-57b9-406e-b9b1-01f6f850ad67",
+          "entityId": "6b208df5-2799-4260-acbf-6daad3a45bf5",
           "action": "LOCAL_ADMIN_SUPER_ADMIN_GRANTED",
           "actor": "local-dev-seed-admin-script",
           "correlationId": null,
@@ -1435,17 +1495,17 @@
               "privileged:execute"
             ],
             "roleKey": "SUPER_ADMIN",
-            "effectiveTo": "2126-11-02T19:03:54.610Z",
+            "effectiveTo": "2126-11-02T19:08:49.689Z",
             "principalId": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-            "effectiveFrom": "2026-11-26T19:03:54.610Z",
+            "effectiveFrom": "2026-11-26T19:08:49.689Z",
             "assignmentReference": "a2-fin-role-ddbc38bffeca3ef32db44200e3da422f"
           },
-          "occurredAt": "2026-11-26T19:03:54.614Z"
+          "occurredAt": "2026-11-26T19:08:49.693Z"
         },
         {
-          "id": "8c9d9f62-cd40-4ead-b80b-05f0604c344c",
+          "id": "b416bead-46cb-4556-a30e-04ab3d5844b7",
           "entityType": "LOCAL_ADMIN_CREDENTIAL",
-          "entityId": "29ee6eed-a1e0-4104-9e16-891b9ba13492",
+          "entityId": "5c08dcda-1e19-459b-9524-5a192ed1bd8b",
           "action": "LOCAL_ADMIN_CREDENTIAL_SEEDED",
           "actor": "local-dev-seed-admin-script",
           "correlationId": null,
@@ -1454,12 +1514,12 @@
           "newValues": {
             "email": "admin@monienaija.local"
           },
-          "occurredAt": "2026-11-26T19:03:54.607Z"
+          "occurredAt": "2026-11-26T19:08:49.686Z"
         },
         {
-          "id": "7394a068-4c11-40bb-af01-51b0834caa9d",
+          "id": "7ea55281-412c-48af-a2ba-246e8146e9cd",
           "entityType": "A2_FINANCE_ROLE_ASSIGNMENT",
-          "entityId": "d6985986-7c8a-4bed-9849-e2e2e2c467e1",
+          "entityId": "24255dce-2a3e-43eb-8265-82dc9a631852",
           "action": "LOCAL_DEV_ROLE_ASSIGNED",
           "actor": "local-dev-seed-11-roles",
           "correlationId": null,
@@ -1470,21 +1530,7 @@
             "principalId": "https://idp.example.com:local-admin-credential:45e965e8f17dfaae1d8866c38ecdcd9c",
             "assignmentReference": "a2-fin-role-1dd581ab63cfb12e527c13bb9494b5f8"
           },
-          "occurredAt": "2026-11-26T19:03:52.919Z"
-        },
-        {
-          "id": "d67947a2-b155-4fe5-bbf0-1e84e7b5ca6c",
-          "entityType": "LOCAL_ADMIN_CREDENTIAL",
-          "entityId": "186a1a86-68d7-4f40-bc83-e217f9d2f647",
-          "action": "LOCAL_ADMIN_CREDENTIAL_SEEDED",
-          "actor": "local-dev-seed-11-roles",
-          "correlationId": null,
-          "requestId": null,
-          "previousValues": null,
-          "newValues": {
-            "email": "treasury@monienaija.local"
-          },
-          "occurredAt": "2026-11-26T19:03:52.915Z"
+          "occurredAt": "2026-11-26T19:08:48.040Z"
         }
       ]
     },
@@ -1497,20 +1543,13 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
-      "status": 200,
-      "request": null,
-      "response": []
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
       "status": 200,
       "request": null,
       "response": {
         "report": {
           "status": "PASS",
-          "generatedAt": "2026-11-26T19:04:03.243Z",
+          "generatedAt": "2026-11-26T19:08:58.761Z",
           "checks": [
             {
               "name": "wallet_balances_ledger_derived",
@@ -1617,7 +1656,7 @@
           ],
           "binding": {
             "status": "PASS",
-            "generatedAt": "2026-11-26T19:04:03.243Z",
+            "generatedAt": "2026-11-26T19:08:58.761Z",
             "summary": {
               "bindingsChecked": 0,
               "activeBindingsChecked": 0,
@@ -1633,10 +1672,10 @@
           }
         },
         "trialBalance": {
-          "generatedAt": "2026-11-26T19:04:03.154Z",
+          "generatedAt": "2026-11-26T19:08:58.694Z",
           "rows": [
             {
-              "accountId": "e304ab46-1979-4d6b-88ed-966393a30476",
+              "accountId": "ec4cbc89-b138-457a-8afe-86540a670d2e",
               "accountCode": "AGENT_FUNDING_POOL-NGN",
               "accountName": "Agent Funding Pool NGN",
               "accountType": "LIABILITY",
@@ -1648,7 +1687,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "aabf9046-26d3-4630-874a-2c958c9e107f",
+              "accountId": "971b283c-e362-46e8-b0a8-0248ef8ba914",
               "accountCode": "CASH_TO_CASH-UNCLAIMED-NGN",
               "accountName": "Cash-to-Cash Unclaimed NGN",
               "accountType": "LIABILITY",
@@ -1660,7 +1699,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "887a1c78-e024-42a9-9529-f2ba5ae4a665",
+              "accountId": "c5b11d81-0634-4170-b3c3-8963b3fb5683",
               "accountCode": "FINANCE-COMMISSION_EXPENSE-NGN",
               "accountName": "Finance Commission Expense NGN",
               "accountType": "EXPENSE",
@@ -1672,7 +1711,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "fdbc4340-08eb-4a59-b3ef-3fc3e116ea38",
+              "accountId": "efdc6f7c-9be9-4686-b13d-fb3474d1f380",
               "accountCode": "FINANCE-COMMISSION_PAYABLE-NGN",
               "accountName": "Finance Commission Payable NGN",
               "accountType": "LIABILITY",
@@ -1684,7 +1723,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "369cdebf-7616-4d09-a8dd-562362044aeb",
+              "accountId": "60eb31bf-9ce2-451b-9c71-cf21677d457a",
               "accountCode": "FINANCE-FEE_REVENUE-NGN",
               "accountName": "Finance Fee Revenue NGN (pooled)",
               "accountType": "REVENUE",
@@ -1696,7 +1735,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "c5fc7423-bbd0-4fe5-bc50-4c6298b06ce9",
+              "accountId": "19a5721b-3507-4b12-974c-10f5c4f6a089",
               "accountCode": "FINANCE-VAT_PAYABLE-NGN",
               "accountName": "Finance VAT Payable NGN",
               "accountType": "LIABILITY",
@@ -1744,7 +1783,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "fb98ec0a-7828-4f6c-8e15-5dda16af1249",
+              "accountId": "a2a96630-a4e6-47d0-8842-120684a8a36a",
               "accountCode": "PAYMENT-WITHDRAWAL_RESERVE-NGN",
               "accountName": "Withdrawal funds reserved NGN",
               "accountType": "LIABILITY",
@@ -1838,9 +1877,9 @@
       "status": 200,
       "request": null,
       "response": {
-        "generatedAt": "2026-11-26T19:04:03.305Z",
+        "generatedAt": "2026-11-26T19:08:58.792Z",
         "metrics": {
-          "reconciliation.duration_ms": "119"
+          "reconciliation.duration_ms": "98"
         }
       }
     },
@@ -1851,8 +1890,8 @@
       "request": null,
       "response": {
         "period": "7d",
-        "from": "2026-11-19T19:04:03.301Z",
-        "to": "2026-11-26T19:04:03.301Z",
+        "from": "2026-11-19T19:08:58.793Z",
+        "to": "2026-11-26T19:08:58.793Z",
         "currency": "NGN",
         "totalCompletedCount": 0,
         "totalCompletedValueMinor": "0",
@@ -1907,15 +1946,15 @@
       "response": {
         "data": [
           {
-            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
-            "reference": "t1-tiertwo-b9661f05",
+            "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+            "reference": "t1-tiertwo-c1cc0afa",
             "type": "INDIVIDUAL",
             "status": "ACTIVE",
             "kycLevel": "LEVEL_2",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.236Z",
-            "displayName": "Synthetic tiertwo 1f05",
-            "legalName": "Synthetic tiertwo 1f05",
+            "createdAt": "2026-11-26T19:08:45.560Z",
+            "displayName": "Synthetic tiertwo 0afa",
+            "legalName": "Synthetic tiertwo 0afa",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0004",
@@ -1923,15 +1962,15 @@
             }
           },
           {
-            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
-            "reference": "t1-unconfigured-cb621544",
+            "id": "7539909f-ee67-4126-b352-563cf17bd429",
+            "reference": "t1-unconfigured-7539909f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.233Z",
-            "displayName": "Synthetic unconfigured 1544",
-            "legalName": "Synthetic unconfigured 1544",
+            "createdAt": "2026-11-26T19:08:45.558Z",
+            "displayName": "Synthetic unconfigured 909f",
+            "legalName": "Synthetic unconfigured 909f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0003",
@@ -1939,15 +1978,15 @@
             }
           },
           {
-            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
-            "reference": "t1-receiver-61a3a630",
+            "id": "d915337f-96a8-48e8-94ab-1b096e2e7b2e",
+            "reference": "t1-receiver-d915337f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:03:50.229Z",
-            "displayName": "Synthetic receiver a630",
-            "legalName": "Synthetic receiver a630",
+            "createdAt": "2026-11-26T19:08:45.556Z",
+            "displayName": "Synthetic receiver 337f",
+            "legalName": "Synthetic receiver 337f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0002",
@@ -1955,15 +1994,15 @@
             }
           },
           {
-            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
-            "reference": "t1-sender-686cc9c7",
+            "id": "96d508fe-8b2d-44de-9b34-1db0b03bf004",
+            "reference": "t1-sender-96d508fe",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.224Z",
-            "displayName": "Synthetic sender c9c7",
-            "legalName": "Synthetic sender c9c7",
+            "createdAt": "2026-11-26T19:08:45.552Z",
+            "displayName": "Synthetic sender 08fe",
+            "legalName": "Synthetic sender 08fe",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0001",
@@ -1987,16 +2026,16 @@
         "type": "INDIVIDUAL"
       },
       "response": {
-        "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+        "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
         "type": "INDIVIDUAL",
         "status": "DRAFT",
         "isSynthetic": false,
         "kycLevel": "NONE",
         "kycStatus": "NOT_STARTED",
         "version": 1,
-        "createdAt": "2026-11-26T19:04:05.042Z",
-        "updatedAt": "2026-11-26T19:04:05.042Z",
+        "createdAt": "2026-11-26T19:09:01.065Z",
+        "updatedAt": "2026-11-26T19:09:01.065Z",
         "deletedAt": null
       }
     },
@@ -2008,27 +2047,27 @@
       "response": {
         "data": [
           {
-            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:04:05.042Z",
+            "createdAt": "2026-11-26T19:09:01.065Z",
             "displayName": null,
             "legalName": null,
             "primaryContact": null
           },
           {
-            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
-            "reference": "t1-tiertwo-b9661f05",
+            "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+            "reference": "t1-tiertwo-c1cc0afa",
             "type": "INDIVIDUAL",
             "status": "ACTIVE",
             "kycLevel": "LEVEL_2",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.236Z",
-            "displayName": "Synthetic tiertwo 1f05",
-            "legalName": "Synthetic tiertwo 1f05",
+            "createdAt": "2026-11-26T19:08:45.560Z",
+            "displayName": "Synthetic tiertwo 0afa",
+            "legalName": "Synthetic tiertwo 0afa",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0004",
@@ -2036,15 +2075,15 @@
             }
           },
           {
-            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
-            "reference": "t1-unconfigured-cb621544",
+            "id": "7539909f-ee67-4126-b352-563cf17bd429",
+            "reference": "t1-unconfigured-7539909f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.233Z",
-            "displayName": "Synthetic unconfigured 1544",
-            "legalName": "Synthetic unconfigured 1544",
+            "createdAt": "2026-11-26T19:08:45.558Z",
+            "displayName": "Synthetic unconfigured 909f",
+            "legalName": "Synthetic unconfigured 909f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0003",
@@ -2052,15 +2091,15 @@
             }
           },
           {
-            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
-            "reference": "t1-receiver-61a3a630",
+            "id": "d915337f-96a8-48e8-94ab-1b096e2e7b2e",
+            "reference": "t1-receiver-d915337f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:03:50.229Z",
-            "displayName": "Synthetic receiver a630",
-            "legalName": "Synthetic receiver a630",
+            "createdAt": "2026-11-26T19:08:45.556Z",
+            "displayName": "Synthetic receiver 337f",
+            "legalName": "Synthetic receiver 337f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0002",
@@ -2068,15 +2107,15 @@
             }
           },
           {
-            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
-            "reference": "t1-sender-686cc9c7",
+            "id": "96d508fe-8b2d-44de-9b34-1db0b03bf004",
+            "reference": "t1-sender-96d508fe",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.224Z",
-            "displayName": "Synthetic sender c9c7",
-            "legalName": "Synthetic sender c9c7",
+            "createdAt": "2026-11-26T19:08:45.552Z",
+            "displayName": "Synthetic sender 08fe",
+            "legalName": "Synthetic sender 08fe",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0001",
@@ -2094,7 +2133,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/registration-profile",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/registration-profile",
       "status": 201,
       "request": {
         "firstName": "Amina",
@@ -2104,8 +2143,8 @@
         "nationality": "NG"
       },
       "response": {
-        "id": "382698bc-218c-4bc0-a849-6a4aab6355ed",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "e0b42ac9-ba71-4dcb-9405-af38ee3649ae",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "displayName": "Amina Grace Bello",
         "legalName": "Amina Grace Bello",
         "firstName": "Amina",
@@ -2114,8 +2153,8 @@
         "dateOfBirth": "1991-03-18",
         "nationality": "NG",
         "isActive": true,
-        "createdAt": "2026-11-26T19:04:05.091Z",
-        "updatedAt": "2026-11-26T19:04:05.091Z",
+        "createdAt": "2026-11-26T19:09:01.131Z",
+        "updatedAt": "2026-11-26T19:09:01.131Z",
         "deletedAt": null
       }
     },
@@ -2127,27 +2166,27 @@
       "response": {
         "data": [
           {
-            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:04:05.042Z",
+            "createdAt": "2026-11-26T19:09:01.065Z",
             "displayName": "Amina Grace Bello",
             "legalName": "Amina Grace Bello",
             "primaryContact": null
           },
           {
-            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
-            "reference": "t1-tiertwo-b9661f05",
+            "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+            "reference": "t1-tiertwo-c1cc0afa",
             "type": "INDIVIDUAL",
             "status": "ACTIVE",
             "kycLevel": "LEVEL_2",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.236Z",
-            "displayName": "Synthetic tiertwo 1f05",
-            "legalName": "Synthetic tiertwo 1f05",
+            "createdAt": "2026-11-26T19:08:45.560Z",
+            "displayName": "Synthetic tiertwo 0afa",
+            "legalName": "Synthetic tiertwo 0afa",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0004",
@@ -2155,15 +2194,15 @@
             }
           },
           {
-            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
-            "reference": "t1-unconfigured-cb621544",
+            "id": "7539909f-ee67-4126-b352-563cf17bd429",
+            "reference": "t1-unconfigured-7539909f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.233Z",
-            "displayName": "Synthetic unconfigured 1544",
-            "legalName": "Synthetic unconfigured 1544",
+            "createdAt": "2026-11-26T19:08:45.558Z",
+            "displayName": "Synthetic unconfigured 909f",
+            "legalName": "Synthetic unconfigured 909f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0003",
@@ -2171,15 +2210,15 @@
             }
           },
           {
-            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
-            "reference": "t1-receiver-61a3a630",
+            "id": "d915337f-96a8-48e8-94ab-1b096e2e7b2e",
+            "reference": "t1-receiver-d915337f",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:03:50.229Z",
-            "displayName": "Synthetic receiver a630",
-            "legalName": "Synthetic receiver a630",
+            "createdAt": "2026-11-26T19:08:45.556Z",
+            "displayName": "Synthetic receiver 337f",
+            "legalName": "Synthetic receiver 337f",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0002",
@@ -2187,15 +2226,15 @@
             }
           },
           {
-            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
-            "reference": "t1-sender-686cc9c7",
+            "id": "96d508fe-8b2d-44de-9b34-1db0b03bf004",
+            "reference": "t1-sender-96d508fe",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "LEVEL_1",
             "kycStatus": "APPROVED",
-            "createdAt": "2026-11-26T19:03:50.224Z",
-            "displayName": "Synthetic sender c9c7",
-            "legalName": "Synthetic sender c9c7",
+            "createdAt": "2026-11-26T19:08:45.552Z",
+            "displayName": "Synthetic sender 08fe",
+            "legalName": "Synthetic sender 08fe",
             "primaryContact": {
               "type": "PHONE",
               "maskedValue": "+234*****0001",
@@ -2213,43 +2252,43 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-method",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/contact-method",
       "status": 201,
       "request": {
         "type": "PHONE",
-        "value": "+2348099110016",
+        "value": "+2348099110020",
         "isPrimary": true,
         "phoneCountry": "NG"
       },
       "response": {
-        "id": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "7c7ff4c6-8e7a-4ee7-b1ec-b1ae468eb8b0",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "type": "PHONE",
-        "maskedValue": "+234*****0016",
+        "maskedValue": "+234*****0020",
         "isPrimary": true,
         "verifiedAt": null,
-        "createdAt": "2026-11-26T19:04:05.292Z",
-        "updatedAt": "2026-11-26T19:04:05.292Z"
+        "createdAt": "2026-11-26T19:09:01.317Z",
+        "updatedAt": "2026-11-26T19:09:01.317Z"
       }
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-method",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/contact-method",
       "status": 201,
       "request": {
         "type": "EMAIL",
-        "value": "amina.bello.mwxx8cbp@example.invalid",
+        "value": "amina.bello.mwxxeoqe@example.invalid",
         "isPrimary": false
       },
       "response": {
-        "id": "74a529a4-46a4-4803-b44e-1b0e9c857f97",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "91a2b939-8e02-413c-a752-3b21a92794b3",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "type": "EMAIL",
         "maskedValue": "a•••@example.invalid",
         "isPrimary": false,
         "verifiedAt": null,
-        "createdAt": "2026-11-26T19:04:05.324Z",
-        "updatedAt": "2026-11-26T19:04:05.324Z"
+        "createdAt": "2026-11-26T19:09:01.344Z",
+        "updatedAt": "2026-11-26T19:09:01.344Z"
       }
     },
     {
@@ -2257,7 +2296,7 @@
       "path": "/api/v1/customers/registration/otp",
       "status": 200,
       "request": {
-        "phone": "+2348099110016"
+        "phone": "+2348099110020"
       },
       "response": {
         "status": "OTP_REQUEST_ACCEPTED",
@@ -2270,39 +2309,39 @@
       "path": "/api/v1/customers/registration/otp/verify",
       "status": 200,
       "request": {
-        "phone": "+2348099110016",
-        "code": "041011"
+        "phone": "+2348099110020",
+        "code": "787213"
       },
       "response": {
         "status": "PHONE_VERIFIED",
-        "verificationToken": "-BvLSx__NfcqBBRtt6L4RQYreGoutRNzWMVK5svac6w",
+        "verificationToken": "rr341sr9g34gCOd-a4pK2--X_RPZLnf7SOt_TWLq7D8",
         "expiresInSeconds": 900
       }
     },
     {
       "method": "PATCH",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-methods/ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/contact-methods/7c7ff4c6-8e7a-4ee7-b1ec-b1ae468eb8b0",
       "status": 200,
       "request": {
-        "value": "+2348099110016",
+        "value": "+2348099110020",
         "phoneCountry": "NG",
         "isPrimary": true,
-        "verificationToken": "-BvLSx__NfcqBBRtt6L4RQYreGoutRNzWMVK5svac6w"
+        "verificationToken": "rr341sr9g34gCOd-a4pK2--X_RPZLnf7SOt_TWLq7D8"
       },
       "response": {
-        "id": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "7c7ff4c6-8e7a-4ee7-b1ec-b1ae468eb8b0",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "type": "PHONE",
-        "maskedValue": "+234*****0016",
+        "maskedValue": "+234*****0020",
         "isPrimary": true,
-        "verifiedAt": "2026-11-26T19:04:10.427Z",
-        "createdAt": "2026-11-26T19:04:05.292Z",
-        "updatedAt": "2026-11-26T19:04:10.465Z"
+        "verifiedAt": "2026-11-26T19:09:06.466Z",
+        "createdAt": "2026-11-26T19:09:01.317Z",
+        "updatedAt": "2026-11-26T19:09:06.501Z"
       }
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/address",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/address",
       "status": 201,
       "request": {
         "type": "RESIDENTIAL",
@@ -2314,8 +2353,8 @@
         "isPrimary": true
       },
       "response": {
-        "id": "210cd850-d4cb-46aa-85fe-f2b76608d03d",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "7fea420c-2be1-46aa-880b-d838158ecd12",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "type": "RESIDENTIAL",
         "lineOne": "31 Murtala Muhammed Way",
         "lineTwo": null,
@@ -2324,40 +2363,40 @@
         "country": "NG",
         "postalCode": "700241",
         "isPrimary": true,
-        "createdAt": "2026-11-26T19:04:13.739Z",
-        "updatedAt": "2026-11-26T19:04:13.739Z",
+        "createdAt": "2026-11-26T19:09:09.691Z",
+        "updatedAt": "2026-11-26T19:09:09.691Z",
         "deletedAt": null
       }
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/identity-document",
       "status": 201,
       "request": {
         "type": "BVN",
-        "documentNumber": "22998877661",
+        "documentNumber": "22998877662",
         "issuingCountry": "NG"
       },
       "response": {
-        "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "8bf41786-40f5-419e-beac-d6f859ec50fe",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "type": "BVN",
-        "maskedDocumentNumber": "••••••7661",
+        "maskedDocumentNumber": "••••••7662",
         "issuingCountry": "NG",
         "issuedAt": null,
         "expiresAt": null,
-        "createdAt": "2026-11-26T19:04:16.859Z",
-        "updatedAt": "2026-11-26T19:04:16.859Z"
+        "createdAt": "2026-11-26T19:09:12.830Z",
+        "updatedAt": "2026-11-26T19:09:12.830Z"
       }
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/registration-review",
+      "path": "/api/v1/internal/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/registration-review",
       "status": 200,
       "request": null,
       "response": {
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+        "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
         "customerType": "INDIVIDUAL",
         "customerStatus": "DRAFT",
         "isSynthetic": false,
@@ -2367,7 +2406,7 @@
           "classCode": "STANDARD",
           "className": "Standard",
           "source": "REGISTRATION_DEFAULT",
-          "effectiveFrom": "2026-11-26T19:04:05.047Z"
+          "effectiveFrom": "2026-11-26T19:09:01.073Z"
         },
         "defaults": {
           "customerClass": {
@@ -2375,7 +2414,7 @@
             "classCode": "STANDARD",
             "className": "Standard",
             "source": "REGISTRATION_DEFAULT",
-            "effectiveFrom": "2026-11-26T19:04:05.047Z"
+            "effectiveFrom": "2026-11-26T19:09:01.073Z"
           },
           "kyc": {
             "level": "NONE",
@@ -2459,14 +2498,14 @@
         ],
         "activatable": false,
         "effectiveConfiguration": {
-          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "verifiedTier": "NONE",
           "assignedClass": {
             "classCode": "STANDARD",
             "className": "Standard",
             "source": "REGISTRATION_DEFAULT",
             "eligibleForVerifiedTier": null,
-            "classId": "ec6661ca-08ee-4678-8522-bc857c4e3fcd"
+            "classId": "8ebbaa40-d28e-4749-b713-89140ef8ad41"
           },
           "products": [
             {
@@ -2475,7 +2514,7 @@
               "currency": "NGN",
               "fee": {
                 "status": "ZERO",
-                "ruleId": "3f4da8e0-bd7e-470b-8f2a-b03290d4739b",
+                "ruleId": "85db0c79-ca79-4d62-b2cc-15510c389132",
                 "ruleVersion": 1,
                 "flatFeeMinor": "0",
                 "percentageBps": 0,
@@ -2498,7 +2537,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "1000000000",
                   "limitValueCount": null,
-                  "ruleId": "0e9cb496-b095-4ce6-86ca-cf80d83662a1",
+                  "ruleId": "7670dad8-16c1-4650-ba2e-d8df4544b08f",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2510,7 +2549,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "bcfb82c6-2c79-4874-9e91-02b99c181fd1",
+                  "ruleId": "d79e89ed-3e48-4711-9974-5052dc9bbf11",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2522,7 +2561,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "b9ee45fa-60de-4b94-9409-85a22acbfe7f",
+                  "ruleId": "1feee562-7663-4276-8f58-1582e881989f",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2534,7 +2573,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "a4cb0c44-6903-4ca5-807f-de53e5761dc6",
+                  "ruleId": "0ca15415-f6f8-4700-8fc5-3bbf0af272f8",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2546,7 +2585,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "96031ae1-69e1-4b40-9cb0-08294f24d89e",
+                  "ruleId": "94093362-6773-4e78-a72c-e63dd2f7f3c4",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2561,7 +2600,7 @@
               "currency": "NGN",
               "fee": {
                 "status": "RESOLVED",
-                "ruleId": "1a402f5d-a76e-4926-8cfc-e0b41227c8d2",
+                "ruleId": "95e6bccf-e987-479b-a1e2-67a59eca9b36",
                 "ruleVersion": 1,
                 "flatFeeMinor": "10000",
                 "percentageBps": 0,
@@ -2584,7 +2623,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "1000000000",
                   "limitValueCount": null,
-                  "ruleId": "693f24e8-8f1b-45e9-b381-a9d32a89d0fd",
+                  "ruleId": "0f7891a4-592e-4306-b151-14361bfe12b9",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2596,7 +2635,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "3dd62566-4482-4bee-92fc-00c3e562ae2c",
+                  "ruleId": "2b7b3c15-c176-4826-949a-1f1d4f31885f",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2608,7 +2647,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "7e6e4cdc-73fe-4b6f-a532-a700fb82d712",
+                  "ruleId": "65dd2cfc-1f2a-460d-8f45-a4e05494c9be",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2620,7 +2659,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "aee183c2-dfdd-4e2e-aea8-e47ed7964d96",
+                  "ruleId": "52a7740c-89b1-47cb-b1b6-f2527ced583f",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2632,7 +2671,7 @@
                   "status": "RESOLVED",
                   "limitValueMinor": "900000000000",
                   "limitValueCount": null,
-                  "ruleId": "dab56f60-f4da-497a-90c6-0bf2039045a6",
+                  "ruleId": "fe7f53d1-04ea-493d-8a36-0ca6cb5be9a3",
                   "profileCode": "T1_COMMERCIAL_HIGH",
                   "source": "ASSIGNMENT",
                   "effectiveFrom": "2000-01-01T00:00:00.000Z",
@@ -2642,10 +2681,10 @@
               ]
             }
           ],
-          "evaluatedAt": "2026-11-26T19:04:55.106Z"
+          "evaluatedAt": "2026-11-26T19:09:51.072Z"
         },
         "activationRoute": "PATCH /api/v1/customers/:id",
-        "evaluatedAt": "2026-11-26T19:04:55.112Z"
+        "evaluatedAt": "2026-11-26T19:09:51.078Z"
       }
     },
     {
@@ -2865,18 +2904,18 @@
       "response": {
         "data": [
           {
-            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
             "type": "INDIVIDUAL",
             "status": "DRAFT",
             "kycLevel": "NONE",
             "kycStatus": "NOT_STARTED",
-            "createdAt": "2026-11-26T19:04:05.042Z",
+            "createdAt": "2026-11-26T19:09:01.065Z",
             "displayName": "Amina Grace Bello",
             "legalName": "Amina Grace Bello",
             "primaryContact": {
               "type": "PHONE",
-              "maskedValue": "+234*****0016",
+              "maskedValue": "+234*****0020",
               "isVerified": true
             }
           }
@@ -2891,13 +2930,44 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:09:51.252Z",
+        "to": "2026-11-26T19:09:51.252Z",
+        "window": {
+          "hours": 168,
+          "from": "2026-11-19T19:09:51.252Z",
+          "to": "2026-11-26T19:09:51.252Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "7d window, 2026-11-19T19:09 to 2026-11-26T19:09 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
+        "totals": {
+          "deliveries": 0,
+          "exceptions": 0
+        },
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
+        },
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-26T19:09:51.252Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
       "status": 200,
       "request": null,
       "response": {
         "period": "7d",
-        "from": "2026-11-19T19:04:55.307Z",
-        "to": "2026-11-26T19:04:55.307Z",
+        "from": "2026-11-19T19:09:51.255Z",
+        "to": "2026-11-26T19:09:51.255Z",
         "currency": "NGN",
         "totalCompletedCount": 0,
         "totalCompletedValueMinor": "0",
@@ -2946,44 +3016,13 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
-      "status": 200,
-      "request": null,
-      "response": {
-        "period": "7d",
-        "from": "2026-11-19T19:04:55.319Z",
-        "to": "2026-11-26T19:04:55.319Z",
-        "window": {
-          "hours": 168,
-          "from": "2026-11-19T19:04:55.319Z",
-          "to": "2026-11-26T19:04:55.319Z",
-          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
-          "label": "7d window, 2026-11-19T19:04 to 2026-11-26T19:04 UTC"
-        },
-        "availability": "MEASURED",
-        "configuration": "CONFIGURED",
-        "totals": {
-          "deliveries": 0,
-          "exceptions": 0
-        },
-        "policy": {
-          "manualRetrySupported": false,
-          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
-        },
-        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
-        "checkedAt": "2026-11-26T19:04:55.319Z",
-        "source": "NotificationOperationsService.summary() over notification_deliveries"
-      }
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
       "status": 200,
       "request": null,
       "response": {
         "period": "30d",
-        "from": "2026-10-27T19:04:55.354Z",
-        "to": "2026-11-26T19:04:55.354Z",
+        "from": "2026-10-27T19:09:51.289Z",
+        "to": "2026-11-26T19:09:51.289Z",
         "currency": "NGN",
         "definition": "Completed-transaction count and value, summed across all four V1 transaction types (W2W/C2W/W2C/C2C), grouped by calendar day (UTC). Days with no completed transactions appear as zero rather than being omitted.",
         "daily": [
@@ -3161,6 +3200,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/support/tickets",
       "status": 200,
       "request": null,
@@ -3186,19 +3232,12 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
-      "status": 200,
-      "request": null,
-      "response": []
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
       "status": 200,
       "request": null,
       "response": [
         {
-          "id": "4cf9f9a8-8f8f-445c-809b-31a79e1675ee",
+          "id": "b3812373-cfe5-475a-8375-f38fc47631d1",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3212,7 +3251,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.393Z",
+            "evaluatedAt": "2026-11-26T19:09:51.332Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3221,10 +3260,10 @@
               "audit.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.395Z"
+          "occurredAt": "2026-11-26T19:09:51.336Z"
         },
         {
-          "id": "94f4a7a1-9d56-4550-b7b4-b74d0f250615",
+          "id": "1dcd2c00-1402-48ff-838a-4706e0a5898e",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3238,7 +3277,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.383Z",
+            "evaluatedAt": "2026-11-26T19:09:51.332Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3247,10 +3286,10 @@
               "reporting.transaction_summary.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.386Z"
+          "occurredAt": "2026-11-26T19:09:51.336Z"
         },
         {
-          "id": "99e11ec9-c9bf-4267-9593-bcb4abb845f7",
+          "id": "e09620a5-8ed2-477d-9ae2-bf728b439d5e",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3264,7 +3303,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.359Z",
+            "evaluatedAt": "2026-11-26T19:09:51.317Z",
             "resourceType": "internal-support",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3273,10 +3312,10 @@
               "customer.manage_support_case"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.361Z"
+          "occurredAt": "2026-11-26T19:09:51.320Z"
         },
         {
-          "id": "9169eb47-5e8e-4907-86ee-f4ba49e0400a",
+          "id": "135ff3c0-086d-46da-9cf0-d978327a5cbf",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3290,7 +3329,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.351Z",
+            "evaluatedAt": "2026-11-26T19:09:51.285Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3299,36 +3338,10 @@
               "kyc.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.354Z"
+          "occurredAt": "2026-11-26T19:09:51.292Z"
         },
         {
-          "id": "0f24275c-8a37-4d4b-8762-a5b9054da00c",
-          "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "00000000-0000-4000-8000-000000000000",
-          "action": "ALLOWED",
-          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-          "correlationId": null,
-          "requestId": null,
-          "previousValues": null,
-          "newValues": {
-            "action": "reporting.transaction_summary.view",
-            "reason": null,
-            "allowed": true,
-            "customerId": null,
-            "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.339Z",
-            "resourceType": "dashboard-widget",
-            "principalType": "PRIVILEGED",
-            "requiredRoles": [],
-            "requiredScopes": [],
-            "requiredFunctions": [
-              "reporting.transaction_summary.view"
-            ]
-          },
-          "occurredAt": "2026-11-26T19:04:55.343Z"
-        },
-        {
-          "id": "da2cfdd8-6234-4ef5-a5d5-fd8f3b2098d2",
+          "id": "2701679f-10ed-428e-931d-18ab2250a8ba",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3342,7 +3355,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.331Z",
+            "evaluatedAt": "2026-11-26T19:09:51.276Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3351,36 +3364,10 @@
               "reconciliation.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.340Z"
+          "occurredAt": "2026-11-26T19:09:51.280Z"
         },
         {
-          "id": "beae2dc7-e837-4498-95b0-62c32fd7c958",
-          "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "00000000-0000-4000-8000-000000000000",
-          "action": "ALLOWED",
-          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
-          "correlationId": null,
-          "requestId": null,
-          "previousValues": null,
-          "newValues": {
-            "action": "notification.view_deliveries",
-            "reason": null,
-            "allowed": true,
-            "customerId": null,
-            "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.302Z",
-            "resourceType": "dashboard-widget",
-            "principalType": "PRIVILEGED",
-            "requiredRoles": [],
-            "requiredScopes": [],
-            "requiredFunctions": [
-              "notification.view_deliveries"
-            ]
-          },
-          "occurredAt": "2026-11-26T19:04:55.306Z"
-        },
-        {
-          "id": "c4c1af50-77fb-4853-9d79-721a2abc9de0",
+          "id": "60fdac93-381d-42e4-aab1-4c9809fff8de",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3394,7 +3381,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.291Z",
+            "evaluatedAt": "2026-11-26T19:09:51.272Z",
             "resourceType": "dashboard-widget",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3403,10 +3390,62 @@
               "reporting.transaction_summary.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.292Z"
+          "occurredAt": "2026-11-26T19:09:51.275Z"
         },
         {
-          "id": "d1de1990-a588-402a-ac76-cd701e7e2fbd",
+          "id": "e914af7e-6b87-4d7b-a5c1-058c58932282",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:09:51.240Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:09:51.243Z"
+        },
+        {
+          "id": "493df337-ddd4-4f8d-b35c-266d21039ee5",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "notification.view_deliveries",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:09:51.235Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:09:51.240Z"
+        },
+        {
+          "id": "5ca28c46-d31f-4c01-9d4a-f0aca9c2bbdc",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3420,7 +3459,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.273Z",
+            "evaluatedAt": "2026-11-26T19:09:51.228Z",
             "resourceType": "internal-customers",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3429,10 +3468,10 @@
               "customer.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.278Z"
+          "occurredAt": "2026-11-26T19:09:51.234Z"
         },
         {
-          "id": "f1fa6740-032f-4017-a842-dcce03857149",
+          "id": "8dd33ef3-d991-4cb1-b33f-fc3286d30542",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3446,7 +3485,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:55.077Z",
+            "evaluatedAt": "2026-11-26T19:09:51.048Z",
             "resourceType": "internal-customers",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3455,12 +3494,12 @@
               "customer.view"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:55.077Z"
+          "occurredAt": "2026-11-26T19:09:51.049Z"
         },
         {
-          "id": "cffc7c8c-1f8d-4804-94b7-21b41f8747e3",
+          "id": "de0c34de-67a5-45e8-97d0-fc2e1e174774",
           "entityType": "CUSTOMER_IDENTITY_DOCUMENT",
-          "entityId": "95ab7f55-0663-405a-bc98-b1735db509f7",
+          "entityId": "8bf41786-40f5-419e-beac-d6f859ec50fe",
           "action": "CREATED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
@@ -3475,10 +3514,10 @@
               "expiresAt"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:16.863Z"
+          "occurredAt": "2026-11-26T19:09:12.833Z"
         },
         {
-          "id": "d2caeda7-d079-4b66-850b-4a5b5fb4a396",
+          "id": "ff6b588b-878e-43f6-a525-9fef139a786d",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3492,7 +3531,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:16.857Z",
+            "evaluatedAt": "2026-11-26T19:09:12.827Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3501,10 +3540,10 @@
               "kyc.review"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:16.857Z"
+          "occurredAt": "2026-11-26T19:09:12.827Z"
         },
         {
-          "id": "cff0669a-00f7-4276-bb29-ee734e6186e4",
+          "id": "b4e64cd5-2402-4ddf-a5aa-bdd02b9bfbc5",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3518,7 +3557,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:16.851Z",
+            "evaluatedAt": "2026-11-26T19:09:12.822Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3527,36 +3566,36 @@
               "customer.view_identity_documents"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:16.855Z"
+          "occurredAt": "2026-11-26T19:09:12.825Z"
         },
         {
-          "id": "88771055-e157-4453-813c-a2f071d56187",
+          "id": "4ca70130-1ce6-496a-9fa8-2036ac2c8072",
           "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "entityId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "action": "ALLOWED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
           "requestId": null,
           "previousValues": null,
           "newValues": {
-            "action": "POST:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document",
+            "action": "POST:/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/identity-document",
             "reason": null,
             "allowed": true,
-            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "evaluatedAt": "2026-11-26T19:04:16.847Z",
+            "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "resourceId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "evaluatedAt": "2026-11-26T19:09:12.818Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
             "requiredScopes": [],
             "requiredFunctions": []
           },
-          "occurredAt": "2026-11-26T19:04:16.847Z"
+          "occurredAt": "2026-11-26T19:09:12.819Z"
         },
         {
-          "id": "9b4d8815-0202-4a7a-9da3-f2b175cd9b32",
+          "id": "03c10f25-0c7e-40d2-8866-17b4fd5c9ca4",
           "entityType": "CUSTOMER_ADDRESS",
-          "entityId": "210cd850-d4cb-46aa-85fe-f2b76608d03d",
+          "entityId": "7fea420c-2be1-46aa-880b-d838158ecd12",
           "action": "CREATED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
@@ -3574,10 +3613,10 @@
               "isPrimary"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:13.746Z"
+          "occurredAt": "2026-11-26T19:09:09.700Z"
         },
         {
-          "id": "bb78e33e-6ee9-46d4-8f22-3de344471545",
+          "id": "e9cc5e9b-5239-45ce-83ca-15c3b14655a8",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3591,7 +3630,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:13.735Z",
+            "evaluatedAt": "2026-11-26T19:09:09.688Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3600,36 +3639,36 @@
               "customer.create"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:13.736Z"
+          "occurredAt": "2026-11-26T19:09:09.689Z"
         },
         {
-          "id": "5ca1a061-7ec0-4f93-a74e-c0626b746b07",
+          "id": "948cffa8-6993-401a-a58a-d6ed188a9b27",
           "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "entityId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "action": "ALLOWED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
           "requestId": null,
           "previousValues": null,
           "newValues": {
-            "action": "POST:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/address",
+            "action": "POST:/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/address",
             "reason": null,
             "allowed": true,
-            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "evaluatedAt": "2026-11-26T19:04:13.723Z",
+            "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "resourceId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "evaluatedAt": "2026-11-26T19:09:09.685Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
             "requiredScopes": [],
             "requiredFunctions": []
           },
-          "occurredAt": "2026-11-26T19:04:13.723Z"
+          "occurredAt": "2026-11-26T19:09:09.685Z"
         },
         {
-          "id": "87660cd8-c457-44b2-af52-0604da95a594",
+          "id": "8940a629-8f51-4354-b6d6-80d6cf09ab2e",
           "entityType": "CUSTOMER_CONTACT_METHOD",
-          "entityId": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+          "entityId": "7c7ff4c6-8e7a-4ee7-b1ec-b1ae468eb8b0",
           "action": "PHONE_VERIFIED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
@@ -3646,10 +3685,10 @@
               "phoneVerification"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:10.471Z"
+          "occurredAt": "2026-11-26T19:09:06.507Z"
         },
         {
-          "id": "47e754df-4c02-4239-bebf-f9ad7c515fa0",
+          "id": "76329437-2112-46fe-b8f5-d3fb576e2813",
           "entityType": "AUTHORIZATION_DECISION",
           "entityId": "00000000-0000-4000-8000-000000000000",
           "action": "ALLOWED",
@@ -3663,7 +3702,7 @@
             "allowed": true,
             "customerId": null,
             "resourceId": null,
-            "evaluatedAt": "2026-11-26T19:04:10.463Z",
+            "evaluatedAt": "2026-11-26T19:09:06.499Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
@@ -3672,33 +3711,40 @@
               "customer.create"
             ]
           },
-          "occurredAt": "2026-11-26T19:04:10.463Z"
+          "occurredAt": "2026-11-26T19:09:06.500Z"
         },
         {
-          "id": "67fdd79a-b982-4f56-8aeb-80126eb9693a",
+          "id": "bbf3a505-b276-42c2-ae51-1f9ad4b1c089",
           "entityType": "AUTHORIZATION_DECISION",
-          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "entityId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
           "action": "ALLOWED",
           "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
           "correlationId": null,
           "requestId": null,
           "previousValues": null,
           "newValues": {
-            "action": "PATCH:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-methods/ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+            "action": "PATCH:/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/contact-methods/7c7ff4c6-8e7a-4ee7-b1ec-b1ae468eb8b0",
             "reason": null,
             "allowed": true,
-            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-            "evaluatedAt": "2026-11-26T19:04:10.460Z",
+            "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "resourceId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+            "evaluatedAt": "2026-11-26T19:09:06.497Z",
             "resourceType": "customer",
             "principalType": "PRIVILEGED",
             "requiredRoles": [],
             "requiredScopes": [],
             "requiredFunctions": []
           },
-          "occurredAt": "2026-11-26T19:04:10.460Z"
+          "occurredAt": "2026-11-26T19:09:06.497Z"
         }
       ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200,
+      "request": null,
+      "response": []
     },
     {
       "method": "GET",
@@ -3708,7 +3754,7 @@
       "response": {
         "report": {
           "status": "PASS",
-          "generatedAt": "2026-11-26T19:04:55.426Z",
+          "generatedAt": "2026-11-26T19:09:51.376Z",
           "checks": [
             {
               "name": "wallet_balances_ledger_derived",
@@ -3815,7 +3861,7 @@
           ],
           "binding": {
             "status": "PASS",
-            "generatedAt": "2026-11-26T19:04:55.426Z",
+            "generatedAt": "2026-11-26T19:09:51.376Z",
             "summary": {
               "bindingsChecked": 0,
               "activeBindingsChecked": 0,
@@ -3831,10 +3877,10 @@
           }
         },
         "trialBalance": {
-          "generatedAt": "2026-11-26T19:04:55.373Z",
+          "generatedAt": "2026-11-26T19:09:51.319Z",
           "rows": [
             {
-              "accountId": "e304ab46-1979-4d6b-88ed-966393a30476",
+              "accountId": "ec4cbc89-b138-457a-8afe-86540a670d2e",
               "accountCode": "AGENT_FUNDING_POOL-NGN",
               "accountName": "Agent Funding Pool NGN",
               "accountType": "LIABILITY",
@@ -3846,7 +3892,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "aabf9046-26d3-4630-874a-2c958c9e107f",
+              "accountId": "971b283c-e362-46e8-b0a8-0248ef8ba914",
               "accountCode": "CASH_TO_CASH-UNCLAIMED-NGN",
               "accountName": "Cash-to-Cash Unclaimed NGN",
               "accountType": "LIABILITY",
@@ -3858,7 +3904,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "887a1c78-e024-42a9-9529-f2ba5ae4a665",
+              "accountId": "c5b11d81-0634-4170-b3c3-8963b3fb5683",
               "accountCode": "FINANCE-COMMISSION_EXPENSE-NGN",
               "accountName": "Finance Commission Expense NGN",
               "accountType": "EXPENSE",
@@ -3870,7 +3916,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "fdbc4340-08eb-4a59-b3ef-3fc3e116ea38",
+              "accountId": "efdc6f7c-9be9-4686-b13d-fb3474d1f380",
               "accountCode": "FINANCE-COMMISSION_PAYABLE-NGN",
               "accountName": "Finance Commission Payable NGN",
               "accountType": "LIABILITY",
@@ -3882,7 +3928,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "369cdebf-7616-4d09-a8dd-562362044aeb",
+              "accountId": "60eb31bf-9ce2-451b-9c71-cf21677d457a",
               "accountCode": "FINANCE-FEE_REVENUE-NGN",
               "accountName": "Finance Fee Revenue NGN (pooled)",
               "accountType": "REVENUE",
@@ -3894,7 +3940,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "c5fc7423-bbd0-4fe5-bc50-4c6298b06ce9",
+              "accountId": "19a5721b-3507-4b12-974c-10f5c4f6a089",
               "accountCode": "FINANCE-VAT_PAYABLE-NGN",
               "accountName": "Finance VAT Payable NGN",
               "accountType": "LIABILITY",
@@ -3942,7 +3988,7 @@
               "balanceMinor": "0"
             },
             {
-              "accountId": "fb98ec0a-7828-4f6c-8e15-5dda16af1249",
+              "accountId": "a2a96630-a4e6-47d0-8842-120684a8a36a",
               "accountCode": "PAYMENT-WITHDRAWAL_RESERVE-NGN",
               "accountName": "Withdrawal funds reserved NGN",
               "accountType": "LIABILITY",
@@ -3966,20 +4012,6 @@
           "balanced": true
         }
       }
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
-      "status": 200,
-      "request": null,
-      "response": []
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
-      "status": 200,
-      "request": null,
-      "response": []
     },
     {
       "method": "GET",
@@ -4039,13 +4071,20 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/metrics",
       "status": 200,
       "request": null,
       "response": {
-        "generatedAt": "2026-11-26T19:04:55.457Z",
+        "generatedAt": "2026-11-26T19:09:51.394Z",
         "metrics": {
-          "reconciliation.duration_ms": "192"
+          "reconciliation.duration_ms": "183"
         }
       }
     },
@@ -4056,8 +4095,8 @@
       "request": null,
       "response": {
         "period": "7d",
-        "from": "2026-11-19T19:04:55.464Z",
-        "to": "2026-11-26T19:04:55.464Z",
+        "from": "2026-11-19T19:09:51.396Z",
+        "to": "2026-11-26T19:09:51.396Z",
         "currency": "NGN",
         "totalCompletedCount": 0,
         "totalCompletedValueMinor": "0",
@@ -4113,14 +4152,14 @@
         "password": "MonieNaija_COMPLIANCE_123!"
       },
       "response": {
-        "accessToken": "-m4Qrwnqdjg9GHZKlzWy88VpJuSp56MZQ9yGH_qKyYE",
+        "accessToken": "42mh3gv8Bwcoc75JCvImcxRbZsAjAcGLbhPo8HNTMNw",
         "tokenType": "Bearer",
-        "sessionId": "ab39302e-5f3b-4578-8041-dd5c71a19618",
-        "expiresAt": "2026-11-26T19:19:56.693Z",
+        "sessionId": "732840ac-2567-4348-9c25-df351131f450",
+        "expiresAt": "2026-11-26T19:24:52.617Z",
         "principal": {
           "type": "OPERATOR",
           "principalId": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
-          "sessionId": "ab39302e-5f3b-4578-8041-dd5c71a19618",
+          "sessionId": "732840ac-2567-4348-9c25-df351131f450",
           "audience": "workforce-admin",
           "roles": [
             "COMPLIANCE"
@@ -4222,20 +4261,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
-      "status": 200,
-      "request": null,
-      "response": {
-        "byStatus": [
-          {
-            "status": "APPROVED",
-            "count": 3
-          }
-        ]
-      }
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary",
       "status": 200,
       "request": null,
@@ -4259,20 +4284,34 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675",
       "status": 200,
       "request": null,
       "response": {
         "customer": {
-          "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-          "reference": "mn-cus-00bb1616871df06490e79a13",
+          "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+          "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
           "type": "INDIVIDUAL",
           "status": "DRAFT",
           "kycLevel": "NONE",
           "kycStatus": "NOT_STARTED",
           "displayName": "Amina Grace Bello",
           "legalName": "Amina Grace Bello",
-          "createdAt": "2026-11-26T19:04:05.042Z"
+          "createdAt": "2026-11-26T19:09:01.065Z"
         },
         "assessmentState": {
           "current": null,
@@ -4290,7 +4329,7 @@
             "access": "GRANTED",
             "present": true,
             "verified": true,
-            "maskedValue": "+234***016"
+            "maskedValue": "+234***020"
           },
           "residentialAddress": {
             "access": "GRANTED",
@@ -4301,13 +4340,13 @@
             "access": "GRANTED",
             "items": [
               {
-                "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+                "id": "8bf41786-40f5-419e-beac-d6f859ec50fe",
                 "type": "BVN",
-                "maskedDocumentNumber": "••••7661",
+                "maskedDocumentNumber": "••••7662",
                 "issuingCountry": "NG",
                 "issuedAt": null,
                 "expiresAt": null,
-                "createdAt": "2026-11-26T19:04:16.859Z"
+                "createdAt": "2026-11-26T19:09:12.830Z"
               }
             ]
           },
@@ -4328,7 +4367,7 @@
             "publishedVersion": 1,
             "effectiveVersion": 1,
             "status": "EFFECTIVE",
-            "latestApprovedAt": "2026-11-26T19:03:50.142Z",
+            "latestApprovedAt": "2026-11-26T19:08:45.475Z",
             "effectiveFrom": "2020-01-01T00:00:00.000Z",
             "effectiveUntil": null,
             "pendingProposalsCount": 0,
@@ -4457,42 +4496,42 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/verify-identity",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/verify-identity",
       "status": 200,
       "request": {
         "kind": "BVN",
         "customerConsentConfirmed": true,
         "noticeVersion": "v1.0-ng",
-        "consentRequestId": "a5589ef7-6364-41af-bc9c-030852f358cd",
-        "requestId": "c034c9b7-9d8e-4618-bbe0-35897561bc77"
+        "consentRequestId": "f8b99c73-cf31-48f8-a6bc-60142988c0d0",
+        "requestId": "fe63229f-072c-44b8-93b9-5aebaa129af4"
       },
       "response": {
-        "id": "81663935-53bb-4cb4-ae66-af7e88221425",
-        "consentId": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+        "id": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
+        "consentId": "b0ca6c13-afed-427c-877b-12d344b11804",
         "kind": "BVN",
         "status": "MATCH",
         "provider": "PREMBLY",
         "routeVersion": 1,
         "identityRevision": "7",
-        "expiresAt": "2026-11-27T19:04:56.929Z"
+        "expiresAt": "2026-11-27T19:09:52.773Z"
       }
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675",
       "status": 200,
       "request": null,
       "response": {
         "customer": {
-          "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
-          "reference": "mn-cus-00bb1616871df06490e79a13",
+          "id": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+          "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
           "type": "INDIVIDUAL",
           "status": "DRAFT",
           "kycLevel": "NONE",
           "kycStatus": "NOT_STARTED",
           "displayName": "Amina Grace Bello",
           "legalName": "Amina Grace Bello",
-          "createdAt": "2026-11-26T19:04:05.042Z"
+          "createdAt": "2026-11-26T19:09:01.065Z"
         },
         "assessmentState": {
           "current": null,
@@ -4504,33 +4543,33 @@
             "reasonCode": null,
             "verificationAttempts": [
               {
-                "id": "81663935-53bb-4cb4-ae66-af7e88221425",
+                "id": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
                 "kind": "BVN",
                 "provider": "PREMBLY",
                 "policyVersion": "v1",
                 "outcome": "MATCH",
-                "createdAt": "2026-11-26T19:04:56.925Z",
-                "completedAt": "2026-11-26T19:04:56.929Z",
-                "expiresAt": "2026-11-27T19:04:56.929Z"
+                "createdAt": "2026-11-26T19:09:52.768Z",
+                "completedAt": "2026-11-26T19:09:52.773Z",
+                "expiresAt": "2026-11-27T19:09:52.773Z"
               }
             ],
             "identityClaims": [
               {
-                "id": "d7ecac44-cbf8-4e0c-b4b9-a661435295a8",
+                "id": "639151b0-8093-4faa-ac0e-173d9850f8d9",
                 "kind": "BVN",
-                "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+                "attemptId": "c7b6fbd2-e5dd-4198-9682-5356e37bb29d",
                 "status": "VERIFIED",
-                "createdAt": "2026-11-26T19:04:56.925Z"
+                "createdAt": "2026-11-26T19:09:52.769Z"
               }
             ],
             "consents": [
               {
-                "id": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+                "id": "b0ca6c13-afed-427c-877b-12d344b11804",
                 "kind": "BVN",
                 "noticeVersion": "v1.0-ng",
                 "provider": "PREMBLY",
-                "grantedAt": "2026-11-26T19:04:56.914Z",
-                "expiresAt": "2026-11-27T19:04:56.913Z",
+                "grantedAt": "2026-11-26T19:09:52.757Z",
+                "expiresAt": "2026-11-27T19:09:52.757Z",
                 "withdrawnAt": null
               }
             ]
@@ -4539,7 +4578,7 @@
             "access": "GRANTED",
             "present": true,
             "verified": true,
-            "maskedValue": "+234***016"
+            "maskedValue": "+234***020"
           },
           "residentialAddress": {
             "access": "GRANTED",
@@ -4550,13 +4589,13 @@
             "access": "GRANTED",
             "items": [
               {
-                "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+                "id": "8bf41786-40f5-419e-beac-d6f859ec50fe",
                 "type": "BVN",
-                "maskedDocumentNumber": "••••7661",
+                "maskedDocumentNumber": "••••7662",
                 "issuingCountry": "NG",
                 "issuedAt": null,
                 "expiresAt": null,
-                "createdAt": "2026-11-26T19:04:16.859Z"
+                "createdAt": "2026-11-26T19:09:12.830Z"
               }
             ]
           },
@@ -4577,7 +4616,7 @@
             "publishedVersion": 1,
             "effectiveVersion": 1,
             "status": "EFFECTIVE",
-            "latestApprovedAt": "2026-11-26T19:03:50.142Z",
+            "latestApprovedAt": "2026-11-26T19:08:45.475Z",
             "effectiveFrom": "2020-01-01T00:00:00.000Z",
             "effectiveUntil": null,
             "pendingProposalsCount": 0,
@@ -4699,7 +4738,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/kyc-assessment",
+      "path": "/api/v1/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/kyc-assessment",
       "status": 201,
       "request": {
         "level": "LEVEL_1",
@@ -4708,13 +4747,442 @@
         "reason": "Provider BVN match verified through the governed consent flow"
       },
       "response": {
-        "id": "0e5c0c1e-049c-443e-8a97-789458972248",
-        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "id": "db6a1ad3-bc4f-4d4f-afac-17495da73795",
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
         "level": "LEVEL_1",
         "status": "APPROVED"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/kyc/tier-reviews",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/kyc/review-workspace/queue",
+      "status": 200,
+      "request": null,
+      "response": {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "limit": 15,
+        "summary": {
+          "loaded": 0,
+          "manualHolds": 0,
+          "pendingReview": 0,
+          "rejected": 0,
+          "notStarted": 0,
+          "approved": 0
+        },
+        "counts": {
+          "total": 0,
+          "pendingReview": 0,
+          "manualHolds": 0,
+          "rejected": 0,
+          "notStarted": 0,
+          "approved": 0
+        },
+        "scopeMode": "PLATFORM",
+        "governance": {
+          "tierPolicy": {
+            "access": "GRANTED",
+            "requiredDetailScope": "kyc.policy.view",
+            "publishedVersion": 1,
+            "effectiveVersion": 1,
+            "status": "EFFECTIVE",
+            "latestApprovedAt": "2026-11-26T19:08:45.475Z",
+            "effectiveFrom": "2020-01-01T00:00:00.000Z",
+            "effectiveUntil": null,
+            "pendingProposalsCount": 0,
+            "nextLevelRequirements": null
+          },
+          "providerRouting": {
+            "access": "GRANTED",
+            "version": 1,
+            "dispatchReadyProviders": [
+              "PREMBLY"
+            ],
+            "pendingProposalsCount": 0,
+            "providers": [
+              {
+                "code": "MONNIFY",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "DOJAH",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "PREMBLY",
+                "enabled": true,
+                "ready": true,
+                "testOnly": false,
+                "configuredCapabilities": [
+                  "BVN",
+                  "NIN"
+                ],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "SYNTHETIC",
+                "enabled": false,
+                "ready": true,
+                "testOnly": true,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": [
+                  "BVN",
+                  "NIN"
+                ]
+              }
+            ],
+            "routes": {
+              "BVN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "NIN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "ADDRESS_VERIFICATION": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              },
+              "ENHANCED_DUE_DILIGENCE": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              }
+            },
+            "premblyCredentials": {
+              "encryptionAvailable": false,
+              "sandboxConfigured": false,
+              "productionConfigured": false,
+              "productionReleased": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/7355f1bc-bbf8-48f2-bfff-c50f09bda675/registration-review",
+      "status": 200,
+      "request": null,
+      "response": {
+        "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+        "reference": "mn-cus-6fe6e054c1201a7dabead8ed",
+        "customerType": "INDIVIDUAL",
+        "customerStatus": "DRAFT",
+        "isSynthetic": false,
+        "verifiedTier": "LEVEL_1",
+        "assignedClass": {
+          "configured": true,
+          "classCode": "STANDARD",
+          "className": "Standard",
+          "source": "TIER_DEFAULT",
+          "effectiveFrom": "2026-11-26T19:09:52.847Z"
+        },
+        "defaults": {
+          "customerClass": {
+            "configured": true,
+            "classCode": "STANDARD",
+            "className": "Standard",
+            "source": "TIER_DEFAULT",
+            "effectiveFrom": "2026-11-26T19:09:52.847Z"
+          },
+          "kyc": {
+            "level": "LEVEL_1",
+            "status": "APPROVED",
+            "assessment": {
+              "level": "LEVEL_1",
+              "status": "APPROVED",
+              "expiresAt": "2026-11-27T19:09:52.773Z",
+              "reason": "TIER_1_REQUIREMENTS_MET"
+            }
+          }
+        },
+        "onboardingWorkflow": {
+          "status": null,
+          "eligibility": null,
+          "completed": false
+        },
+        "financialEligibility": "ELIGIBLE",
+        "restrictions": {
+          "active": []
+        },
+        "identityConflicts": 0,
+        "trustedEvidence": {
+          "state": "VERIFIED",
+          "verifiedKinds": [
+            "BVN"
+          ]
+        },
+        "wallet": null,
+        "requirements": [
+          {
+            "code": "phone_verified",
+            "label": "Phone verified",
+            "state": "MET"
+          },
+          {
+            "code": "identity_evidence",
+            "label": "Identity verified by an approved provider",
+            "state": "MET",
+            "detail": "Verified: BVN"
+          },
+          {
+            "code": "kyc_assessment",
+            "label": "KYC assessment approved",
+            "state": "MET"
+          },
+          {
+            "code": "identity_conflict",
+            "label": "No identity ownership conflict",
+            "state": "MET"
+          },
+          {
+            "code": "account_restriction",
+            "label": "No active financial restriction",
+            "state": "MET"
+          },
+          {
+            "code": "financial_policy",
+            "label": "Financial eligibility policy in force",
+            "state": "MET"
+          },
+          {
+            "code": "commercial_configuration",
+            "label": "Effective fees and limits configured for enabled products",
+            "state": "MET"
+          },
+          {
+            "code": "account_active",
+            "label": "Account activated by MonieNaija",
+            "state": "OUTSTANDING",
+            "detail": "Account status is DRAFT"
+          },
+          {
+            "code": "wallet",
+            "label": "Wallet provisioned",
+            "state": "OUTSTANDING"
+          }
+        ],
+        "outstanding": [
+          "account_active",
+          "wallet"
+        ],
+        "activatable": true,
+        "effectiveConfiguration": {
+          "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675",
+          "verifiedTier": "LEVEL_1",
+          "assignedClass": {
+            "classCode": "STANDARD",
+            "className": "Standard",
+            "source": "TIER_DEFAULT",
+            "eligibleForVerifiedTier": true,
+            "classId": "8ebbaa40-d28e-4749-b713-89140ef8ad41"
+          },
+          "products": [
+            {
+              "productCode": "WALLET_TO_CASH",
+              "productName": "Wallet to Cash",
+              "currency": "NGN",
+              "fee": {
+                "status": "ZERO",
+                "ruleId": "85db0c79-ca79-4d62-b2cc-15510c389132",
+                "ruleVersion": 1,
+                "flatFeeMinor": "0",
+                "percentageBps": 0,
+                "minimumFeeMinor": "0",
+                "maximumFeeMinor": null,
+                "vatBps": 0,
+                "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                "effectiveTo": null,
+                "priority": 100,
+                "quote": {
+                  "amountMinor": "100000",
+                  "feeMinor": "0",
+                  "vatMinor": "0",
+                  "totalMinor": "100000"
+                }
+              },
+              "limits": [
+                {
+                  "dimension": "MAX_AMOUNT_PER_TX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "1000000000",
+                  "limitValueCount": null,
+                  "ruleId": "7670dad8-16c1-4650-ba2e-d8df4544b08f",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "DAILY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "d79e89ed-3e48-4711-9974-5052dc9bbf11",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WEEKLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "1feee562-7663-4276-8f58-1582e881989f",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "MONTHLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "0ca15415-f6f8-4700-8fc5-3bbf0af272f8",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WALLET_BALANCE_MAX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "94093362-6773-4e78-a72c-e63dd2f7f3c4",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                }
+              ]
+            },
+            {
+              "productCode": "WALLET_TRANSFER",
+              "productName": "Wallet Transfer",
+              "currency": "NGN",
+              "fee": {
+                "status": "RESOLVED",
+                "ruleId": "95e6bccf-e987-479b-a1e2-67a59eca9b36",
+                "ruleVersion": 1,
+                "flatFeeMinor": "10000",
+                "percentageBps": 0,
+                "minimumFeeMinor": "0",
+                "maximumFeeMinor": null,
+                "vatBps": 0,
+                "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                "effectiveTo": null,
+                "priority": 100,
+                "quote": {
+                  "amountMinor": "100000",
+                  "feeMinor": "10000",
+                  "vatMinor": "0",
+                  "totalMinor": "110000"
+                }
+              },
+              "limits": [
+                {
+                  "dimension": "MAX_AMOUNT_PER_TX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "1000000000",
+                  "limitValueCount": null,
+                  "ruleId": "0f7891a4-592e-4306-b151-14361bfe12b9",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "DAILY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "2b7b3c15-c176-4826-949a-1f1d4f31885f",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WEEKLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "65dd2cfc-1f2a-460d-8f45-a4e05494c9be",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "MONTHLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "52a7740c-89b1-47cb-b1b6-f2527ced583f",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WALLET_BALANCE_MAX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "fe7f53d1-04ea-493d-8a36-0ca6cb5be9a3",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                }
+              ]
+            }
+          ],
+          "evaluatedAt": "2026-11-26T19:09:55.467Z"
+        },
+        "activationRoute": "PATCH /api/v1/customers/:id",
+        "evaluatedAt": "2026-11-26T19:09:55.476Z"
       }
     }
   ],
   "consoleErrors": [],
-  "error": "locator.click: Element is not visible\nCall log:\n  - waiting for locator('[data-testid=\"nav-kycQueue\"]').first()\n    - locator resolved to <button type=\"button\" class=\"mn-nav__item\" data-testid=\"nav-kycQueue\">KYC reviews</button>\n  - attempting click action\n    - scrolling into view if needed\n"
+  "customerId": "7355f1bc-bbf8-48f2-bfff-c50f09bda675"
 }

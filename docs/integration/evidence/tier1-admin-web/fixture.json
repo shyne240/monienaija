@@ -2,12 +2,12 @@
   "status": "DISPOSABLE DATABASE ONLY — synthetic fixture, no real data",
   "database": "monienaija_t1",
   "kycTierPolicyVersion": 1,
-  "institutionId": "2cda8268-0946-445c-96f6-1f1b88bc7309",
+  "institutionId": "957e71e7-9667-41fb-a167-d17dd9f48685",
   "institutionPolicyVersion": 1,
   "customerClass": {
     "code": "STANDARD",
     "name": "Standard (Tier 1 default)",
-    "id": "ec6661ca-08ee-4678-8522-bc857c4e3fcd"
+    "id": "8ebbaa40-d28e-4749-b713-89140ef8ad41"
   },
   "commercialProfile": {
     "code": "T1_COMMERCIAL_HIGH",
@@ -34,25 +34,25 @@
   },
   "customers": {
     "sender": {
-      "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
-      "reference": "t1-sender-686cc9c7",
+      "id": "96d508fe-8b2d-44de-9b34-1db0b03bf004",
+      "reference": "t1-sender-96d508fe",
       "phone": "+2348099000001",
       "enrolled": true
     },
     "receiver": {
-      "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
-      "reference": "t1-receiver-61a3a630",
+      "id": "d915337f-96a8-48e8-94ab-1b096e2e7b2e",
+      "reference": "t1-receiver-d915337f",
       "phone": "+2348099000002"
     },
     "misconfigured": {
-      "id": "cb621544-2354-4c9b-8e50-093c0f020253",
-      "reference": "t1-unconfigured-cb621544",
+      "id": "7539909f-ee67-4126-b352-563cf17bd429",
+      "reference": "t1-unconfigured-7539909f",
       "phone": "+2348099000003",
       "approvedClass": "TIER1_MISCONFIGURED"
     },
     "tierTwo": {
-      "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
-      "reference": "t1-tiertwo-b9661f05",
+      "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+      "reference": "t1-tiertwo-c1cc0afa",
       "phone": "+2348099000004",
       "status": "ACTIVE",
       "expectedTier": "LEVEL_2",
