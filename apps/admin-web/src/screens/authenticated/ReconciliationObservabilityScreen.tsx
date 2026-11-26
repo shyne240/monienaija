@@ -6,6 +6,7 @@ import './reconciliation-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatMinorUnits } from '../../utils/financial-display';
+import { ReconciliationBreaksPanel } from './ReconciliationBreaksPanel';
 
 interface ReconciliationCheck {
   name: string;
@@ -213,7 +214,14 @@ const validFinance = (r: any) =>
       ),
   );
 
-export const ReconciliationObservabilityScreen: React.FC = () => {
+export const ReconciliationObservabilityScreen: React.FC<{
+  /** Open a ledger journal record from an internal reconciliation break. */
+  onOpenJournal?: (journalId: string) => void;
+  /** Deep link from Banking Operations into one institution's breaks. */
+  initialInstitutionId?: string;
+  /** Deep link target tab; defaults to the internal run workspace. */
+  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
+}> = ({ onOpenJournal, initialInstitutionId, initialTab }) => {
   const { principal, sessionId } = useAuthStore();
   const canView = principal?.scopes.includes('reconciliation.view') ?? false;
   return (
@@ -230,10 +238,18 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
         principal?.readOnlyPrincipal,
       ])}
       canView={canView}
+      onOpenJournal={onOpenJournal}
+      initialInstitutionId={initialInstitutionId}
+      initialTab={initialTab}
     />
   );
 };
-const ReconciliationWorkspace: React.FC<{ canView: boolean }> = ({ canView }) => {
+const ReconciliationWorkspace: React.FC<{
+  canView: boolean;
+  onOpenJournal?: (journalId: string) => void;
+  initialInstitutionId?: string;
+  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
+}> = ({ canView, onOpenJournal, initialInstitutionId, initialTab }) => {
   const generations = useRef({ run: 0, trial: 0, finance: 0, activity: 0 });
   useEffect(
     () => () => {
@@ -244,7 +260,9 @@ const ReconciliationWorkspace: React.FC<{ canView: boolean }> = ({ canView }) =>
     },
     [],
   );
-  const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance' | 'finance'>('runs');
+  const [activeTab, setActiveTab] = useState<
+    'runs' | 'trial-balance' | 'finance' | 'evidence'
+  >(initialTab ?? 'runs');
   const activityHeading = useRef<HTMLHeadingElement>(null);
   const focusActivity = useRef(false);
   useEffect(() => {
@@ -407,6 +425,7 @@ const ReconciliationWorkspace: React.FC<{ canView: boolean }> = ({ canView }) =>
           { value: 'runs', label: 'Run Verification Audits' },
           { value: 'trial-balance', label: 'General Trial Balance' },
           { value: 'finance', label: 'Finance Verification & Activity' },
+          { value: 'evidence', label: 'External Evidence & Breaks' },
         ]}
         onChange={(value) => {
           setSelectedBreak(null);
@@ -421,6 +440,8 @@ const ReconciliationWorkspace: React.FC<{ canView: boolean }> = ({ canView }) =>
             setActiveTab('finance');
             setFinanceError('');
             void handleLoadFinanceVerification();
+          } else if (value === 'evidence') {
+            setActiveTab('evidence');
           }
         }}
       />
@@ -697,6 +718,11 @@ const ReconciliationWorkspace: React.FC<{ canView: boolean }> = ({ canView }) =>
             )
           )}
         </div>
+      ) : activeTab === 'evidence' ? (
+        <ReconciliationBreaksPanel
+          onOpenJournal={onOpenJournal}
+          initialInstitutionId={initialInstitutionId}
+        />
       ) : (
         <div className="mn-reconciliation__workspace" style={styles.content}>
           <p className="mn-reconciliation__eyebrow">FINANCE SIGNALS</p>

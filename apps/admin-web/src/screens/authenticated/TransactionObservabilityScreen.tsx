@@ -6,6 +6,10 @@ import './transaction-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatFinancialAmount, formatMinorUnits } from '../../utils/financial-display';
+import {
+  FinanceOperationsApi,
+  type TransactionJournalLink,
+} from '../../services/finance-operations-api';
 
 interface TransactionDetail {
   id: string;
@@ -59,7 +63,11 @@ interface CustomerTransactionHistoryResponse {
 interface TransactionObservabilityProps {
   initialType?: string;
   initialCustomerId?: string;
+  /** Deep link from a ledger journal or reconciliation break: trace this transaction on open. */
+  initialTransactionId?: string;
   onBackToCustomer?: () => void;
+  /** Navigate to the ledger journal record that recorded this transaction. */
+  onOpenJournal?: (journalId: string) => void;
 }
 
 /** Convert naira to kobo exactly, without binary floating-point rounding. */
@@ -74,7 +82,9 @@ function parseNaira(value: string, label: string): string {
 export const TransactionObservabilityScreen: React.FC<TransactionObservabilityProps> = ({
   initialType,
   initialCustomerId,
+  initialTransactionId,
   onBackToCustomer,
+  onOpenJournal,
 }) => {
   const { principal, sessionId } = useAuthStore();
   const canViewGlobalTransactions = principal?.scopes.includes('transaction.view') ?? false;
@@ -92,6 +102,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
     principal?.readOnlyPrincipal,
     initialType,
     initialCustomerId,
+    initialTransactionId,
   ]);
   const canSimulate = canViewGlobalTransactions && !principal?.readOnlyPrincipal;
   return (
@@ -99,7 +110,9 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
       key={key}
       initialType={initialType}
       initialCustomerId={initialCustomerId}
+      initialTransactionId={initialTransactionId}
       onBackToCustomer={onBackToCustomer}
+      onOpenJournal={onOpenJournal}
       canSimulate={canSimulate}
       canViewGlobalTransactions={canViewGlobalTransactions}
       canViewCustomerTransactions={canViewCustomerTransactions}
@@ -115,7 +128,9 @@ const TransactionWorkspace: React.FC<
 > = ({
   initialType,
   initialCustomerId,
+  initialTransactionId,
   onBackToCustomer,
+  onOpenJournal,
   canViewGlobalTransactions,
   canViewCustomerTransactions,
   canSimulate,
@@ -139,6 +154,10 @@ const TransactionWorkspace: React.FC<
   const [txDetail, setTxDetail] = useState<TransactionDetail | null>(null);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState('');
+  const [journalLink, setJournalLink] = useState<TransactionJournalLink | null>(null);
+  const [journalLinkError, setJournalLinkError] = useState('');
+  const [journalLinkLoading, setJournalLinkLoading] = useState(false);
+  const journalLinkGeneration = useRef(0);
 
   // Fee Simulator State
   const [amountStr, setAmountStr] = useState('1000');
@@ -219,24 +238,45 @@ const TransactionWorkspace: React.FC<
     };
   }, [isCustomerHistoryView, initialCustomerId, historyPage, historyType]);
 
-  const handleSearchTx = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /** Resolve the ledger journal that recorded this transaction, via the server's read model. */
+  const loadJournalLink = async (transactionId: string, type: string, request: number) => {
+    const linkRequest = ++journalLinkGeneration.current;
+    setJournalLinkLoading(true);
+    setJournalLinkError('');
+    try {
+      const link = await FinanceOperationsApi.transactionJournal(transactionId, type);
+      if (linkRequest !== journalLinkGeneration.current || request !== traceGeneration.current)
+        return;
+      setJournalLink(link);
+    } catch (err: any) {
+      if (linkRequest === journalLinkGeneration.current && request === traceGeneration.current)
+        setJournalLinkError(
+          err?.message || 'Ledger posting link is unavailable for this transaction.',
+        );
+    } finally {
+      if (linkRequest === journalLinkGeneration.current) setJournalLinkLoading(false);
+    }
+  };
+
+  const traceTransaction = async (rawId: string, type: typeof txType) => {
     if (!canViewGlobalTransactions || traceLock.current) return;
-    if (!searchTxId.trim()) {
+    if (!rawId.trim()) {
       setTxError('Transaction ID (UUID) is required');
       return;
     }
     traceLock.current = true;
     const request = ++traceGeneration.current;
-    const requestedId = searchTxId.trim();
+    const requestedId = rawId.trim();
     setTxError('');
     setTxDetail(null);
+    setJournalLink(null);
+    setJournalLinkError('');
     setTxLoading(true);
 
     try {
       let endpoint = '';
-      if (txType === 'DEPOSIT') endpoint = `/deposits/${encodeURIComponent(requestedId)}`;
-      else if (txType === 'WITHDRAWAL')
+      if (type === 'DEPOSIT') endpoint = `/deposits/${encodeURIComponent(requestedId)}`;
+      else if (type === 'WITHDRAWAL')
         endpoint = `/withdrawals/${encodeURIComponent(requestedId)}`;
       else endpoint = `/transfers/${encodeURIComponent(requestedId)}`;
 
@@ -253,6 +293,7 @@ const TransactionWorkspace: React.FC<
       )
         throw new Error('Transaction lookup returned an invalid or mismatched record.');
       setTxDetail(res);
+      void loadJournalLink(requestedId, type, request);
     } catch (err: any) {
       if (request === traceGeneration.current)
         setTxError(err?.message || 'Transaction record not found.');
@@ -261,6 +302,20 @@ const TransactionWorkspace: React.FC<
       if (request === traceGeneration.current) setTxLoading(false);
     }
   };
+
+  const handleSearchTx = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await traceTransaction(searchTxId, txType);
+  };
+
+  const autoTraced = useRef(false);
+  useEffect(() => {
+    if (autoTraced.current || !initialTransactionId || !canViewGlobalTransactions) return;
+    autoTraced.current = true;
+    setSearchTxId(initialTransactionId);
+    void traceTransaction(initialTransactionId, txType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewGlobalTransactions, initialTransactionId]);
 
   const handleCalculateFee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -613,6 +668,73 @@ const TransactionWorkspace: React.FC<
                         <strong>Completed:</strong>{' '}
                         {new Date(txDetail.completedAt).toLocaleString()}
                       </p>
+                    )}
+                  </div>
+
+                  <div style={styles.journalLinkBox} data-testid="transaction-journal-link">
+                    <p style={styles.journalLinkHead}>Ledger posting</p>
+                    {journalLinkLoading && (
+                      <p style={styles.journalLinkText}>Resolving the ledger journal…</p>
+                    )}
+                    {journalLinkError && (
+                      <p style={styles.errorBox} role="alert" data-testid="transaction-journal-error">
+                        {journalLinkError}
+                      </p>
+                    )}
+                    {journalLink && (
+                      <>
+                        <p
+                          style={styles.journalLinkText}
+                          data-testid="transaction-journal-status"
+                          role="status"
+                        >
+                          <strong>{journalLink.outcome}</strong> — {journalLink.message}
+                        </p>
+                        {journalLink.journal && (
+                          <div style={styles.journalLinkMeta}>
+                            <p style={styles.metaItem}>
+                              <strong>Journal:</strong>{' '}
+                              <code>{journalLink.journal.reference || journalLink.journal.id}</code>
+                            </p>
+                            <p style={styles.metaItem}>
+                              <strong>Institution:</strong>{' '}
+                              {journalLink.journal.institution
+                                ? `${journalLink.journal.institution.name} (${journalLink.journal.institution.code})`
+                                : 'Unattributed legacy journal'}
+                            </p>
+                            <p style={styles.metaItem}>
+                              <strong>Amount:</strong>{' '}
+                              {formatFinancialAmount(
+                                journalLink.journal.totalMinor,
+                                journalLink.journal.currency,
+                              )}
+                            </p>
+                            <p style={styles.metaItem}>
+                              <strong>Journal status:</strong> {journalLink.journal.status}{' '}
+                              {journalLink.journal.reversal.kind !== 'NORMAL' &&
+                                `· ${journalLink.journal.reversal.kind.replace(/_/g, ' ').toLowerCase()}`}
+                            </p>
+                            <button
+                              type="button"
+                              data-testid="open-journal-record"
+                              style={styles.searchBtn}
+                              disabled={!onOpenJournal}
+                              onClick={() => {
+                                if (journalLink.journal && onOpenJournal)
+                                  onOpenJournal(journalLink.journal.id);
+                              }}
+                            >
+                              Open journal record
+                            </button>
+                          </div>
+                        )}
+                        {journalLink.ledgerAccess === 'DENIED_LEDGER_VIEW' && (
+                          <p style={styles.journalLinkText}>
+                            Your principal lacks <code>ledger.view</code>, so the journal itself is
+                            withheld. This is not evidence that no posting exists.
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -1125,5 +1247,29 @@ const styles = {
   feeValue: {
     color: 'var(--mn-action-primary, #0b624a)',
     fontWeight: '700',
+  },
+  journalLinkBox: {
+    marginTop: '14px',
+    padding: '12px 14px',
+    border: '1px solid var(--mn-border-subtle, #cfdad6)',
+    borderLeft: '4px solid var(--mn-action-primary, #0b624a)',
+    borderRadius: '6px',
+    backgroundColor: 'var(--mn-surface-raised, #f5f8f7)',
+  },
+  journalLinkHead: {
+    margin: '0 0 6px 0',
+    fontSize: '11px',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: 'var(--mn-text-secondary, #52655f)',
+  },
+  journalLinkText: {
+    margin: '0 0 8px 0',
+    fontSize: '13px',
+  },
+  journalLinkMeta: {
+    display: 'grid',
+    gap: '4px',
+    fontSize: '13px',
   },
 };
