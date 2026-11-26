@@ -29,7 +29,7 @@ import {
 )
 @Check(
   'chk_customer_class_assignments_source',
-  "source IN ('REGISTRATION_DEFAULT','MANUAL','BACKFILL','SWITCH')",
+  "source IN ('REGISTRATION_DEFAULT','MANUAL','BACKFILL','SWITCH','TIER_DEFAULT')",
 )
 @Check('chk_customer_class_assignments_version', 'version > 0')
 export class CustomerClassAssignment {

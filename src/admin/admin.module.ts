@@ -27,6 +27,11 @@ import { AdminSupportCredentialsController } from './admin-support-credentials.c
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
 
 @Module({
   imports: [
@@ -42,6 +47,11 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     // The registration-review read reuses the shared activation-readiness projection so the
     // administrator and the customer see the same outstanding requirements.
     CustomerWalletModule,
+    CustomerClassModule,
+    FeeRulesModule,
+    KycTierModule,
+    LimitCatalogModule,
+    ProductCatalogModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
@@ -59,9 +69,13 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     AdminNotificationProviderController,
     NotificationOperationsController,
   ],
-  // `NotificationOperationsService` is provided by NotificationModule (imported below) and consumed
-  // here by NotificationOperationsController; a second provider would give the delivery-log
-  // aggregates two instances with independent caches of nothing but confusion.
+  // `NotificationOperationsService` is provided by NotificationModule (imported above, exported
+  // since ARENA 6) and consumed here by NotificationOperationsController; a second provider would
+  // give the delivery-log aggregates two instances with independent caches of nothing but confusion.
+  //
+  // `CustomerEffectiveConfigurationService` is deliberately NOT provided here: KycTierModule
+  // (imported above) provides and exports it, so AdminCustomerController's registration-review read
+  // and KycTierTransitionService's tier-default write share one instance instead of forking.
   providers: [CustomerTransactionHistoryService],
 })
 export class AdminModule {}

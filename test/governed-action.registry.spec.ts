@@ -45,6 +45,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         // ARENA 4 Phase 2 institutional financial ownership.
         'WALLET_INSTITUTION_ATTRIBUTION',
         'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
+        'CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
       ].sort(),
     );
     // Governance uses explicit rule actions, not a generic LIMIT_MODIFY action.

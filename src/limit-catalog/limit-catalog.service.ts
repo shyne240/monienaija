@@ -242,10 +242,12 @@ export class LimitCatalogService {
       if (effectiveTo <= effectiveFrom)
         throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
+    const isUnlimited = input.isUnlimited ?? false;
     this.validateDimensionValue(
       dimension,
       input.limitValueMinor ?? null,
       input.limitValueCount ?? null,
+      isUnlimited,
     );
 
     const entity = manager.getRepository(LimitRule).create({
@@ -255,8 +257,9 @@ export class LimitCatalogService {
       channel,
       currency,
       dimension,
-      limitValueMinor: input.limitValueMinor ?? null,
-      limitValueCount: input.limitValueCount ?? null,
+      limitValueMinor: isUnlimited ? null : (input.limitValueMinor ?? null),
+      limitValueCount: isUnlimited ? null : (input.limitValueCount ?? null),
+      isUnlimited,
       version: 1,
       effectiveFrom,
       effectiveTo,
@@ -335,8 +338,13 @@ export class LimitCatalogService {
     if (input.channel !== undefined) rule.channel = input.channel ? input.channel.trim() : null;
     if (input.currency !== undefined) rule.currency = input.currency.trim().toUpperCase();
     if (input.dimension !== undefined) rule.dimension = input.dimension;
+    if (input.isUnlimited !== undefined) rule.isUnlimited = input.isUnlimited;
     if (input.limitValueMinor !== undefined) rule.limitValueMinor = input.limitValueMinor ?? null;
     if (input.limitValueCount !== undefined) rule.limitValueCount = input.limitValueCount ?? null;
+    if (rule.isUnlimited) {
+      rule.limitValueMinor = null;
+      rule.limitValueCount = null;
+    }
     if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom)
       rule.effectiveFrom = parsedEffectiveFrom;
     if (parsedEffectiveTo !== undefined) rule.effectiveTo = parsedEffectiveTo;
@@ -345,7 +353,12 @@ export class LimitCatalogService {
     if (input.isActive !== undefined) rule.isActive = input.isActive;
     if (input.priority !== undefined) rule.priority = input.priority;
     rule.updatedBy = actor;
-    this.validateDimensionValue(rule.dimension, rule.limitValueMinor, rule.limitValueCount);
+    this.validateDimensionValue(
+      rule.dimension,
+      rule.limitValueMinor,
+      rule.limitValueCount,
+      rule.isUnlimited,
+    );
     rule.version += 1;
     try {
       const persisted = await repository.save(rule);
@@ -465,6 +478,7 @@ export class LimitCatalogService {
       input.dimension,
       input.limitValueMinor ?? null,
       input.limitValueCount ?? null,
+      input.isUnlimited ?? false,
     );
     if (input.effectiveFrom && isNaN(new Date(input.effectiveFrom as string).getTime()))
       throw new BadRequestException('effectiveFrom must be valid ISO date');
@@ -481,10 +495,26 @@ export class LimitCatalogService {
     dimension: string,
     minor: string | null,
     count: number | null,
+    isUnlimited = false,
   ): void {
     const dim = dimension.toUpperCase();
     const isAmount = (LIMIT_AMOUNT_DIMENSIONS as readonly string[]).includes(dim);
     const isCount = (LIMIT_COUNT_DIMENSIONS as readonly string[]).includes(dim);
+    if (isUnlimited) {
+      if (dim === 'MIN_AMOUNT_PER_TX') {
+        throw new BadRequestException('MIN_AMOUNT_PER_TX cannot be unlimited');
+      }
+      if (!isAmount && !isCount) throw new BadRequestException(`unknown dimension ${dim}`);
+      if (minor !== null && minor !== undefined)
+        throw new BadRequestException(
+          `dimension ${dim} unlimited rules must not have limitValueMinor`,
+        );
+      if (count !== null && count !== undefined)
+        throw new BadRequestException(
+          `dimension ${dim} unlimited rules must not have limitValueCount`,
+        );
+      return;
+    }
     if (isAmount) {
       if (minor === null || minor === undefined || minor === '')
         throw new BadRequestException(`dimension ${dim} requires limitValueMinor`);
@@ -585,6 +615,11 @@ export class LimitCatalogService {
       dimension: row.dimension,
       limitValueMinor: row.limitValueMinor ?? null,
       limitValueCount: row.limitValueCount ?? null,
+      isUnlimited: Boolean(
+        (row as unknown as { isUnlimited?: boolean; is_unlimited?: boolean }).isUnlimited ??
+          (row as unknown as { is_unlimited?: boolean }).is_unlimited ??
+          false,
+      ),
       version: row.version,
       effectiveFrom: row.effectiveFrom,
       effectiveTo: row.effectiveTo ?? null,

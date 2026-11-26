@@ -29,6 +29,7 @@ export interface LimitRuleCreateInput {
   dimension: string;
   limitValueMinor?: string | null;
   limitValueCount?: number | null;
+  isUnlimited?: boolean;
   effectiveFrom?: Date | string | null;
   effectiveTo?: Date | string | null;
   isActive?: boolean;
@@ -44,6 +45,7 @@ export interface LimitRuleUpdateInput {
   dimension?: string;
   limitValueMinor?: string | null;
   limitValueCount?: number | null;
+  isUnlimited?: boolean;
   effectiveFrom?: Date | string | null;
   effectiveTo?: Date | string | null;
   isActive?: boolean;
@@ -77,6 +79,7 @@ export interface LimitRuleSafeProjection {
   dimension: string;
   limitValueMinor: string | null;
   limitValueCount: number | null;
+  isUnlimited: boolean;
   version: number;
   effectiveFrom: Date;
   effectiveTo: Date | null;

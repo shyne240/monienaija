@@ -33,6 +33,7 @@ export enum CustomerRestrictionType {
   MANUAL_REVIEW = 'MANUAL_REVIEW',
   FROZEN = 'FROZEN',
   BLACKLISTED = 'BLACKLISTED',
+  CONFIGURATION_REVIEW = 'CONFIGURATION_REVIEW',
 }
 
 export enum CustomerLimitType {

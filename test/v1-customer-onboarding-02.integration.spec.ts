@@ -12,6 +12,7 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -159,6 +160,7 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await seedActivationCommercialConfig(dataSource);
     provider.clear();
   });
 
