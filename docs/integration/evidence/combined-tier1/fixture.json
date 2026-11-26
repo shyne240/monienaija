@@ -1,0 +1,60 @@
+{
+  "status": "DISPOSABLE DATABASE ONLY — synthetic fixture, no real data",
+  "database": "monienaija_t1",
+  "kycTierPolicyVersion": 1,
+  "institutionId": "9ec382be-ec6b-4f6a-a3f2-3b5529b6a0a2",
+  "institutionPolicyVersion": 2,
+  "customerClass": {
+    "code": "STANDARD",
+    "name": "Standard (Tier 1 default)",
+    "id": "e4888552-0d9d-47ab-9385-edc70427787a"
+  },
+  "commercialProfile": {
+    "code": "T1_COMMERCIAL_HIGH",
+    "maxAmountPerTxMinor": "1000000000"
+  },
+  "institutionTierProfile": {
+    "code": "T1_INSTITUTION_TIER_CAP",
+    "maxAmountPerTxMinor": "500000000"
+  },
+  "transferFee": {
+    "flatFeeMinor": "10000",
+    "percentageBps": 0,
+    "vatBps": 0
+  },
+  "workforce": {
+    "scopedPrincipal": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+    "scopedEmail": "compliance@monienaija.local",
+    "unassignedPrincipal": "https://idp.example.com:local-admin-credential:be3e43f40c9f55bf96a37871c302b0f4",
+    "unassignedEmail": "customer-service@monienaija.local"
+  },
+  "customers": {
+    "sender": {
+      "id": "c507f4fe-5ff1-43a2-af2e-e0f587b7dfd8",
+      "reference": "t1-sender-c507f4fe",
+      "phone": "+2348099000001",
+      "enrolled": true
+    },
+    "receiver": {
+      "id": "e37cacd4-03b7-4963-bf0c-39929e2e2fe2",
+      "reference": "t1-receiver-e37cacd4",
+      "phone": "+2348099000002"
+    },
+    "misconfigured": {
+      "id": "f6da2dcb-2978-461d-83d4-a8675350d695",
+      "reference": "t1-unconfigured-f6da2dcb",
+      "phone": "+2348099000003",
+      "approvedClass": "TIER1_MISCONFIGURED"
+    }
+  },
+  "walletState": {
+    "wallets": 0,
+    "customerSignIns": 0,
+    "transactionPins": 0,
+    "claimCredentials": 0
+  },
+  "customerProducts": [
+    "WALLET_TO_CASH",
+    "WALLET_TRANSFER"
+  ]
+}
