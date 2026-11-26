@@ -106,10 +106,10 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations
         ORDER BY timestamp DESC LIMIT 1`,
     );
-    // The customer-class migration follows the Arena 5 dual-lane migrations.
+    // The platform-funds migration is appended after the customer-class migration by PR #33.
     expect(rows[0]).toEqual({
-      timestamp: '1785753600807',
-      name: 'CaptureCustomerFundingScope1785753600807',
+      timestamp: '1785753600813',
+      name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
   });
 
@@ -216,7 +216,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('CaptureCustomerFundingScope1785753600807');
+      expect(appliedNames.at(-1)).toBe('CreatePlatformFundsBankComparisons1785753600813');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
@@ -366,7 +366,7 @@ describe('Stage 8 readiness detection of a missing earlier migration (real Postg
     // The readiness service's expected head is the current migration head. This assertion tracks it
     // rather than re-deriving it, so a stale expectation fails loudly instead of quietly accepting a
     // tree the service does not consider compatible.
-    expect(result.migrations.latestTimestamp).toBe('1785753600807');
+    expect(result.migrations.latestTimestamp).toBe('1785753600813');
     // Financial dependency gates are unverified by design, so overall readiness still refuses.
     expect(result.status).toBe('error');
     expect(result.reason).toBe('financial_dependencies_not_ready');

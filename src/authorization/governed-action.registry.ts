@@ -189,6 +189,37 @@ export const WALLET_OWNERSHIP_RESOLUTION_ACTION: GovernedActionDefinition = {
   approvalScope: 'privileged:approve',
 };
 
+/**
+ * Finance bank reconciliation (Finance -> Reconciliation, "Platform Funds vs. Bank Balance").
+ *
+ * A FINANCE_PREPARER records a staff-verified bank balance against the ledger-backed expected
+ * balance and submits the comparison for sign-off; an independent FINANCE_CONTROLLER approves or
+ * rejects it. Nothing here moves money or posts a ledger adjustment: the approval governs a
+ * record, never funds.
+ *
+ * Function codes are catalogue codes and are never invented: no assignable maker/checker pair
+ * exists for this workflow yet (`reconciliation.investigate`/`reconciliation.resolve` are
+ * FUTURE/`assignable: false`), so — exactly like `LEDGER_JOURNAL_REVERSAL` — the maker side falls
+ * back to the approved role rule (FINANCE_PREPARER) and the checker side to `privileged:approve`,
+ * the literal capability FINANCE_CONTROLLER carries. Self-approval is prohibited and MFA is
+ * required on both sides. The action is deliberately NOT a protected-authority action: the record
+ * is evidence, not authority, and it decides nothing financial (commercial-rule actions behave the
+ * same way; only institutional/wallet/ledger actions enter the protected boundary).
+ */
+export const PLATFORM_FUNDS_BANK_COMPARISON_ACTION: GovernedActionDefinition = {
+  action: 'PLATFORM_FUNDS_BANK_COMPARISON',
+  resourceType: 'PLATFORM_FUNDS_COMPARISON',
+  initiatingFunctionCodes: [],
+  approvingFunctionCodes: [],
+  initiatingRoles: [FINANCE_PREPARER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
 /** Decision 7: AGENT_NETWORK_MANAGER initiates; independent FINANCE_CONTROLLER approves. */
 export const AGENT_FUNDING_ACTIONS: Readonly<Record<'FUND' | 'DEFUND', GovernedActionDefinition>> =
   {
@@ -318,6 +349,7 @@ export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>
   ...NOTIFICATION_CHANGE_ACTIONS,
   ...Object.fromEntries(Object.values(AGENT_FUNDING_ACTIONS).map((item) => [item.action, item])),
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
+  [PLATFORM_FUNDS_BANK_COMPARISON_ACTION.action]: PLATFORM_FUNDS_BANK_COMPARISON_ACTION,
   [WALLET_OWNERSHIP_RESOLUTION_ACTION.action]: WALLET_OWNERSHIP_RESOLUTION_ACTION,
   [INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION.action]: INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION,
   [FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION.action]:

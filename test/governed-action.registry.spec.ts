@@ -10,6 +10,7 @@ import {
   GOVERNED_ACTIONS,
   LEDGER_JOURNAL_REVERSAL_ACTION,
   NOTIFICATION_CHANGE_ACTIONS,
+  PLATFORM_FUNDS_BANK_COMPARISON_ACTION,
   WALLET_OWNERSHIP_RESOLUTION_ACTION,
   governedAction,
   governedChangeFingerprint,
@@ -39,6 +40,8 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         'LIMIT_RULE_UPDATE',
         'LEDGER_JOURNAL_REVERSAL',
         'WALLET_OWNERSHIP_RESOLUTION',
+        // Finance -> Reconciliation, "Platform Funds vs. Bank Balance" sign-off.
+        'PLATFORM_FUNDS_BANK_COMPARISON',
         // ARENA 4 Phase 1 institutional foundation.
         'INSTITUTION_AGENT_AFFILIATION_CHANGE',
         'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
@@ -58,6 +61,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE')).toBe(true);
     expect(isGovernedAction('WALLET_INSTITUTION_ATTRIBUTION')).toBe(true);
     expect(isGovernedAction('CUSTOMER_INSTITUTION_ENROLMENT_CHANGE')).toBe(true);
+    expect(isGovernedAction('PLATFORM_FUNDS_BANK_COMPARISON')).toBe(true);
   });
 
   it('requires independent MFA maker/checker roles for both notification change types', () => {
@@ -83,6 +87,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     for (const definition of [
       ...Object.values(COMMERCIAL_RULE_ACTIONS),
       LEDGER_JOURNAL_REVERSAL_ACTION,
+      PLATFORM_FUNDS_BANK_COMPARISON_ACTION,
     ]) {
       expect(definition.initiatingRoles).toEqual(['FINANCE_PREPARER']);
       expect(definition.approvingRoles).toEqual(['FINANCE_CONTROLLER']);

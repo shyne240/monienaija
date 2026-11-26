@@ -1,0 +1,180 @@
+{
+  "generatedAt": "2026-11-25T23:16:44.566Z",
+  "gitCommit": "3c26f7cfe7681c30c64c30541376dc89de45bbc2",
+  "api": "stubbed (same-origin /api/v1 fixture router — no request reaches a server or a bank)",
+  "browser": {
+    "name": "chromium",
+    "version": "153.0.8010.0",
+    "engine": "Blink",
+    "headless": true
+  },
+  "summary": {
+    "total": 17,
+    "passed": 17,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "BOOT-RENDERS-LOGIN",
+      "ok": true,
+      "detail": "login form visible"
+    },
+    {
+      "name": "LOGIN-REACHES-AUTHENTICATED-SHELL",
+      "ok": true,
+      "detail": "desktop nav rendered"
+    },
+    {
+      "name": "PF-NAV-VISIBLE-FOR-LEDGER-VIEW",
+      "ok": true,
+      "detail": "Finance → \"Platform funds vs. bank\" visible for a ledger.view principal"
+    },
+    {
+      "name": "PF-COMPARISON-LIST-RENDERS",
+      "ok": true,
+      "detail": "main content contains settlement code, statement reference and total=1"
+    },
+    {
+      "name": "PF-DETAIL-BLOCKER-ALERTS",
+      "ok": true,
+      "detail": "role=alert renders the ACCOUNT_NOT_MAPPED blocker"
+    },
+    {
+      "name": "PF-SUBMIT-DISABLED-WHILE-MAPPING-INCOMPLETE",
+      "ok": true,
+      "detail": "Submit for independent review is disabled with an incomplete mapping"
+    },
+    {
+      "name": "PF-BLOCKING-REASON-VISIBLE",
+      "ok": true,
+      "detail": "blocking reason text is visible to the maker"
+    },
+    {
+      "name": "PF-PREVIEW-RENDERS-MEMO-NOT-SAVED",
+      "ok": true,
+      "detail": "preview tiles render Expected/Breakdown with no POST issued"
+    },
+    {
+      "name": "PF-PREVIEW-SURFACES-BLOCKER",
+      "ok": true,
+      "detail": "preview renders the same blocker, flagged, before any save"
+    },
+    {
+      "name": "PF-PREVIEW-IS-READ-ONLY",
+      "ok": true,
+      "detail": "POST /comparisons issued before Create: 0"
+    },
+    {
+      "name": "PF-CREATE-CAPTURES-MANUAL-BALANCE",
+      "ok": true,
+      "detail": "create POST body bankBalanceMinor=245000000, settlementAccountId=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+    },
+    {
+      "name": "PF-NO-NON-API-REQUESTS",
+      "ok": true,
+      "detail": "requests outside same-origin /api/v1: 0"
+    },
+    {
+      "name": "PF-TIMING-ITEM-RECORDED",
+      "ok": true,
+      "detail": "POST timing-items issued: 1"
+    },
+    {
+      "name": "PF-TIMING-ITEM-REMOVED",
+      "ok": true,
+      "detail": "DELETE timing-item issued: 1"
+    },
+    {
+      "name": "PF-PASSWORD-NEVER-PERSISTED",
+      "ok": true,
+      "detail": "no credential material in storage"
+    },
+    {
+      "name": "PF-NO-PAGE-ERRORS",
+      "ok": true,
+      "detail": "clean"
+    },
+    {
+      "name": "PF-NO-LEDGER-VIEW-NO-NAV",
+      "ok": true,
+      "detail": "nav entries for principal without ledger.view: 0"
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions",
+      "body": "{\"email\":\"finance-preparer@monienaija.local\",\"password\":\"[redacted]\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/scope",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/settlement-accounts",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons/11111111-2222-4333-8444-555566667777",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons/preview",
+      "body": "{\"settlementAccountId\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001\",\"ledgerCutoff\":\"2026-11-25T23:16:00.000Z\"}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons",
+      "body": "{\"settlementAccountId\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001\",\"ledgerCutoff\":\"2026-11-25T23:16:00.000Z\",\"bankCutoff\":\"2026-11-25T23:16:00.000Z\",\"statementReference\":\"STMT-PFE-BROWSER-1\",\"bankBalanceMinor\":\"245000000\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons/11111111-2222-4333-8444-555566667777/timing-items",
+      "body": "{\"title\":\"Deposit in transit\",\"reference\":\"PFE-BROWSER-ITEM-1\",\"explanation\":\"Lodgement recorded by the bank, not yet posted to the ledger\",\"amountMinor\":\"50000\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons",
+      "body": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons/11111111-2222-4333-8444-555566667777/timing-items/deadbeef-0000-4000-8000-000000000001",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/finance-operations/platform-funds/comparisons",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions",
+      "body": "{\"email\":\"admin@monienaija.local\",\"password\":\"[redacted]\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "body": null
+    }
+  ]
+}

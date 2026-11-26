@@ -334,6 +334,7 @@ const ALL_NAV_KEYS = [
   'cashToCashOps',
   'ledgerExplorer',
   'reconciliation',
+  'platformFunds',
   'feeRules',
   'commissionRules',
   'rewardRules',
@@ -369,6 +370,7 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
     'transfers',
     'ledgerExplorer',
     'reconciliation',
+    'platformFunds',
     'feeRules',
     'commissionRules',
     'rewardRules',
@@ -387,6 +389,7 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
     'dashboard',
     'institutions',
     'ledgerExplorer',
+    'platformFunds',
     'feeRules',
     'commissionRules',
     'rewardRules',
@@ -402,6 +405,7 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
     'agents',
     'institutions',
     'ledgerExplorer',
+    'platformFunds',
     'feeRules',
     'commissionRules',
     'rewardRules',
@@ -424,6 +428,7 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
     'transfers',
     'ledgerExplorer',
     'reconciliation',
+    'platformFunds',
     'feeRules',
     'commissionRules',
     'rewardRules',
@@ -484,7 +489,7 @@ const SECTION_KEYS: Record<string, readonly NavKey[]> = {
   // ARENA 4 — institutional administration console.
   institutions: ['institutions'],
   money: ['transfers', 'cashIn', 'cashOut', 'cashToCashOps'],
-  finance: ['ledgerExplorer', 'reconciliation'],
+  finance: ['ledgerExplorer', 'reconciliation', 'platformFunds'],
   commercial: [
     'feeRules',
     'commissionRules',
@@ -519,6 +524,7 @@ const SCREEN_MARKERS: Record<NavKey, RegExp> = {
   cashToCashOps: /Cash-to-Cash Operations/i,
   ledgerExplorer: /Ledger Core & Reversals Desk/i,
   reconciliation: /Independent Reconciliation & Breaks Desk/i,
+  platformFunds: /Platform Funds vs\. Bank/i,
   feeRules: /Commercial Rule Registries/i,
   commissionRules: /Commercial Rule Registries/i,
   rewardRules: /Commercial Rule Registries/i,
@@ -589,6 +595,18 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
           walletId: null,
         });
       }
+      if (path === '/internal/finance-operations/platform-funds/scope')
+        return Promise.resolve({ mode: 'PLATFORM', institutionIds: [], platformFunctionGranted: true });
+      if (path === '/internal/finance-operations/platform-funds/settlement-accounts')
+        return Promise.resolve({ items: [] });
+      if (path.startsWith('/internal/finance-operations/platform-funds/comparisons'))
+        return Promise.resolve({
+          items: [],
+          total: 0,
+          limit: 25,
+          offset: 0,
+          scope: { mode: 'PLATFORM', institutionIds: [], platformFunctionGranted: true },
+        });
       return Promise.resolve([]);
     });
     (ApiClient.post as jest.Mock).mockResolvedValue({});

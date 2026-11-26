@@ -12,6 +12,7 @@ export type AdminView =
   | 'cashToCashOps'
   | 'ledgerExplorer'
   | 'reconciliation'
+  | 'platformFunds'
   | 'bankingOperations'
   | 'feeRules'
   | 'commissionRules'
@@ -142,6 +143,10 @@ export function canAccessAdminView(
       return has('ledger.view');
     case 'reconciliation':
       return has('reconciliation.view');
+    case 'platformFunds':
+      // Platform Funds vs. Bank Balance: the finance audience (maker/checker/auditor) holds
+      // ledger.view. The comparison itself is scope-checked server-side on every request.
+      return has('ledger.view');
     case 'bankingOperations':
       // Banking governance and reconciliation triage reuse the reconciliation capability: the
       // banking workspace cannot move money, so it must not demand a money-moving function.
