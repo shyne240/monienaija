@@ -118,9 +118,10 @@ async function mapping(tier: string) {
       approved_by: string | null;
       version: number;
     }>
-  >(`SELECT tier, class_id, status, approval_id, approved_by, version FROM customer_tier_default_classes WHERE tier = $1`, [
-    tier,
-  ]);
+  >(
+    `SELECT tier, class_id, status, approval_id, approved_by, version FROM customer_tier_default_classes WHERE tier = $1`,
+    [tier],
+  );
   return rows[0];
 }
 
@@ -182,7 +183,7 @@ describe('tier default class maker/checker approval', () => {
         approvalId,
         comment: 'self approval attempt',
       })
-      .catch((error: Error) => ({ approved: false, reason: error.message } as never));
+      .catch((error: Error) => ({ approved: false, reason: error.message }) as never);
     expect(selfDecision.approved).toBe(false);
 
     const stillPending = await mapping('LEVEL_1');
@@ -269,7 +270,11 @@ describe('tier default class maker/checker approval', () => {
       reason: 'Recreate the missing LEVEL_3 mapping under approval',
     });
     const approvalId = request.approvalId;
-    await approvals.approve({ principal: checker, approvalId, comment: 'checker approves new row' });
+    await approvals.approve({
+      principal: checker,
+      approvalId,
+      comment: 'checker approves new row',
+    });
     await tierDefaults.execute(checker, approvalId, {
       tierDefaults: { LEVEL_1: premium, LEVEL_2: premium, LEVEL_3: business },
       reason: 'Recreate the missing LEVEL_3 mapping under approval',
