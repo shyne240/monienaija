@@ -63,6 +63,15 @@ interface NavContext {
   /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
   reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
   institutionId?: string;
+  // Audit workspace pre-filters (ARENA 6 drill-downs). Search criteria only; see
+  // `AdminNavigationContext` — the audit read surface stays server-restricted.
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  notificationStatus?: string;
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -87,6 +96,12 @@ export const Layout: React.FC = () => {
     window.addEventListener('hashchange', open);
     return () => window.removeEventListener('hashchange', open);
   }, []);
+  /**
+   * Principal selected in the Workforce Directory for a governed access change. It is a UI
+   * hand-off only: the value identifies WHICH identity the operator inspected, and every grant or
+   * revocation still goes through the existing server-enforced role routes.
+   */
+  const [roleTargetPrincipalId, setRoleTargetPrincipalId] = useState('');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -535,6 +550,9 @@ export const Layout: React.FC = () => {
     setNavigationQuery('');
     if (!context?.transactionKey && window.location.hash.startsWith('#transaction-history/'))
       window.location.hash = '';
+    // A directory hand-off prefill belongs to one visit only: leaving Role governance (or moving
+    // to any other view) drops it, while the hand-off's own navigation INTO roleGovernance keeps it.
+    if (canonicalAdminView(view) !== 'roleGovernance') setRoleTargetPrincipalId('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -627,7 +645,7 @@ export const Layout: React.FC = () => {
       case 'dashboard':
         return (
           <DashboardScreen
-            onNavigate={(view) => handleNav(view)}
+            onNavigate={(view, context) => handleNav(view as View, context)}
             onNavigateToCustomers={() => handleNav('customers')}
             onNavigateToAgents={(opts) =>
               handleNav(
@@ -790,9 +808,19 @@ export const Layout: React.FC = () => {
           />
         );
       case 'workforceAccess':
-        return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
+        return (
+          <WorkforceAdminScreen
+            onWorkforceGuardChange={reportWorkforceGuard}
+            onOpenDirectory={() => handleNav('workforceDirectory')}
+          />
+        );
       case 'roleGovernance':
-        return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
+        return (
+          <RoleAssignmentScreen
+            onRoleGuardChange={reportRoleGuard}
+            initialTargetPrincipalId={roleTargetPrincipalId || undefined}
+          />
+        );
       case 'approvalsInbox':
         return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
       case 'superAdminRecovery':
@@ -805,14 +833,52 @@ export const Layout: React.FC = () => {
             onOpenNotifications={
               isVisible('notifications') ? () => handleNav('notifications') : undefined
             }
+            onOpenNotificationOperations={
+              isVisible('notificationOperations')
+                ? () => handleNav('notificationOperations')
+                : undefined
+            }
           />
         );
       case 'auditEvents':
-        return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+        return (
+          <AuditTrailScreen
+            initialCustomerId={navContext.customerId}
+            initialEntityId={navContext.auditEntityId}
+            initialEntityType={navContext.auditEntityType}
+            initialCorrelationId={navContext.correlationId}
+          />
+        );
       case 'notificationOperations':
-        return <NotificationOperationsScreen />;
+        return (
+          <NotificationOperationsScreen
+            initialStatus={navContext.notificationStatus}
+            initialWindow={
+              navContext.notificationFrom || navContext.notificationTo
+                ? {
+                    from: navContext.notificationFrom ?? '',
+                    to: navContext.notificationTo ?? '',
+                    exclusive: navContext.notificationToExclusive === true,
+                  }
+                : undefined
+            }
+            onOpenAuditSearch={
+              isVisible('auditEvents')
+                ? (correlationId: string) => handleNav('auditEvents', { correlationId })
+                : undefined
+            }
+          />
+        );
       case 'workforceDirectory':
-        return <WorkforceDirectoryScreen />;
+        return (
+          <WorkforceDirectoryScreen
+            onGovernAccess={(principalId) => {
+              if (!canAccessAdminView('roleGovernance', principal.scopes, principal.roles)) return;
+              setRoleTargetPrincipalId(principalId);
+              performNav('roleGovernance');
+            }}
+          />
+        );
       case 'auditInspection':
         return <AuditInspectionScreen />;
       case 'institutions':

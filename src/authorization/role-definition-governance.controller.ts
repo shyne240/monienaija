@@ -154,6 +154,19 @@ export class RoleDefinitionGovernanceController {
     });
   }
 
+  /**
+   * Catalogue functions the role-definition editor may select from (Arena B9 configurable roles).
+   * `workforce.role.view` is the same read gate the proposal reads use; the payload is metadata.
+   */
+  @Get('functions') async functions(@Req() r: R) {
+    const p = this.principal(r);
+    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_FUNCTION', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
+    return this.governance.listAssignableFunctions();
+  }
+
   @Get('proposals/:id')
   async getOne(@Param('id') id: string, @Req() r: R) {
     const p = this.principal(r);

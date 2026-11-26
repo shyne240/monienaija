@@ -368,9 +368,175 @@ const DashboardSettingsWorkspace: React.FC<{
       </div>
 
       <nav className="mn-dashboard-settings__nav" aria-label="Dashboard settings sections">
+        <a href="#dashboard-configuration-scope">Your configuration scope</a>
         <a href="#dashboard-template-catalogue">Template catalogue</a>
         <a href="#dashboard-role-assignments">Role assignments</a>
+        <a href="#dashboard-widget-coverage">Widget coverage</a>
       </nav>
+
+      <section
+        id="dashboard-configuration-scope"
+        tabIndex={-1}
+        className="mn-dashboard-settings__panel"
+        aria-label="Your configuration scope"
+      >
+        <p className="mn-dashboard-settings__eyebrow">WHAT THIS ROLE MAY CONFIGURE</p>
+        <h2 style={styles.sectionHeader}>Your configuration scope</h2>
+        <p style={styles.note}>
+          This panel is computed from your own session claims and the server-side widget registry.
+          It states the limit of what this screen can change for you, so that a control which is
+          absent is not mistaken for a feature that is broken — and so that a control which is
+          present is not mistaken for a permission grant.
+        </p>
+        <ul style={styles.scopeList} data-testid="dashboard-scope-list">
+          <li>
+            <code style={styles.code}>workforce.dashboard.view</code>{' '}
+            {principal?.scopes.includes('workforce.dashboard.view') ? (
+              <strong>held</strong>
+            ) : (
+              <strong>not held</strong>
+            )}{' '}
+            — reading templates, assignments and the widget registry.
+          </li>
+          <li>
+            <code style={styles.code}>workforce.dashboard.assign</code>{' '}
+            {principal?.scopes.includes('workforce.dashboard.assign') ? (
+              <strong>held</strong>
+            ) : (
+              <strong>not held</strong>
+            )}{' '}
+            — changing which template a role displays. Without it this workspace is read-only and
+            every control below stays disabled, because the backend refuses the write regardless of
+            what the browser renders.
+          </li>
+          <li>
+            {principal?.readOnlyPrincipal ? (
+              <>
+                <strong>Read-only principal.</strong> This session cannot submit configuration writes
+                at all, independently of the functions above.
+              </>
+            ) : (
+              <>This session is not flagged read-only, so an assignment write is permitted wherever{' '}
+                <code style={styles.code}>workforce.dashboard.assign</code> is held.</>
+            )}
+          </li>
+          <li>
+            <strong>Not configurable here, by design:</strong> a template&rsquo;s widget list and a
+            widget&rsquo;s required functions live in the source-controlled registry
+            (<code style={styles.code}>dashboard-widget-registry.ts</code>), and assigning a
+            template never grants or revokes a function. Roles and function grants are governed by
+            Workforce access and Role governance, which use their own maker/checker rules.
+          </li>
+          <li>
+            <strong>Governance of the write itself:</strong> a dashboard assignment is single-actor
+            (no maker/checker) and fully audited — the catalogue records that reasoning for{' '}
+            <code style={styles.code}>workforce.dashboard.assign</code>. Configuration changes that
+            <em> do</em> require approval, such as notification provider settings and templates,
+            stay in those workspaces and are not reachable from here.
+          </li>
+          <li>
+            Your roles: {principal?.roles.length ? principal.roles.join(', ') : 'none on this session'}
+            . Your dashboard is resolved from the first role with an active assignment, so this
+            screen shows the assignments available to you rather than your own layout.
+          </li>
+        </ul>
+      </section>
+      <section
+        id="dashboard-widget-coverage"
+        tabIndex={-1}
+        className="mn-dashboard-settings__panel"
+        aria-label="Widget coverage for this role"
+      >
+        <p className="mn-dashboard-settings__eyebrow">REGISTRY COVERAGE</p>
+        <h2 style={styles.sectionHeader}>
+          Widgets this role can see, and what they open ({registry.length})
+        </h2>
+        <p style={styles.note}>
+          One row per registered widget. &ldquo;Visible to you&rdquo; answers whether this session
+          holds every function the widget requires — the same check the backend applies per widget
+          before it returns data, so a row marked no is genuinely restricted and not a load failure.
+          &ldquo;In a template&rdquo; answers whether any template places the widget at all: a
+          widget that is visible but placed nowhere is an unconfigured source, which is a different
+          fact from &ldquo;there is nothing to show&rdquo;.
+        </p>
+        <div className="mn-dashboard-settings__scroll" style={styles.registryWrap}>
+          <table style={styles.registryTable}>
+            <thead>
+              <tr>
+                <th scope="col">Widget</th>
+                <th scope="col">Requires</th>
+                <th scope="col">Visible to you</th>
+                <th scope="col">In a template</th>
+                <th scope="col">Drill-down target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {registry.map((entry) => {
+                const required = entry.requiredFunctions ?? [];
+                const visible =
+                  required.length === 0 ||
+                  required.every((fn) => principal?.scopes.includes(fn) ?? false);
+                const placed = templates.filter((template) =>
+                  template.layout.widgets.some((w) => w.widgetKey === entry.widgetKey),
+                );
+                return (
+                  <tr key={entry.widgetKey} data-testid={`registry-row-${entry.widgetKey}`}>
+                    <th scope="row">
+                      {entry.displayName}
+                      <span style={styles.muted}>
+                        {' '}
+                        <code style={styles.code}>{entry.widgetKey}</code>
+                      </span>
+                    </th>
+                    <td>
+                      {required.length === 0 ? (
+                        <span style={styles.muted}>no function (own session data)</span>
+                      ) : (
+                        required.map((fn) => (
+                          <code key={fn} style={styles.code}>
+                            {fn}
+                          </code>
+                        ))
+                      )}
+                    </td>
+                    <td>
+                      <span
+                        style={
+                          visible ? styles.pillOk : styles.pillRestricted
+                        }
+                        data-testid={`registry-visible-${entry.widgetKey}`}
+                      >
+                        {visible ? 'authorized' : 'restricted'}
+                      </span>
+                    </td>
+                    <td>
+                      {placed.length === 0 ? (
+                        <span style={styles.pillUnconfigured} data-testid={`registry-placed-${entry.widgetKey}`}>
+                          not placed
+                        </span>
+                      ) : (
+                        <span data-testid={`registry-placed-${entry.widgetKey}`}>
+                          {placed.map((template) => template.templateKey).join(', ')}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {(entry as { drilldown?: { view: string; label: string } }).drilldown ? (
+                        <code style={styles.code}>
+                          {(entry as { drilldown: { view: string } }).drilldown.view}
+                        </code>
+                      ) : (
+                        <span style={styles.muted}>none</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section
         id="dashboard-template-catalogue"
         tabIndex={-1}
@@ -926,5 +1092,56 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--mn-border-subtle, #dde7e2)',
     padding: '1px 5px',
     borderRadius: 4,
+  },
+  scopeList: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none',
+    display: 'grid',
+    gap: 8,
+    fontSize: 13,
+    maxWidth: 860,
+  },
+  registryWrap: {
+    overflowX: 'auto' as const,
+    minWidth: 0,
+  },
+  registryTable: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    fontSize: 12,
+    minWidth: 720,
+  },
+  muted: {
+    color: 'var(--mn-text-secondary, #52655f)',
+    fontSize: 11,
+  },
+  pillOk: {
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    background: 'var(--mn-status-success-bg, #e7f6ee)',
+    color: 'var(--mn-status-success, #0a3d25)',
+  },
+  pillRestricted: {
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    background: 'var(--mn-status-warning-bg, #fff4e5)',
+    color: 'var(--mn-status-warning, #8a5300)',
+  },
+  pillUnconfigured: {
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    background: 'var(--mn-surface-canvas, #f1f5f9)',
+    color: 'var(--mn-text-secondary, #475569)',
+    border: '1px dashed var(--mn-border-strong, #b6c2d1)',
   },
 };

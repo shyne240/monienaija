@@ -181,3 +181,156 @@ test('delivery detail exposes retry history but no retry control', async () => {
   expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
   expect(ApiClient.get).toHaveBeenCalledWith('/internal/notifications/deliveries/d1');
 });
+
+const cardWindowDeliveries = {
+  ...deliveries,
+  window: {
+    from: '2026-11-18T15:56:00.000Z',
+    to: '2026-11-25T15:56:00.000Z',
+    upperBound: 'exclusive' as const,
+    boundary: 'created_at >= from AND created_at < to (half-open, UTC)',
+  },
+};
+
+const editWindowDeliveries = {
+  ...deliveries,
+  window: {
+    from: '2026-11-25T12:00:00.000Z',
+    to: '2026-11-25T14:00:00.000Z',
+    upperBound: 'inclusive' as const,
+    boundary: 'created_at >= from AND created_at <= to (inclusive upper bound, UTC)',
+  },
+};
+
+const localStamp = (iso: string): string => {
+  const d = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+test('a drill-down hands the card window to the queue with the bound excluded, and says so', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/notifications/operations/summary')) {
+      return Promise.resolve(summary);
+    }
+    if (path.startsWith('/internal/notifications/deliveries?')) {
+      return Promise.resolve(cardWindowDeliveries);
+    }
+    return Promise.reject(new Error(`unexpected ${path}`));
+  });
+  render(
+    <NotificationOperationsScreen
+      initialStatus="FAILED"
+      initialWindow={{
+        from: '2026-11-18T15:56:00.000Z',
+        to: '2026-11-25T15:56:00.000Z',
+        exclusive: true,
+      }}
+    />,
+  );
+
+  // Waiting on the note alone is not enough: the field values it echoes are known before the queue answers,
+  // so it paints once with the "the queue did not report" fallback. Awaiting the boundary the server
+  // reported is what makes this assert the applied window rather than an intermediate render.
+  await screen.findByText('created_at >= from AND created_at < to (half-open, UTC)');
+  const note = screen.getByTestId('a4-applied-window');
+  expect(note.textContent).toContain('half-open');
+  expect(screen.getByTestId('a4-applied-window-card-match').textContent).toContain(
+    'the same interval the dashboard exception card aggregated',
+  );
+  const path = String(
+    (ApiClient.get as jest.Mock).mock.calls.find((call) =>
+      String(call[0]).startsWith('/internal/notifications/deliveries?'),
+    )![0],
+  );
+  // The instant on the wire is the card's instant, minute-rounded only in the visible field, and the
+  // exclusive bound is what makes the two counts comparable rather than one apart.
+  expect(path).toContain('toExclusive=true');
+  expect(path).toContain('from=2026-11-18T15%3A56%3A00.000Z');
+  expect(path).toContain('to=2026-11-25T15%3A56%3A00.000Z');
+});
+
+test('editing the upper bound ends the card handoff: the inclusive bound returns', async () => {
+  // Each request is answered the way the real queue answers it: the drill-down's `toExclusive=true` gets the
+  // half-open echo, the edited query (no flag) gets the inclusive echo. The screen's statement therefore
+  // follows the server's answer in both directions, which is the behavior under test.
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/notifications/operations/summary')) {
+      return Promise.resolve(summary);
+    }
+    if (path.startsWith('/internal/notifications/deliveries?')) {
+      return Promise.resolve(
+        path.includes('toExclusive=true') ? cardWindowDeliveries : editWindowDeliveries,
+      );
+    }
+    return Promise.reject(new Error(`unexpected ${path}`));
+  });
+  render(
+    <NotificationOperationsScreen
+      initialStatus="FAILED"
+      initialWindow={{
+        from: '2026-11-18T15:56:00.000Z',
+        to: '2026-11-25T15:56:00.000Z',
+        exclusive: true,
+      }}
+    />,
+  );
+  await screen.findByTestId('a4-applied-window-card-match');
+
+  fireEvent.change(screen.getByLabelText('Created to'), {
+    target: { value: localStamp('2026-11-25T14:00:00.000Z') },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+  expect(screen.queryByTestId('a4-applied-window-card-match')).toBeNull();
+  const paths = (ApiClient.get as jest.Mock).mock.calls
+    .map((call) => String(call[0]))
+    .filter((path) => path.startsWith('/internal/notifications/deliveries?'));
+  // The edited request is identified by its own `to` value rather than by being last, so the assertion
+  // cannot pass against the drill-down request that preceded it. No exclusive bound, an inclusive `to`,
+  // and `Created from` still the card's because it was not touched: ordinary queue behaviour.
+  const last = paths.find((path) => path.includes('to=2026-11-25T14%3A00%3A00.000Z'))!;
+  expect(last).not.toContain('toExclusive');
+  expect(last).toContain('to=2026-11-25T14%3A00%3A00.000Z');
+  expect(last).toContain('from=2026-11-18T15%3A56%3A00.000Z');
+});
+
+test('a queue that does not report its bound warns, and does not also claim the card match', async () => {
+  // The response below deliberately has no `window` at all — the shape an older queue answers with. The
+  // screen's only honest move is to say the bound is unreported; rendering the card-match sentence next to
+  // that warning would put "treat this count as inclusive" and "these counts are meant to be equal" in the
+  // same paragraph, which is the contradiction this test exists to keep out.
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/notifications/operations/summary')) {
+      return Promise.resolve(summary);
+    }
+    if (path.startsWith('/internal/notifications/deliveries?')) {
+      return Promise.resolve(deliveries);
+    }
+    return Promise.reject(new Error(`unexpected ${path}`));
+  });
+  render(
+    <NotificationOperationsScreen
+      initialStatus="FAILED"
+      initialWindow={{
+        from: '2026-11-18T15:56:00.000Z',
+        to: '2026-11-25T15:56:00.000Z',
+        exclusive: true,
+      }}
+    />,
+  );
+  // Barrier first: the queue answer has been painted (so the absence asserted below is not a pre-response
+  // emptiness), and it was requested with the exclusive bound.
+  await screen.findByText(/1 matching deliveries/);
+  const requested = (ApiClient.get as jest.Mock).mock.calls
+    .map((call) => String(call[0]))
+    .filter((path) => path.startsWith('/internal/notifications/deliveries?'))
+    .at(-1)!;
+  expect(requested).toContain('toExclusive=true');
+
+  const note = await screen.findByTestId('a4-applied-window');
+  expect(note.textContent).toContain(
+    'the queue did not report which upper bound it used — treat this count as inclusive of the end of the window',
+  );
+  expect(screen.queryByTestId('a4-applied-window-card-match')).toBeNull();
+});

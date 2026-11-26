@@ -207,7 +207,14 @@ test('section navigation and requests follow each independent function grant', a
   expect(screen.getByRole('link', { name: 'Metrics' })).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Deliveries & receipts' })).toBeNull();
   expect(screen.queryByRole('region', { name: 'Notification deliveries' })).toBeNull();
-  expect(ApiClient.get).toHaveBeenCalledTimes(1);
+  // `metrics.view` authorizes the metrics family only: the counter read plus the operational-metrics
+  // snapshot the components panel composes. No diagnostics, outbox or delivery read is issued for a
+  // session that does not hold those functions.
+  const paths = (ApiClient.get as jest.Mock).mock.calls.map(([path]) => path).sort();
+  expect(paths).toEqual(['/internal/metrics', '/internal/operational-metrics']);
+  expect(paths.some((path) => path.includes('diagnostics'))).toBe(false);
+  expect(paths.some((path) => path.includes('outbox'))).toBe(false);
+  expect(paths.some((path) => path.includes('deliveries'))).toBe(false);
 });
 test('system health rejects malformed receipts without manufacturing an empty list', async () => {
   principal();
@@ -291,5 +298,7 @@ test('metric search is local to the authorized loaded response and distinguishes
   expect(screen.getByText('No loaded metrics match this search.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
   expect(screen.getByText('jobs')).toBeTruthy();
-  expect(ApiClient.get).toHaveBeenCalledTimes(1);
+  // Two calls in total, both from the initial metrics-family load. Filtering the loaded response must
+  // not issue a request per keystroke, so the count stays fixed across search, clear and re-search.
+  expect(ApiClient.get).toHaveBeenCalledTimes(2);
 });

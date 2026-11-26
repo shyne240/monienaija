@@ -44,6 +44,30 @@ export interface DashboardWidgetDefinition {
     | 'status-breakdown'
     | 'trend'
     | 'link';
+  /**
+   * Where the records behind this card actually live, when an authorized workspace exists to open
+   * them (V1-ADMIN-DASHBOARD-DRILLDOWN, ARENA 6). Declared server-side on purpose: a card can only
+   * advertise a destination this table states, so a template edit can never plant a link to a
+   * workflow the widget's own data has no relationship with.
+   *
+   * `view` is a canonical admin-console view key, not a URL — the console resolves it through its
+   * own navigation guard, and the target workspace's data stays behind the target's own
+   * server-side authorization. A caller who cannot open the target simply gets no affordance: the
+   * card's numbers are unaffected, because a drill-down is a convenience, not a permission.
+   */
+  drilldown?: DashboardWidgetDrilldown;
+}
+
+export interface DashboardWidgetDrilldown {
+  /** Canonical admin view key the console should switch to. */
+  view: string;
+  /** Button label, owned by the registry so the copy matches what the target actually shows. */
+  label: string;
+  /**
+   * Optional preset the target workspace understands (e.g. open a specific queue tab). The console
+   * ignores an unrecognized preset rather than navigating somewhere unintended.
+   */
+  preset?: string;
 }
 
 export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
@@ -74,6 +98,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     fetchMode: 'proxy',
     supportsPeriodFilter: true,
     kind: 'kpi-summary',
+    drilldown: {
+      view: 'transfers',
+      label: 'Open transaction detail →',
+    },
   },
   {
     widgetKey: 'transaction-trend',
@@ -93,6 +121,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['reporting.transaction_summary.view'],
     fetchMode: 'proxy',
     kind: 'table',
+    drilldown: {
+      view: 'transfers',
+      label: 'Open transaction detail →',
+    },
   },
   {
     widgetKey: 'ledger-summary',
@@ -102,6 +134,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['ledger.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'ledgerExplorer',
+      label: 'Open ledger explorer →',
+    },
   },
   {
     widgetKey: 'reconciliation-status',
@@ -111,6 +147,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['reconciliation.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'reconciliation',
+      label: 'Open reconciliation workspace →',
+    },
   },
   {
     widgetKey: 'audit-trail',
@@ -119,6 +159,12 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['audit.view'],
     fetchMode: 'proxy',
     kind: 'table',
+    // The audit card is a preview; the search surface it opens is a different capability
+    // (`audit.search`), which is exactly why the console gates the affordance and not the numbers.
+    drilldown: {
+      view: 'auditEvents',
+      label: 'Search audit events →',
+    },
   },
   {
     widgetKey: 'system-health',
@@ -128,6 +174,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     fetchMode: 'direct',
     endpoint: '/internal/metrics',
     kind: 'kpi-summary',
+    drilldown: {
+      view: 'systemHealth',
+      label: 'Open system health →',
+    },
   },
   {
     widgetKey: 'workforce-overview',
@@ -136,6 +186,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['workforce.user.view', 'workforce.role.view'],
     fetchMode: 'proxy',
     kind: 'kpi-summary',
+    drilldown: {
+      view: 'workforceDirectory',
+      label: 'Open workforce directory →',
+    },
   },
   {
     widgetKey: 'role-governance-queue',
@@ -145,6 +199,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     fetchMode: 'direct',
     endpoint: '/internal/a2/workforce/role-definitions/proposals',
     kind: 'table',
+    drilldown: {
+      view: 'roleGovernance',
+      label: 'Open role governance →',
+    },
   },
   {
     widgetKey: 'agent-lifecycle-summary',
@@ -153,6 +211,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['agent.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'agents',
+      label: 'Open agent network →',
+    },
   },
   {
     widgetKey: 'agent-applications-queue',
@@ -162,6 +224,11 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     fetchMode: 'direct',
     endpoint: '/internal/agents/applications',
     kind: 'table',
+    drilldown: {
+      view: 'agents',
+      label: 'Open onboarding queue →',
+      preset: 'openAgentApplications',
+    },
   },
   {
     widgetKey: 'kyc-queue-summary',
@@ -170,6 +237,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['kyc.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'kycQueue',
+      label: 'Open KYC queue →',
+    },
   },
   {
     widgetKey: 'compliance-case-summary',
@@ -179,6 +250,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['compliance.manage_case'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'complianceCases',
+      label: 'Open compliance cases →',
+    },
   },
   {
     widgetKey: 'fraud-case-summary',
@@ -188,6 +263,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['risk_fraud.manage_fraud_case'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
+    drilldown: {
+      view: 'fraudCases',
+      label: 'Open fraud cases →',
+    },
   },
   {
     widgetKey: 'support-ticket-queue',
@@ -197,6 +276,24 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     fetchMode: 'direct',
     endpoint: '/internal/support/tickets',
     kind: 'table',
+    drilldown: {
+      view: 'support',
+      label: 'Open support tickets →',
+    },
+  },
+  {
+    widgetKey: 'notification-delivery-exceptions',
+    displayName: 'Notification Delivery Exceptions',
+    description:
+      "Failed, dead and outcome-unknown notification deliveries in the selected window, with sanitized error codes and the next scheduled automatic retry. Read-only by policy: recovery is the worker's bounded automatic retry, so this card reports the backlog and never offers a retry control.",
+    requiredFunctions: ['notification.view_deliveries'],
+    fetchMode: 'proxy',
+    supportsPeriodFilter: true,
+    kind: 'status-breakdown',
+    drilldown: {
+      view: 'notificationOperations',
+      label: 'Open notification operations →',
+    },
   },
   {
     widgetKey: 'customer-directory-shortcut',
@@ -205,6 +302,10 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
     requiredFunctions: ['customer.view'],
     fetchMode: 'direct',
     kind: 'link',
+    drilldown: {
+      view: 'customers',
+      label: 'Open customer directory →',
+    },
   },
 ];
 

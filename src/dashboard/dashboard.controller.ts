@@ -166,6 +166,10 @@ export class DashboardController {
         }
         return this.widgetDataService.complianceCaseSummary();
       }
+      case 'notification-delivery-exceptions':
+        return this.widgetDataService.notificationDeliveryExceptions(
+          resolvePeriod(period, from, to),
+        );
       case 'fraud-case-summary': {
         const access = await this.complianceAccess.resolveAccess(req.authorizationPrincipal, 'GET');
         if (!access.categories.includes(ComplianceCaseCategory.FRAUD)) {
