@@ -50,11 +50,28 @@ type View = AdminView;
 
 interface NavContext {
   transactionKey?: string;
-  journalId?: string;
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
+  /** Finance operations deep links: open a ledger journal record by id. */
+  journalId?: string;
+  /** Finance operations deep links: run a ledger record search by reference. */
+  ledgerReference?: string;
+  /** Finance operations deep links: open a transaction and resolve its journal. */
+  transactionId?: string;
+  transactionType?: string;
+  /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
+  reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
   institutionId?: string;
+  // Audit workspace pre-filters (ARENA 6 drill-downs). Search criteria only; see
+  // `AdminNavigationContext` — the audit read surface stays server-restricted.
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  notificationStatus?: string;
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -79,6 +96,12 @@ export const Layout: React.FC = () => {
     window.addEventListener('hashchange', open);
     return () => window.removeEventListener('hashchange', open);
   }, []);
+  /**
+   * Principal selected in the Workforce Directory for a governed access change. It is a UI
+   * hand-off only: the value identifies WHICH identity the operator inspected, and every grant or
+   * revocation still goes through the existing server-enforced role routes.
+   */
+  const [roleTargetPrincipalId, setRoleTargetPrincipalId] = useState('');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -527,6 +550,9 @@ export const Layout: React.FC = () => {
     setNavigationQuery('');
     if (!context?.transactionKey && window.location.hash.startsWith('#transaction-history/'))
       window.location.hash = '';
+    // A directory hand-off prefill belongs to one visit only: leaving Role governance (or moving
+    // to any other view) drops it, while the hand-off's own navigation INTO roleGovernance keeps it.
+    if (canonicalAdminView(view) !== 'roleGovernance') setRoleTargetPrincipalId('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -619,7 +645,7 @@ export const Layout: React.FC = () => {
       case 'dashboard':
         return (
           <DashboardScreen
-            onNavigate={(view) => handleNav(view)}
+            onNavigate={(view, context) => handleNav(view as View, context)}
             onNavigateToCustomers={() => handleNav('customers')}
             onNavigateToAgents={(opts) =>
               handleNav(
@@ -667,6 +693,21 @@ export const Layout: React.FC = () => {
                 ? () => handleNav('agents', { agentId: navContext.agentId })
                 : undefined
             }
+            onBackToCustomer={
+              navContext.customerId && isVisible('customers')
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToAgent={
+              isVisible('agents')
+                ? (agentId: string) => handleNav('agents', { agentId })
+                : undefined
+            }
           />
         );
       case 'transfers':
@@ -680,6 +721,8 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="TRANSFER"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
             onBackToCustomer={
               navContext.customerId
                 ? () => handleNav('customers', { customerId: navContext.customerId })
@@ -687,17 +730,35 @@ export const Layout: React.FC = () => {
             }
           />
         );
+
       case 'ledgerExplorer':
         return (
           <LedgerOperationsScreen
             onLedgerGuardChange={reportLedgerGuard}
             initialJournalId={navContext.journalId}
+            initialReference={navContext.ledgerReference}
           />
         );
       case 'reconciliation':
-        return <ReconciliationObservabilityScreen />;
+        return (
+          <ReconciliationObservabilityScreen
+            initialTab={navContext.reconciliationTab}
+            initialInstitutionId={navContext.institutionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+          />
+        );
       case 'bankingOperations':
-        return <BankingOperationsScreen />;
+        return (
+          <BankingOperationsScreen
+            initialInstitutionId={navContext.institutionId}
+            onOpenReconciliation={(institutionId) =>
+              handleNav('reconciliation', {
+                institutionId,
+                reconciliationTab: 'evidence',
+              })
+            }
+          />
+        );
       case 'feeRules':
         return <CommercialRulesScreen initialTab="fees" />;
       case 'commissionRules':
@@ -726,26 +787,82 @@ export const Layout: React.FC = () => {
             onComplianceGuardChange={reportComplianceGuard}
             initialCustomerId={navContext.customerId}
             mode="kyc"
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToKycProviders={
+              isVisible('kycProviders') ? () => handleNav('kycProviders') : undefined
+            }
+            onNavigateToKycTierPolicies={
+              isVisible('kycTierPolicies') ? () => handleNav('kycTierPolicies') : undefined
+            }
+            onNavigateToComplianceCases={
+              isVisible('complianceCases')
+                ? (customerId?: string) =>
+                    handleNav('complianceCases', customerId ? { customerId } : undefined)
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />
         );
       case 'kycProviders':
-        return <KycProviderManagementScreen onGuardChange={reportKycProviderGuard} />;
+        return (
+          <KycProviderManagementScreen
+            onGuardChange={reportKycProviderGuard}
+            onNavigateToKycReviews={
+              isVisible('kycQueue') ? () => handleNav('kycQueue') : undefined
+            }
+            onNavigateToTierPolicies={
+              isVisible('kycTierPolicies') ? () => handleNav('kycTierPolicies') : undefined
+            }
+          />
+        );
       case 'kycTierPolicies':
-        return <KycTierPolicyManagementScreen onGuardChange={reportKycTierPolicyGuard} />;
+        return (
+          <KycTierPolicyManagementScreen
+            onGuardChange={reportKycTierPolicyGuard}
+            onNavigateToKycReviews={
+              isVisible('kycQueue') ? () => handleNav('kycQueue') : undefined
+            }
+            onNavigateToProviders={
+              isVisible('kycProviders') ? () => handleNav('kycProviders') : undefined
+            }
+          />
+        );
       case 'complianceCases':
         return (
           <ComplianceScreen
             initialCustomerId={navContext.customerId}
-            initialCategory="AML"
+            initialCategory="ALL"
             mode="cases"
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />
@@ -754,17 +871,39 @@ export const Layout: React.FC = () => {
         return (
           <RiskFraudScreen
             initialCustomerId={navContext.customerId}
+            liveWorkspace
             onBackToCustomer={
-              navContext.customerId
+              navContext.customerId && isVisible('customers')
                 ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+            onNavigateToCustomer={
+              isVisible('customers')
+                ? (customerId: string) => handleNav('customers', { customerId })
+                : undefined
+            }
+            onNavigateToSupport={
+              isVisible('support')
+                ? (customerId?: string) =>
+                    handleNav('support', customerId ? { customerId } : undefined)
                 : undefined
             }
           />
         );
       case 'workforceAccess':
-        return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
+        return (
+          <WorkforceAdminScreen
+            onWorkforceGuardChange={reportWorkforceGuard}
+            onOpenDirectory={() => handleNav('workforceDirectory')}
+          />
+        );
       case 'roleGovernance':
-        return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
+        return (
+          <RoleAssignmentScreen
+            onRoleGuardChange={reportRoleGuard}
+            initialTargetPrincipalId={roleTargetPrincipalId || undefined}
+          />
+        );
       case 'approvalsInbox':
         return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
       case 'superAdminRecovery':
@@ -777,14 +916,52 @@ export const Layout: React.FC = () => {
             onOpenNotifications={
               isVisible('notifications') ? () => handleNav('notifications') : undefined
             }
+            onOpenNotificationOperations={
+              isVisible('notificationOperations')
+                ? () => handleNav('notificationOperations')
+                : undefined
+            }
           />
         );
       case 'auditEvents':
-        return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+        return (
+          <AuditTrailScreen
+            initialCustomerId={navContext.customerId}
+            initialEntityId={navContext.auditEntityId}
+            initialEntityType={navContext.auditEntityType}
+            initialCorrelationId={navContext.correlationId}
+          />
+        );
       case 'notificationOperations':
-        return <NotificationOperationsScreen />;
+        return (
+          <NotificationOperationsScreen
+            initialStatus={navContext.notificationStatus}
+            initialWindow={
+              navContext.notificationFrom || navContext.notificationTo
+                ? {
+                    from: navContext.notificationFrom ?? '',
+                    to: navContext.notificationTo ?? '',
+                    exclusive: navContext.notificationToExclusive === true,
+                  }
+                : undefined
+            }
+            onOpenAuditSearch={
+              isVisible('auditEvents')
+                ? (correlationId: string) => handleNav('auditEvents', { correlationId })
+                : undefined
+            }
+          />
+        );
       case 'workforceDirectory':
-        return <WorkforceDirectoryScreen />;
+        return (
+          <WorkforceDirectoryScreen
+            onGovernAccess={(principalId) => {
+              if (!canAccessAdminView('roleGovernance', principal.scopes, principal.roles)) return;
+              setRoleTargetPrincipalId(principalId);
+              performNav('roleGovernance');
+            }}
+          />
+        );
       case 'auditInspection':
         return <AuditInspectionScreen />;
       case 'institutions':

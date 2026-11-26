@@ -68,6 +68,29 @@ function SupportItems({ onNavigate }: { onNavigate: Props['onNavigate'] }) {
     </div>
   );
 }
+/**
+ * The approvals row deliberately shows no number.
+ *
+ * A count of pending approvals has no registered widget source in this release, and inventing one by
+ * scraping the inbox page would report a page length as though it were a queue total. So the row says
+ * plainly that the count is not published, and keeps the navigation that *is* useful — reading the
+ * queue in the inbox, where the server states its own pagination. An unexplained "Count unavailable"
+ * reads like a load failure; this states which fact is missing and where to get it.
+ */
+function ApprovalsItems({ onNavigate }: { onNavigate: Props['onNavigate'] }) {
+  return (
+    <div className="one-action-item" data-testid="action-item-approvals">
+      <span aria-hidden="true">⇄</span>
+      <button type="button" onClick={() => onNavigate('approvalsInbox')}>
+        Approvals awaiting review
+      </button>
+      <span data-testid="action-item-approvals-count">
+        Count not published — open the inbox to read the queue
+      </span>
+    </div>
+  );
+}
+
 export const ActionItems: React.FC<Props> = ({
   canKyc,
   canSupport,
@@ -81,15 +104,7 @@ export const ActionItems: React.FC<Props> = ({
     <h2>Action Items</h2>
     {canKyc && <KycItems onNavigate={onNavigate} />}
     {canSupport && <SupportItems onNavigate={onNavigate} />}
-    {canApprovals && (
-      <div className="one-action-item">
-        <span aria-hidden="true">⇄</span>
-        <button type="button" onClick={() => onNavigate('approvalsInbox')}>
-          Approvals awaiting review
-        </button>
-        <span>Count unavailable</span>
-      </div>
-    )}
+    {canApprovals && <ApprovalsItems onNavigate={onNavigate} />}
     {onAgents && canAgentNetwork && (
       <div className="one-action-item">
         <span aria-hidden="true">♙</span>

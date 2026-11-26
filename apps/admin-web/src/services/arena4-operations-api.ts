@@ -1,4 +1,5 @@
 import { ApiClient } from './api-client';
+import type { ApprovalRecord, ApprovalRecordPage } from '../utils/approval-evaluation';
 
 /**
  * ARENA 4 — administrative operations API adapters.
@@ -10,7 +11,10 @@ import { ApiClient } from './api-client';
  */
 
 export interface NotificationOperationsSummary {
-  window: { hours: number; from: string };
+  /** When the aggregates were computed — a figure without this is undated, not current. */
+  generatedAt?: string;
+  window: { hours: number; from: string; to?: string };
+  filters?: { channel: string | null };
   totals: { deliveries: number; byStatus: Array<{ status: string; count: number }> };
   retryBacklog: {
     pending: number;
@@ -21,6 +25,8 @@ export interface NotificationOperationsSummary {
     nextScheduledRetryAt: string | null;
   };
   failureDiagnostics: Array<{ errorCode: string; count: number; lastSeenAt: string | null }>;
+  /** Outbox consumer checkpoints, counted independently of delivery status. */
+  outboxReceipts?: Array<{ status: string; count: number }>;
   provider: {
     projectionScope: 'FULL' | 'MINIMAL';
     channels: Array<{ channel: string; available: boolean; provider?: string }>;
@@ -42,15 +48,83 @@ export interface NotificationDeliveryPage {
   page: number;
   limit: number;
   totalPages: number;
+  /**
+   * The interval the server actually applied, with the bound it used. `toExclusive` is how a drill-down
+   * from the dashboard asks for the card's own half-open window; an ordinary visit keeps the historical
+   * inclusive bound, and this field is what lets the screen say which of the two produced the count.
+   */
+  window?: {
+    from: string | null;
+    to: string | null;
+    upperBound: 'exclusive' | 'inclusive' | 'none';
+    boundary: string;
+  };
+}
+
+/**
+ * The upstream outbox event a delivery is the materialization of, plus the notification consumer's
+ * receipt for it. Three availabilities are kept distinct on purpose: `FOUND` (read), `NOT_FOUND`
+ * (nothing addressable — purged or pre-linkage), `UNAVAILABLE` (could not be read). The last two are
+ * statements about the read, never evidence that the event was healthy.
+ */
+export interface NotificationRelatedEvent {
+  availability: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE';
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  id?: string;
+  eventType?: string;
+  status?: string;
+  attempts?: number;
+  occurredAt?: string | null;
+  publishedAt?: string | null;
+  availableAt?: string | null;
+  eventHasError?: boolean;
+  receipt?: {
+    status: string;
+    reason: string | null;
+    attempts: number;
+    nextAttemptAt: string | null;
+    updatedAt: string | null;
+  } | null;
+}
+
+export interface NotificationProviderReceiptTrace {
+  availability: 'AVAILABLE' | 'NONE_RECORDED' | 'UNAVAILABLE';
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  limit: number;
+  returned: number;
+  items: Array<{
+    id: string;
+    kind: string;
+    verification: 'SIGNED' | 'SHARED_SECRET' | 'UNVERIFIED';
+    providerCode: string | null;
+    occurredAt: string;
+    receivedAt: string;
+  }>;
 }
 
 export interface NotificationDeliveryDetail {
   delivery: Record<string, unknown> & {
     id: string;
-    status: string;
+    eventType: string;
+    eventKey: string;
+    recipientType: string;
+    /** Redacted server-side; the display form is the only form this surface ever receives. */
+    recipientId: string;
     channel: string;
+    status: string;
     attempts: number;
+    correlationId: string | null;
+    causationId: string | null;
     errorCode: string | null;
+    nextAttemptAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+    sentAt: string | null;
+    failedAt: string | null;
   };
   attempts: Array<{
     attemptNumber: number;
@@ -75,6 +149,8 @@ export interface NotificationDeliveryDetail {
     };
   };
   provider: { projectionScope: string; channel: string; available: boolean; provider?: string };
+  relatedEvent: NotificationRelatedEvent;
+  providerReceipts: NotificationProviderReceiptTrace;
 }
 
 export interface WorkforceDirectoryPage {
@@ -110,11 +186,22 @@ export interface WorkforcePrincipalDetail {
   principalId: string;
   principalType: string;
   accountStatus: string;
-  roles: Array<{ roleKey: string; status: string; readOnly: boolean }>;
+  roles: Array<{
+    roleKey: string;
+    status: string;
+    readOnly: boolean;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+    assignedBy?: string;
+    assignedAt?: string;
+    revokedAt?: string | null;
+  }>;
+  /** True when every held role is revoked or read-only — the projection never widens this. */
+  readOnlyPrincipal?: boolean;
   institutionScope: {
     mode: string;
     platformFunctionGranted: boolean;
-    active: Array<{ institutionId: string; institutionName: string | null }>;
+    active: Array<{ institutionId: string; institutionName: string | null; code?: string | null }>;
     revokedCount: number;
   };
   sessions: Array<{
@@ -136,6 +223,15 @@ export interface WorkforcePrincipalDetail {
   administrativeAuthorizations: Array<{ functionCode: string; domain: string; name: string }>;
   boundaries: { readOnly: true; note: string };
 }
+
+/**
+ * Governed-change approvals (B9). Both reads go through the existing
+ * `A2WorkforceAdministrationController` approval routes: the collection is already scoped to the
+ * caller's approval scope, MFA assurance and approving roles by
+ * `PrivilegedActionApprovalService.listApprovals`, and the single read re-uses that exact
+ * predicate with an id filter. There is no unscoped read helper here, by design.
+ */
+export type ApprovalInboxPage = ApprovalRecordPage;
 
 export interface AuditInspectionPage {
   data: Array<{
@@ -202,6 +298,44 @@ const queryString = (params: Record<string, string | number | undefined>): strin
   return query.toString();
 };
 
+/** ARENA B9 — configurable workforce roles (governed role definitions). */
+export interface RoleDefinitionFunctionOption {
+  functionCode: string;
+  name: string;
+  domain: string;
+  sensitivity: string;
+  v1Status: string;
+  financeClassRestricted: boolean;
+}
+
+export interface RoleDefinitionProposal {
+  id: string;
+  proposalType: 'CREATE' | 'MODIFY';
+  targetRoleKey: string;
+  proposedDisplayName: string;
+  proposedDescription: string;
+  proposedReadOnly: boolean;
+  proposedFunctionGrants: Array<{ functionCode: string; accessType: string }>;
+  deactivate: boolean;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'APPLIED' | 'EXPIRED' | 'FAILED';
+  approvalId: string | null;
+  appliedRoleId: string | null;
+  reason: string;
+  decisionReason: string | null;
+  requestedAt: string;
+  expiresAt: string;
+}
+
+export interface RoleChangeApproval {
+  approvalId: string;
+  action: 'FINANCE_ROLE_ASSIGN' | 'FINANCE_ROLE_REVOKE';
+  status: string;
+  actionFingerprint: string;
+  resourceType: string;
+  resourceId: string;
+  expiresAt: string;
+}
+
 export const Arena4OperationsApi = {
   notificationSummary(hours = 24): Promise<NotificationOperationsSummary> {
     return ApiClient.get<NotificationOperationsSummary>(
@@ -215,17 +349,95 @@ export const Arena4OperationsApi = {
     search?: string;
     from?: string;
     to?: string;
+    /** Use `created_at < to` instead of the historical `<=`, to match a half-open aggregate. */
+    toExclusive?: boolean;
     page?: number;
     limit?: number;
   }): Promise<NotificationDeliveryPage> {
+    // The bound flag is a query string, so it is spelled out rather than relying on a boolean coercing.
+    const { toExclusive, ...rest } = filters;
     return ApiClient.get<NotificationDeliveryPage>(
-      `/internal/notifications/deliveries?${queryString({ ...filters, page: filters.page ?? 1, limit: filters.limit ?? 20 })}`,
+      `/internal/notifications/deliveries?${queryString({
+        ...rest,
+        ...(toExclusive ? { toExclusive: 'true' } : {}),
+        page: filters.page ?? 1,
+        limit: filters.limit ?? 20,
+      })}`,
     );
   },
 
   notificationDelivery(id: string): Promise<NotificationDeliveryDetail> {
     return ApiClient.get<NotificationDeliveryDetail>(
       `/internal/notifications/deliveries/${encodeURIComponent(id)}`,
+    );
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // ARENA B9 — configurable workforce roles.
+  //
+  // `roleDefinitionFunctions` returns exactly the catalogue functions the apply path accepts, so
+  // the editor cannot offer a grant the server will refuse. `prepareRoleChangeApproval` asks the
+  // server for the approval a governed role change consumes — the fingerprint is computed there,
+  // so an operator never types an approval id they could not have derived.
+  // ---------------------------------------------------------------------------------------
+  roleDefinitionFunctions(): Promise<RoleDefinitionFunctionOption[]> {
+    return ApiClient.get<RoleDefinitionFunctionOption[]>(
+      '/internal/a2/workforce/role-definitions/functions',
+    );
+  },
+
+  roleDefinitionProposals(
+    filters: { status?: string; roleKey?: string } = {},
+  ): Promise<RoleDefinitionProposal[]> {
+    return ApiClient.get<RoleDefinitionProposal[]>(
+      `/internal/a2/workforce/role-definitions/proposals?${queryString(filters)}`,
+    );
+  },
+
+  submitRoleDefinition(body: {
+    proposalType: 'CREATE' | 'MODIFY';
+    roleKey: string;
+    displayName: string;
+    description: string;
+    readOnly?: boolean;
+    functionGrants: Array<{ functionCode: string; accessType: string }>;
+    expectedDefinitionVersion?: number;
+    reason: string;
+  }): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post('/internal/a2/workforce/role-definitions/proposals', body);
+  },
+
+  decideRoleDefinition(
+    id: string,
+    decision: 'approve' | 'reject',
+    comment?: string,
+  ): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post(
+      `/internal/a2/workforce/role-definitions/proposals/${encodeURIComponent(id)}/${decision}`,
+      comment ? { comment } : {},
+    );
+  },
+
+  applyRoleDefinition(
+    id: string,
+  ): Promise<{ success: boolean; proposal: RoleDefinitionProposal; reason?: string }> {
+    return ApiClient.post(
+      `/internal/a2/workforce/role-definitions/proposals/${encodeURIComponent(id)}/apply`,
+    );
+  },
+
+  prepareRoleChangeApproval(body: {
+    operation: 'ASSIGN' | 'REVOKE';
+    targetPrincipalId: string;
+    roleKey: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+    expectedVersion?: number;
+    reason: string;
+  }): Promise<RoleChangeApproval> {
+    return ApiClient.post<RoleChangeApproval>(
+      '/internal/a2/workforce/roles/approval-requests',
+      body,
     );
   },
 
@@ -248,10 +460,39 @@ export const Arena4OperationsApi = {
     );
   },
 
+  /**
+   * Approval inbox, as visible to the signed-in checker. `status`, `actionType` and
+   * `resourceType` are the server's own filters; nothing is filtered only in the browser.
+   */
+  approvals(filters: {
+    status?: string;
+    actionType?: string;
+    resourceType?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ApprovalInboxPage> {
+    return ApiClient.get<ApprovalInboxPage>(
+      `/internal/a2/workforce/approvals?${queryString({
+        ...filters,
+        limit: filters.limit ?? 25,
+        offset: filters.offset ?? 0,
+      })}`,
+    );
+  },
+
+  /** Authoritative re-read of ONE approval (404 when it is outside the caller's visibility). */
+  approval(id: string): Promise<ApprovalRecord> {
+    return ApiClient.get<ApprovalRecord>(
+      `/internal/a2/workforce/approvals/${encodeURIComponent(id)}`,
+    );
+  },
+
   auditInspection(filters: {
     actor?: string;
     action?: string;
     entityType?: string;
+    entityId?: string;
+    correlationId?: string;
     outcome?: string;
     institutionId?: string;
     from?: string;

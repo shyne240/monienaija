@@ -53,6 +53,9 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
       { widgetKey: 'role-governance-queue', order: 8 },
       { widgetKey: 'audit-trail', order: 9 },
       { widgetKey: 'system-health', order: 10 },
+      // SUPER_ADMIN holds notification.view_deliveries, so the exceptions card is authorized here
+      // and (unlike a bespoke panel) a role that does not hold it still just sees a restricted tile.
+      { widgetKey: 'notification-delivery-exceptions', order: 11 },
     ],
   },
   {
@@ -102,6 +105,7 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
       { widgetKey: 'reconciliation-status', order: 5 },
       { widgetKey: 'audit-trail', order: 6 },
       { widgetKey: 'system-health', order: 7 },
+      { widgetKey: 'notification-delivery-exceptions', order: 8 },
     ],
   },
   {
@@ -118,6 +122,7 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
       { widgetKey: 'support-ticket-queue', order: 5 },
       { widgetKey: 'system-health', order: 6 },
       { widgetKey: 'customer-directory-shortcut', order: 7 },
+      { widgetKey: 'notification-delivery-exceptions', order: 8 },
     ],
   },
   {
@@ -200,4 +205,44 @@ export const ROLE_DASHBOARD_ASSIGNMENT_SEED: Array<{
   { roleKey: 'RISK_FRAUD', templateKey: 'FRAUD_CASE_MONITORING', reason: 'V1 initial seed' },
   { roleKey: 'CUSTOMER_SERVICE', templateKey: 'CUSTOMER_SERVICING', reason: 'V1 initial seed' },
   { roleKey: 'TREASURY', templateKey: 'RECONCILIATION_VISIBILITY', reason: 'V1 initial seed' },
+];
+
+/**
+ * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6) — additive layout reconciliation for ALREADY-SEEDED
+ * templates.
+ *
+ * `DashboardSeedService` is insert-missing-only by design, which is correct for rows an operator can
+ * edit: re-seeding must not overwrite a considered configuration. The consequence, though, is that a
+ * widget added to the registry in a later release would exist in the fresh-install seed and nowhere on
+ * an existing deployment — a card the operator has no supported way to turn on, because template
+ * layouts are read-only in this release. That is precisely the "unconfigured, not zero" failure mode
+ * this package is meant to avoid.
+ *
+ * So additions are declared here, separately from the template's base layout, and applied
+ * append-only: a template that already carries the widget is left alone, and a widget once recorded
+ * in the template's `metadata.layoutAdditions` is never re-added after a deliberate removal.
+ */
+export const DASHBOARD_TEMPLATE_LAYOUT_ADDITIONS: ReadonlyArray<{
+  templateKey: string;
+  reason: string;
+  widgets: Array<{ widgetKey: string; order: number; title?: string }>;
+}> = [
+  {
+    templateKey: 'EXECUTIVE_GOVERNANCE',
+    reason:
+      'ARENA 6: notification delivery exceptions (SUPER_ADMIN holds notification.view_deliveries, so the card is authorized for this template)',
+    widgets: [{ widgetKey: 'notification-delivery-exceptions', order: 11 }],
+  },
+  {
+    templateKey: 'FINANCIAL_AUDIT_ASSURANCE',
+    reason:
+      'ARENA 6: notification delivery exceptions (FINANCE_AUDITOR holds notification.view_deliveries and owns delivery-failure assurance)',
+    widgets: [{ widgetKey: 'notification-delivery-exceptions', order: 8 }],
+  },
+  {
+    templateKey: 'TRANSACTION_OPERATIONS',
+    reason:
+      'ARENA 6: notification delivery exceptions (OPERATIONS runs the queues and is the role that receives customer "I never got the SMS" reports)',
+    widgets: [{ widgetKey: 'notification-delivery-exceptions', order: 8 }],
+  },
 ];

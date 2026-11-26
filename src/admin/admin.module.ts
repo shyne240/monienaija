@@ -20,7 +20,6 @@ import { AdminAgentLifecycleController } from './admin-agent-lifecycle.controlle
 import { AdminNotificationController } from './admin-notification.controller';
 import { AdminNotificationProviderController } from './admin-notification-provider.controller';
 import { NotificationOperationsController } from './notification-operations.controller';
-import { NotificationOperationsService } from './notification-operations.service';
 import { AdminAgentCredentialsController } from './admin-agent-credentials.controller';
 import { AdminCustomerCredentialsController } from './admin-customer-credentials.controller';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
@@ -75,9 +74,11 @@ import { InstitutionModule } from '../institution/institution.module';
     AdminNotificationProviderController,
     NotificationOperationsController,
   ],
+  // `NotificationOperationsService` is provided by NotificationModule (imported below) and consumed
+  // here by NotificationOperationsController; a second provider would give the delivery-log
+  // aggregates two instances with independent caches of nothing but confusion.
   providers: [
     CustomerTransactionHistoryService,
-    NotificationOperationsService,
     // CSV export shares the history list's read path; it only serialises and audits.
     TransactionHistoryExportService,
     // Wallet statement: the ledger read and the scoped, audited PDF generation.

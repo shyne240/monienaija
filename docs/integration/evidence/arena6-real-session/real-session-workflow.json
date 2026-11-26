@@ -1,0 +1,192 @@
+{
+  "kind": "arena6-real-session-workflow",
+  "generatedAt": "2026-11-25T17:23:37.811Z",
+  "environment": {
+    "nodeEnv": "test",
+    "database": "disposable, created + migrated by test/support/pg-harness.ts for this run only",
+    "productionGate": "NOT bypassed: the app is built the way every *.integration.spec.ts builds it"
+  },
+  "workflow": [
+    {
+      "step": "sign-in + dashboard",
+      "role": "FINANCE_AUDITOR",
+      "status": 200,
+      "templateKey": "FINANCIAL_AUDIT_ASSURANCE",
+      "cardAuthorized": true,
+      "drilldownView": "notificationOperations",
+      "cardReadStatus": 200,
+      "cardAnonymousStatus": 401,
+      "cardPayload": {
+        "period": "today",
+        "from": "2026-11-25T00:00:00.000Z",
+        "to": "2026-11-25T17:23:37.347Z",
+        "window": {
+          "hours": 17,
+          "from": "2026-11-25T00:00:00.000Z",
+          "to": "2026-11-25T17:23:37.347Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "today window, 2026-11-25T00:00 to 2026-11-25T17:23 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
+        "totals": {
+          "deliveries": 2,
+          "exceptions": 1
+        },
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
+        },
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-25T17:23:37.347Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "step": "queue → trace → audit",
+      "queueStatus": 200,
+      "queueRows": 1,
+      "queueAllFailed": true,
+      "traceStatus": 200,
+      "relatedEvent": {
+        "availability": "FOUND",
+        "id": "7b77446f-267f-4653-94a9-5ad27b42926d"
+      },
+      "providerReceipts": {
+        "availability": "NONE_RECORDED",
+        "returned": 0,
+        "reason": "the provider has reported nothing about this message; absence of a receipt is not evidence of delivery or failure"
+      },
+      "outboxSkipReason": null,
+      "auditStatus": 200,
+      "auditEvents": 1,
+      "auditFirst": {
+        "action": "ARENA6_SYNTHETIC_DELIVERY_RECORDED",
+        "correlationId": "arena6-real-1dfdb97b-9a92-47aa-b218-6283e817d47e"
+      }
+    },
+    {
+      "step": "window edge agreement",
+      "window": {
+        "hours": 2,
+        "from": "2026-11-25T14:23:37.697Z",
+        "to": "2026-11-25T16:23:37.697Z",
+        "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+        "label": "custom window, 2026-11-25T14:23 to 2026-11-25T16:23 UTC"
+      },
+      "cardExceptions": 2,
+      "drillDownTotal": 2,
+      "ordinaryVisitTotal": 3,
+      "edges": [
+        {
+          "label": "exactly at from",
+          "expect": "counted"
+        },
+        {
+          "label": "just before to",
+          "expect": "counted"
+        },
+        {
+          "label": "exactly at to",
+          "expect": "excluded"
+        }
+      ],
+      "nonsenseBoundStatus": 400
+    },
+    {
+      "step": "measured zero on an empty window",
+      "status": 200
+    }
+  ],
+  "restrictedRole": {
+    "role": "RISK_FRAUD",
+    "dashboardStatus": 200,
+    "widgetsVisible": 3,
+    "unauthorizedDrilldowns": 0,
+    "protectedReads": [
+      {
+        "path": "/api/v1/internal/notifications/operations/summary?hours=24",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/notifications/deliveries?status=FAILED&page=1&limit=20",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/notifications/deliveries/314bcf35-0a9c-4cdc-85e2-bc3abf5313c9",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/audit/inspection?correlationId=arena6-real-1dfdb97b-9a92-47aa-b218-6283e817d47e",
+        "status": 403,
+        "bodyBytes": 89
+      },
+      {
+        "path": "/api/v1/internal/diagnostics",
+        "status": 403,
+        "bodyBytes": 89
+      }
+    ]
+  },
+  "health": {
+    "status": 200,
+    "overall": "ok",
+    "components": [
+      {
+        "key": "database",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T17:23:37.570Z"
+      },
+      {
+        "key": "migrations",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T17:23:37.571Z"
+      },
+      {
+        "key": "reconciliation",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T17:23:37.590Z"
+      },
+      {
+        "key": "outbox",
+        "state": "ok",
+        "availability": "CHECKED",
+        "reason": null,
+        "checkedAt": "2026-11-25T17:23:37.571Z"
+      },
+      {
+        "key": "workers",
+        "state": "unknown",
+        "availability": "UNAVAILABLE",
+        "reason": "no completed tick observed in this process; disabled workers are never measured by design",
+        "checkedAt": "2026-11-25T17:23:37.590Z"
+      }
+    ]
+  },
+  "notCertified": [
+    "no browser rendering happens in this file; see docs/integration/evidence/arena6-real-browser/browser-run.json for the real-backend browser leg, and docs/integration/evidence/arena6-drilldown/ for the stubbed client harness",
+    "no provider call was made, so no provider receipt can be FOUND here",
+    "the shipped bootstrap still refuses to listen; no AR6 change alters that"
+  ],
+  "accountsSeeded": 11,
+  "productionReadiness": {
+    "refuses": true,
+    "reason": "Production readiness failed: financial_dependencies_not_ready"
+  },
+  "browserRun": {
+    "ranHere": false,
+    "reason": "this suite leaves the browser leg to its own process, because a jest worker does not flush replies to a browser in another process — so the browser run is recorded separately, not implied here",
+    "runWith": "node scripts/arena6-real-browser.cjs --executable <chromium> --lib-path <library>",
+    "evidence": "docs/integration/evidence/arena6-real-browser/browser-run.json",
+    "readinessGateAssertedByBackend": true
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-11-25T11:31:02.196Z",
+  "api": "stubbed",
+  "checks": [
+    {
+      "name": "LEDGER-SEARCH-PANEL-RENDERS",
+      "ok": true,
+      "detail": "search panel visible"
+    },
+    {
+      "name": "LEDGER-SEARCH-RETURNS-SCOPED-ROWS",
+      "ok": true,
+      "detail": "3 result row(s), institution and source rendered"
+    },
+    {
+      "name": "JOURNAL-DETAIL-SHOWS-NEXT-ACTION-AND-SOURCE",
+      "ok": true,
+      "detail": "next action=\"Execute the approved reversal\", source link visible=true"
+    },
+    {
+      "name": "TRANSFER-LINKS-TO-UNIFIED-HISTORY-BY-BUSINESS-KEY",
+      "ok": true,
+      "detail": "href=#transaction-history/WALLET_TRANSFER/aa11bb22-3333-4444-8555-666677778888"
+    },
+    {
+      "name": "CASH-IN-LINKS-BY-CANONICAL-JOURNAL-ID",
+      "ok": true,
+      "detail": "href=#transaction-history/CASH_IN/1a2b3c4d-2222-4333-8444-555566667777 (expected CASH_IN/1a2b3c4d-2222-4333-8444-555566667777, not deposit-1)"
+    },
+    {
+      "name": "UNSUPPORTED-PRODUCT-SHOWS-LINK-UNAVAILABLE",
+      "ok": true,
+      "detail": "Transaction history link unavailable — Unified Transaction History has no mapping for customer funding yet."
+    },
+    {
+      "name": "RECONCILIATION-SHOWS-NOT-ESTABLISHED-AND-SOURCES",
+      "ok": true,
+      "detail": "3 source cards; banner: \"Reconciliation not established — 0/1 internal checks passed, 1 error break(s), 0 warning(s), 2 source(s) not performed, \""
+    },
+    {
+      "name": "RECONCILIATION-BREAK-OPENS-JOURNAL",
+      "ok": true,
+      "detail": "internal break next action opened the journal record"
+    },
+    {
+      "name": "NO-UNCAUGHT-PAGE-ERRORS",
+      "ok": true,
+      "detail": "none"
+    }
+  ]
+}

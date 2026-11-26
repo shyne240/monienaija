@@ -410,6 +410,9 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
     'limitAssignments',
     'approvalsInbox',
     'notifications',
+    // The checker holds workforce.role.create but no assignment authority: Role governance now
+    // opens as a definitions-only review workspace so it can decide what it was asked to check.
+    'roleGovernance',
   ],
   FINANCE_AUDITOR: [
     'dashboard',

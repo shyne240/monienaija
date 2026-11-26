@@ -52,6 +52,12 @@ export interface LedgerJournalView {
   description: string | null;
   correlationId: string | null;
   reversalOfJournalId: string | null;
+  /**
+   * Institutional attribution of the posting, resolved at INSERT time from the accounts.
+   * Optional in the TypeScript view so existing in-memory journal doubles stay assignable; the
+   * service always populates it in production reads.
+   */
+  institutionId?: string | null;
   metadata: Record<string, unknown>;
   totalMinor: string;
   createdAt: Date;
@@ -67,6 +73,9 @@ export interface LedgerAccountView {
   normalBalance: LedgerNormalBalance;
   currency: string;
   accountingUnit: string;
+  institutionalScope?: string;
+  institutionId?: string | null;
+  institutionalPurpose?: string | null;
   allowNegativeBalance: boolean;
   isActive: boolean;
   createdAt: Date;

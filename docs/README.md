@@ -8,7 +8,8 @@ artifacts live in [`archive/`](archive/README.md) and are *not* current requirem
 
 | What | Where |
 |---|---|
-| V1 scope adjudication (what is in, what is deliberately out, decision-pending items) | [`V1/V1-SCOPE-CHALLENGE-01.md`](V1/V1-SCOPE-CHALLENGE-01.md) |
+| Admin Web capability audit and proposed revised V1 scope | [Admin Web audit and proposed V1 scope](V1/ADMIN-WEB-AUDIT-AND-PROPOSED-V1-SCOPE.md) |
+| Historical V1 scope reassessment | [`V1/V1-SCOPE-CHALLENGE-01.md`](V1/V1-SCOPE-CHALLENGE-01.md) |
 | V1 implementation-completion audit (22 gaps → closed) | [`V1/V1-PRODUCT-COMPLETION-AUDIT.md`](V1/V1-PRODUCT-COMPLETION-AUDIT.md) |
 | V1 operational launch-gate audit ("operationally complete") | [`V1/V1-HARDENING-10-FINAL-V1-OPERATIONAL-READINESS-AUDIT.md`](V1/V1-HARDENING-10-FINAL-V1-OPERATIONAL-READINESS-AUDIT.md) |
 | Runtime-backed capability surface | [`V1/V1-CAPABILITY-REGISTRY.md`](V1/V1-CAPABILITY-REGISTRY.md) |

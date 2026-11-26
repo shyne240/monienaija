@@ -12,6 +12,19 @@ import {
   StructuredKeyValueList,
   StructuredRecordTable,
 } from '../../components/StructuredData';
+import { HealthComponentsTable, HealthSourceAvailability } from '../../components/SystemHealthPanels';
+import {
+  asRecord,
+  HEALTH_SOURCE_PATHS,
+  isAttentionItemList,
+  isHealthComponentArray,
+  isUnavailableList,
+  stamp,
+  type HealthPayload,
+  type OperationsCentre,
+  type OperationalSnapshot,
+  type UnavailableSource,
+} from '../../components/system-health-types';
 
 interface DeliveryFilters {
   status: string;
@@ -63,7 +76,12 @@ const validList = (value: unknown): boolean => {
       : null;
   return Array.isArray(rows) && rows.every(isRecord);
 };
-export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> = (props) => {
+
+export const SystemHealthScreen: React.FC<{
+  onOpenNotifications?: () => void;
+  /** Deep link to the read-only delivery workspace, offered only when that workspace is reachable. */
+  onOpenNotificationOperations?: () => void;
+}> = (props) => {
   const principal = useAuthStore((state) => state.principal);
   const contextKey = JSON.stringify([
     principal?.principalId,
@@ -77,16 +95,30 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
   ]);
   return <SystemHealthWorkspace key={contextKey} {...props} />;
 };
-const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
-  onOpenNotifications,
-}) => {
+const SystemHealthWorkspace: React.FC<{
+  onOpenNotifications?: () => void;
+  onOpenNotificationOperations?: () => void;
+}> = ({ onOpenNotifications, onOpenNotificationOperations }) => {
   const { principal } = useAuthStore();
-  const generations = useRef({ health: 0, deliveries: 0, receipts: 0 });
+  /**
+   * One counter per independent read. They are deliberately not shared: two panels reading the same
+   * counter would invalidate each other's in-flight responses, which turns an unrelated refresh into
+   * a silently dropped panel. Each read supersedes only its own previous read.
+   */
+  const generations = useRef({
+    health: 0,
+    deliveries: 0,
+    receipts: 0,
+    operationsCentre: 0,
+    operationalMetrics: 0,
+  });
   useEffect(
     () => () => {
       generations.current.health++;
       generations.current.deliveries++;
       generations.current.receipts++;
+      generations.current.operationsCentre++;
+      generations.current.operationalMetrics++;
     },
     [],
   );
@@ -98,7 +130,18 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
 
   const [metrics, setMetrics] = useState<any>(null);
   const [metricSearch, setMetricSearch] = useState('');
-  const [diagnostics, setDiagnostics] = useState<DataRecord | null>(null);
+  const [diagnostics, setDiagnostics] = useState<HealthPayload | null>(null);
+  /**
+   * Two further reads back this screen's central promise — that a source which could not be read is
+   * shown as unread rather than as a healthy zero:
+   *  - the operations centre ranks what needs attention and is the only source that reports *which
+   *    subsystems it could not consult* (`unavailable`, `partial`);
+   *  - the operational-metrics snapshot names signals that could not be collected in this process.
+   * Each is fetched only when its own capability is granted.
+   */
+  const [centre, setCentre] = useState<OperationsCentre | null>(null);
+  const [operational, setOperational] = useState<OperationalSnapshot | null>(null);
+  const [componentsError, setComponentsError] = useState('');
   const [outbox, setOutbox] = useState<unknown>(null);
   const [deliveries, setDeliveries] = useState<any>(null);
   const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
@@ -187,18 +230,94 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
     if (canViewMetrics)
       read(
         'metrics',
-        '/internal/metrics',
+        HEALTH_SOURCE_PATHS.metrics,
         (value) => isRecord(value) && isRecord(value.metrics),
         setMetrics,
       );
     if (canViewDiagnostics)
       read(
         'diagnostics',
-        '/internal/diagnostics',
+        HEALTH_SOURCE_PATHS.diagnostics,
         (value) => isRecord(value) && typeof value.status === 'string',
-        setDiagnostics,
+        setDiagnostics as (value: any) => void,
       );
-    if (canViewOutbox) read('outbox', '/internal/outbox', validList, setOutbox);
+    if (canViewOutbox) read('outbox', HEALTH_SOURCE_PATHS.outbox, validList, setOutbox);
+
+    // The two composed sources each carry their own generation counter, like every other panel here.
+    // Sharing the metrics counter would have made a metrics-only refresh cancel these reads (and vice
+    // versa), which shows up as a panel that quietly keeps its previous numbers.
+    setComponentsError('');
+    if (canViewDiagnostics) {
+      const centreGeneration = ++generations.current.operationsCentre;
+      setPanelLoading((previous) => ({ ...previous, operationsCentre: true }));
+      void ApiClient.get(HEALTH_SOURCE_PATHS.operationsCentre)
+        .then((value: unknown) => {
+          if (!asRecord(value) || typeof value.clear !== 'boolean' || typeof value.partial !== 'boolean')
+            throw new Error('The operations centre returned an unusable response.');
+          if (centreGeneration !== generations.current.operationsCentre) return;
+          setCentre({
+            generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : '',
+            clear: value.clear === true,
+            partial: value.partial === true,
+            items: isAttentionItemList(value.items) ? value.items : [],
+            unavailable: (
+              isUnavailableList(value.unavailable) ? value.unavailable : []
+            ).map((entry) => ({
+              area: entry.area,
+              reason: entry.reason,
+              source: `operations centre (${HEALTH_SOURCE_PATHS.operationsCentre})`,
+              checkedAt: typeof value.generatedAt === 'string' ? value.generatedAt : null,
+            })),
+            counts: asRecord(value.counts)
+              ? (value.counts as unknown as OperationsCentre['counts'])
+              : undefined,
+            scope: typeof value.scope === 'string' ? value.scope : undefined,
+          });
+        })
+        .catch((error: any) => {
+          if (centreGeneration !== generations.current.operationsCentre) return;
+          setCentre(null);
+          setComponentsError(
+            error?.message ||
+              'The operations centre could not be reached, so source availability is unknown.',
+          );
+        })
+        .finally(() => {
+          if (centreGeneration === generations.current.operationsCentre)
+            setPanelLoading((previous) => ({ ...previous, operationsCentre: false }));
+        });
+    }
+    if (canViewMetrics) {
+      const operationalGeneration = ++generations.current.operationalMetrics;
+      setPanelLoading((previous) => ({ ...previous, operationalMetrics: true }));
+      void ApiClient.get(HEALTH_SOURCE_PATHS.operationalMetrics)
+        .then((value: unknown) => {
+          if (!asRecord(value) || !Array.isArray(value.unavailable))
+            throw new Error(
+              'The operational metrics snapshot did not include its unavailable list.',
+            );
+          if (operationalGeneration !== generations.current.operationalMetrics) return;
+          setOperational({
+            generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : '',
+            unavailable: value.unavailable
+              .filter((entry: unknown) => asRecord(entry))
+              .map((entry: any) => ({ signal: String(entry.signal), reason: String(entry.reason) })),
+            samples: Array.isArray(value.samples) ? value.samples : [],
+          });
+        })
+        .catch((error: any) => {
+          if (operationalGeneration !== generations.current.operationalMetrics) return;
+          setOperational(null);
+          setLoadErrors((previous) => ({
+            ...previous,
+            operationalMetrics: error?.message || 'Operational metrics snapshot unavailable',
+          }));
+        })
+        .finally(() => {
+          if (operationalGeneration === generations.current.operationalMetrics)
+            setPanelLoading((previous) => ({ ...previous, operationalMetrics: false }));
+        });
+    }
   }, [canViewMetrics, canViewDiagnostics, canViewOutbox]);
 
   const fetchDeliveries = useCallback(async () => {
@@ -314,8 +433,107 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
           started here.
         </span>
       </div>
+      {canViewDiagnostics && (
+        <section
+          id="health-components"
+          tabIndex={-1}
+          className="health-redesign__panel"
+          aria-label="Health components checked"
+        >
+          <p className="health-redesign__eyebrow">COMPONENTS CHECKED</p>
+          <h2>What was checked, what it means, and when</h2>
+          <p className="health-redesign__sub">
+            One row per component the diagnostics service probed for this request. A row exists only
+            where a probe was attempted; a probe that could not run reports <strong>UNAVAILABLE</strong>{' '}
+            with the reason, which means that component&rsquo;s state is unknown — not healthy, and not
+            zero.
+          </p>
+          {panelLoading.diagnostics ? (
+            <div className="health-redesign__state" role="status">
+              Loading component checks…
+            </div>
+          ) : loadErrors.diagnostics ? (
+            <div className="health-redesign__error" role="alert">
+              {loadErrors.diagnostics} — no component state can be shown for this refresh.
+            </div>
+          ) : isHealthComponentArray(diagnostics?.components) ? (
+            <HealthComponentsTable
+              components={diagnostics!.components as any}
+              reportTimestamp={typeof diagnostics?.timestamp === 'string' ? diagnostics.timestamp : undefined}
+            />
+          ) : (
+            <div
+              className="health-redesign__state"
+              role="status"
+              data-testid="health-components-absent"
+            >
+              This build&rsquo;s diagnostics service returned no component breakdown, so per-component
+              check times are unavailable. The aggregate verdict and the raw diagnostics below are all
+              that can honestly be shown.
+            </div>
+          )}
+        </section>
+      )}
+
+      {canViewDiagnostics && (
+        <section
+          id="health-sources"
+          tabIndex={-1}
+          className="health-redesign__panel"
+          aria-label="Source availability and attention items"
+        >
+          <p className="health-redesign__eyebrow">SOURCE AVAILABILITY</p>
+          <h2>Unreadable sources and what needs attention</h2>
+          <p className="health-redesign__sub">
+            The operations centre ranks the findings an operator may need to act on and states which
+            subsystems it could not consult; the metrics snapshot names the signals it could not
+            collect in this process. Both are separate reads, and both are shown as unavailable rather
+            than empty when they fail.
+          </p>
+          {componentsError ? (
+            <div className="health-redesign__error" role="alert">
+              {componentsError}
+            </div>
+          ) : null}
+          {panelLoading.operationsCentre ? (
+            <div className="health-redesign__state" role="status">
+              Loading operations centre view…
+            </div>
+          ) : centre ? (
+            <HealthSourceAvailability
+              clear={centre.clear}
+              partial={centre.partial}
+              generatedAt={centre.generatedAt}
+              scope={centre.scope}
+              items={centre.items}
+              unavailable={centre.unavailable}
+              metricsUnavailable={operational?.unavailable ?? []}
+              metricsGeneratedAt={operational?.generatedAt ?? null}
+              metricsUnreadable={Boolean(loadErrors.operationalMetrics)}
+              centreUnreadable={false}
+              onOpenNotificationOperations={onOpenNotificationOperations}
+            />
+          ) : (
+            <HealthSourceAvailability
+              clear={false}
+              partial
+              generatedAt=""
+              items={[]}
+              unavailable={[]}
+              metricsUnavailable={operational?.unavailable ?? []}
+              metricsGeneratedAt={operational?.generatedAt ?? null}
+              metricsUnreadable={Boolean(loadErrors.operationalMetrics)}
+              centreUnreadable
+              onOpenNotificationOperations={onOpenNotificationOperations}
+            />
+          )}
+        </section>
+      )}
+
       <div className="health-redesign__toolbar">
         <nav className="health-redesign__nav" aria-label="System health sections">
+          {canViewDiagnostics && <a href="#health-components">Components</a>}
+          {canViewDiagnostics && <a href="#health-sources">Sources &amp; attention</a>}
           {canViewMetrics && <a href="#health-metrics">Metrics</a>}
           {canViewDiagnostics && <a href="#health-diagnostics">Diagnostics</a>}
           {canViewOutbox && <a href="#health-outbox">Outbox events</a>}
@@ -419,7 +637,9 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
           <p className="health-redesign__eyebrow">EVENT TRANSPORT</p>
           <h2>Outbox (recent events)</h2>
           <p className="health-redesign__sub">
-            Recent records returned by the outbox service; this is not a delivery history.
+            Recent records returned by the outbox service; this is not a delivery history. This read
+            reports no generation timestamp, so the set as a whole is undated — each row&rsquo;s own{' '}
+            <code>occurredAt</code> is the only time available.
           </p>
           {panelLoading.outbox ? (
             <div className="health-redesign__state" role="status">

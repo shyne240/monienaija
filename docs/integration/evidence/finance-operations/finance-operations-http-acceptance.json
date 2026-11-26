@@ -1,0 +1,350 @@
+{
+  "generatedAt": "2026-11-25T11:46:54.072Z",
+  "bootstrap": "isolated test bootstrap: real AppModule/Fastify/guards/route policies, readiness gate skipped",
+  "database": {
+    "host": "127.0.0.1",
+    "name": "monienaija"
+  },
+  "assertions": [
+    {
+      "name": "LOGIN-FINANCE_AUDITOR",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-FINANCE_PREPARER",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-FINANCE_CONTROLLER",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-TREASURY",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "LOGIN-SUPER_ADMIN",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "UNAUTHENTICATED-READ-DENIED",
+      "ok": true,
+      "detail": "HTTP 401"
+    },
+    {
+      "name": "AUTHORIZED-SEARCH-RETURNS-INSTITUTION-RECORD",
+      "ok": true,
+      "detail": "HTTP 200, items=1"
+    },
+    {
+      "name": "SEARCH-DOES-NOT-LEAK-OTHER-INSTITUTION",
+      "ok": true,
+      "detail": "HTTP 200, items=0"
+    },
+    {
+      "name": "AUTHORIZED-DETAIL-SHOWS-ATTRIBUTION-AND-LINES",
+      "ok": true,
+      "detail": "HTTP 200, lines=2, kind=NORMAL"
+    },
+    {
+      "name": "CROSS-INSTITUTION-READ-DENIED-404",
+      "ok": true,
+      "detail": "finance HTTP 404, legacy ledger HTTP 404"
+    },
+    {
+      "name": "CROSS-INSTITUTION-RECONCILIATION-DENIED-404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "EXTERNAL-EVIDENCE-STAYS-NOT-PERFORMED",
+      "ok": true,
+      "detail": "HTTP 200, established=false, provider=NOT_PERFORMED"
+    },
+    {
+      "name": "AUDITOR-ELIGIBILITY-IS-READ-ONLY",
+      "ok": true,
+      "detail": "nextAction=NONE, reason=READ_ONLY_PRINCIPAL"
+    },
+    {
+      "name": "PREPARER-ELIGIBILITY-REQUESTS-REVERSAL",
+      "ok": true,
+      "detail": "nextAction=REQUEST_REVERSAL"
+    },
+    {
+      "name": "CROSS-INSTITUTION-REVERSAL-REQUEST-DENIED",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "name": "MAKER-REQUEST-CREATES-PENDING-APPROVAL",
+      "ok": true,
+      "detail": "HTTP 201, approval=ab014905-c99b-4823-a2e8-82fb85ed2065"
+    },
+    {
+      "name": "CHECKER-SEES-AWAIT-APPROVAL",
+      "ok": true,
+      "detail": "nextAction=AWAIT_APPROVAL, approvalStatus=REQUESTED"
+    },
+    {
+      "name": "CHECKER-APPROVES-GOVERNED-ACTION",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "CHECKER-ELIGIBILITY-OFFERS-EXECUTION",
+      "ok": true,
+      "detail": "nextAction=EXECUTE_REVERSAL"
+    },
+    {
+      "name": "EXECUTION-POSTS-REVERSAL",
+      "ok": true,
+      "detail": "HTTP 201, reversal=01903771-0977-4794-b51c-d1f10f5790d7"
+    },
+    {
+      "name": "DETAIL-REFLECTS-REVERSED-STATE",
+      "ok": true,
+      "detail": "kind=REVERSED, reversedBy=01903771-0977-4794-b51c-d1f10f5790d7"
+    },
+    {
+      "name": "ALREADY-REVERSED-IS-NOT-ELIGIBLE",
+      "ok": true,
+      "detail": "nextAction=NONE, reason=ALREADY_REVERSED"
+    },
+    {
+      "name": "PLATFORM-AUTHORITY-SEES-BOTH-INSTITUTIONS",
+      "ok": true,
+      "detail": "HTTP 200, mode=PLATFORM, items=1"
+    },
+    {
+      "name": "FUNCTION-DENIAL-HOLDS-AND-OWN-INSTITUTION-IS-ALLOWED",
+      "ok": true,
+      "detail": "ledger search HTTP 403, own-institution reconciliation HTTP 200"
+    },
+    {
+      "name": "INVALID-DATE-RANGE-REJECTED",
+      "ok": true,
+      "detail": "HTTP 400"
+    }
+  ],
+  "transcript": [
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-auditor@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"bf8fb6d2-68a8-4567-ad89-761a4f389acd\",\"expiresAt\":\"2026-11-25T12:01:53.561Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:67bff13ab7604d1e1c1189be5ab7eb06\",\"sessionId\":\"bf8fb6d2-68a8-4567-ad89-761a4f389acd\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_AUDITO"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-preparer@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"2eb31cbe-ec0f-4408-880c-4d21f2b64320\",\"expiresAt\":\"2026-11-25T12:01:53.600Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:cc12037b2b90869722d01e356f81e857\",\"sessionId\":\"2eb31cbe-ec0f-4408-880c-4d21f2b64320\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_PREPAR"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "finance-controller@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"d7c6ab58-17b9-41f3-97ac-d575af5974f5\",\"expiresAt\":\"2026-11-25T12:01:53.631Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:287e947a9ed20b7e3cfd99ad8e7ffd04\",\"sessionId\":\"d7c6ab58-17b9-41f3-97ac-d575af5974f5\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"FINANCE_CONTRO"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "treasury@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"80d4f8c7-9f3e-407a-9d6e-998191c4132f\",\"expiresAt\":\"2026-11-25T12:01:53.651Z\",\"principal\":{\"type\":\"OPERATOR\",\"principalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:45e965e8f17dfaae1d8866c38ecdcd9c\",\"sessionId\":\"80d4f8c7-9f3e-407a-9d6e-998191c4132f\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"TREASURY\"},\"sc"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "body": {
+        "email": "super-admin@monienaija.local",
+        "password": "[REDACTED]"
+      },
+      "responsePreview": "{\"accessToken\":\"[REDACTED]\",\"tokenType\":\"[REDACTED]\",\"sessionId\":\"6e782ac9-faee-42d6-8341-5107cf1f21b0\",\"expiresAt\":\"2026-11-25T12:01:53.677Z\",\"principal\":{\"type\":\"PRIVILEGED\",\"principalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123\",\"sessionId\":\"6e782ac9-faee-42d6-8341-5107cf1f21b0\",\"audience\":\"workforce-admin\",\"roles\":{\"0\":\"SUPER_ADMIN\""
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals?reference=FIN-ACC-A-cadfaab0",
+      "status": 401,
+      "body": null,
+      "responsePreview": "{\"statusCode\":401,\"code\":\"REQUEST_ERROR\",\"message\":\"Authentication required\",\"error\":\"Unauthorized\",\"timestamp\":\"2026-11-25T11:46:53.694Z\",\"path\":\"/api/v1/internal/finance-operations/ledger/journals\",\"requestId\":\"req-6\",\"correlationId\":\"req-6\",\"traceId\":\"b75663a8-eb92-4d00-82b5-4fde55a38587\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals?reference=FIN-ACC-A-cadfaab0",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"reference\":\"FIN-ACC-A-cadfaab0\",\"description\":\"Acceptance journal\",\"status\":\"POSTED\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"totalMinor\":\"100000\",\"lineCount\":2,\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"code\":\"FIA\",\"name\":\"Acceptance Institution A\",\"status\":\"APPROVED\"},\"source\":null,\"reversal\":{\"kind\":\"NORMAL\""
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals?reference=FIN-ACC-B-cadfaab0",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{},\"total\":0,\"hasMore\":false,\"limit\":25,\"offset\":0,\"range\":{\"from\":\"2026-10-26T11:46:53.733Z\",\"to\":\"2026-11-25T11:46:53.733Z\"},\"scope\":{\"mode\":\"INSTITUTIONS\",\"institutionIds\":{\"0\":\"aaaaaaaa-0000-4000-8000-000000000001\"},\"platformFunctionGranted\":false},\"supportedReferenceForms\":{\"0\":\"Journal UUID\",\"1\":\"Journal reference\",\"2\":\"Journal idempotency key\",\"3\":\"Journal correlation id\",\"4\":\"Tran"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"id\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"reference\":\"FIN-ACC-A-cadfaab0\",\"description\":\"Acceptance journal\",\"status\":\"POSTED\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"totalMinor\":\"100000\",\"lineCount\":2,\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"code\":\"FIA\",\"name\":\"Acceptance Institution A\",\"status\":\"APPROVED\"},\"source\":null,\"reversal\":{\"kind\":\"NORMAL\",\"reversalOfJo"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187",
+      "status": 404,
+      "body": null,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Journal not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-25T11:46:53.764Z\",\"path\":\"/api/v1/internal/finance-operations/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187\",\"requestId\":\"req-a\",\"correlationId\":\"req-a\",\"traceId\":\"983a2492-c454-45ab-9e6e-33cd250499c9\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187",
+      "status": 404,
+      "body": null,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Journal not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-25T11:46:53.782Z\",\"path\":\"/api/v1/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187\",\"requestId\":\"req-b\",\"correlationId\":\"req-b\",\"traceId\":\"6f08f956-1ca4-493d-affe-7a5ffb59260e\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/reconciliation/breaks?institutionId=aaaaaaaa-0000-4000-8000-000000000002",
+      "status": 404,
+      "body": null,
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Institution not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-25T11:46:53.792Z\",\"path\":\"/api/v1/internal/finance-operations/reconciliation/breaks\",\"requestId\":\"req-c\",\"correlationId\":\"req-c\",\"traceId\":\"83ebbdb5-f0ba-44e5-a8e1-1b68a0123d93\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/reconciliation/breaks?institutionId=aaaaaaaa-0000-4000-8000-000000000001",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"code\":\"FIA\",\"name\":\"Acceptance Institution A\",\"status\":\"APPROVED\"},\"generatedAt\":\"2026-11-25T11:46:53.801Z\",\"sources\":{\"0\":{\"source\":\"INTERNAL_LEDGER\",\"label\":\"Internal ledger checks\",\"availability\":\"AVAILABLE\",\"description\":\"Double-entry checks computed from our own ledger for this institution: balance integrity, account ownership, tran"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-eligibility",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"journalId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"eligible\":false,\"nextAction\":\"NONE\",\"nextActionLabel\":\"No reversal action available\",\"reasonCode\":\"READ_ONLY_PRINCIPAL\",\"reason\":\"This session holds only read-only catalogue roles, so it can inspect but never request a reversal.\",\"permissions\":{\"canView\":true,\"canRequest\":false,\"canExecute\":false},\"approval\":null,\"blockers\":{\"0\":{\"code\":\"READ_ON"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-eligibility",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"journalId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"eligible\":true,\"nextAction\":\"REQUEST_REVERSAL\",\"nextActionLabel\":\"Request governed reversal\",\"reasonCode\":\"ELIGIBLE_TO_REQUEST\",\"reason\":\"This posted journal has not been reversed and no reversal request is outstanding. A FINANCE_PREPARER may request a governed reversal.\",\"permissions\":{\"canView\":true,\"canRequest\":true,\"canExecute\":false},\"appro"
+    },
+    {
+      "method": "POST",
+      "route": "/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187/reversal-request",
+      "status": 404,
+      "body": {
+        "reason": "Cross-institution attempt must be denied"
+      },
+      "responsePreview": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Journal not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-25T11:46:53.848Z\",\"path\":\"/api/v1/ledger/journals/e899a890-f5eb-453b-90d9-14ccbf7fe187/reversal-request\",\"requestId\":\"req-g\",\"correlationId\":\"req-g\",\"traceId\":\"e0ced02c-cb0f-4136-b399-df7607c2edd0\"}"
+    },
+    {
+      "method": "POST",
+      "route": "/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-request",
+      "status": 201,
+      "body": {
+        "reason": "Acceptance: duplicate posting verified by Finance"
+      },
+      "responsePreview": "{\"approvalId\":\"ab014905-c99b-4823-a2e8-82fb85ed2065\",\"status\":\"REQUESTED\",\"actionType\":\"LEDGER_JOURNAL_REVERSAL\",\"resourceType\":\"LEDGER_JOURNAL\",\"resourceId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"actionFingerprint\":\"106e8b4de4f92656358c16f1e4987555d744330f530558903400ff05ef18d310\",\"requestedAt\":\"2026-11-25T11:46:53.866Z\",\"expiresAt\":\"2026-11-25T12:01:53.866Z\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-eligibility",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"journalId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"eligible\":true,\"nextAction\":\"AWAIT_APPROVAL\",\"nextActionLabel\":\"Await independent approval\",\"reasonCode\":\"APPROVAL_PENDING\",\"reason\":\"A governed reversal request is outstanding. It must be approved by an independent FINANCE_CONTROLLER before execution.\",\"permissions\":{\"canView\":true,\"canRequest\":false,\"canExecute\":true},\"approval\":{\"approvalId\":"
+    },
+    {
+      "method": "POST",
+      "route": "/internal/a2/workforce/approvals/ab014905-c99b-4823-a2e8-82fb85ed2065/approve",
+      "status": 201,
+      "body": {
+        "comment": "Approved during disposable acceptance run"
+      },
+      "responsePreview": "{\"approved\":true,\"approval\":{\"id\":\"ab014905-c99b-4823-a2e8-82fb85ed2065\",\"actionType\":\"LEDGER_JOURNAL_REVERSAL\",\"resourceType\":\"LEDGER_JOURNAL\",\"resourceId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"customerId\":null,\"actionFingerprint\":\"106e8b4de4f92656358c16f1e4987555d744330f530558903400ff05ef18d310\",\"requesterPrincipalId\":\"https://local-dev-identity.monienaija.invalid:local-admin-credential:cc1203"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-eligibility",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"journalId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"eligible\":true,\"nextAction\":\"EXECUTE_REVERSAL\",\"nextActionLabel\":\"Execute approved reversal\",\"reasonCode\":\"APPROVED_AWAITING_EXECUTION\",\"reason\":\"The reversal request is approved. Execution consumes the approval and posts the exact inverse.\",\"permissions\":{\"canView\":true,\"canRequest\":false,\"canExecute\":true},\"approval\":{\"approvalId\":\"ab014905-c9"
+    },
+    {
+      "method": "POST",
+      "route": "/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal",
+      "status": 201,
+      "body": {
+        "reason": "Acceptance: duplicate posting verified by Finance",
+        "approvalId": "ab014905-c99b-4823-a2e8-82fb85ed2065"
+      },
+      "responsePreview": "{\"id\":\"01903771-0977-4794-b51c-d1f10f5790d7\",\"idempotencyKey\":\"finance-http-acceptance:4b704f41-e386-492c-b647-02505db76cfd:ab014905-c99b-4823-a2e8-82fb85ed2065\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"status\":\"POSTED\",\"reference\":\"FIN-ACC-A-cadfaab0\",\"description\":\"Acceptance: duplicate posting verified by Finance\",\"correlationId\":null,\"reversalOfJournalId\":\"4b704f41-e386-492c-b647-02"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"id\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"reference\":\"FIN-ACC-A-cadfaab0\",\"description\":\"Acceptance journal\",\"status\":\"POSTED\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"totalMinor\":\"100000\",\"lineCount\":2,\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"code\":\"FIA\",\"name\":\"Acceptance Institution A\",\"status\":\"APPROVED\"},\"source\":null,\"reversal\":{\"kind\":\"REVERSED\",\"reversalOf"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals/4b704f41-e386-492c-b647-02505db76cfd/reversal-eligibility",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"journalId\":\"4b704f41-e386-492c-b647-02505db76cfd\",\"eligible\":false,\"nextAction\":\"NONE\",\"nextActionLabel\":\"No reversal action available\",\"reasonCode\":\"ALREADY_REVERSED\",\"reason\":\"A compensating journal already exists for this journal.\",\"permissions\":{\"canView\":true,\"canRequest\":false,\"canExecute\":true},\"approval\":{\"approvalId\":\"ab014905-c99b-4823-a2e8-82fb85ed2065\",\"status\":\"CONSUMED\",\"requestedA"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals?reference=FIN-ACC-B-cadfaab0",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"items\":{\"0\":{\"id\":\"e899a890-f5eb-453b-90d9-14ccbf7fe187\",\"reference\":\"FIN-ACC-B-cadfaab0\",\"description\":\"Acceptance journal\",\"status\":\"POSTED\",\"currency\":\"NGN\",\"accountingUnit\":\"CUSTOMER_FUNDS\",\"totalMinor\":\"100000\",\"lineCount\":2,\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000002\",\"code\":\"FIB\",\"name\":\"Acceptance Institution B\",\"status\":\"APPROVED\"},\"source\":null,\"reversal\":{\"kind\":\"NORMAL\""
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals",
+      "status": 403,
+      "body": null,
+      "responsePreview": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied: FUNCTION_MISSING\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-25T11:46:54.006Z\",\"path\":\"/api/v1/internal/finance-operations/ledger/journals\",\"requestId\":\"req-p\",\"correlationId\":\"req-p\",\"traceId\":\"b89a74fc-4eaa-4176-9a56-ea76a5a65333\"}"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/reconciliation/breaks?institutionId=aaaaaaaa-0000-4000-8000-000000000001",
+      "status": 200,
+      "body": null,
+      "responsePreview": "{\"institution\":{\"id\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"code\":\"FIA\",\"name\":\"Acceptance Institution A\",\"status\":\"APPROVED\"},\"generatedAt\":\"2026-11-25T11:46:54.024Z\",\"sources\":{\"0\":{\"source\":\"INTERNAL_LEDGER\",\"label\":\"Internal ledger checks\",\"availability\":\"AVAILABLE\",\"description\":\"Double-entry checks computed from our own ledger for this institution: balance integrity, account ownership, tran"
+    },
+    {
+      "method": "GET",
+      "route": "/internal/finance-operations/ledger/journals?from=2026-11-20&to=2026-11-01",
+      "status": 400,
+      "body": null,
+      "responsePreview": "{\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"from must be before or equal to to\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-25T11:46:54.046Z\",\"path\":\"/api/v1/internal/finance-operations/ledger/journals\",\"requestId\":\"req-r\",\"correlationId\":\"req-r\",\"traceId\":\"3b45a8b9-9366-451b-919b-a1132f314b27\"}"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { AuthorizationRole } from '../authorization-catalogue/authorization-role.entity';
 import { CustomerComplianceModule } from '../customer-compliance/customer-compliance.module';
+import { NotificationModule } from '../notification/notification.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { DashboardController } from './dashboard.controller';
 import { DashboardSeedService } from './dashboard-seed.service';
@@ -23,6 +24,8 @@ import { RoleDashboardAssignment } from './role-dashboard-assignment.entity';
     AuthorizationModule,
     CustomerComplianceModule,
     ReconciliationModule,
+    // The delivery-exception card projects the read-only notification operations aggregates.
+    NotificationModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService, DashboardSeedService, DashboardWidgetDataService],

@@ -92,12 +92,15 @@ export class BankingReadinessService {
     const versions = await this.db.query<
       Array<ProviderConfigurationSnapshot & { version: number }>
     >(
-      `SELECT DISTINCT ON (provider_key,environment)
-              provider_key,environment,capabilities,routing_approved,operational_ready,
-              credential_bundle_fingerprint,version
-         FROM banking_provider_configuration_versions
-        WHERE institution_id=$1
-        ORDER BY provider_key,environment,version DESC`,
+      // The fingerprint lives on the approved proposal, not on the immutable version row. Joining
+      // it is what makes `credentialed` an observed fact rather than a column that never existed.
+      `SELECT DISTINCT ON (v.provider_key,v.environment)
+              v.provider_key,v.environment,v.capabilities,v.routing_approved,v.operational_ready,
+              p.credential_bundle_fingerprint,v.version
+         FROM banking_provider_configuration_versions v
+         JOIN banking_provider_configuration_proposals p ON p.id = v.proposal_id
+        WHERE v.institution_id=$1
+        ORDER BY v.provider_key,v.environment,v.version DESC`,
       [institutionId],
     );
     const disengagements = await this.db.query<

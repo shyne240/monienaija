@@ -25,7 +25,13 @@ const ROLE_COLUMNS: StructuredColumn[] = [
 
 export const WorkforceAdminScreen: React.FC<{
   onWorkforceGuardChange?: (guarded: boolean, busy: boolean) => void;
-}> = ({ onWorkforceGuardChange }) => {
+  /**
+   * Opens the read-only Workforce Directory, the only place this console can look up an
+   * arbitrary workforce identity (its roles, effective permissions and institution scope).
+   * This workspace itself has no workforce-user list route, so it must not imply one.
+   */
+  onOpenDirectory?: () => void;
+}> = ({ onWorkforceGuardChange, onOpenDirectory }) => {
   const { principal, sessionId } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canViewOverview = hasFn('workforce.dashboard.view');
@@ -56,6 +62,7 @@ export const WorkforceAdminScreen: React.FC<{
       canCreateSupportUser={canCreateSupportUser}
       canSuspendSupportUser={canSuspendSupportUser}
       onWorkforceGuardChange={onWorkforceGuardChange}
+      onOpenDirectory={onOpenDirectory}
     />
   );
 };
@@ -66,12 +73,14 @@ const WorkforceWorkspace: React.FC<{
   canCreateSupportUser: boolean;
   canSuspendSupportUser: boolean;
   onWorkforceGuardChange?: (guarded: boolean, busy: boolean) => void;
+  onOpenDirectory?: () => void;
 }> = ({
   canView,
   canViewOverview,
   canCreateSupportUser,
   canSuspendSupportUser,
   onWorkforceGuardChange,
+  onOpenDirectory,
 }) => {
   const overviewRequest = useRef(0);
   const createRequest = useRef(0);
@@ -337,6 +346,15 @@ const WorkforceWorkspace: React.FC<{
         title="Workforce Overview & Support Provisioning"
         description="Review the workforce summary and manage SUPPORT identities according to your function grants."
       />
+      {onOpenDirectory && (canViewOverview || canCreateSupportUser) ? (
+        <p className="workforce-redesign__directory-link">
+          To find a specific workforce identity, its current roles, effective permissions and
+          institution restrictions, open the read-only workforce directory.{' '}
+          <Button variant="secondary" onClick={onOpenDirectory}>
+            Open workforce directory
+          </Button>
+        </p>
+      ) : null}
       {uncertain && (
         <div className="workforce-redesign__boundary" role="status">
           <strong>Independent workforce review required</strong>

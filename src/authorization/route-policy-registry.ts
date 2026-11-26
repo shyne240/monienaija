@@ -274,6 +274,64 @@ const BANKING_ADMIN_ROUTE_POLICIES: ReadonlyArray<{
 ];
 
 /**
+ * Admin Web Finance Operations.
+ *
+ * Every route here is a workforce *read*. The two write paths an operator can reach remain the
+ * already-registered ones (`POST /ledger/journals/:id/reversal-request`, `POST
+ * /ledger/journals/:id/reversal`, and the banking exception resolution route), so no new mutation
+ * capability is created by this surface.
+ *
+ * The guard pins the function each route needs, and the controller re-checks the same function.
+ * Institution scope is not expressible in a route policy because it is a per-row fact resolved
+ * from `workforce_institution_assignments`; the service resolves it on every request and answers
+ * 404 outside scope.
+ */
+const FINANCE_OPERATIONS_ROUTE_POLICIES: ReadonlyArray<{
+  method: 'GET';
+  pattern: RegExp;
+  resourceType: string;
+  requiredFunctions: readonly string[];
+}> = [
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/ledger\/journals$/,
+    resourceType: 'finance-ledger-search',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/ledger\/journals\/[0-9a-f-]{36}$/i,
+    resourceType: 'finance-ledger-journal',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/ledger\/journals\/[0-9a-f-]{36}\/reversal-eligibility$/i,
+    resourceType: 'finance-ledger-reversal-state',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/transactions\/[^/]+\/journal$/i,
+    resourceType: 'finance-transaction-journal-link',
+    requiredFunctions: ['transaction.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/reconciliation\/institutions$/,
+    resourceType: 'finance-reconciliation-institutions',
+    requiredFunctions: ['reconciliation.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/reconciliation\/breaks$/,
+    resourceType: 'finance-reconciliation-breaks',
+    requiredFunctions: ['reconciliation.view'],
+  },
+];
+
+/**
  * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
  *
  * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
@@ -455,6 +513,30 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: [...bankingAdmin.allowedPrincipalTypes],
           requiredFunctions: [...bankingAdmin.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Admin Web Finance Operations. Registered explicitly (with a function gate) rather than left
+    // to the generic `/internal/` branch, which authenticates a caller without constraining what
+    // they may read. Denials here are audited as denied workforce functions.
+    const financeOperations = FINANCE_OPERATIONS_ROUTE_POLICIES.find(
+      (route) => route.method === lookedUpMethod && route.pattern.test(path),
+    );
+    if (financeOperations) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: financeOperations.resourceType,
+        policy: {
+          resourceType: financeOperations.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [...financeOperations.requiredFunctions],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -1797,7 +1879,9 @@ export class RoutePolicyRegistry {
       path.startsWith('/api/v1/internal/kyc/providers/') ||
       path === '/api/v1/internal/kyc/tier-reviews' ||
       path === '/api/v1/internal/kyc/tier-policies' ||
-      path.startsWith('/api/v1/internal/kyc/tier-policies/')
+      path.startsWith('/api/v1/internal/kyc/tier-policies/') ||
+      path === '/api/v1/internal/kyc/review-workspace' ||
+      path.startsWith('/api/v1/internal/kyc/review-workspace/')
     ) {
       return {
         public: false,
@@ -1809,6 +1893,23 @@ export class RoutePolicyRegistry {
           allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
           minimumAssurance: 'MFA',
           customerAccess: 'NONE',
+        },
+      };
+    }
+
+    if (path === '/api/v1/internal/compliance-cases') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-compliance-case',
+        policy: {
+          resourceType: 'customer-compliance-case',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          minimumAssurance: 'MFA',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }

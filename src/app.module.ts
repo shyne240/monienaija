@@ -62,6 +62,7 @@ import { FeeModule } from './fee/fee.module';
 import { HealthModule } from './health/health.module';
 import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { FinanceOperationsModule } from './finance-operations/finance-operations.module';
 import { InstitutionModule } from './institution/institution.module';
 import { LimitModule } from './limit/limit.module';
 import { MaturityModule } from './maturity/maturity.module';
@@ -175,6 +176,7 @@ import { WorkforceVisibilityModule } from './workforce-visibility/workforce-visi
     FeeModule,
     LedgerModule,
     InstitutionModule,
+    FinanceOperationsModule,
     LimitModule,
     MaturityModule,
     OperationsModule,

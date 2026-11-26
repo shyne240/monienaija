@@ -37,8 +37,15 @@ export type NotificationOperationsStatus =
   | 'DEAD';
 
 export interface NotificationOperationsSummaryInput {
-  /** Bounded window in hours; 1..168. */
+  /** Bounded window in hours; 1..168. Ignored when `from` is supplied explicitly. */
   hours: number;
+  /**
+   * Explicit window bounds, for callers that resolve a period elsewhere (the dashboard widget
+   * resolves `today`/`7d`/`30d`/custom to a from/to range and must not be silently clamped to the
+   * 168-hour ceiling). Both must be supplied together; `to` defaults to now.
+   */
+  from?: Date;
+  to?: Date;
   channel?: 'SMS' | 'PUSH' | 'EMAIL';
   /** True only after a server-side `notification.provider.view` decision succeeded. */
   includeProviderIdentity: boolean;
@@ -73,7 +80,8 @@ export interface DeliveryAttemptView {
 
 export interface NotificationOperationsSummary {
   generatedAt: Date;
-  window: { hours: number; from: Date };
+  /** The window actually aggregated. `from`/`to` are half-open: `created_at >= from AND < to`. */
+  window: { hours: number; from: Date; to: Date };
   filters: { channel: string | null };
   totals: {
     deliveries: number;
@@ -170,7 +178,73 @@ export interface NotificationDeliveryOperationDetail {
     provider?: string;
     lifecycleState?: string;
   };
+  /**
+   * The upstream outbox event this delivery is the materialization of, plus the notification
+   * consumer's receipt for it. This is what lets an operator connect "SMS failed" to "the event
+   * that produced it was suppressed / published / never taken", instead of stopping at a status.
+   *
+   * Three outcomes are kept distinct on purpose:
+   *  - `FOUND`   — the event row was read; its state is the state of the event, not of the delivery.
+   *  - `NOT_FOUND` — no event row is addressable by this delivery's event key (purged by retention,
+   *    or written before key-based linkage). The delivery record remains the authoritative verdict.
+   *  - `UNAVAILABLE` — the event could not be queried at all. No conclusion is available; this is
+   *    never rendered as a healthy or empty state.
+   * Only status/attempt/timestamp facts cross this boundary. The event `payload` and the event
+   * `last_error` free text stay behind `outbox.view`, which is a different capability.
+   */
+  relatedEvent: NotificationRelatedEvent;
+  /**
+   * Provider-reported outcomes for this delivery (the append-only receipt ledger). `items` is a
+   * bounded newest-first window and says so; an empty list with `availability: 'NONE_RECORDED'` is
+   * genuinely "the provider told us nothing about this message", not a read failure.
+   */
+  providerReceipts: NotificationProviderReceiptTrace;
 }
+
+export interface NotificationRelatedEvent {
+  availability: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE';
+  /** Stated so a reader can tell what was consulted, and when. */
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  id?: string;
+  eventType?: string;
+  status?: string;
+  attempts?: number;
+  occurredAt?: Date | string | null;
+  publishedAt?: Date | string | null;
+  availableAt?: Date | string | null;
+  /** True when the event row carries an error string; the text itself is not projected here. */
+  eventHasError?: boolean;
+  receipt?: {
+    status: string;
+    reason: string | null;
+    attempts: number;
+    nextAttemptAt: Date | string | null;
+    updatedAt: Date | string | null;
+  } | null;
+}
+
+export interface NotificationProviderReceiptTrace {
+  availability: 'AVAILABLE' | 'NONE_RECORDED' | 'UNAVAILABLE';
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  limit: number;
+  returned: number;
+  items: Array<{
+    id: string;
+    kind: string;
+    verification: 'SIGNED' | 'SHARED_SECRET' | 'UNVERIFIED';
+    /** Closed-set vendor classification only; anything unrecognized is dropped rather than echoed. */
+    providerCode: string | null;
+    occurredAt: Date | string;
+    receivedAt: Date | string;
+  }>;
+}
+
+const NOTIFICATION_CONSUMER_NAME = 'notification.v1';
+const PROVIDER_RECEIPT_LIMIT = 10;
 
 export const MANUAL_RETRY_POLICY_REFERENCE =
   'docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY';
@@ -228,14 +302,21 @@ export class NotificationOperationsService {
 
   async summary(input: NotificationOperationsSummaryInput): Promise<NotificationOperationsSummary> {
     const hours = Math.min(Math.max(Math.trunc(input.hours) || 24, 1), 168);
+    const to =
+      input.to instanceof Date && !Number.isNaN(input.to.getTime()) ? input.to : new Date();
+    const from =
+      input.from instanceof Date && !Number.isNaN(input.from.getTime())
+        ? input.from
+        : new Date(to.getTime() - hours * 60 * 60 * 1000);
+    const windowClause = `created_at >= $1::timestamptz AND created_at < $2::timestamptz`;
     const channel = input.channel ?? null;
-    const channelFilter = channel ? ' AND channel=$2' : '';
-    const windowParams: unknown[] = channel ? [hours, channel] : [hours];
+    const channelFilter = channel ? ' AND channel=$3' : '';
+    const windowParams: unknown[] = channel ? [from, to, channel] : [from, to];
 
     const byChannelAndStatus = await this.dataSource.query<ChannelStatusCount[]>(
       `SELECT channel, status, count(*)::int AS count
          FROM notification_deliveries
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')${channelFilter}
+        WHERE ${windowClause}${channelFilter}
         GROUP BY channel, status
         ORDER BY channel, status`,
       windowParams,
@@ -269,7 +350,7 @@ export class NotificationOperationsService {
          min(created_at) FILTER (WHERE status='PENDING') AS oldest_pending_at,
          min(next_attempt_at) FILTER (WHERE status='FAILED') AS next_scheduled_retry_at
        FROM notification_deliveries
-       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')${channelFilter}`,
+       WHERE ${windowClause}${channelFilter}`,
       windowParams,
     );
     const backlog = backlogRows[0];
@@ -281,7 +362,7 @@ export class NotificationOperationsService {
          FROM notification_deliveries
         WHERE status IN ('FAILED','DEAD','UNKNOWN')
           AND last_error IS NOT NULL
-          AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')${channelFilter}
+          AND ${windowClause}${channelFilter}
         GROUP BY last_error
         ORDER BY count DESC, last_error
         LIMIT 25`,
@@ -322,7 +403,7 @@ export class NotificationOperationsService {
 
     return {
       generatedAt: new Date(),
-      window: { hours, from: new Date(Date.now() - hours * 60 * 60 * 1000) },
+      window: { hours, from, to },
       filters: { channel },
       totals: {
         deliveries,
@@ -413,6 +494,8 @@ export class NotificationOperationsService {
 
     const provider = await this.providerProjection(includeProviderIdentity);
     const channelProjection = provider.channels.find((item) => item.channel === row.channel);
+    const relatedEvent = await this.readRelatedEvent(row.event_key);
+    const providerReceipts = await this.readProviderReceipts(deliveryId);
 
     return {
       delivery: {
@@ -468,7 +551,162 @@ export class NotificationOperationsService {
             }
           : {}),
       },
+      relatedEvent,
+      providerReceipts,
     };
+  }
+
+  /**
+   * Event linkage is read defensively. A missing `event_key` match is a real, reportable state
+   * (retention purge, pre-linkage write) and a query failure is a different one; neither is allowed
+   * to fail the delivery detail, because the delivery row is the authoritative verdict and an
+   * operator investigating a failure must still get it.
+   */
+  private async readRelatedEvent(eventKey: string): Promise<NotificationRelatedEvent> {
+    const checkedAt = new Date().toISOString();
+    const source =
+      'outbox_events + notification_outbox_receipts (consumer ' + NOTIFICATION_CONSUMER_NAME + ')';
+    if (!eventKey) {
+      return {
+        availability: 'NOT_FOUND',
+        checkedAt,
+        source,
+        reason: 'this delivery carries no event key, so no upstream event is addressable from it',
+      };
+    }
+    try {
+      const rows = await this.dataSource.query<
+        Array<{
+          id: string;
+          event_type: string;
+          status: string;
+          attempts: number;
+          occurred_at: Date;
+          published_at: Date | null;
+          available_at: Date;
+          last_error: string | null;
+          receipt_status: string | null;
+          receipt_reason: string | null;
+          receipt_attempts: number | null;
+          receipt_next_attempt_at: Date | null;
+          receipt_updated_at: Date | null;
+        }>
+      >(
+        `SELECT o.id, o.event_type, o.status, o.attempts, o.occurred_at, o.published_at,
+                o.available_at, o.last_error,
+                r.status AS receipt_status, r.reason AS receipt_reason,
+                r.attempts AS receipt_attempts, r.next_attempt_at AS receipt_next_attempt_at,
+                r.updated_at AS receipt_updated_at
+           FROM outbox_events o
+           LEFT JOIN notification_outbox_receipts r
+             ON r.outbox_event_id = o.id AND r.consumer_name = $2
+          WHERE o.event_key = $1
+          LIMIT 1`,
+        [eventKey, NOTIFICATION_CONSUMER_NAME],
+      );
+      const event = rows[0];
+      if (!event) {
+        return {
+          availability: 'NOT_FOUND',
+          checkedAt,
+          source,
+          reason:
+            'no outbox event is addressable by this delivery event key (retention-purged, or written before key-based linkage)',
+        };
+      }
+      return {
+        availability: 'FOUND',
+        checkedAt,
+        source,
+        id: event.id,
+        eventType: sanitizeDiagnosticIdentifier(event.event_type) ?? '[REDACTED]',
+        status: event.status,
+        attempts: Number(event.attempts ?? 0),
+        occurredAt: event.occurred_at,
+        publishedAt: event.published_at,
+        availableAt: event.available_at,
+        eventHasError: event.last_error !== null && event.last_error !== undefined,
+        receipt:
+          event.receipt_status === null || event.receipt_status === undefined
+            ? null
+            : {
+                status: event.receipt_status,
+                reason: event.receipt_reason,
+                attempts: Number(event.receipt_attempts ?? 0),
+                nextAttemptAt: event.receipt_next_attempt_at,
+                updatedAt: event.receipt_updated_at,
+              },
+      };
+    } catch {
+      return {
+        availability: 'UNAVAILABLE',
+        checkedAt,
+        source,
+        reason: 'the outbox event and consumer receipt could not be read by this surface',
+      };
+    }
+  }
+
+  private async readProviderReceipts(
+    deliveryId: string,
+  ): Promise<NotificationProviderReceiptTrace> {
+    const checkedAt = new Date().toISOString();
+    const source = 'notification_delivery_receipts (append-only provider receipts)';
+    try {
+      const rows = await this.dataSource.query<
+        Array<{
+          id: string;
+          kind: string;
+          verification: string;
+          provider_code: string | null;
+          occurred_at: Date;
+          received_at: Date;
+        }>
+      >(
+        `SELECT id, kind, verification, provider_code, occurred_at, received_at
+           FROM notification_delivery_receipts
+          WHERE delivery_id = $1
+          ORDER BY occurred_at DESC, received_at DESC
+          LIMIT $2`,
+        [deliveryId, PROVIDER_RECEIPT_LIMIT],
+      );
+      const items = rows.map((receipt) => ({
+        id: receipt.id,
+        kind: receipt.kind,
+        verification: (['SIGNED', 'SHARED_SECRET', 'UNVERIFIED'].includes(receipt.verification)
+          ? receipt.verification
+          : 'UNVERIFIED') as NotificationProviderReceiptTrace['items'][number]['verification'],
+        // The raw provider detail is free text and is never projected; only a recognized
+        // closed-set classification code survives.
+        providerCode: sanitizeDeliveryErrorCode(receipt.provider_code),
+        occurredAt: receipt.occurred_at,
+        receivedAt: receipt.received_at,
+      }));
+      return {
+        availability: items.length === 0 ? 'NONE_RECORDED' : 'AVAILABLE',
+        checkedAt,
+        source,
+        limit: PROVIDER_RECEIPT_LIMIT,
+        returned: items.length,
+        items,
+        ...(items.length === 0
+          ? {
+              reason:
+                'the provider has reported nothing about this message; absence of a receipt is not evidence of delivery or failure',
+            }
+          : {}),
+      };
+    } catch {
+      return {
+        availability: 'UNAVAILABLE',
+        checkedAt,
+        source,
+        limit: PROVIDER_RECEIPT_LIMIT,
+        returned: 0,
+        items: [],
+        reason: 'provider receipts could not be read by this surface',
+      };
+    }
   }
 
   /**

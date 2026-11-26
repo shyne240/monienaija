@@ -179,7 +179,9 @@ test('unconfirmed generic decisions lock that approval until an explicit externa
   });
   fireEvent.click(screen.getByRole('button', { name: 'Sign & Approve Action' }));
   fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
-  expect(await screen.findByText(/This screen has no generic approval read endpoint/)).toBeTruthy();
+  expect(
+    await screen.findByText(/Decision outcome unconfirmed — re-check the record/),
+  ).toBeTruthy();
   expect(
     (screen.getByRole('button', { name: 'Sign & Approve Action' }) as HTMLButtonElement).disabled,
   ).toBe(true);
@@ -221,7 +223,7 @@ test('unconfirmed decisions remain guarded when a different ID is entered and wa
   });
   fireEvent.click(screen.getByRole('button', { name: 'Reject Action' }));
   fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
-  await screen.findByText(/This screen has no generic approval read endpoint/);
+  await screen.findByText(/Decision outcome unconfirmed — re-check the record/);
   fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'), {
     target: { value: 'id-two' },
   });
@@ -338,4 +340,201 @@ test('CommercialApprovalInbox displays proposed parameters and executes an APPRO
       reason: 'Standard wallet transfer fee',
     },
   );
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Arena B9 — approval evaluation inbox and authoritative re-read of an unconfirmed decision.
+ * ---------------------------------------------------------------------------------------- */
+
+const INBOX_ID = '00000000-0000-4000-8000-0000000000b9';
+
+const pendingApproval = (overrides: Record<string, any> = {}) => ({
+  id: INBOX_ID,
+  actionType: 'LEDGER_JOURNAL_REVERSAL',
+  resourceType: 'LEDGER_JOURNAL',
+  resourceId: 'journal-42',
+  customerId: null,
+  requesterPrincipalId: 'maker-principal',
+  approvedBy: null,
+  reason: 'Duplicate posting confirmed by reconciliation',
+  approvalScope: 'privileged:approve',
+  requiredAssurance: 'MFA',
+  policy: { requestDetails: { journalReference: 'JL-42', amountMinor: '150000' } },
+  status: 'REQUESTED',
+  requestedAt: '2026-11-20T09:00:00.000Z',
+  expiresAt: '2099-11-20T10:00:00.000Z',
+  approvedAt: null,
+  rejectedAt: null,
+  cancelledAt: null,
+  consumedAt: null,
+  version: 1,
+  authority: {
+    approvingRoles: ['FINANCE_CONTROLLER'],
+    approvingFunctions: [],
+    minimumApprovals: 1,
+    selfApprovalProhibited: true,
+    minimumAssurance: 'MFA',
+    approvalScope: 'privileged:approve',
+    governed: true,
+  },
+  ...overrides,
+});
+
+function mockApprovalReads(list: any[], detail: any, detailError?: unknown) {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/a2/workforce/approvals?'))
+      return Promise.resolve({ items: list, total: list.length });
+    if (path.startsWith('/internal/a2/workforce/approvals/'))
+      return detailError ? Promise.reject(detailError) : Promise.resolve(detail);
+    return Promise.resolve([]);
+  });
+}
+
+test('the inbox shows the proposed change, affected records, required authority and applied state', async () => {
+  mockApprovalReads([pendingApproval()], pendingApproval());
+  render(<ApprovalsScreen />);
+  expect(await screen.findByText('LEDGER_JOURNAL_REVERSAL')).toBeTruthy();
+  expect(screen.getByText('Awaiting decision')).toBeTruthy();
+  expect(screen.getByText('journal-42')).toBeTruthy();
+  expect(screen.getByText(/FINANCE_CONTROLLER · MFA/)).toBeTruthy();
+  expect(screen.getByText('No application recorded')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Full evaluation' }));
+  expect(screen.getByText('Proposed change')).toBeTruthy();
+  expect(screen.getByText('Journal Reference')).toBeTruthy();
+  expect(screen.getByText('JL-42')).toBeTruthy();
+  expect(screen.getByText(/Maker and checker must be different principals/)).toBeTruthy();
+  expect(screen.getByText(/Frozen request recorded with its fingerprint and expiry/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load into checker decision' }));
+  expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe(
+    INBOX_ID,
+  );
+});
+
+test('a request raised by the signed-in principal cannot be loaded for a decision', async () => {
+  mockApprovalReads(
+    [pendingApproval({ requesterPrincipalId: 'one' })],
+    pendingApproval({ requesterPrincipalId: 'one' }),
+  );
+  render(<ApprovalsScreen />);
+  expect(await screen.findByText('Your own request')).toBeTruthy();
+  expect(
+    (screen.getByRole('button', { name: 'Decision blocked' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(screen.getByText(/Maker-checker separation forbids you from checking it/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Decision blocked' }));
+  expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
+});
+
+test('stale, rejected, approved-not-applied and applied requests each say what happened', async () => {
+  const stale = pendingApproval({
+    id: '00000000-0000-4000-8000-0000000000c1',
+    status: 'REQUESTED',
+    expiresAt: '2020-01-01T00:00:00.000Z',
+  });
+  const rejected = pendingApproval({
+    id: '00000000-0000-4000-8000-0000000000c2',
+    status: 'REJECTED',
+    approvedBy: 'checker-two',
+    rejectedAt: '2026-11-21T09:00:00.000Z',
+  });
+  const approved = pendingApproval({
+    id: '00000000-0000-4000-8000-0000000000c3',
+    status: 'APPROVED',
+    approvedBy: 'checker-two',
+    approvedAt: '2026-11-21T09:00:00.000Z',
+  });
+  const applied = pendingApproval({
+    id: '00000000-0000-4000-8000-0000000000c4',
+    status: 'CONSUMED',
+    approvedBy: 'checker-two',
+    approvedAt: '2026-11-21T09:00:00.000Z',
+    consumedAt: '2026-11-21T09:05:00.000Z',
+  });
+  mockApprovalReads([stale, rejected, approved, applied], stale);
+  render(<ApprovalsScreen />);
+  fireEvent.click(await screen.findByRole('button', { name: /All visible/ }));
+  expect(screen.getByText('Stale — expired')).toBeTruthy();
+  expect(screen.getByText('Rejected')).toBeTruthy();
+  expect(screen.getByText('Approved — not yet applied')).toBeTruthy();
+  expect(screen.getByText('Approved — applied')).toBeTruthy();
+  expect(screen.getByText(/already in effect/)).toBeTruthy();
+  expect(screen.getByText(/not applied yet/)).toBeTruthy();
+  expect(screen.getByText(/Yes — applied/)).toBeTruthy();
+  const nonDecidable = screen.getAllByRole('button', { name: 'No decision possible' });
+  expect(nonDecidable.length).toBeGreaterThan(0);
+  for (const button of nonDecidable) expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('an unreadable inbox is reported and never presented as an empty authoritative inbox', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/internal/a2/workforce/approvals?'))
+      return Promise.reject(Object.assign(new Error('forbidden'), { status: 403 }));
+    return Promise.resolve([]);
+  });
+  render(<ApprovalsScreen />);
+  expect(await screen.findByText(/does not hold the required authorization function/)).toBeTruthy();
+  expect(screen.queryByTestId('approval-inbox-empty')).toBeNull();
+});
+
+test("re-checking an unconfirmed decision releases the lock only when the server recorded this principal's decision", async () => {
+  mockApprovalReads(
+    [],
+    pendingApproval({
+      status: 'APPROVED',
+      approvedBy: 'one',
+      approvedAt: '2026-11-21T09:00:00.000Z',
+    }),
+  );
+  (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+  render(<ApprovalsScreen />);
+  fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'), {
+    target: { value: INBOX_ID },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign & Approve Action' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
+  await screen.findByText(/Decision outcome unconfirmed — re-check the record/);
+  fireEvent.click(screen.getByRole('button', { name: 'Re-check approval state' }));
+  expect(await screen.findByText(/Approval recorded/)).toBeTruthy();
+  expect(screen.queryByText(/Decision outcome unconfirmed — re-check the record/)).toBeNull();
+  expect(ApiClient.get).toHaveBeenCalledWith(`/internal/a2/workforce/approvals/${INBOX_ID}`);
+});
+
+test('re-checking reports the actual server state and keeps the lock when the decision was not recorded', async () => {
+  mockApprovalReads([], pendingApproval({ status: 'REQUESTED' }));
+  (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+  render(<ApprovalsScreen />);
+  fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'), {
+    target: { value: INBOX_ID },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Reject Action' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
+  await screen.findByText(/Decision outcome unconfirmed — re-check the record/);
+  fireEvent.click(screen.getByRole('button', { name: 'Re-check approval state' }));
+  expect(await screen.findByTestId('approval-recheck-result')).toBeTruthy();
+  expect(screen.getByTestId('approval-recheck-result').textContent).toContain('REQUESTED');
+  expect(screen.getByTestId('approval-recheck-result').textContent).toContain(
+    'Awaiting an independent checker decision',
+  );
+  expect(
+    (screen.getByRole('button', { name: 'Reject Action' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+});
+
+test("an approval outside this session's visibility is reported as unconfirmed, not as success or absence", async () => {
+  mockApprovalReads([], null, Object.assign(new Error('Approval not found'), { status: 404 }));
+  (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+  render(<ApprovalsScreen />);
+  fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'), {
+    target: { value: INBOX_ID },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign & Approve Action' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
+  await screen.findByText(/Decision outcome unconfirmed — re-check the record/);
+  fireEvent.click(screen.getByRole('button', { name: 'Re-check approval state' }));
+  expect(await screen.findByText(/does not expose this approval to your session/)).toBeTruthy();
+  expect(
+    (screen.getByRole('button', { name: 'Sign & Approve Action' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });
