@@ -503,19 +503,27 @@ export class KycTierTransitionService {
           [customerId, tierDefault.classId],
         );
         if (existing[0]) {
-          await manager.query(
-            `UPDATE customer_class_assignments
-                SET is_active = true, effective_from = clock_timestamp(), effective_to = NULL,
-                    updated_by = $2, updated_at = clock_timestamp()
-              WHERE id = $1`,
-            [existing[0].id, actor],
-          );
+          // Migration 0805 enforces one live assignment per customer. Close the old row
+          // before re-activating the historical tier-default row, or the unique partial
+          // index rejects the transition.
           if (current?.id && current.id !== existing[0].id) {
             await manager.query(
-              `UPDATE customer_class_assignments SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp() WHERE id = $1`,
+              `UPDATE customer_class_assignments
+                    SET is_active = false, updated_at = clock_timestamp(), effective_to = clock_timestamp()
+                  WHERE id = $1`,
               [current.id],
             );
           }
+          // `created_by` keeps the original provenance; the re-activating actor belongs in
+          // `updated_by`, with a version bump like the regular assignment service. There is
+          // no `assigned_by` column.
+          await manager.query(
+            `UPDATE customer_class_assignments
+                SET is_active = true, effective_from = clock_timestamp(), effective_to = NULL,
+                    updated_by = $2, version = version + 1, updated_at = clock_timestamp()
+              WHERE id = $1`,
+            [existing[0].id, actor],
+          );
         } else {
           await manager.query(
             `UPDATE customer_class_assignments
@@ -523,17 +531,22 @@ export class KycTierTransitionService {
               WHERE customer_id = $1 AND is_active = true`,
             [customerId],
           );
+          // `customer_class_assignments` (migration 0805) has no `assigned_by` or
+          // `previous_class_id`: the audit actor is `created_by`, and the superseded row is
+          // already closed by the UPDATE above. `source='TIER_DEFAULT'` is admitted by migration
+          // 0810; precedence/reason/created_by mirror the regular assignment service's schema.
           await manager.query(
-            // `customer_class_assignments` records the acting operator in `created_by`/`updated_by`;
-            // there is no `assigned_by` or `previous_class_id` column (see migration
-            // CreateCustomerClasses + CustomerTierDefaultClassMappings). Writing those names made
-            // every tier-default re-assignment fail with a 500.
             `INSERT INTO customer_class_assignments
-              (id, customer_id, class_id, source, is_active, effective_from, effective_to,
-               created_by, updated_by, created_at, updated_at)
-             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', true, clock_timestamp(), NULL,
-                     $3, $3, clock_timestamp(), clock_timestamp())`,
-            [customerId, tierDefault.classId, actor],
+              (id, customer_id, class_id, effective_from, effective_to, is_active, precedence,
+               source, reason, created_by, updated_by, version, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, clock_timestamp(), NULL, true, 0,
+                     'TIER_DEFAULT', $3, $4, NULL, 1, clock_timestamp(), clock_timestamp())`,
+            [
+              customerId,
+              tierDefault.classId,
+              `Tier default for ${newLevel} applied by KYC transition`,
+              actor,
+            ],
           );
         }
       } else {
