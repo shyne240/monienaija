@@ -111,7 +111,10 @@ The combined chain was executed once, on real PostgreSQL, with **all three** coo
 loaded together — this branch's `1785753600809` plus the transaction-history PR's unmodified
 `1785753600806` and `1785753600807`, taken straight from that PR's head and byte-identical to it.
 The transcript is committed as
-[`evidence/combined-sequence-run.log`](./evidence/combined-sequence-run.log).
+[`evidence/combined-sequence-run.log`](./evidence/combined-sequence-run.log) — that reference was
+dangling before (the file was cited but never committed), and the committed transcript restores it for
+exactly this claim.
+
 It proved:
 
 - a clean install applies the combined chain once, in timestamp order, ending at
@@ -129,8 +132,22 @@ would duplicate two identities the other PR owns — the exact defect this docum
 and `test/migration-identity-renumber-upgrade.integration.spec.ts` fails if it happens. The
 repeatable, committed proof of the coordination invariant is instead
 `test/migration-identity-renumber-upgrade.integration.spec.ts`, which exercises the same 0806 slot
-from this branch alone: this branch's chain must apply 0809, must never apply a migration ending in
-`0806`, and must upgrade correctly from an installation that recorded the superseded identity.
+from this branch alone: this branch's chain must apply 0809, must never itself occupy `0806` (the
+slot belongs to the other PR's `DurableInboundIdentity`, and the spec now asserts the slot's owner
+rather than its emptiness, so it stays correct once that PR merges), and must upgrade correctly from
+an installation that recorded the superseded identity.
+
+### Slot discipline, as a committed invariant
+
+The combined tree can only be reached by loading both PRs' migration files at once, so no spec can own
+that state. What *is* committed, and what keeps working in either tree, are the properties below —
+each now asserted in a form that stays correct **after** the other PR lands:
+
+| Property | Where | Why it is written this way |
+| --- | --- | --- |
+| This branch never occupies `1785753600806`, and only `DurableInboundIdentity` ever does | `migration-identity-renumber-upgrade` | It previously asserted that **nothing** loaded ends with `0806`. That is true only while this branch is measured alone; once the other PR merges, its migration legitimately holds the slot and the assertion fails on a correct integration — a merge blocker for the exact end state it exists to allow. It now asserts the slot's *owner*, that `0808` stays empty, and that the slot never holds two identities at once. |
+| The superseded identity is retired | same spec | Every ledger read and write about the superseded row is scoped by timestamp **and** name, because the timestamp alone is shared with that PR's migration once it lands. |
+| Applied order stays `…0805 → 0806 → 0807 → 0809` | `migration-chain` | Its expected list includes whichever of `0806`/`0807` are present, in applied order, instead of asserting them absent. This branch's `0809` is still asserted unconditionally, and still last. |
 
 ## Pre-upgrade attribution audit (measured, not estimated)
 

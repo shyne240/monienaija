@@ -403,6 +403,15 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'GeneralizeFinancialAuthorizationsForAgents1785753600803',
         'GeneralizeExternalOperationsForAgents1785753600804',
         'CreateCustomerClasses1785753600805',
+        // Identities appended by other in-flight PRs sort BETWEEN 0805 and this PR's 0809, so they are
+        // included in applied order when they are present in the tree (PR #23's inbound identity 0806
+        // and funding-scope 0807) instead of being asserted absent: their presence is the correct end
+        // state once those PRs merge, and asserting them here would either duplicate their owners' own
+        // coverage or fail on a correct combined tree. This PR's own identity is NOT conditional — it
+        // must still apply, and still last.
+        ...executed
+          .map((m) => m.name)
+          .filter((name) => name.endsWith('1785753600806') || name.endsWith('1785753600807')),
         'AgentApplicationSubmitterAttribution1785753600809',
       ]);
       const boundary = await db.query<

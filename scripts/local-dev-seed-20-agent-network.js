@@ -318,9 +318,18 @@ async function seedAgents({ applicationService, lifecycleService }, dataSource, 
       contactEmail: `${fixture.reference.toLowerCase()}@demo.local`,
       actor: 'demo-seed',
     });
-    await applicationService.submit(application.id, 'demo-seed');
+    /*
+     * Maker and checker are DIFFERENT principals. `AgentApplicationService.approve()` refuses an
+     * approver whose principal id equals the persisted `submitted_by`, so a fixture that submitted
+     * and approved under one actor stopped working the moment approval independence was enforced.
+     * The identities stay synthetic and in-process (this is a trusted local fixture, not a
+     * workforce session), but they are no longer the same one — which is the whole rule.
+     */
+    const maker = 'demo-seed-maker';
+    const checker = 'demo-seed-checker';
+    await applicationService.submit(application.id, maker);
     // Approve through the service, then activate: both write their own audit evidence.
-    await applicationService.approve(application.id, 'demo-seed');
+    await applicationService.approve(application.id, checker);
     const agent = await lifecycleService.activateFromApplication(application.id, 'demo-seed');
     report.push(
       `Agent ${agent.reference} activated (${agent.status}) on class ${fixture.code} as ${agent.id}`,

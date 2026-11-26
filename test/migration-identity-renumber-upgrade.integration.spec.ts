@@ -35,6 +35,11 @@ describe('Agent application submitter attribution — identity renumber upgrade 
   const OLD_NAME = 'AgentApplicationSubmitterAttribution1785753600806';
   const NEW_TIMESTAMP = 1785753600809;
   const NEW_NAME = 'AgentApplicationSubmitterAttribution1785753600809';
+  // The slot's rightful owners, from the transaction-history PR. Named here so the assertions can
+  // tell "the other PR's migration is present" (correct once that PR lands) from "this PR claimed
+  // the slot" (the defect being prevented).
+  const OTHER_0806_NAME = 'DurableInboundIdentity1785753600806';
+  const OTHER_0807_NAME = 'CaptureCustomerFundingScope1785753600807';
 
   it('ships the coordinated identity, and leaves the contested slot to the other PR', () => {
     // The loaded entries expose `name`; the identity suffix is the authoritative timestamp (it is
@@ -44,16 +49,37 @@ describe('Agent application submitter attribution — identity renumber upgrade 
       (migration) => migration.name ?? '',
     );
     expect(loaded).toContain(NEW_NAME);
-    // 1785753600806 belongs exclusively to DurableInboundIdentity in the other PR. Nothing loaded
-    // here — not this PR's migration under its superseded name, and not a copy of the other PR's
-    // migration pulled in to make a combined test pass — may occupy that slot.
+    /*
+     * 1785753600806 belongs exclusively to `DurableInboundIdentity` in the transaction-history PR.
+     * This branch must never occupy it — not under the superseded name, and not by pulling a copy of
+     * the other PR's migration in to make a combined test pass.
+     *
+     * The assertion is written against the SLOT'S OWNER rather than against emptiness, because
+     * emptiness is only true while this branch is measured alone. Once the other PR lands, its
+     * migration legitimately occupies 0806 and 0807 in the same tree; asserting "nothing ends with
+     * 0806" would then fail on a correct, fully coordinated integration — turning this guard into a
+     * merge blocker for the exact end state it exists to allow.
+     */
     expect(loaded).not.toContain(OLD_NAME);
-    expect(loaded.filter((entry) => entry.endsWith(String(OLD_TIMESTAMP)))).toHaveLength(0);
-    // 1785753600807 is the other PR's funding-scope capture, and 1785753600808 is the deliberate
-    // buffer slot. Neither may be claimed here either.
-    for (const reserved of [1785753600807, 1785753600808]) {
-      expect(loaded.filter((entry) => entry.endsWith(String(reserved)))).toHaveLength(0);
+    for (const occupant of loaded.filter((entry) => entry.endsWith(String(OLD_TIMESTAMP)))) {
+      expect(occupant).toBe(OTHER_0806_NAME);
     }
+    for (const occupant of loaded.filter((entry) => entry.endsWith('1785753600807'))) {
+      expect(occupant).toBe(OTHER_0807_NAME);
+    }
+    // 1785753600808 stays empty: the deliberate buffer slot between the two PRs.
+    expect(loaded.filter((entry) => entry.endsWith('1785753600808'))).toHaveLength(0);
+  });
+
+  it('never loads two identities for the 1785753600806 slot at the same time', () => {
+    // The collision this whole coordination exists for: two DIFFERENT migrations under one
+    // timestamp. TypeORM records timestamp and name, so a duplicated timestamp can be applied twice
+    // and only the name disambiguates them. Scoped to 0806 because it is the one contested slot.
+    const occupants = (ds.migrations as unknown as Array<{ name?: string }>)
+      .map((migration) => migration.name ?? '')
+      .filter((entry) => entry.endsWith(String(OLD_TIMESTAMP)));
+    expect(occupants.length).toBeLessThanOrEqual(1);
+    if (occupants.length === 1) expect(occupants[0]).toBe(OTHER_0806_NAME);
   });
 
   /**
@@ -67,7 +93,10 @@ describe('Agent application submitter attribution — identity renumber upgrade 
     await ds.query(`DROP FUNCTION IF EXISTS reject_agent_application_submitter_mutation()`);
     await ds.query(`DROP INDEX IF EXISTS idx_agent_applications_submitted_by`);
     await ds.query(`ALTER TABLE agent_applications DROP COLUMN IF EXISTS submitted_by`);
-    await ds.query(`DELETE FROM typeorm_migrations WHERE timestamp = $1`, [NEW_TIMESTAMP]);
+    await ds.query(`DELETE FROM typeorm_migrations WHERE timestamp = $1 AND name = $2`, [
+      NEW_TIMESTAMP,
+      NEW_NAME,
+    ]);
     await ds.query(`INSERT INTO typeorm_migrations (timestamp, name) VALUES ($1, $2)`, [
       OLD_TIMESTAMP,
       OLD_NAME,
@@ -77,9 +106,15 @@ describe('Agent application submitter attribution — identity renumber upgrade 
   it('re-runs cleanly on an installation that applied the superseded identity', async () => {
     await rewindToOldIdentity();
     // Precondition: the stale row is present and the schema does NOT have the column.
+    /*
+     * Scoped by timestamp AND name. The 0806 slot is legitimately occupied by the transaction-history
+     * PR's `DurableInboundIdentity` once that PR lands, so a timestamp-only read returns two rows on a
+     * combined tree and this precondition would fail on a correct integration. The subject here is
+     * this PR's superseded identity, not whatever else the slot holds.
+     */
     const before: Array<{ name: string }> = await ds.query(
-      `SELECT name FROM typeorm_migrations WHERE timestamp = $1`,
-      [OLD_TIMESTAMP],
+      `SELECT name FROM typeorm_migrations WHERE timestamp = $1 AND name = $2`,
+      [OLD_TIMESTAMP, OLD_NAME],
     );
     expect(before.map((row) => row.name)).toEqual([OLD_NAME]);
     const columnBefore: Array<{ n: number }> = await ds.query(
@@ -111,13 +146,13 @@ describe('Agent application submitter attribution — identity renumber upgrade 
 
     // The superseded ledger row is retired: leaving it would report a loaded-inventory mismatch.
     const stale: Array<{ name: string }> = await ds.query(
-      `SELECT name FROM typeorm_migrations WHERE timestamp = $1`,
-      [OLD_TIMESTAMP],
+      `SELECT name FROM typeorm_migrations WHERE timestamp = $1 AND name = $2`,
+      [OLD_TIMESTAMP, OLD_NAME],
     );
     expect(stale).toHaveLength(0);
     const fresh: Array<{ name: string }> = await ds.query(
-      `SELECT name FROM typeorm_migrations WHERE timestamp = $1`,
-      [NEW_TIMESTAMP],
+      `SELECT name FROM typeorm_migrations WHERE timestamp = $1 AND name = $2`,
+      [NEW_TIMESTAMP, NEW_NAME],
     );
     expect(fresh.map((row) => row.name)).toEqual([NEW_NAME]);
   });
@@ -159,8 +194,8 @@ describe('Agent application submitter attribution — identity renumber upgrade 
     const pending = await ds.runMigrations({ transaction: 'all' });
     expect(pending).toHaveLength(0);
     const rows: Array<{ n: number }> = await ds.query(
-      `SELECT count(*)::int AS n FROM typeorm_migrations WHERE timestamp = $1`,
-      [NEW_TIMESTAMP],
+      `SELECT count(*)::int AS n FROM typeorm_migrations WHERE timestamp = $1 AND name = $2`,
+      [NEW_TIMESTAMP, NEW_NAME],
     );
     expect(rows[0]!.n).toBe(1);
   });
