@@ -193,12 +193,12 @@ export function createDeterministicPremblyTransport(
       const record = registry.get(options.number);
       // Unknown identifier: report the provider's own "no record" envelope so the governed flow
       // resolves to REVIEW instead of inventing evidence.
-      if (!record) return { status: 200, body: { status: true, code: '00', data: null } };
+      if (!record) return { status: 200, body: { status: true, response_code: '00', data: null } };
       return {
         status: 200,
         body: {
           status: true,
-          code: '00',
+          response_code: '00',
           data: {
             [path === '/verification/vnin-basic' ? 'nin' : 'bvn']: options.number,
             firstName: record.firstName,

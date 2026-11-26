@@ -57,6 +57,8 @@ const PREMBLY_TRANSPORT = 'PREMBLY_TRANSPORT';
 const deterministicPrembly = deterministicPremblyTransportFromEnvironment();
 const deterministicPremblyEnabled = deterministicPrembly !== undefined;
 const premblyTransport: PremblyTransport = deterministicPrembly ?? premblyHttpsTransport;
+// Shape-valid placeholder for the deterministic adapter only; it authorises no remote call.
+const DETERMINISTIC_PREMBLY_API_KEY = 'deterministic-acceptance-adapter-key';
 const PREMBLY_VERIFICATION_ADAPTER = 'PREMBLY_VERIFICATION_ADAPTER';
 type ProviderRuntime = {
   providers: readonly KycProvider[];
@@ -199,7 +201,15 @@ function providerRuntimeFromConfig(
       inject: [PremblyCredentialGovernanceService, PREMBLY_TRANSPORT],
       useFactory: (credentials: PremblyCredentialGovernanceService, transport: PremblyTransport) =>
         new PremblyVerificationProvider({
-          credentialResolver: { getApiKey: () => credentials.getRuntimeApiKey() },
+          credentialResolver: {
+            // The deterministic acceptance adapter validates the key's shape itself but authenticates
+            // nothing, so it does not need a managed provider credential. Production never selects
+            // that adapter, so the credential-governed path is unchanged there.
+            getApiKey: () =>
+              deterministicPremblyEnabled
+                ? Promise.resolve(DETERMINISTIC_PREMBLY_API_KEY)
+                : credentials.getRuntimeApiKey(),
+          },
           transport,
         }),
     },

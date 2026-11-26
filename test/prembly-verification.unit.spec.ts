@@ -300,6 +300,8 @@ describe('deterministic Prembly acceptance adapter', () => {
       firstName: 'Synthetic',
       lastName: 'Customer',
     });
+    // The governed provider only accepts Prembly's documented envelope shape.
+    expect((result.body as { response_code: string }).response_code).toBe('00');
     const nin = await transport('/verification/vnin-basic', options);
     expect((nin.body as { data: unknown }).data).toMatchObject({ nin: '12345678901' });
   });
@@ -311,6 +313,7 @@ describe('deterministic Prembly acceptance adapter', () => {
       number: '99999999999',
     });
     expect((result.body as { data: unknown }).data).toBeNull();
+    expect((result.body as { response_code: string }).response_code).toBe('00');
   });
 
   it('applies the same input validation as the HTTPS transport', async () => {

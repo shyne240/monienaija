@@ -33,10 +33,54 @@ async function main() {
   const { FastifyAdapter } = require(path.join(ROOT, 'node_modules/@nestjs/platform-fastify'));
   const { ValidationPipe } = require(path.join(ROOT, 'node_modules/@nestjs/common'));
   const { AppModule } = require(path.join(ROOT, 'dist', 'app.module'));
-  const app = await NestFactory.create(AppModule, new FastifyAdapter({ trustProxy: true }), { bufferLogs: false, rawBody: true });
+
+  // Acceptance-only SMS seam. The registration OTP is stored as a salted hash and the console SMS
+  // provider deliberately discards the message body, so a browser cannot read the code a real
+  // handset would receive. With JOURNEY_RECORD_SMS=1 (and NODE_ENV != production) the server binds
+  // an in-process recording provider instead, exactly as the integration suites do, and writes
+  // each delivered message to JOURNEY_SMS_LOG so the driver can consume it as the handset would.
+  let notificationOverride;
+  if (process.env.JOURNEY_RECORD_SMS === '1') {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JOURNEY_RECORD_SMS is refused under NODE_ENV=production');
+    }
+    const logPath = process.env.JOURNEY_SMS_LOG;
+    if (!logPath) throw new Error('JOURNEY_SMS_LOG is required when JOURNEY_RECORD_SMS=1');
+    fs.writeFileSync(logPath, '');
+    notificationOverride = {
+      name: 'recording-sms',
+      sent: [],
+      async send(request) {
+        fs.appendFileSync(
+          logPath,
+          `${JSON.stringify({ to: request.destination, message: request.message, at: new Date().toISOString() })}\n`,
+        );
+        return { success: true, providerRef: `journey-recording-${Date.now()}` };
+      },
+      clear() {
+        this.sent.length = 0;
+      },
+    };
+    process.stdout.write(`JOURNEY_SMS_RECORDING ${logPath}\n`);
+  }
+
+  const { Test } = require(path.join(ROOT, 'node_modules/@nestjs/testing'));
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  if (notificationOverride) {
+    builder
+      .overrideProvider(require(path.join(ROOT, 'dist', 'notification', 'notification.constants')).NOTIFICATION_PROVIDER_TOKEN)
+      .useValue(notificationOverride);
+  }
+  const moduleRef = await builder.compile();
+  const app = moduleRef.createNestApplication(new FastifyAdapter({ trustProxy: true }), {
+    bufferLogs: false,
+    rawBody: true,
+  });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
   app.enableShutdownHooks();
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
   await app.listen(API_PORT, '0.0.0.0');
   const preview = http.createServer((req, res) => {
     const url = new URL(req.url, `http://127.0.0.1:${PREVIEW_PORT}`);
