@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { InstitutionModule } from '../institution/institution.module';
 import { OperationsModule } from '../operations/operations.module';
 import { SupportTicket } from './support-ticket.entity';
 import { SupportTicketMessage } from './support-ticket-message.entity';
@@ -13,6 +14,7 @@ import { SupportInternalController } from './support-internal.controller';
 @Module({
   imports: [
     forwardRef(() => AuthorizationModule),
+    forwardRef(() => InstitutionModule),
     OperationsModule,
     TypeOrmModule.forFeature([SupportTicket, SupportTicketMessage]),
   ],

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Optional,
   Param,
   Post,
   Query,
@@ -13,11 +14,13 @@ import {
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AuthorizationService } from '../authorization/authorization.service';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import { SupportService } from './support.service';
 import { SupportTicketStatus } from './support.enums';
 import { AssignSupportTicketDto } from './dto/assign-support-ticket.dto';
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 import { CreateSupportTicketMessageDto } from './dto/create-support-ticket-message.dto';
+import { CreateInternalSupportTicketDto } from './dto/create-internal-support-ticket.dto';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -29,6 +32,7 @@ export class SupportInternalController {
   constructor(
     private readonly supportService: SupportService,
     private readonly auth: AuthorizationService,
+    @Optional() private readonly institutionScope?: InstitutionWorkforceScopeService,
   ) {}
 
   @Get('tickets')
@@ -36,29 +40,79 @@ export class SupportInternalController {
     @Query('page') pageRaw?: string,
     @Query('limit') limitRaw?: string,
     @Query('status') status?: string,
+    @Query('priority') priority?: string,
+    @Query('category') category?: string,
     @Query('customerId') customerId?: string,
     @Query('agentId') agentId?: string,
     @Query('assignedTo') assignedTo?: string,
+    @Query('search') search?: string,
+    @Query('institutionId') institutionId?: string,
+    @Query('sortBy') sortBy?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
-    this.requireWorkforce(req!);
+    const principal = this.requireWorkforce(req!);
     await this.requireFunction(req!, 'customer.manage_support_case');
     const page = Math.max(1, Number.parseInt(pageRaw ?? '1', 10) || 1);
     const rawLimit = Number.parseInt(limitRaw ?? '20', 10) || 20;
     const limit = Math.min(100, Math.max(1, rawLimit));
+    const recordScope = this.institutionScope
+      ? await this.institutionScope.resolveCustomerRecordScope(principal, institutionId)
+      : undefined;
     return this.supportService.listForInternal(page, limit, {
       status: status || undefined,
+      priority: priority || undefined,
+      category: category || undefined,
       customerId: customerId || undefined,
       agentId: agentId || undefined,
       assignedTo: assignedTo || undefined,
+      search: search || undefined,
+      sortBy: sortBy || undefined,
+      recordScope,
+    });
+  }
+
+  @Post('tickets')
+  async create(
+    @Body() dto: CreateInternalSupportTicketDto,
+    @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
+    @Headers('Idempotency-Key') idempotencyKeyHeader2: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const principal = this.requireWorkforce(req);
+    await this.requireFunction(req, 'customer.manage_support_case');
+    if (this.institutionScope) {
+      await this.institutionScope.assertCanAccessSupportTicketRecord(principal, {
+        customerId: dto.targetCustomerId ?? null,
+        agentId: dto.targetAgentId ?? null,
+      });
+    }
+    const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
+    return this.supportService.createTicket({
+      subject: dto.subject,
+      category: dto.category,
+      description: dto.description,
+      priority: dto.priority,
+      fundingRequestId: dto.fundingRequestId ?? null,
+      relatedTransferId: dto.relatedTransferId ?? null,
+      targetCustomerId: dto.targetCustomerId ?? null,
+      targetAgentId: dto.targetAgentId ?? null,
+      idempotencyKey,
+      principal,
     });
   }
 
   @Get('tickets/:id')
   async getOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    this.requireWorkforce(req);
+    const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
-    return this.supportService.getForInternal(id);
+    const ticket = await this.supportService.getForInternal(id);
+    if (this.institutionScope) {
+      await this.institutionScope.assertCanAccessSupportTicketRecord(principal, {
+        customerId: ticket.customerId,
+        agentId: ticket.agentId,
+      });
+    }
+    return ticket;
   }
 
   @Post('tickets/:id/assign')
@@ -69,6 +123,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     return this.supportService.assignTicket({
       ticketId: id,
       assignedTo: dto.assignedTo,
@@ -85,6 +140,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     return this.supportService.updateStatus({
       ticketId: id,
       status: dto.status,
@@ -101,6 +157,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     return this.supportService.updateStatus({
       ticketId: id,
       status: SupportTicketStatus.RESOLVED,
@@ -117,6 +174,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     return this.supportService.updateStatus({
       ticketId: id,
       status: SupportTicketStatus.CLOSED,
@@ -135,6 +193,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     return this.supportService.addMessage({
       ticketId: id,
@@ -149,7 +208,20 @@ export class SupportInternalController {
   async listMessages(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
+    await this.assertTicketInScope(id, principal);
     return this.supportService.listMessages(id, principal);
+  }
+
+  private async assertTicketInScope(
+    ticketId: string,
+    principal: AuthorizationPrincipal,
+  ): Promise<void> {
+    if (!this.institutionScope) return;
+    const ticket = await this.supportService.getForInternal(ticketId);
+    await this.institutionScope.assertCanAccessSupportTicketRecord(principal, {
+      customerId: ticket.customerId,
+      agentId: ticket.agentId,
+    });
   }
 
   private requireWorkforce(req: AuthenticatedRequest): AuthorizationPrincipal {

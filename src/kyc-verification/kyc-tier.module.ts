@@ -44,6 +44,10 @@ import { PremblyKycProvider } from './prembly-kyc.provider';
 import { PremblyCredentialController } from './prembly-credential.controller';
 import { PremblyCredentialGovernanceService } from './prembly-credential-governance.service';
 import { KycProviderSecretEncryptionService } from './kyc-provider-secret-encryption.service';
+import { KycWorkforceReviewController } from './kyc-workforce-review.controller';
+import { KycWorkforceReviewService } from './kyc-workforce-review.service';
+import { InstitutionModule } from '../institution/institution.module';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import type { KycProvider } from './kyc.types';
 
 const KYC_PROVIDER_RUNTIME = 'KYC_PROVIDER_RUNTIME';
@@ -115,11 +119,17 @@ function providerRuntimeFromConfig(
 @Module({
   imports: [
     ProtectedAuthorityModule,
+    forwardRef(() => InstitutionModule),
     forwardRef(() => AuthorizationModule),
     forwardRef(() => OperationsModule),
     forwardRef(() => CustomerAuthenticationModule),
   ],
-  controllers: [KycTierPolicyController, KycTierReviewController, PremblyCredentialController],
+  controllers: [
+    KycTierPolicyController,
+    KycTierReviewController,
+    PremblyCredentialController,
+    KycWorkforceReviewController,
+  ],
   providers: [
     CustomerFinancialEligibilityService,
     { provide: PREMBLY_TRANSPORT, useValue: premblyHttpsTransport },
@@ -256,6 +266,7 @@ function providerRuntimeFromConfig(
         AuditService,
         AuthorizationService,
         AuthenticationSessionService,
+        InstitutionWorkforceScopeService,
       ],
       useFactory: (
         db: DataSource,
@@ -264,7 +275,16 @@ function providerRuntimeFromConfig(
         audit: AuditService,
         auth: AuthorizationService,
         sessions: AuthenticationSessionService,
-      ) => new KycTierTransitionService(db, policies, reader, audit, auth, sessions),
+        institutionScope: InstitutionWorkforceScopeService,
+      ) =>
+        new KycTierTransitionService(
+          db,
+          policies,
+          reader,
+          audit,
+          auth,
+          sessions,
+        ).setInstitutionScope(institutionScope),
     },
     {
       provide: KycTierWorker,
@@ -280,6 +300,33 @@ function providerRuntimeFromConfig(
           pollIntervalMs: config.get('KYC_TIER_WORKER_POLL_INTERVAL_MS', { infer: true }),
         }),
     },
+    {
+      provide: KycWorkforceReviewService,
+      inject: [
+        DataSource,
+        AuthorizationService,
+        KycTierEvidenceReader,
+        KycProviderGovernanceService,
+        PremblyCredentialGovernanceService,
+        InstitutionWorkforceScopeService,
+      ],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        reader: KycTierEvidenceReader,
+        providerGovernance: KycProviderGovernanceService,
+        premblyCredentials: PremblyCredentialGovernanceService,
+        institutionScope: InstitutionWorkforceScopeService,
+      ) =>
+        new KycWorkforceReviewService(
+          db,
+          auth,
+          reader,
+          providerGovernance,
+          premblyCredentials,
+          institutionScope,
+        ),
+    },
   ],
   exports: [
     KycTierTransitionService,
@@ -287,6 +334,7 @@ function providerRuntimeFromConfig(
     KycTierEvidenceReader,
     KycProviderGovernanceService,
     KycCustomerVerificationService,
+    KycWorkforceReviewService,
   ],
 })
 export class KycTierModule {}
