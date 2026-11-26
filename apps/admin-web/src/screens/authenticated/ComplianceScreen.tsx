@@ -4,6 +4,7 @@ import './compliance-workspace.css';
 import './compliance-redesign.css';
 import { Button, PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
+import { generateNotificationIdempotencyKey } from '../../services/notification-management-api';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
 import {
@@ -200,12 +201,26 @@ const ComplianceWorkspace: React.FC<
     mode === 'cases' ? canManageCases : canViewKyc || availableKycStatuses.length > 0;
   const canUseOperationalKycWorkspace =
     mode === 'kyc' && canAccess && principal?.assuranceLevel === 'MFA';
+  // Verifying an identity is a customer-consented provider call, so it needs the same MFA-bound
+  // review authority as the workspace itself and must be refused for a read-only principal.
+  const canVerifyIdentity = canUseOperationalKycWorkspace && !principal?.readOnlyPrincipal;
 
   const [customerId, setCustomerId] = useState(initialCustomerId || '');
   const [kyc, setKyc] = useState<any>(null);
   const [kycDossier, setKycDossier] = useState<any>(null);
   const [kycDossierLoading, setKycDossierLoading] = useState(false);
   const [kycDossierError, setKycDossierError] = useState('');
+  // Consent capture + identity verification. The operator reads the notice to the customer and
+  // attests to it here; that attestation is what the server binds to the attempt as the consent.
+  const [consentNotice, setConsentNotice] = useState<{ version: string; text: string } | null>(
+    null,
+  );
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [verifyKind, setVerifyKind] = useState('BVN');
+  const [verifyIdentifier, setVerifyIdentifier] = useState('');
+  const [verifyPending, setVerifyPending] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const [verifyResult, setVerifyResult] = useState<any>(null);
 
   // Operational KYC Queue state
   const [opQueueItems, setOpQueueItems] = useState<OperationalKycQueueItem[]>([]);
@@ -353,6 +368,7 @@ const ComplianceWorkspace: React.FC<
       if (gen !== dossierGeneration.current) return;
       if (response && typeof response === 'object' && response.customer?.id === id) {
         setKycDossier(response);
+        setConsentNotice(response.consentNotice ?? null);
       }
     } catch (err: any) {
       if (gen === dossierGeneration.current) {
@@ -360,6 +376,55 @@ const ComplianceWorkspace: React.FC<
       }
     } finally {
       if (gen === dossierGeneration.current) setKycDossierLoading(false);
+    }
+  };
+
+  /**
+   * Records the customer's consent and executes the governed identity verification in one staff
+   * action. The returned attempt carries `consentId`, which is the link between the consent the
+   * operator just attested to and the verification that used it.
+   */
+  const verifyIdentity = async () => {
+    const targetId = (kycDossier?.customer?.id ?? '').trim();
+    // eslint-disable-next-line no-console
+    if (!canVerifyIdentity || !targetId || !consentNotice) return;
+    const identifier = verifyIdentifier.trim();
+    if (!/^\d{11}$/.test(identifier)) {
+      setVerifyError('Enter the 11-digit customer reference exactly as read from the document.');
+      return;
+    }
+    // eslint-disable-next-line no-console
+    if (!consentConfirmed) {
+      setVerifyError('Record the customer consent before verifying an identity.');
+      return;
+    }
+    setVerifyPending(true);
+    setVerifyError('');
+    // eslint-disable-next-line no-console
+    try {
+      const response: any = await Promise.resolve(
+        ApiClient.post(
+          `/internal/kyc/review-workspace/customers/${encodeURIComponent(targetId)}/verify-identity`,
+          {
+            kind: verifyKind,
+            customerConsentConfirmed: true,
+            noticeVersion: consentNotice.version,
+            consentRequestId: generateNotificationIdempotencyKey(),
+            requestId: generateNotificationIdempotencyKey(),
+            identifier,
+          },
+        ),
+      );
+      setVerifyResult(response ?? null);
+      setConsentConfirmed(false);
+      setVerifyIdentifier('');
+      await loadCustomerKycDossier(targetId);
+    } catch (err: any) {
+      setVerifyError(
+        err?.message || 'Identity verification failed. Nothing was recorded for this customer.',
+      );
+    } finally {
+      setVerifyPending(false);
     }
   };
 
@@ -627,8 +692,7 @@ const ComplianceWorkspace: React.FC<
       !principal?.principalId
     )
       return;
-    const effectiveLevel =
-      kycStatus === 'PENDING' || kycStatus === 'REJECTED' ? 'NONE' : kycLevel;
+    const effectiveLevel = kycStatus === 'PENDING' || kycStatus === 'REJECTED' ? 'NONE' : kycLevel;
     const effectiveReason =
       (kycStatus === 'PENDING' || kycStatus === 'REJECTED') && !kycReason.trim()
         ? 'MANUAL_REVIEW'
@@ -778,28 +842,31 @@ const ComplianceWorkspace: React.FC<
         }
       />
 
-      {mode === 'kyc' && (onNavigateToKycProviders || onNavigateToKycTierPolicies || onNavigateToComplianceCases) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {onNavigateToKycProviders && hasFn('kyc.provider.view') && (
-            <Button variant="secondary" onClick={onNavigateToKycProviders}>
-              KYC Provider Governance →
-            </Button>
-          )}
-          {onNavigateToKycTierPolicies && hasFn('kyc.policy.view') && (
-            <Button variant="secondary" onClick={onNavigateToKycTierPolicies}>
-              KYC Tier Policy Governance →
-            </Button>
-          )}
-          {onNavigateToComplianceCases && canManageCases && (
-            <Button
-              variant="secondary"
-              onClick={() => onNavigateToComplianceCases(customerId.trim() || undefined)}
-            >
-              Compliance Cases →
-            </Button>
-          )}
-        </div>
-      )}
+      {mode === 'kyc' &&
+        (onNavigateToKycProviders ||
+          onNavigateToKycTierPolicies ||
+          onNavigateToComplianceCases) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {onNavigateToKycProviders && hasFn('kyc.provider.view') && (
+              <Button variant="secondary" onClick={onNavigateToKycProviders}>
+                KYC Provider Governance →
+              </Button>
+            )}
+            {onNavigateToKycTierPolicies && hasFn('kyc.policy.view') && (
+              <Button variant="secondary" onClick={onNavigateToKycTierPolicies}>
+                KYC Tier Policy Governance →
+              </Button>
+            )}
+            {onNavigateToComplianceCases && canManageCases && (
+              <Button
+                variant="secondary"
+                onClick={() => onNavigateToComplianceCases(customerId.trim() || undefined)}
+              >
+                Compliance Cases →
+              </Button>
+            )}
+          </div>
+        )}
 
       {canUseOperationalKycWorkspace && (
         <section
@@ -929,7 +996,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {opQueueError && (
-            <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--error"
+              role="alert"
+            >
               {opQueueError}
             </div>
           )}
@@ -960,7 +1030,9 @@ const ComplianceWorkspace: React.FC<
                       <tr key={row.customerId}>
                         <td>
                           <div>
-                            <strong>{row.displayName || row.reference || row.customerId.slice(0, 8)}</strong>
+                            <strong>
+                              {row.displayName || row.reference || row.customerId.slice(0, 8)}
+                            </strong>
                           </div>
                           <div style={{ fontSize: 11, color: '#64748B' }}>
                             <code>{row.customerId}</code>
@@ -1167,7 +1239,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {createCaseMsg && (
-            <div className="compliance-workspace__state compliance-workspace__state--success" role="status">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--success"
+              role="status"
+            >
               {createCaseMsg}
             </div>
           )}
@@ -1178,7 +1253,9 @@ const ComplianceWorkspace: React.FC<
               style={{ ...subPanelStyle, marginBottom: 14 }}
               aria-label="Create compliance case"
             >
-              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Open new non-FRAUD compliance case</h3>
+              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>
+                Open new non-FRAUD compliance case
+              </h3>
               {createCaseErr && (
                 <div
                   className="compliance-workspace__state compliance-workspace__state--error"
@@ -1394,7 +1471,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {queueCasesError && (
-            <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--error"
+              role="alert"
+            >
               {queueCasesError}
             </div>
           )}
@@ -1740,6 +1820,85 @@ const ComplianceWorkspace: React.FC<
           </div>
         )}
 
+        {mode === 'kyc' && kycDossier && canVerifyIdentity && (
+          <div style={subPanelStyle} data-testid="kyc-identity-verification">
+            <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>
+              Customer Consent &amp; Identity Verification
+            </h3>
+            {!consentNotice ? (
+              <p style={{ margin: 0, fontSize: 12, color: '#B91C1C' }}>
+                The consent notice is not configured on the server, so consent cannot be recorded
+                and identity cannot be verified. Nothing has been sent to a provider.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 10, fontSize: 13 }}>
+                <div>
+                  <span style={{ color: '#64748B', display: 'block', fontSize: 11 }}>
+                    Consent notice version
+                  </span>
+                  <strong>{consentNotice.version}</strong>
+                </div>
+                <div data-testid="kyc-consent-notice-text">
+                  <span style={{ color: '#64748B', display: 'block', fontSize: 11 }}>
+                    The customer must be read this notice
+                  </span>
+                  {consentNotice.text}
+                </div>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <input
+                    type="checkbox"
+                    checked={consentConfirmed}
+                    onChange={(event) => setConsentConfirmed(event.target.checked)}
+                  />
+                  <span>
+                    I have read this notice to the customer and they consented to this specific
+                    verification. Recording this is what links their consent to the attempt.
+                  </span>
+                </label>
+                <label style={{ display: 'grid', gap: 4, maxWidth: 320 }}>
+                  <span style={{ fontSize: 11, color: '#64748B' }}>Identity document</span>
+                  <select
+                    value={verifyKind}
+                    onChange={(event) => setVerifyKind(event.target.value)}
+                  >
+                    <option value="BVN">BVN</option>
+                    <option value="NIN">NIN</option>
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 4, maxWidth: 320 }}>
+                  <span style={{ fontSize: 11, color: '#64748B' }}>Customer reference</span>
+                  <input
+                    value={verifyIdentifier}
+                    onChange={(event) => setVerifyIdentifier(event.target.value)}
+                    placeholder="11 digits"
+                    inputMode="numeric"
+                  />
+                </label>
+                {verifyError && (
+                  <p style={{ margin: 0, fontSize: 12, color: '#B91C1C' }}>{verifyError}</p>
+                )}
+                {verifyResult && (
+                  <p
+                    style={{ margin: 0, fontSize: 12, color: '#047857' }}
+                    data-testid="kyc-verify-result"
+                  >
+                    Verified {verifyResult.kind} via {verifyResult.provider} (route v
+                    {verifyResult.routeVersion}) — status {verifyResult.status}; consent{' '}
+                    {verifyResult.consentId} is bound to attempt {verifyResult.id}.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={!consentConfirmed || verifyPending}
+                  onClick={() => void verifyIdentity()}
+                >
+                  {verifyPending ? 'Verifying…' : 'Verify identity'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {mode === 'kyc' && kycDossier && (
           <div style={{ display: 'grid', gap: 14, marginTop: 16 }} data-testid="kyc-review-dossier">
             <div style={subPanelStyle}>
@@ -1977,7 +2136,9 @@ const ComplianceWorkspace: React.FC<
                         <span>
                           Status: <strong>{tp.status || 'PUBLISHED'}</strong> · Published v
                           {tp.publishedVersion ?? tp.policy?.version ?? 0}
-                          {tp.effectiveVersion != null ? ` (Effective v${tp.effectiveVersion})` : ''}
+                          {tp.effectiveVersion != null
+                            ? ` (Effective v${tp.effectiveVersion})`
+                            : ''}
                         </span>
                       ) : (
                         'Unconfigured'

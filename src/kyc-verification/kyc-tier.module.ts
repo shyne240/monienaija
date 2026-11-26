@@ -45,6 +45,7 @@ import { PremblyCredentialGovernanceService } from './prembly-credential-governa
 import { KycProviderSecretEncryptionService } from './kyc-provider-secret-encryption.service';
 import { KycWorkforceReviewController } from './kyc-workforce-review.controller';
 import { KycWorkforceReviewService } from './kyc-workforce-review.service';
+import { KycWorkforceVerificationService } from './kyc-workforce-verification.service';
 import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import type { KycProvider } from './kyc.types';
 
@@ -347,6 +348,53 @@ function providerRuntimeFromConfig(
           institutionScope,
         ),
     },
+    {
+      provide: KycWorkforceVerificationService,
+      inject: [
+        DataSource,
+        KycCustomerSessionValidator,
+        AuthorizationService,
+        InstitutionWorkforceScopeService,
+        KycProviderGovernanceService,
+        KYC_PROVIDER_RUNTIME,
+        ConfigService,
+        AuditService,
+      ],
+      useFactory: (
+        db: DataSource,
+        sessions: KycCustomerSessionValidator,
+        auth: AuthorizationService,
+        institutionScope: InstitutionWorkforceScopeService,
+        governance: KycProviderGovernanceService,
+        runtime: ProviderRuntime,
+        config: ConfigService<Environment, true>,
+        audit: AuditService,
+      ) =>
+        new KycWorkforceVerificationService(
+          db,
+          sessions,
+          auth,
+          institutionScope,
+          governance,
+          runtime.providers,
+          customerKycConfigurationFromEnvironment({
+            KYC_CUSTOMER_VERIFICATION_ENABLED: config.get('KYC_CUSTOMER_VERIFICATION_ENABLED', {
+              infer: true,
+            }),
+            KYC_VERIFICATION_POLICY_JSON: config.get('KYC_VERIFICATION_POLICY_JSON', {
+              infer: true,
+            }),
+            KYC_CONSENT_NOTICE_VERSION: config.get('KYC_CONSENT_NOTICE_VERSION', { infer: true }),
+            KYC_CONSENT_NOTICE_TEXT: config.get('KYC_CONSENT_NOTICE_TEXT', { infer: true }),
+            KYC_CONSENT_VALIDITY_SECONDS: config.get('KYC_CONSENT_VALIDITY_SECONDS', {
+              infer: true,
+            }),
+            KYC_OWNERSHIP_KEY_BASE64: config.get('KYC_OWNERSHIP_KEY_BASE64', { infer: true }),
+            KYC_OWNERSHIP_KEY_VERSION: config.get('KYC_OWNERSHIP_KEY_VERSION', { infer: true }),
+          }),
+          audit,
+        ),
+    },
   ],
   exports: [
     KycTierTransitionService,
@@ -356,6 +404,7 @@ function providerRuntimeFromConfig(
     KycCustomerVerificationService,
     KycWorkforceReviewService,
     CustomerEffectiveConfigurationService,
+    KycWorkforceVerificationService,
   ],
 })
 export class KycTierModule {}

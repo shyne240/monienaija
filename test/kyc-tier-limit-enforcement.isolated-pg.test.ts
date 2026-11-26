@@ -345,6 +345,9 @@ beforeAll(async () => {
     `CREATE TABLE kyc_identity_claims(attempt_id uuid,customer_id uuid,kind varchar(3),status varchar(12))`,
   );
   await db.query(
+    `CREATE TABLE kyc_private_audit(id uuid PRIMARY KEY,customer_id uuid,resource_id uuid,action varchar(32),actor_id uuid,outcome varchar(24),occurred_at timestamptz DEFAULT now())`,
+  );
+  await db.query(
     `CREATE TABLE authentication_sessions(id uuid PRIMARY KEY,customer_id uuid,audience varchar(40))`,
   );
   // Read by LimitEnforcementService for the reservation idempotency scope.

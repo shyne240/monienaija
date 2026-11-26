@@ -23,6 +23,8 @@ import {
 } from '../limit-catalog/limit-rule-applicability';
 import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
 import { ProductCatalogService } from '../product-catalog/product-catalog.service';
+import { CustomerEligibilityService } from '../customer-eligibility/customer-eligibility.service';
+import { CustomerOnboardingService } from '../customer-onboarding/customer-onboarding.service';
 import { AuditService } from '../operations/audit.service';
 import { consumePhoneVerificationToken } from '../customer-registration/phone-verification-token';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
@@ -101,6 +103,10 @@ export class CustomerService {
     private readonly limitProfileResolver?: LimitProfileResolverService,
     @Optional()
     private readonly classResolver?: CustomerClassResolverService,
+    @Optional()
+    private readonly onboardingService?: CustomerOnboardingService,
+    @Optional()
+    private readonly eligibilityService?: CustomerEligibilityService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -241,6 +247,22 @@ export class CustomerService {
           ? { ...this.auditCustomer(saved), activationGate }
           : this.auditCustomer(saved),
       );
+      if (previous.status === CustomerStatus.DRAFT && saved.status === CustomerStatus.ACTIVE) {
+        const completedOnboarding =
+          await this.onboardingService?.completeVerifiedRegistrationInManager(
+            manager,
+            saved,
+            actor,
+          );
+        if (completedOnboarding) {
+          await this.eligibilityService?.ensureEligibleFromCompletedOnboardingInManager(
+            manager,
+            saved.id,
+            completedOnboarding.id,
+            actor,
+          );
+        }
+      }
       if (
         command.status === CustomerStatus.SUSPENDED ||
         command.status === CustomerStatus.CLOSED ||

@@ -575,7 +575,15 @@ export class KycWorkforceReviewService {
       const evidence = await this.evidenceReader.read(manager, normalizedCustomerId, {
         lockMode: 'NONE',
       });
-      return evidence !== null;
+      return Boolean(
+        evidence &&
+          evidence.evidence.some(
+            (item) =>
+              item.status === 'VERIFIED' &&
+              item.provenance === 'VERIFIED_PROVIDER' &&
+              (item.type === 'BVN' || item.type === 'NIN'),
+          ),
+      );
     });
 
     // 3. Permission-bounded Customer Evidence Sub-resources
