@@ -7,6 +7,7 @@ import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatMinorUnits } from '../../utils/financial-display';
 import { ReconciliationBreaksPanel } from './ReconciliationBreaksPanel';
+import { ProviderReportPreviewPanel } from './ProviderReportPreviewPanel';
 
 interface ReconciliationCheck {
   name: string;
@@ -220,7 +221,7 @@ export const ReconciliationObservabilityScreen: React.FC<{
   /** Deep link from Banking Operations into one institution's breaks. */
   initialInstitutionId?: string;
   /** Deep link target tab; defaults to the internal run workspace. */
-  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
+  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence' | 'reports';
 }> = ({ onOpenJournal, initialInstitutionId, initialTab }) => {
   const { principal, sessionId } = useAuthStore();
   const canView = principal?.scopes.includes('reconciliation.view') ?? false;
@@ -248,7 +249,7 @@ const ReconciliationWorkspace: React.FC<{
   canView: boolean;
   onOpenJournal?: (journalId: string) => void;
   initialInstitutionId?: string;
-  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
+  initialTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence' | 'reports';
 }> = ({ canView, onOpenJournal, initialInstitutionId, initialTab }) => {
   const generations = useRef({ run: 0, trial: 0, finance: 0, activity: 0 });
   useEffect(
@@ -261,7 +262,7 @@ const ReconciliationWorkspace: React.FC<{
     [],
   );
   const [activeTab, setActiveTab] = useState<
-    'runs' | 'trial-balance' | 'finance' | 'evidence'
+    'runs' | 'trial-balance' | 'finance' | 'evidence' | 'reports'
   >(initialTab ?? 'runs');
   const activityHeading = useRef<HTMLHeadingElement>(null);
   const focusActivity = useRef(false);
@@ -413,8 +414,9 @@ const ReconciliationWorkspace: React.FC<{
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>Internal verification boundaries</span>
         <p style={styles.gapText}>
-          These reports check internal ledger and wallet relationships. They do not compare external
-          bank statements or establish settlement with an external provider.
+          The audit tabs check internal ledger and wallet relationships and do not establish
+          external settlement. The Provider Report Preview tab compares uploaded, redacted provider
+          rows and a supplied statement in memory only; it never posts or resolves anything.
         </p>
       </div>
 
@@ -426,6 +428,7 @@ const ReconciliationWorkspace: React.FC<{
           { value: 'trial-balance', label: 'General Trial Balance' },
           { value: 'finance', label: 'Finance Verification & Activity' },
           { value: 'evidence', label: 'External Evidence & Breaks' },
+          { value: 'reports', label: 'Provider Report Preview' },
         ]}
         onChange={(value) => {
           setSelectedBreak(null);
@@ -442,6 +445,8 @@ const ReconciliationWorkspace: React.FC<{
             void handleLoadFinanceVerification();
           } else if (value === 'evidence') {
             setActiveTab('evidence');
+          } else if (value === 'reports') {
+            setActiveTab('reports');
           }
         }}
       />
@@ -722,6 +727,11 @@ const ReconciliationWorkspace: React.FC<{
         <ReconciliationBreaksPanel
           onOpenJournal={onOpenJournal}
           initialInstitutionId={initialInstitutionId}
+        />
+      ) : activeTab === 'reports' ? (
+        <ProviderReportPreviewPanel
+          canView={canView}
+          institutionId={initialInstitutionId}
         />
       ) : (
         <div className="mn-reconciliation__workspace" style={styles.content}>
