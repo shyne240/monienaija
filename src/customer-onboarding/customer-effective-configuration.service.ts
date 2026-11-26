@@ -100,18 +100,20 @@ export class CustomerEffectiveConfigurationService {
     manager: EntityManager,
     customerId: string,
   ): Promise<CustomerEffectiveConfiguration> {
-    const [customerRows, products, classResolution] = await Promise.all([
-      manager.query<Array<{ kyc_level: string }>>(`SELECT kyc_level FROM customers WHERE id = $1`, [
-        customerId,
-      ]),
-      manager.query<Array<{ code: string; name: string; currency: string }>>(
-        `SELECT code, name, currency FROM products
-          WHERE domain = 'CUSTOMER' AND status = 'ACTIVE' AND enabled = TRUE
-            AND configuration_status = 'CONFIGURED' AND product_scope = 'V1' AND deleted_at IS NULL
-          ORDER BY code ASC`,
-      ),
-      this.classResolver.resolveInManager(manager, customerId),
-    ]);
+    // This manager is transaction-scoped to a single PostgreSQL client; do not dispatch
+    // concurrent queries through it. Sequential reads avoid pg's overlapping-query warning and
+    // keep the class/config snapshot ordered inside the activation transaction.
+    const customerRows = await manager.query<Array<{ kyc_level: string }>>(
+      `SELECT kyc_level FROM customers WHERE id = $1`,
+      [customerId],
+    );
+    const products = await manager.query<Array<{ code: string; name: string; currency: string }>>(
+      `SELECT code, name, currency FROM products
+        WHERE domain = 'CUSTOMER' AND status = 'ACTIVE' AND enabled = TRUE
+          AND configuration_status = 'CONFIGURED' AND product_scope = 'V1' AND deleted_at IS NULL
+        ORDER BY code ASC`,
+    );
+    const classResolution = await this.classResolver.resolveInManager(manager, customerId);
 
     const verifiedTier = customerRows[0]?.kyc_level ?? null;
     let classResolutionEffective = classResolution;

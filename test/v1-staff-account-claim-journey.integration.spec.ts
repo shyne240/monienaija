@@ -53,6 +53,7 @@ import { PremblyKycProvider } from '../src/kyc-verification/prembly-kyc.provider
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { RecordingSmsProvider } from './support/desk-otp-fixture';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 
 const { AppModule } = require('../src/app.module') as { AppModule: typeof AppModuleType };
 
@@ -296,6 +297,15 @@ describe('V1 Staff-Created Account Claim Journey (Real HTTP + PostgreSQL)', () =
         isDefault: true,
       })
       .expect(201);
+
+    // Activation now requires an approved tier-default class mapping plus complete effective
+    // commercial rules. Seed those rules after the supported Admin API creates the class so this
+    // fixture does not bypass the class-creation workflow or weaken the activation guard.
+    await seedActivationCommercialConfig(dataSource, {
+      actor: 'task1-staff-account-claim-journey-fixture',
+      classCode: 'TIER_1_STANDARD',
+      profileCode: 'TIER_1_STANDARD_LIMITS',
+    });
   });
 
   afterAll(async () => {
@@ -540,6 +550,36 @@ describe('V1 Staff-Created Account Claim Journey (Real HTTP + PostgreSQL)', () =
       .set('Authorization', `Bearer ${compliance.token}`)
       .expect(200);
     expect(dossierAfter.body.supportedDecisions.approvalEligibleNow).toBe(true);
+    const trusted = dossierAfter.body.evidenceStatus.trustedVerificationEngine;
+    expect(trusted.verificationAttempts[0]).toMatchObject({
+      id: verifyRes.body.id,
+      consentId: verifyRes.body.consentId,
+      routeVersion: 1,
+    });
+    expect(trusted.consents[0]).toMatchObject({
+      id: verifyRes.body.consentId,
+      routeVersion: 1,
+      provenance: 'WORKFORCE_MFA',
+    });
+    expect(trusted.identityClaims[0]).toMatchObject({
+      attemptId: verifyRes.body.id,
+      status: 'VERIFIED',
+    });
+    const privateConsentAudit = await dataSource.query(
+      `SELECT action, outcome FROM kyc_private_audit
+        WHERE customer_id = $1 AND resource_id = $2 AND action = 'CONSENT_GRANTED'`,
+      [customerId, verifyRes.body.consentId],
+    );
+    expect(privateConsentAudit).toEqual([{ action: 'CONSENT_GRANTED', outcome: 'WORKFORCE_MFA' }]);
+    const verificationAudit = await dataSource.query(
+      `SELECT action, new_values->>'consentId' AS consent_id
+         FROM audit_events
+        WHERE entity_type = 'CUSTOMER_KYC_VERIFICATION' AND entity_id = $1`,
+      [verifyRes.body.id],
+    );
+    expect(verificationAudit).toEqual([
+      { action: 'WORKFORCE_VERIFIED', consent_id: verifyRes.body.consentId },
+    ]);
 
     // 3. COMPLIANCE approves Tier 1 KYC assessment; OPERATIONS activates customer (DRAFT -> ACTIVE)
     await request(app.getHttpServer())

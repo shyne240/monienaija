@@ -4,6 +4,11 @@ import './compliance-workspace.css';
 import './compliance-redesign.css';
 import { Button, PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
+import {
+  createKycRequestId,
+  KycWorkforceReviewApi,
+  type KycIdentityKind,
+} from '../../services/kyc-governance-api';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
 import {
@@ -206,6 +211,10 @@ const ComplianceWorkspace: React.FC<
   const [kycDossier, setKycDossier] = useState<any>(null);
   const [kycDossierLoading, setKycDossierLoading] = useState(false);
   const [kycDossierError, setKycDossierError] = useState('');
+  const [workforceConsentConfirmed, setWorkforceConsentConfirmed] = useState(false);
+  const [workforceVerificationBusy, setWorkforceVerificationBusy] = useState(false);
+  const [workforceVerificationMessage, setWorkforceVerificationMessage] = useState('');
+  const [workforceVerificationError, setWorkforceVerificationError] = useState('');
 
   // Operational KYC Queue state
   const [opQueueItems, setOpQueueItems] = useState<OperationalKycQueueItem[]>([]);
@@ -360,6 +369,40 @@ const ComplianceWorkspace: React.FC<
       }
     } finally {
       if (gen === dossierGeneration.current) setKycDossierLoading(false);
+    }
+  };
+
+  const verifyRegisteredIdentity = async (kind: KycIdentityKind) => {
+    const customerId = String(kycDossier?.customer?.id ?? '').trim();
+    const notice = kycDossier?.consentNotice;
+    if (!CUSTOMER_UUID.test(customerId) || !notice?.version || !workforceConsentConfirmed) {
+      setWorkforceVerificationError(
+        'Review the active notice and confirm customer consent before verification.',
+      );
+      return;
+    }
+    setWorkforceVerificationBusy(true);
+    setWorkforceVerificationError('');
+    setWorkforceVerificationMessage('');
+    try {
+      const result = await KycWorkforceReviewApi.verifyRegisteredIdentity(customerId, {
+        kind,
+        customerConsentConfirmed: true,
+        noticeVersion: notice.version,
+        consentRequestId: createKycRequestId(),
+        requestId: createKycRequestId(),
+      });
+      setWorkforceVerificationMessage(
+        `${kind} verification ${result.status} · consent ${result.consentId} → attempt ${result.id} · ${result.provider} route v${result.routeVersion}`,
+      );
+      setWorkforceConsentConfirmed(false);
+      await loadCustomerKycDossier(customerId);
+    } catch (err: any) {
+      setWorkforceVerificationError(
+        err?.message || 'Identity verification could not be completed.',
+      );
+    } finally {
+      setWorkforceVerificationBusy(false);
     }
   };
 
@@ -627,8 +670,7 @@ const ComplianceWorkspace: React.FC<
       !principal?.principalId
     )
       return;
-    const effectiveLevel =
-      kycStatus === 'PENDING' || kycStatus === 'REJECTED' ? 'NONE' : kycLevel;
+    const effectiveLevel = kycStatus === 'PENDING' || kycStatus === 'REJECTED' ? 'NONE' : kycLevel;
     const effectiveReason =
       (kycStatus === 'PENDING' || kycStatus === 'REJECTED') && !kycReason.trim()
         ? 'MANUAL_REVIEW'
@@ -778,28 +820,31 @@ const ComplianceWorkspace: React.FC<
         }
       />
 
-      {mode === 'kyc' && (onNavigateToKycProviders || onNavigateToKycTierPolicies || onNavigateToComplianceCases) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {onNavigateToKycProviders && hasFn('kyc.provider.view') && (
-            <Button variant="secondary" onClick={onNavigateToKycProviders}>
-              KYC Provider Governance →
-            </Button>
-          )}
-          {onNavigateToKycTierPolicies && hasFn('kyc.policy.view') && (
-            <Button variant="secondary" onClick={onNavigateToKycTierPolicies}>
-              KYC Tier Policy Governance →
-            </Button>
-          )}
-          {onNavigateToComplianceCases && canManageCases && (
-            <Button
-              variant="secondary"
-              onClick={() => onNavigateToComplianceCases(customerId.trim() || undefined)}
-            >
-              Compliance Cases →
-            </Button>
-          )}
-        </div>
-      )}
+      {mode === 'kyc' &&
+        (onNavigateToKycProviders ||
+          onNavigateToKycTierPolicies ||
+          onNavigateToComplianceCases) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {onNavigateToKycProviders && hasFn('kyc.provider.view') && (
+              <Button variant="secondary" onClick={onNavigateToKycProviders}>
+                KYC Provider Governance →
+              </Button>
+            )}
+            {onNavigateToKycTierPolicies && hasFn('kyc.policy.view') && (
+              <Button variant="secondary" onClick={onNavigateToKycTierPolicies}>
+                KYC Tier Policy Governance →
+              </Button>
+            )}
+            {onNavigateToComplianceCases && canManageCases && (
+              <Button
+                variant="secondary"
+                onClick={() => onNavigateToComplianceCases(customerId.trim() || undefined)}
+              >
+                Compliance Cases →
+              </Button>
+            )}
+          </div>
+        )}
 
       {canUseOperationalKycWorkspace && (
         <section
@@ -929,7 +974,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {opQueueError && (
-            <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--error"
+              role="alert"
+            >
               {opQueueError}
             </div>
           )}
@@ -960,7 +1008,9 @@ const ComplianceWorkspace: React.FC<
                       <tr key={row.customerId}>
                         <td>
                           <div>
-                            <strong>{row.displayName || row.reference || row.customerId.slice(0, 8)}</strong>
+                            <strong>
+                              {row.displayName || row.reference || row.customerId.slice(0, 8)}
+                            </strong>
                           </div>
                           <div style={{ fontSize: 11, color: '#64748B' }}>
                             <code>{row.customerId}</code>
@@ -1167,7 +1217,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {createCaseMsg && (
-            <div className="compliance-workspace__state compliance-workspace__state--success" role="status">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--success"
+              role="status"
+            >
               {createCaseMsg}
             </div>
           )}
@@ -1178,7 +1231,9 @@ const ComplianceWorkspace: React.FC<
               style={{ ...subPanelStyle, marginBottom: 14 }}
               aria-label="Create compliance case"
             >
-              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Open new non-FRAUD compliance case</h3>
+              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>
+                Open new non-FRAUD compliance case
+              </h3>
               {createCaseErr && (
                 <div
                   className="compliance-workspace__state compliance-workspace__state--error"
@@ -1394,7 +1449,10 @@ const ComplianceWorkspace: React.FC<
           </div>
 
           {queueCasesError && (
-            <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">
+            <div
+              className="compliance-workspace__state compliance-workspace__state--error"
+              role="alert"
+            >
               {queueCasesError}
             </div>
           )}
@@ -1825,6 +1883,96 @@ const ComplianceWorkspace: React.FC<
               )}
             </div>
 
+            <section
+              aria-label="Record consent and verify identity"
+              data-testid="workforce-consent-verification"
+              style={{
+                marginTop: 14,
+                border: '1px solid #CBD5E1',
+                borderRadius: 8,
+                padding: 14,
+                background: '#FFFFFF',
+              }}
+            >
+              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>
+                Customer consent &amp; identity verification
+              </h3>
+              {kycDossier.consentNotice?.version && kycDossier.consentNotice?.text ? (
+                <>
+                  <p style={{ margin: '0 0 8px', fontSize: 12, color: '#334155' }}>
+                    Governed notice <code>{kycDossier.consentNotice.version}</code>
+                  </p>
+                  <blockquote
+                    data-testid="governed-consent-notice"
+                    style={{
+                      margin: '0 0 10px',
+                      padding: '8px 12px',
+                      borderLeft: '3px solid #2563EB',
+                      fontSize: 12,
+                    }}
+                  >
+                    {kycDossier.consentNotice.text}
+                  </blockquote>
+                  <label
+                    style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={workforceConsentConfirmed}
+                      onChange={(event) => setWorkforceConsentConfirmed(event.target.checked)}
+                      data-testid="workforce-consent-confirmed"
+                    />
+                    I confirm the customer has agreed to this notice and the selected identity
+                    check.
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    {(['BVN', 'NIN'] as const).map((kind) => {
+                      const docs = kycDossier.evidenceStatus?.identityDocuments?.items ?? [];
+                      const available = docs.some((doc: any) => doc.type === kind);
+                      return (
+                        <Button
+                          key={kind}
+                          type="button"
+                          disabled={
+                            !available || !workforceConsentConfirmed || workforceVerificationBusy
+                          }
+                          onClick={() => void verifyRegisteredIdentity(kind)}
+                          data-testid={`verify-${kind.toLowerCase()}-with-consent`}
+                        >
+                          {workforceVerificationBusy
+                            ? 'Verifying…'
+                            : `Record consent & verify ${kind}`}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: 11, color: '#64748B' }}>
+                    Requires an MFA workforce session, institution-scoped KYC review and
+                    identity-document access. Raw identity numbers are not sent from this screen or
+                    returned in the dossier.
+                  </p>
+                </>
+              ) : (
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>
+                  No active governed consent notice is configured; verification remains unavailable.
+                </p>
+              )}
+              {workforceVerificationMessage && (
+                <p
+                  role="status"
+                  data-testid="workforce-verification-result"
+                  style={{ margin: '10px 0 0', fontSize: 12 }}
+                >
+                  {workforceVerificationMessage}
+                </p>
+              )}
+              {workforceVerificationError && (
+                <p role="alert" style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12 }}>
+                  {workforceVerificationError}
+                </p>
+              )}
+            </section>
+
             <div
               style={{
                 display: 'grid',
@@ -1847,10 +1995,15 @@ const ComplianceWorkspace: React.FC<
                     )
                       .slice(0, 6)
                       .map((att: any) => (
-                        <li key={att.id} style={{ marginBottom: 4 }}>
+                        <li key={att.id} style={{ marginBottom: 6 }}>
                           <strong>{att.kind}</strong> via <code>{att.provider}</code> —{' '}
                           <span>{att.outcome || att.status}</span> (
                           {fmtShortDate(att.completedAt || att.verifiedAt || att.createdAt)})
+                          <div style={{ color: '#64748B', overflowWrap: 'anywhere' }}>
+                            Attempt <code>{att.id}</code> ← consent{' '}
+                            <code>{att.consentId || 'legacy/unlinked'}</code>
+                            {att.routeVersion ? ` · route v${att.routeVersion}` : ''}
+                          </div>
                         </li>
                       ))}
                   </ul>
@@ -1871,9 +2024,26 @@ const ComplianceWorkspace: React.FC<
                       )
                         .map(
                           (c: any) =>
-                            `${c.kind || c.scope} (${c.withdrawnAt ? 'WITHDRAWN' : c.status || 'GRANTED'})`,
+                            `${c.kind || c.scope} · ${c.provenance || 'unverified'} · consent ${c.id} · route v${c.routeVersion ?? '—'} (${c.withdrawnAt ? 'WITHDRAWN' : c.status || 'GRANTED'})`,
                         )
                         .join(', ')
+                    : 'None recorded'}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12 }} data-testid="identity-claim-linkage">
+                  <strong>Ownership claims:</strong>{' '}
+                  {(
+                    kycDossier.evidenceStatus?.trustedVerificationEngine?.identityClaims ??
+                    kycDossier.evidence?.identityClaims
+                  )?.length
+                    ? (
+                        kycDossier.evidenceStatus?.trustedVerificationEngine?.identityClaims ??
+                        kycDossier.evidence?.identityClaims
+                      )
+                        .map(
+                          (claim: any) =>
+                            `${claim.kind} ${claim.status} · claim ${claim.id} ← attempt ${claim.attemptId}`,
+                        )
+                        .join('; ')
                     : 'None recorded'}
                 </div>
               </div>
@@ -1977,7 +2147,9 @@ const ComplianceWorkspace: React.FC<
                         <span>
                           Status: <strong>{tp.status || 'PUBLISHED'}</strong> · Published v
                           {tp.publishedVersion ?? tp.policy?.version ?? 0}
-                          {tp.effectiveVersion != null ? ` (Effective v${tp.effectiveVersion})` : ''}
+                          {tp.effectiveVersion != null
+                            ? ` (Effective v${tp.effectiveVersion})`
+                            : ''}
                         </span>
                       ) : (
                         'Unconfigured'

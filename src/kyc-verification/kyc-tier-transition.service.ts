@@ -506,7 +506,7 @@ export class KycTierTransitionService {
           await manager.query(
             `UPDATE customer_class_assignments
                 SET is_active = true, effective_from = clock_timestamp(), effective_to = NULL,
-                    assigned_by = $2, updated_at = clock_timestamp()
+                    updated_by = $2, updated_at = clock_timestamp()
               WHERE id = $1`,
             [existing[0].id, actor],
           );
@@ -525,9 +525,11 @@ export class KycTierTransitionService {
           );
           await manager.query(
             `INSERT INTO customer_class_assignments
-              (id, customer_id, class_id, source, is_active, effective_from, effective_to, assigned_by, previous_class_id, created_at, updated_at)
-             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', true, clock_timestamp(), NULL, $3, $4, clock_timestamp(), clock_timestamp())`,
-            [customerId, tierDefault.classId, actor, current?.class_id ?? null],
+              (id, customer_id, class_id, source, reason, is_active, effective_from, effective_to,
+               precedence, created_by, updated_by, version, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, 'TIER_DEFAULT', $3, true, clock_timestamp(), NULL,
+                     100, $4, $4, 1, clock_timestamp(), clock_timestamp())`,
+            [customerId, tierDefault.classId, `Approved default for ${newLevel}`, actor],
           );
         }
       } else {

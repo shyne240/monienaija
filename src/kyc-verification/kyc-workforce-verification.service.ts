@@ -310,39 +310,40 @@ export class KycWorkforceVerificationService {
         );
       }
 
-      const [revisions, profiles, phones, documents] = await Promise.all([
-        m.query<Array<{ revision: string }>>(
-          'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id = $1 FOR SHARE',
-          [customerId],
-        ),
-        m.query<
-          Array<{
-            first_name: string | null;
-            last_name: string | null;
-            date_of_birth: string | null;
-          }>
-        >(
-          `SELECT first_name, last_name, date_of_birth::text AS date_of_birth
-             FROM customer_profiles
-            WHERE customer_id = $1 AND is_active = true AND deleted_at IS NULL
-            ORDER BY updated_at DESC LIMIT 2`,
-          [customerId],
-        ),
-        m.query<Array<{ phone: string; verified_at: Date | null }>>(
-          `SELECT normalized_value AS phone, verified_at
-             FROM customer_contact_methods
-            WHERE customer_id = $1 AND type = 'PHONE' AND is_primary = true AND deleted_at IS NULL
-            ORDER BY updated_at DESC LIMIT 2`,
-          [customerId],
-        ),
-        m.query<Array<{ document_number: string }>>(
-          `SELECT document_number
-             FROM customer_identity_documents
-            WHERE customer_id = $1 AND type = $2 AND deleted_at IS NULL
-            ORDER BY created_at DESC LIMIT 2`,
-          [customerId, kind],
-        ),
-      ]);
+      // TypeORM's transactional EntityManager is backed by one PostgreSQL client. Keep these
+      // statements sequential: parallel queries on the same client can interleave protocol
+      // responses and make the verification precondition nondeterministic.
+      const revisions = await m.query<Array<{ revision: string }>>(
+        'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id = $1 FOR SHARE',
+        [customerId],
+      );
+      const profiles = await m.query<
+        Array<{
+          first_name: string | null;
+          last_name: string | null;
+          date_of_birth: string | null;
+        }>
+      >(
+        `SELECT first_name, last_name, date_of_birth::text AS date_of_birth
+           FROM customer_profiles
+          WHERE customer_id = $1 AND is_active = true AND deleted_at IS NULL
+          ORDER BY updated_at DESC LIMIT 2`,
+        [customerId],
+      );
+      const phones = await m.query<Array<{ phone: string; verified_at: Date | null }>>(
+        `SELECT normalized_value AS phone, verified_at
+           FROM customer_contact_methods
+          WHERE customer_id = $1 AND type = 'PHONE' AND is_primary = true AND deleted_at IS NULL
+          ORDER BY updated_at DESC LIMIT 2`,
+        [customerId],
+      );
+      const documents = await m.query<Array<{ document_number: string }>>(
+        `SELECT document_number
+           FROM customer_identity_documents
+          WHERE customer_id = $1 AND type = $2 AND deleted_at IS NULL
+          ORDER BY created_at DESC LIMIT 2`,
+        [customerId, kind],
+      );
 
       const identityRevision = revisions[0]?.revision;
       const profile = profiles[0];
