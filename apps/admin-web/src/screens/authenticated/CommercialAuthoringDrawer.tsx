@@ -83,7 +83,12 @@ export const CommercialAuthoringDrawer: React.FC<{
     readOnlyPrincipal: principal?.readOnlyPrincipal === true,
   });
   const blocked = contract.capability !== 'GOVERNED_AUTHORING';
-  const recordId = typeof record?.id === 'string' ? record.id : null;
+  const recordId =
+    typeof record?.id === 'string'
+      ? record.id
+      : typeof record?.code === 'string'
+        ? record.code
+        : null;
   const version = typeof record?.version === 'number' ? record.version : null;
 
   const loadHistory = async () => {

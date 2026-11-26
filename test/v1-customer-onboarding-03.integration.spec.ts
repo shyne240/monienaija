@@ -340,12 +340,21 @@ describe('CUSTOMER-ONBOARDING-END-TO-END-01 (real PostgreSQL)', () => {
       // useful) but never MACs, digests, document numbers or provider payloads.
       expect(JSON.stringify(review.body)).not.toMatch(/identityMac|identity_mac|macKeyVersion/i);
       /*
-       * The 11-digit guard exists to catch leaked BVN/document numbers. A raw JSON dump also
-       * carries random UUID hex tails, which can coincide with an 11-digit run (observed twice
-       * on CI for two different customerIds) — strip UUIDs first so the guard tests values, not
-       * key material. ISO-8601 timestamps never contain an 11-digit run once UUIDs are masked.
+       * Two guards for two properties (merge of base f729f185 and PR #27 d953fcc):
+       * 1. The direct check asserts the fixture's phone is absent in every form — the actual
+       *    privacy property, not a proxy. This fixture's reference is `mn-<canonical>`, so the
+       *    canonical number is exactly what must not surface.
+       * 2. The broader 11-digit scan still catches leaked BVN/document numbers. A raw JSON dump
+       *    also carries random UUID hex tails, which can coincide with an 11-digit run (observed
+       *    twice on CI for two different customerIds) — strip UUIDs first so the guard tests
+       *    values, not key material. ISO-8601 timestamps never contain an 11-digit run once
+       *    UUIDs are masked.
        */
-      const serializedWithoutUuids = JSON.stringify(review.body).replace(
+      const bodyText = JSON.stringify(review.body);
+      for (const form of [draft.canonical, phoneForms(draft.phone).e164, draft.phone]) {
+        expect(bodyText).not.toContain(form);
+      }
+      const serializedWithoutUuids = bodyText.replace(
         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
         '<uuid>',
       );

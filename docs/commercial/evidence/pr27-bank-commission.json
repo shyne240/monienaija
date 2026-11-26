@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-11-26T09:02:38.964Z",
+  "branch": "arena/41dde913-monienaija",
+  "suite": "test/v1-bank-commission-runtime.integration.spec.ts",
+  "database": "disposable per-process PostgreSQL",
+  "note": "Wallet-to-bank commission at settlement. Disposable per-process database; fixture rates only, no production policy.",
+  "commissionEvent": "financial_commitments.state RESERVED -> SETTLED",
+  "transactionReference": "financial_commitments.id",
+  "cases": {
+    "approvedNonzeroRule": {
+      "rule": "PERCENTAGE 100bps of PRINCIPAL (1.00%), AGENT recipient, canonical WALLET_TO_BANK",
+      "principalAmountMinor": "100000",
+      "previewMinor": "1000",
+      "recordedDecisionMinor": "1000",
+      "accrualExpenseMinor": "-1000",
+      "accrualPayableMinor": "1000",
+      "allThreeAgree": true,
+      "beneficiaryIdAttributed": "5da9c881-74c1-410a-98d7-4499eda91620",
+      "commissionEvent": "SETTLEMENT",
+      "pendingHadNoDecision": true,
+      "settlementState": "ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED"
+    },
+    "explicitZero": {
+      "rule": "FIXED 0 minor, AGENT recipient",
+      "decisionStatus": "ALLOCATED",
+      "recordedAmountMinor": "0",
+      "journalLegsPosted": false,
+      "distinction": "a configured rule that computed to zero — not an absent rule"
+    },
+    "noRuleConfigured": {
+      "decisionStatus": "NONE",
+      "allocations": [],
+      "journalLegsPosted": false,
+      "distinction": "evaluated and found nothing — never recorded as a zero"
+    },
+    "releasedTransfer": {
+      "rule": "PERCENTAGE 100bps of PRINCIPAL — deliberately configured so absence is meaningful",
+      "commitmentState": "RELEASED",
+      "decisionRows": 0,
+      "journals": 0,
+      "payableDeltaMinor": "0",
+      "conclusion": "a transfer that never completed cannot pay anyone"
+    },
+    "replay": {
+      "outcome": "IDEMPOTENT_REPLAY",
+      "decisionRows": 1,
+      "journals": 1,
+      "payableMinor": "1000",
+      "conclusion": "commission cannot be paid twice"
+    },
+    "wrongAgentAttribution": {
+      "rule": "targeted at a DIFFERENT explicit agentId",
+      "decisionStatus": "NONE",
+      "journals": 0,
+      "conclusion": "the recipient must be eligible, not merely present"
+    }
+  }
+}

@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { ProductGovernanceRecord } from './product-governance-record.entity';
@@ -106,47 +106,51 @@ export class ProductGovernanceService {
     private readonly auditService: AuditService,
   ) {}
 
-  async create(command: CreateProductGovernanceCommand): Promise<ProductGovernanceView> {
+  async create(
+    command: CreateProductGovernanceCommand,
+    txManager?: EntityManager,
+  ): Promise<ProductGovernanceView> {
     const normalized = this.normalizeCreate(command);
-    try {
-      const record = await this.dataSource.transaction(async (manager) => {
-        const repository = manager.getRepository(ProductGovernanceRecord);
-        const existing = await repository.findOne({
-          where: {
-            kind: normalized.kind,
-            recordKey: normalized.recordKey,
-            version: normalized.version,
-          },
-        });
-        if (existing) {
-          throw new ConflictException(
-            'A governance record with this kind, key, and version already exists',
-          );
-        }
-        const saved = await repository.save(
-          repository.create({
-            id: randomUUID(),
-            kind: normalized.kind,
-            recordKey: normalized.recordKey,
-            name: normalized.name,
-            status: normalized.status,
-            version: normalized.version,
-            parentId: normalized.parentId ?? null,
-            payload: normalized.payload,
-            immutableRecord: normalized.immutableRecord,
-            createdBy: normalized.actor,
-            updatedBy: normalized.actor,
-          }),
-        );
-        await this.auditService.record(manager, {
-          entityType: 'PRODUCT_GOVERNANCE_RECORD',
-          entityId: saved.id,
-          action: 'CREATED',
-          actor: normalized.actor,
-          newValues: this.auditValues(saved),
-        });
-        return saved;
+    const run = async (manager: EntityManager) => {
+      const repository = manager.getRepository(ProductGovernanceRecord);
+      const existing = await repository.findOne({
+        where: {
+          kind: normalized.kind,
+          recordKey: normalized.recordKey,
+          version: normalized.version,
+        },
       });
+      if (existing) {
+        throw new ConflictException(
+          'A governance record with this kind, key, and version already exists',
+        );
+      }
+      const saved = await repository.save(
+        repository.create({
+          id: randomUUID(),
+          kind: normalized.kind,
+          recordKey: normalized.recordKey,
+          name: normalized.name,
+          status: normalized.status,
+          version: normalized.version,
+          parentId: normalized.parentId ?? null,
+          payload: normalized.payload,
+          immutableRecord: normalized.immutableRecord,
+          createdBy: normalized.actor,
+          updatedBy: normalized.actor,
+        }),
+      );
+      await this.auditService.record(manager, {
+        entityType: 'PRODUCT_GOVERNANCE_RECORD',
+        entityId: saved.id,
+        action: 'CREATED',
+        actor: normalized.actor,
+        newValues: this.auditValues(saved),
+      });
+      return saved;
+    };
+    try {
+      const record = txManager ? await run(txManager) : await this.dataSource.transaction(run);
       return this.toView(record);
     } catch (error) {
       if (this.isUniqueViolation(error)) {
@@ -183,6 +187,7 @@ export class ProductGovernanceService {
   async update(
     id: string,
     command: UpdateProductGovernanceCommand,
+    txManager?: EntityManager,
   ): Promise<ProductGovernanceView> {
     this.assertUuid(id);
     const normalizedActor = this.normalizeActor(command.actor);
@@ -196,7 +201,7 @@ export class ProductGovernanceService {
       );
     }
     const previous = this.auditValues(record);
-    const updated = await this.dataSource.transaction(async (manager) => {
+    const run = async (manager: EntityManager) => {
       const repository = manager.getRepository(ProductGovernanceRecord);
       if (command.name !== undefined) {
         record.name = this.normalizeName(command.name);
@@ -218,7 +223,8 @@ export class ProductGovernanceService {
         newValues: this.auditValues(saved),
       });
       return saved;
-    });
+    };
+    const updated = txManager ? await run(txManager) : await this.dataSource.transaction(run);
     return this.toView(updated);
   }
 

@@ -4,6 +4,8 @@ import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nest
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { recordWalletToBankCommissionInTransaction } from '../banking/wallet-to-bank-commission';
+import type { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { LedgerLine } from '../ledger/ledger-line.entity';
@@ -11,9 +13,12 @@ import { LimitUsageService } from '../limit-catalog/limit-usage.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
+import type { CommissionEngine } from '../commission/commission.engine';
+import type { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import { SettlementAccountRole } from '../payment/payment.enums';
 import { SettlementAccountService } from '../payment/settlement-account.service';
 import type { RequestContext } from '../production/request-context';
+import { OUTBOUND_BANK_SETTLEMENT_OPERATION } from './partner-adapter.types';
 import { ExternalOperation } from './external-operation.entity';
 import { ExternalOperationLifecycleState } from './external-operation-lifecycle.enums';
 import { ExternalOperationReferenceSource } from './external-operation.enums';
@@ -137,6 +142,15 @@ export class ExternalSettlementService {
     @Inject(EXTERNAL_OPERATION_STATUS_VERIFIER)
     private readonly statusVerifier?: ExternalOperationStatusVerifier,
     @Optional() private readonly limitUsageService?: LimitUsageService,
+    /**
+     * Optional so the settlement service keeps working where commercial configuration is not
+     * composed (and in the unit suites that construct it directly). When absent, an outbound bank
+     * settlement still completes; it simply records no commission decision, which the effective
+     * configuration preview already reports as a blocker rather than a zero.
+     */
+    @Optional() private readonly commissionEngine?: CommissionEngine,
+    @Optional() private readonly decisionSnapshots?: CommercialDecisionSnapshotService,
+    @Optional() private readonly commercialAccounting?: CommercialAccountingService,
   ) {}
 
   async settleVerifiedOutcome(
@@ -641,6 +655,16 @@ export class ExternalSettlementService {
           'INVALID_SETTLEMENT_STATE',
           'Commitment resolution lost its binding',
         );
+      // PR #27 — agent commission is decided HERE, at the one event that proves the money moved.
+      // Placed after the commitment has become SETTLED (so the decision is bound to a completed
+      // transaction) and inside the same transaction (so a commission failure rolls the settlement
+      // back rather than leaving a settled transfer with an unrecorded decision).
+      const commission = await this.recordBankSettlementCommission(manager, {
+        operation,
+        commitmentId: commitment!.id,
+        journalId: settlement.journalId,
+        correlationId: command.requestContext.correlationId ?? null,
+      });
       await this.auditSettlement(manager, {
         action: 'SETTLEMENT_POSTED',
         entityId: settlement.settlementId,
@@ -661,6 +685,12 @@ export class ExternalSettlementService {
           verifiedProviderObservedAt: verified.observedAt,
           evidenceType: settlement.evidence.referenceType,
           evidenceSource: settlement.evidence.source,
+          // Recorded on the settlement audit trail itself, so an investigator reading the settlement
+          // never has to go looking for whether commission was decided: null means the route carries
+          // no commission step, NONE means it does and no rule applied.
+          commissionStatus: commission?.commissionStatus ?? null,
+          commissionMinor: commission?.commissionMinor ?? null,
+          commissionReplayed: commission?.replayed ?? null,
         },
       });
       await this.recordOutboxFact({
@@ -1218,6 +1248,74 @@ export class ExternalSettlementService {
       decision: ExternalSettlementDecision.SETTLE,
       settlementAssetAccountId,
     });
+  }
+
+  /**
+   * Decide and record the commission for a settled outbound bank transfer.
+   *
+   * Only `OUTBOUND_BANK_SETTLEMENT` operations are in scope: that is the wallet→bank route, and the
+   * only route that reaches this settlement path with a reserved financial commitment. Everything else
+   * is skipped explicitly rather than silently falling through, so a future operation type cannot
+   * inherit commission behaviour it was never designed for.
+   *
+   * The amount basis is the amount actually settled, and the fee basis is the fee actually bound at
+   * authorization — never a re-resolution at settlement time, which could disagree with what the
+   * customer was charged.
+   */
+  private async recordBankSettlementCommission(
+    manager: EntityManager,
+    input: {
+      operation: ExternalOperation;
+      commitmentId: string;
+      journalId: string | null;
+      correlationId: string | null;
+    },
+  ): Promise<{ commissionStatus: string; commissionMinor: string; replayed: boolean } | null> {
+    if (input.operation.operationType !== OUTBOUND_BANK_SETTLEMENT_OPERATION) return null;
+    if (!this.commissionEngine || !this.decisionSnapshots) {
+      // Commercial composition is absent: record nothing rather than pretend the decision was NONE.
+      return null;
+    }
+    const bindings = await manager.query<Array<{ service_fee_minor: string; tax_minor: string }>>(
+      `SELECT service_fee_minor::text AS service_fee_minor, tax_minor::text AS tax_minor
+         FROM banking_operation_fee_bindings WHERE external_operation_id = $1`,
+      [input.operation.id],
+    );
+    // Zero bindings is legitimate and is NOT "a free transfer": `bindForCommittedOperationInTransaction`
+    // records nothing at all when no approved rule prices the route, so the absence itself means the
+    // route is unpriced. That is a fee decision of NOT_CONFIGURED, kept distinct from a bound zero fee.
+    const feeMinor =
+      bindings.length === 0
+        ? null
+        : (BigInt(bindings[0]!.service_fee_minor) + BigInt(bindings[0]!.tax_minor)).toString();
+
+    const outcome = await recordWalletToBankCommissionInTransaction(
+      {
+        commissionEngine: this.commissionEngine,
+        snapshots: this.decisionSnapshots,
+        accounting: this.commercialAccounting,
+        settledFeeMinor: feeMinor,
+      },
+      manager,
+      {
+        commitmentId: input.commitmentId,
+        currency: input.operation.currency,
+        principalAmountMinor: input.operation.amountMinor,
+        journalId: input.journalId,
+        correlationId: input.correlationId,
+        decidedAt: new Date(),
+      },
+    );
+
+    const allocations = outcome.commissionDecision.allocations ?? [];
+    const commissionMinor = allocations
+      .reduce((sum, allocation) => sum + BigInt(String(allocation.amountMinor ?? '0')), 0n)
+      .toString();
+    return {
+      commissionStatus: outcome.commissionDecision.status,
+      commissionMinor,
+      replayed: outcome.replayed,
+    };
   }
 
   private async resolveCommitmentLimits(

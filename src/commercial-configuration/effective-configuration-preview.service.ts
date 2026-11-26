@@ -16,7 +16,12 @@ import {
   narrowApplicableLimitRules,
 } from '../limit-catalog/limit-rule-applicability';
 import { LimitProfileResolverService } from '../limit-catalog/limit-profile-resolver.service';
+import {
+  bankingIdentityFor,
+  type BankingFeeDisposition,
+} from '../product-catalog/banking-product-identities';
 import { ProductCatalogService } from '../product-catalog/product-catalog.service';
+import { statutoryChargesFor } from '../product-catalog/statutory-charges';
 import { RewardRuleResolverService } from '../reward/reward-rule-resolver.service';
 import type { RewardGrantDecision, RewardResolution } from '../reward/reward.types';
 
@@ -262,6 +267,12 @@ export class EffectiveConfigurationPreviewService {
         agentClassId,
         institutionId,
         explanation,
+        // PR #27: a direction may carry a DECIDED fee disposition rather than an authored rule. Bank
+        // credits are the first such case: no customer service fee is charged on money the customer
+        // did not instruct us to spend. Reporting that as MISSING would be a lie ("nobody configured
+        // this") when the truth is "this is not charged, on purpose".
+        feeDisposition: bankingIdentityFor(productCode)?.feeDisposition ?? null,
+        feeDispositionNote: bankingIdentityFor(productCode)?.feeNote ?? null,
       });
 
       const commission = await this.commissionSection({
@@ -276,7 +287,29 @@ export class EffectiveConfigurationPreviewService {
         agentClassId,
         feeMinor: fee.feeMinor,
         explanation,
+        // PR #27: a direction whose runtime never evaluates commission must say so. Otherwise an
+        // operator sees authored rules RESOLVED here and reasonably concludes they are applied.
+        commissionDisposition: bankingIdentityFor(productCode)?.commissionDisposition ?? null,
+        commissionNote: bankingIdentityFor(productCode)?.commissionNote ?? null,
       });
+
+      // Statutory charges derive from the fee decision already taken above, so they cannot disagree
+      // with it. Gated on the FEE read function: statutory charges ARE fee treatment.
+      const feeMayRead = may(SECTION_FUNCTIONS.fee);
+      const statutoryCharges = feeMayRead
+        ? statutoryChargesFor(productCode, {
+            status: fee.section.status,
+            // Narrow the union: a RESTRICTED section never reaches here (feeMayRead is false then).
+            vatBps: 'rule' in fee.section ? (fee.section.rule?.vatBps ?? null) : null,
+            vatMinor: 'computed' in fee.section ? (fee.section.computed?.vatMinor ?? null) : null,
+          })
+        : {
+            status: 'NOT_APPLICABLE' as const,
+            note: 'Statutory charges are withheld with the fee section this caller may not read.',
+            lines: [],
+            notModelled: [],
+            postsJournalLegs: false as const,
+          };
 
       const reward = await this.rewardSection({
         manager,
@@ -293,7 +326,16 @@ export class EffectiveConfigurationPreviewService {
         explanation,
       });
 
-      return { customerClass, kyc, limits, fee, commission, reward, transactionReadOnly };
+      return {
+        customerClass,
+        kyc,
+        limits,
+        fee,
+        statutoryCharges,
+        commission,
+        reward,
+        transactionReadOnly,
+      };
     });
 
     if (principalId === null)
@@ -333,6 +375,10 @@ export class EffectiveConfigurationPreviewService {
       kycRestriction: result.kyc.section,
       limits: result.limits,
       fee: result.fee.section,
+      // PR #27 — statutory charges are reported SEPARATELY from fee and commission, because the
+      // question "is this zero, or is it missing?" has a different answer here than anywhere else:
+      // VAT is modelled (authored per rule), everything else is absent from the data model.
+      statutoryCharges: result.statutoryCharges,
       commission: result.commission,
       reward: result.reward,
       explanation: ordered,
@@ -340,6 +386,7 @@ export class EffectiveConfigurationPreviewService {
         sections: {
           limits: result.limits.status,
           fee: result.fee.section.status,
+          statutoryCharges: result.statutoryCharges.status,
           commission: result.commission.status,
           reward: result.reward.status,
         },
@@ -805,10 +852,31 @@ export class EffectiveConfigurationPreviewService {
     agentClassId: string | null;
     institutionId: string | null;
     explanation: PreviewExplanation[];
+    /** The direction's decided fee treatment, when it has one (`banking-product-identities.ts`). */
+    feeDisposition: BankingFeeDisposition | null;
+    feeDispositionNote: string | null;
   }): Promise<{ section: PreviewFeeSection; feeMinor: string | null }> {
     if (!input.enabled) {
       input.explanation.push(withheld('PREVIEW_SECTION_RESTRICTED', 'fee', SECTION_FUNCTIONS.fee));
       return { section: restricted(SECTION_FUNCTIONS.fee, 'fee'), feeMinor: null };
+    }
+
+    // A decided non-charge is not a missing rule. Report it as NOT_APPLICABLE with the reason, and do
+    // not fall through to the resolver: there is deliberately no rule to find.
+    if (input.feeDisposition === 'NOT_APPLICABLE_INBOUND_CREDIT') {
+      return {
+        section: {
+          status: 'NOT_APPLICABLE',
+          note: input.feeDispositionNote,
+          currency: input.currency,
+          evaluatedAt: input.evaluatedAt.toISOString(),
+          rule: null,
+          ambiguousRuleIds: null,
+          ambiguousPriority: null,
+          computed: null,
+        } as PreviewFeeSection,
+        feeMinor: null,
+      };
     }
 
     const section: {
@@ -954,6 +1022,8 @@ export class EffectiveConfigurationPreviewService {
     agentClassId: string | null;
     feeMinor: string | null;
     explanation: PreviewExplanation[];
+    commissionDisposition: 'COMMISSION_ENGINE' | 'NONE' | null;
+    commissionNote: string | null;
   }): Promise<EffectiveConfigurationPreview['commission']> {
     if (!input.enabled) {
       input.explanation.push(
@@ -966,6 +1036,8 @@ export class EffectiveConfigurationPreviewService {
         status: 'NOT_APPLICABLE',
         note: 'No amount was supplied, so commission payable on this operation could not be computed. Commission rules may still exist; supply an amountMinor to resolve them.',
         allocations: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         accrualPosted: false,
       };
     }
@@ -985,11 +1057,29 @@ export class EffectiveConfigurationPreviewService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Commission resolution failed';
+      const ambiguous = this.parseAmbiguity(message, 'COMMISSION_RULE_AMBIGUOUS');
+      if (ambiguous) {
+        input.explanation.push({
+          code: 'COMMISSION_RULE_AMBIGUOUS',
+          message: `Commission rules ${ambiguous.ruleIds.join(', ')} share priority ${ambiguous.priority ?? 'the same top priority'}; none was selected. Remove the tie before relying on this configuration.`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'AMBIGUOUS',
+          note: `More than one commission rule shares the highest priority (${ambiguous.priority ?? 'unknown'}). The resolver refused to choose, so no commission is selected.`,
+          allocations: [],
+          ambiguousRuleIds: ambiguous.ruleIds,
+          ambiguousPriority: ambiguous.priority,
+          accrualPosted: false,
+        };
+      }
       input.explanation.push(warning('COMMISSION_RESOLUTION_UNAVAILABLE', message));
       return {
         status: 'UNAVAILABLE',
         note: `Commission could not be resolved: ${message}`,
         allocations: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         accrualPosted: false,
       };
     }
@@ -1014,13 +1104,69 @@ export class EffectiveConfigurationPreviewService {
       },
     }));
 
+    // PR #27 — the honest answer for a route with no commission step.
+    //
+    // If rules DO resolve, the default note ("commission that would be allocated") is a false promise
+    // for such a route: nothing would allocate them. Say what actually happens instead, and raise it
+    // as a BLOCKER so an operator authoring commission against the product sees the gap rather than a
+    // green RESOLVED. If no rules resolve either, the section is MISSING and the same gap is stated.
+    if (input.commissionDisposition === 'NONE') {
+      const resolved = allocations.length > 0;
+      // PR #27 — INBOUND is a different kind of absence from "rules exist but nothing runs them", and
+      // conflating them would tell an operator to go author something. A bank credit has no eligible
+      // recipient at all: the recipient is the wallet-owning customer, no agent acts, and the inbound
+      // path carries no agent attribution column. So a rule authored against the product could never
+      // name a beneficiary — the recipient is INAPPLICABLE, not merely unwired. Inbound execution is
+      // also deliberately unavailable (A7 execution authority + suspense policy), so no event exists
+      // to attach a decision to even if one were attributable.
+      if (input.productCode === 'BANK_TO_WALLET') {
+        input.explanation.push({
+          code: 'COMMISSION_RECIPIENT_NOT_APPLICABLE',
+          message: `A bank credit has no eligible commission recipient: the recipient is the wallet-owning customer, no agent performs the movement and the inbound receipt carries no agent attribution.${resolved ? ` ${allocations.length} rule(s) match by product and currency but target a recipient this direction cannot produce; they are not applied.` : ''}`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'NOT_APPLICABLE',
+          note: `Commission cannot apply to a bank credit: there is no eligible recipient, and inbound execution is deliberately unavailable so no settlement event exists.${resolved ? ' The matching rules below are therefore not applied.' : ''}`,
+          allocations,
+          ambiguousRuleIds: null,
+          ambiguousPriority: null,
+          accrualPosted: false,
+        };
+      }
+      input.explanation.push({
+        code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
+        message: resolved
+          ? `Commission rules resolve for ${input.productCode}, but this route never evaluates commission: ${input.commissionNote ?? ''}`.trim()
+          : `No commission rule applies to ${input.productCode}, and this route never evaluates commission anyway: ${input.commissionNote ?? ''}`.trim(),
+        severity: 'BLOCKER',
+      });
+      return {
+        status: resolved ? 'RESOLVED' : 'MISSING',
+        note: resolved
+          ? `${input.commissionNote ?? 'This route does not evaluate commission.'} The rules below are therefore NOT applied.`
+          : `${input.commissionNote ?? 'This route does not evaluate commission.'} No commission rule resolves for this product, currency and targeting either.`,
+        allocations,
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
+        accrualPosted: false,
+      };
+    }
+
+    // PR #27 — a route that DOES evaluate commission states WHEN it does so. Without this an operator
+    // reading "would be allocated for this operation" cannot tell an authorization-time accrual from a
+    // settlement-time one, and for wallet→bank that difference decides whether a released transfer
+    // ever pays commission.
     return {
       status: allocations.length > 0 ? 'RESOLVED' : 'MISSING',
       note:
-        allocations.length > 0
+        (allocations.length > 0
           ? 'Commission that would be allocated for this operation. Nothing is accrued, settled or posted by this preview.'
-          : 'No commission rule applies to this product, currency and targeting.',
+          : 'No commission rule applies to this product, currency and targeting.') +
+        (input.commissionNote ? ` ${input.commissionNote}` : ''),
       allocations,
+      ambiguousRuleIds: null,
+      ambiguousPriority: null,
       accrualPosted: false,
     };
   }
@@ -1052,6 +1198,8 @@ export class EffectiveConfigurationPreviewService {
         status: 'NOT_APPLICABLE',
         note: 'No amount was supplied, so reward value could not be computed. Reward rules may still exist; supply an amountMinor to resolve them.',
         grants: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         creditPosted: false,
       };
     }
@@ -1073,11 +1221,29 @@ export class EffectiveConfigurationPreviewService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Reward resolution failed';
+      const ambiguous = this.parseAmbiguity(message, 'REWARD_RULE_AMBIGUOUS');
+      if (ambiguous) {
+        input.explanation.push({
+          code: 'REWARD_RULE_AMBIGUOUS',
+          message: `Reward rules ${ambiguous.ruleIds.join(', ')} share priority ${ambiguous.priority ?? 'the same top priority'}; none was selected. Remove the tie before relying on this configuration.`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'AMBIGUOUS',
+          note: `More than one reward rule shares the highest priority (${ambiguous.priority ?? 'unknown'}). The resolver refused to choose, so no reward is selected.`,
+          grants: [],
+          ambiguousRuleIds: ambiguous.ruleIds,
+          ambiguousPriority: ambiguous.priority,
+          creditPosted: false,
+        };
+      }
       input.explanation.push(warning('REWARD_RESOLUTION_UNAVAILABLE', message));
       return {
         status: 'UNAVAILABLE',
         note: `Reward could not be resolved: ${message}`,
         grants: [],
+        ambiguousRuleIds: null,
+        ambiguousPriority: null,
         creditPosted: false,
       };
     }
@@ -1106,6 +1272,8 @@ export class EffectiveConfigurationPreviewService {
           ? 'Reward that would be granted for this operation. Nothing is credited or settled by this preview; reward financial execution remains unwired.'
           : 'No reward rule applies to this product, currency and targeting.',
       grants,
+      ambiguousRuleIds: null,
+      ambiguousPriority: null,
       creditPosted: false,
     };
   }
@@ -1169,6 +1337,27 @@ export class EffectiveConfigurationPreviewService {
     if (Number.isNaN(parsed.getTime()))
       throw new BadRequestException('at must be an ISO-8601 instant');
     return parsed;
+  }
+
+  private parseAmbiguity(
+    message: string,
+    code: 'COMMISSION_RULE_AMBIGUOUS' | 'REWARD_RULE_AMBIGUOUS',
+  ): { ruleIds: string[]; priority: number | null } | null {
+    if (!message.includes(code)) return null;
+    const priorityMatch = /share priority (\d+)/i.exec(message);
+    const idsMatch = /rule ids: ([^)]+)\)/i.exec(message);
+    const rawIds = idsMatch?.[1] ?? '';
+    const ruleIds = rawIds
+      ? rawIds
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .sort()
+      : [];
+    return {
+      ruleIds,
+      priority: priorityMatch ? Number.parseInt(priorityMatch[1]!, 10) : null,
+    };
   }
 }
 
