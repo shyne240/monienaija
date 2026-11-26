@@ -92,3 +92,21 @@ behaved as claimed. All eleven workforce accounts/passwords and configurable per
 2. Owner should replace or relabel the PR’s committed historical fixture browser JSON; the refreshed
    real-backend run is the authoritative evidence. PR body has been updated accordingly.
 3. GitHub branch-protection required-check list remains unverifiable (403); workflow job results are reported.
+
+## Owner-authorised merge (2026-11-26)
+
+With owner authorisation, PR #33 was marked ready and merged into the post-#35 integration tip with
+GitHub’s merge-commit method. Pre-merge verification: head `e96a984962e2c04b4d8af7de11bfaac76c4c0ffe`;
+base `arena/5-main-web-integration` at `de83c7b3047a47627b702c283ea03b3c32af7c9d`; all eight CI jobs
+SUCCESS ([run](https://github.com/shyne240/monienaija/actions/runs/45856239360)); `MERGEABLE/CLEAN`.
+`git merge-tree` onto that tip exited 0 with tree `4f5e5b0e7a1358c91972e22e1c6a55deb2f9054b`.
+
+The combined tree differed from the previously reviewed candidate tree only by PR #35’s three dashboard
+files (`DashboardSettingsScreen.tsx`, `dashboard.test.tsx`, `m2-dashboard-settings.test.tsx`). No Finance
+or migration-inventory code changed relative to the reviewed candidate, so the candidate's green
+Finance/migration checks were not rerun. CI also included the full PostgreSQL integration job.
+
+- Merge commit: `aa8b1cf47c80e865a18934cdab46aa66fedbad3c`
+- Parents: `de83c7b3047a47627b702c283ea03b3c32af7c9d` and `e96a984962e2c04b4d8af7de11bfaac76c4c0ffe`
+- Merged tree: `4f5e5b0e7a1358c91972e22e1c6a55deb2f9054b` (identical to the verified merge result)
+- PR #33: CLOSED / MERGED at 2026-11-26T18:45:05Z. PR #35 was already merged as `de83c7b3…`.

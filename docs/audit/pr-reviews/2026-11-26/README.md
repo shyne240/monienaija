@@ -42,3 +42,10 @@ Evidence is strictly separated:
 PR #35 was authorised by the owner, marked ready and merged into `arena/5-main-web-integration` as
 `de83c7b3047a47627b702c283ea03b3c32af7c9d` (merged tree `a1e9a3a4235c1c61a7a667db35ebc98ab0261fb4`).
 PR #33 remains OPEN, DRAFT and UNMERGED.
+
+## Final merge outcome
+
+PR #35 merged as `de83c7b3047a47627b702c283ea03b3c32af7c9d`; PR #33 then merged onto that tip as
+`aa8b1cf47c80e865a18934cdab46aa66fedbad3c` with merged tree
+`4f5e5b0e7a1358c91972e22e1c6a55deb2f9054b`. Both PRs are CLOSED/MERGED; no further PR remains open from
+this review.
