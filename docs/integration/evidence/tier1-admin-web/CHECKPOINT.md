@@ -3,7 +3,7 @@
 ## Pushed state
 
 - Branch: `arena/0f3ce003-monienaija`
-- Head: **`4177e183`** (pushed)
+- Head: **`fb900c75`** (pushed)
 - Draft PR: **#38** — https://github.com/shyne240/monienaija/pull/38 (open, draft, unmerged)
 - Base: `arena/5-main-web-integration` @ **`85b8a953eb3563d800f5a50118c4dddbdaf04965`** — re-fetched
   at review time and unchanged, so this is the exact backend SHA the Customer App session should
@@ -21,32 +21,36 @@ Commits on top of the combined base:
 | `2e97200d` | refresh acceptance evidence from the re-run at `360a8018`                                                      |
 | `0d9c2365` | record pushed SHAs, verified checks and CI state in this checkpoint                                            |
 | `4177e183` | Tier 2 runtime proof + Tier 3 unreachability finding (`test/tier2-tier3-ceiling-coverage.integration.spec.ts`) |
+| `19cf4cff` | LEVEL_2 customer in the fixture + 15th browser check: Tier 2 governed by its own approved cap                  |
+| `fb900c75` | refresh runtime evidence timestamps from the post-rebuild verification run                                     |
 
 Original PRs **#24** and **#34** remain open and unmerged; their 22 commits and authorship are
 preserved in this branch.
 
-## Verified green — Tier 1 Admin Web browser acceptance, 14/14
+## Verified green — Tier 1 Admin Web browser acceptance, 15/15
 
-Re-run end to end at `360a8018` (the head the evidence belongs to). Real workforce session created
+Re-run end to end at `19cf4cff` (the head the evidence belongs to; `fb900c75` only refreshes runtime
+evidence timestamps). Real workforce session created
 through the normal login form; production Admin Web bundle at `http://127.0.0.1:4501` with `/api/*`
 proxied to the real NestJS `AppModule`; fully migrated disposable PostgreSQL (`monienaija_t1`);
 headless Chromium `153.0.8010.0`. No console errors.
 
-| Check                            | Result                                                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Real workforce session           | 33 nav sections; `POST /api/v1/internal/a2/workforce/local-admin-sessions`                                                 |
-| Registration review renders      | `GET /api/v1/internal/customers/:id/registration-review`                                                                   |
-| Verified tier + requirements     | `LEVEL_1`, verified primary phone row satisfied                                                                            |
-| Staff completion                 | `PATCH /api/v1/customers/:id` → `200`, `status=ACTIVE`                                                                     |
-| Approved default class           | `STANDARD — Standard (TIER_DEFAULT) · Eligible for verified tier`                                                          |
-| Effective fee + quote            | resolved rule; NGN 1,000 → fee NGN 100.00, VAT NGN 0.00, total NGN 1,100.00                                                |
-| Effective limits                 | `MAX_AMOUNT_PER_TX` NGN 5,000,000, `source=TIER_POLICY`                                                                    |
-| Ready to claim, unclaimed        | wallets 0, transaction PINs 0, `customer-api` sessions 0, claim credentials 0                                              |
-| Lower ceiling governs at runtime | cap NGN 5,000,000 vs commercial NGN 10,000,000: NGN 4,990,000 `COMPLETED`, NGN 5,010,000 → `422 LIMIT_MAX_AMOUNT_EXCEEDED` |
-| Safe same-request retry          | replay of the browser's own body → `200` no-op, identical class + ceiling                                                  |
-| Assigned principal               | COMPLIANCE → `200` / `200`                                                                                                 |
-| Cross-institution denial         | CUSTOMER_SERVICE (same `customer.view`) → `404` / `404`; unenrolled platform customer → `200`                              |
-| Missing configuration            | `409 ACTIVATION_CONFIGURATION_INCOMPLETE`, 2 issues, rendered to staff, customer stayed `DRAFT`                            |
+| Check                            | Result                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Real workforce session           | 33 nav sections; `POST /api/v1/internal/a2/workforce/local-admin-sessions`                                                                |
+| Registration review renders      | `GET /api/v1/internal/customers/:id/registration-review`                                                                                  |
+| Verified tier + requirements     | `LEVEL_1`, verified primary phone row satisfied                                                                                           |
+| Staff completion                 | `PATCH /api/v1/customers/:id` → `200`, `status=ACTIVE`                                                                                    |
+| Approved default class           | `STANDARD — Standard (TIER_DEFAULT) · Eligible for verified tier`                                                                         |
+| Effective fee + quote            | resolved rule; NGN 1,000 → fee NGN 100.00, VAT NGN 0.00, total NGN 1,100.00                                                               |
+| Effective limits                 | `MAX_AMOUNT_PER_TX` NGN 5,000,000, `source=TIER_POLICY`                                                                                   |
+| Ready to claim, unclaimed        | wallets 0, transaction PINs 0, `customer-api` sessions 0, claim credentials 0                                                             |
+| Lower ceiling governs at runtime | cap NGN 5,000,000 vs commercial NGN 10,000,000: NGN 4,990,000 `COMPLETED`, NGN 5,010,000 → `422 LIMIT_MAX_AMOUNT_EXCEEDED`                |
+| Safe same-request retry          | replay of the browser's own body → `200` no-op, identical class + ceiling                                                                 |
+| Assigned principal               | COMPLIANCE → `200` / `200`                                                                                                                |
+| Cross-institution denial         | CUSTOMER_SERVICE (same `customer.view`) → `404` / `404`; unenrolled platform customer → `200`                                             |
+| Missing configuration            | `409 ACTIVATION_CONFIGURATION_INCOMPLETE`, 2 issues, rendered to staff, customer stayed `DRAFT`                                           |
+| Tier 2 governed by its own cap   | LEVEL_2 (BVN + NIN) → `verifiedTier=LEVEL_2`, ceiling NGN 7,500,000 `source=TIER_POLICY` `T1_INSTITUTION_TIER_CAP_L2`, rendered in the UI |
 
 Evidence in this directory: `fixture.json`, `ceiling.json`, `tier1-browser-result.json`,
 `api-calls.json`. Screenshots are regenerable and written to `/tmp/tier1-admin-web-shots`
@@ -110,11 +114,12 @@ Evidence: `tier-coverage-LEVEL_1.json`, `tier-coverage-LEVEL_2.json`, `tier-cove
 
 ## First remaining blocker
 
-**No Tier 2 walkthrough in the browser.** Tier 2 is proved at runtime (eligibility gate, effective
-configuration, institution policy, transfer admission, ledger) but the Admin Web fixture seeds only a
-LEVEL_1 customer, so the UI run cannot show a Tier 2 record, class or limit table. Closing it needs
-`approveKycEvidence` in `scripts/tier1-admin-web-fixture.ts` to seed BVN + NIN for a LEVEL_2
-customer plus a LEVEL_2 tier-default class, then the same 14 checks re-run against it.
+**Tier 2 in the browser is now proved** (see the 15th check above): the fixture seeds a LEVEL_2
+customer with BVN + NIN evidence and the institution policy maps each tier to its own profile, so
+the Admin Web shows NGN 7,500,000 `source=TIER_POLICY` for Tier 2 against NGN 5,000,000 for Tier 1 and
+NGN 10,000,000 commercial. What remains is the LEVEL_1 → LEVEL_2 _transition_ driven from the
+Compliance screen in a browser; it is currently covered only by
+`test/kyc-tier-transition.isolated-pg.test.ts` and the workforce suites.
 
 Second: the LEVEL_1 → LEVEL_2 transition from the Compliance screen is covered by
 `test/kyc-tier-transition.isolated-pg.test.ts`, not by a browser. The Customer App claim journey is
