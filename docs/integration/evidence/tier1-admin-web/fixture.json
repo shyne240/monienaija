@@ -3,7 +3,7 @@
   "database": "monienaija_t1",
   "kycTierPolicyVersion": 1,
   "institutionId": "7ec9c345-8cdc-4a3d-a620-c71609fa7682",
-  "institutionPolicyVersion": 31,
+  "institutionPolicyVersion": 32,
   "customerClass": {
     "code": "STANDARD",
     "name": "Standard (Tier 1 default)",

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-26T15:08:03.884Z",
+  "generatedAt": "2026-11-26T15:35:57.515Z",
   "base": "http://127.0.0.1:4501",
   "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.0 Safari/537.36",
   "steps": [
@@ -123,7 +123,7 @@
         "belowCap": {
           "amountMinor": "499000000",
           "status": "COMPLETED",
-          "transferId": "50ad958b-af8d-4745-a867-d7a5802a34bd"
+          "transferId": "e9583357-e534-40af-8434-86ca60b17910"
         },
         "aboveCap": {
           "amountMinor": "501000000",
@@ -187,12 +187,12 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/customers?page=1&limit=1"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
     },
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+      "url": "/api/v1/internal/customers?page=1&limit=1"
     },
     {
       "method": "GET",
@@ -212,12 +212,12 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
     },
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions"
     },
     {
       "method": "GET",
@@ -227,17 +227,7 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
     },
     {
       "method": "GET",
@@ -247,12 +237,22 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status"
     },
     {
       "method": "GET",
       "status": 200,
       "url": "/api/v1/internal/metrics"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/role-definitions/proposals"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
     },
     {
       "method": "POST",
@@ -292,12 +292,12 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
     },
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
     },
     {
       "method": "POST",
@@ -367,6 +367,11 @@
     {
       "method": "GET",
       "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+    },
+    {
+      "method": "GET",
+      "status": 200,
       "url": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
     },
     {
@@ -377,12 +382,7 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
+      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
     },
     {
       "method": "GET",
@@ -392,12 +392,7 @@
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/support/tickets?page=1&limit=1&status=OPEN"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary"
     },
     {
       "method": "GET",
@@ -407,12 +402,17 @@
     {
       "method": "GET",
       "status": 200,
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+    },
+    {
+      "method": "GET",
+      "status": 200,
       "url": "/api/v1/internal/metrics"
     },
     {
       "method": "GET",
       "status": 200,
-      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d"
+      "url": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview"
     },
     {
       "method": "GET",
@@ -427,17 +427,22 @@
     {
       "method": "GET",
       "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class/history"
+    },
+    {
+      "method": "GET",
+      "status": 200,
       "url": "/api/v1/internal/customer-classes"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/eligibility"
     },
     {
       "method": "GET",
       "status": 200,
       "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/phone-verification"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/class/history"
     },
     {
       "method": "GET",
@@ -451,18 +456,13 @@
     },
     {
       "method": "GET",
-      "status": 404,
-      "url": "/api/v1/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/eligibility"
+      "status": 200,
+      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/wallets"
     },
     {
       "method": "GET",
       "status": 200,
       "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/transactions?page=1&limit=5"
-    },
-    {
-      "method": "GET",
-      "status": 200,
-      "url": "/api/v1/internal/customers/e44ac1af-d26f-433f-8d34-55ccbb172e41/wallets"
     },
     {
       "method": "GET",
