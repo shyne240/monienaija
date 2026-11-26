@@ -45,7 +45,7 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
        * governed ledger reversal were guarded by tests that never ran on a push.
        */
       const isolated = inventory.discovered.filter((suite) => suite.kind === 'ISOLATED_PG');
-      expect(isolated.length).toBe(12);
+      expect(isolated.length).toBe(13);
       for (const suite of isolated) {
         expect(suite.executedBy).toBe('npm run test:pg:isolated-kyc');
       }
@@ -67,7 +67,7 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
       const broken = inventoryRepositorySuites(repoRoot, withoutScript, workflowText);
 
       expect(broken.verdict).toBe('ERROR');
-      expect(broken.unclaimed.length).toBe(12);
+      expect(broken.unclaimed.length).toBe(13);
       expect(broken.unclaimed.every((suite) => suite.kind === 'ISOLATED_PG')).toBe(true);
     });
 
@@ -83,7 +83,7 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
       const broken = inventoryRepositorySuites(repoRoot, scripts, workflowWithout);
 
       expect(broken.verdict).toBe('ERROR');
-      expect(broken.unclaimed.length).toBe(12);
+      expect(broken.unclaimed.length).toBe(13);
     });
 
     it('reports an unclaimed file dropped into a synthetic test directory', () => {

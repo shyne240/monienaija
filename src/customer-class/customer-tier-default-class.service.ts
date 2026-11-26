@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -65,6 +67,28 @@ interface MappingRow {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `audit_events.entity_id` is `UUID NOT NULL`, but this table is keyed by the tier code
+ * (`LEVEL_1`..`LEVEL_3`), which is not a UUID. Writing the tier code there fails the insert, so
+ * the mapping is approved and the audit write then breaks the surrounding transaction. Derive a
+ * stable name-based UUID (RFC 4122 v5 layout over a fixed namespace) from the tier code so every
+ * tier always maps to the same audit entity id and the tier itself stays in the payload.
+ */
+export const TIER_DEFAULT_AUDIT_NAMESPACE = '2f1c1d9e-5b3a-5c7e-9a11-6d4c0b8f7e21';
+
+export function tierDefaultAuditEntityId(tier: string): string {
+  const bytes = createHash('sha1')
+    .update(Buffer.from(TIER_DEFAULT_AUDIT_NAMESPACE.replace(/-/g, ''), 'hex'))
+    .update(tier)
+    .digest()
+    .subarray(0, 16);
+  // Set the version (5) and RFC 4122 variant bits.
+  bytes.writeUInt8((bytes.readUInt8(6) & 0x0f) | 0x50, 6);
+  bytes.writeUInt8((bytes.readUInt8(8) & 0x3f) | 0x80, 8);
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 @Injectable()
 export class CustomerTierDefaultClassService {
@@ -192,7 +216,7 @@ export class CustomerTierDefaultClassService {
           );
           await this.auditService.record(manager, {
             entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
-            entityId: tier,
+            entityId: tierDefaultAuditEntityId(tier),
             action: 'UPDATED',
             actor,
             previousValues: {
@@ -214,7 +238,7 @@ export class CustomerTierDefaultClassService {
         if (existing.length === 0) {
           await this.auditService.record(manager, {
             entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
-            entityId: tier,
+            entityId: tierDefaultAuditEntityId(tier),
             action: 'CREATED',
             actor,
             newValues: { tier, classId, status: 'APPROVED', approvalId },
