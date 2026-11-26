@@ -19,6 +19,7 @@ import {
 } from '../identity-verification/dojah-verification.provider';
 import { PremblyVerificationProvider } from '../identity-verification/prembly-verification.provider';
 import {
+  deterministicPremblyTransportFromEnvironment,
   premblyHttpsTransport,
   type PremblyTransport,
 } from '../identity-verification/prembly-transport';
@@ -143,7 +144,14 @@ function providerRuntimeFromConfig(
   ],
   providers: [
     CustomerFinancialEligibilityService,
-    { provide: PREMBLY_TRANSPORT, useValue: premblyHttpsTransport },
+    // The HTTPS transport is the production path. A deterministic in-process adapter may replace it
+    // only for a governed acceptance run, and only when the environment names a synthetic registry
+    // (see `deterministicPremblyTransportFromEnvironment`, which also refuses NODE_ENV=production).
+    {
+      provide: PREMBLY_TRANSPORT,
+      useFactory: (): PremblyTransport =>
+        deterministicPremblyTransportFromEnvironment() ?? premblyHttpsTransport,
+    },
     {
       provide: KycProviderSecretEncryptionService,
       inject: [ConfigService],

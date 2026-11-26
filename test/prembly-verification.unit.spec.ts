@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events';
 
 import {
+  createDeterministicPremblyTransport,
   createPremblyHttpsTransport,
+  deterministicPremblyTransportFromEnvironment,
   type PremblyTransport,
 } from '../src/identity-verification/prembly-transport';
 import {
@@ -275,5 +277,70 @@ describe('Prembly fixed-host HTTPS transport guard', () => {
     const pinned = jest.fn();
     requestOptions.lookup('api.prembly.com', { all: true }, pinned);
     expect(pinned).toHaveBeenCalledWith(null, [{ address: '8.8.8.8', family: 4 }]);
+  });
+});
+
+describe('deterministic Prembly acceptance adapter', () => {
+  const registry = new Map([
+    ['12345678901', { firstName: 'Synthetic', lastName: 'Customer', dateOfBirth: '1990-01-02' }],
+  ]);
+  const options = {
+    apiKey: 'synthetic-api-key-value',
+    number: '12345678901',
+    timeoutMs: 5000,
+    signal: new AbortController().signal,
+  };
+
+  it('returns the declared synthetic record only for a governed path and known identifier', async () => {
+    const transport = createDeterministicPremblyTransport(registry);
+    const result = await transport('/verification/bvn_validation', options);
+    expect(result.status).toBe(200);
+    expect((result.body as { data: unknown }).data).toMatchObject({
+      bvn: '12345678901',
+      firstName: 'Synthetic',
+      lastName: 'Customer',
+    });
+    const nin = await transport('/verification/vnin-basic', options);
+    expect((nin.body as { data: unknown }).data).toMatchObject({ nin: '12345678901' });
+  });
+
+  it('fails closed: an undeclared identifier yields no record instead of invented evidence', async () => {
+    const transport = createDeterministicPremblyTransport(registry);
+    const result = await transport('/verification/bvn_validation', {
+      ...options,
+      number: '99999999999',
+    });
+    expect((result.body as { data: unknown }).data).toBeNull();
+  });
+
+  it('applies the same input validation as the HTTPS transport', async () => {
+    const transport = createDeterministicPremblyTransport(registry);
+    await expect(
+      transport('/verification/bvn_validation', { ...options, number: '12345' }),
+    ).rejects.toThrow('Prembly transport blocked');
+    await expect(
+      transport('/verification/bvn_validation', {
+        ...options,
+        apiKey: 'short',
+        number: '12345678901',
+      }),
+    ).rejects.toThrow('Prembly transport blocked');
+  });
+
+  it('refuses to activate in production and never publishes a registry without one', () => {
+    const original = process.env.PREMBLY_DETERMINISTIC_FIXTURES;
+    const originalNodeEnv = process.env.NODE_ENV;
+    try {
+      delete process.env.PREMBLY_DETERMINISTIC_FIXTURES;
+      expect(deterministicPremblyTransportFromEnvironment()).toBeUndefined();
+      process.env.PREMBLY_DETERMINISTIC_FIXTURES = '/tmp/does-not-matter.json';
+      process.env.NODE_ENV = 'production';
+      expect(deterministicPremblyTransportFromEnvironment()).toBeUndefined();
+    } finally {
+      if (original === undefined) delete process.env.PREMBLY_DETERMINISTIC_FIXTURES;
+      else process.env.PREMBLY_DETERMINISTIC_FIXTURES = original;
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
   });
 });
