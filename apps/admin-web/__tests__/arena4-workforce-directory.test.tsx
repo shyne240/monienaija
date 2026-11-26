@@ -166,3 +166,29 @@ test('detail shows effective permissions and the no-elevation boundary', async (
   expect(ApiClient.post).not.toHaveBeenCalled();
   expect(ApiClient.patch).not.toHaveBeenCalled();
 });
+
+test('an authorized operator hands the inspected identity to the governed role workspace', async () => {
+  session(['workforce.role.view', 'workforce.role.assign_operational']);
+  const onGovernAccess = jest.fn();
+  render(<WorkforceDirectoryScreen onGovernAccess={onGovernAccess} />);
+  await screen.findByText('workforce-principal-a');
+  fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+  const govern = await screen.findByTestId('a4-govern-access');
+  fireEvent.click(govern);
+  expect(onGovernAccess).toHaveBeenCalledWith('workforce-principal-a');
+  // The directory itself still performs no write: only the role route can change access.
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(ApiClient.patch).not.toHaveBeenCalled();
+  expect(ApiClient.delete).not.toHaveBeenCalled();
+});
+
+test('a view-only operator sees the identity but is told governing needs a role function', async () => {
+  render(<WorkforceDirectoryScreen onGovernAccess={jest.fn()} />);
+  await screen.findByText('workforce-principal-a');
+  fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+  await screen.findByText('Effective permissions (2)');
+  expect(screen.queryByTestId('a4-govern-access')).toBeNull();
+  expect(document.body.textContent).toContain(
+    'changing access requires a role-assignment function',
+  );
+});

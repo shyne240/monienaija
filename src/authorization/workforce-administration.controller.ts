@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -18,12 +19,14 @@ import { ConsumeWorkforceBootstrapDto } from './dto/consume-workforce-bootstrap.
 import { DecidePrivilegedApprovalDto } from './dto/decide-privileged-approval.dto';
 import { EstablishWorkforceSessionDto } from './dto/establish-workforce-session.dto';
 import { ListPrivilegedApprovalsDto } from './dto/list-privileged-approvals.dto';
+import { PrepareRoleChangeApprovalDto } from './dto/prepare-role-change-approval.dto';
 import { RequestPrivilegedApprovalDto } from './dto/request-privileged-approval.dto';
 import { RevokeWorkforceRoleDto } from './dto/revoke-workforce-role.dto';
 import { RevokeWorkforceSessionDto } from './dto/revoke-workforce-session.dto';
 import {
   ADMINISTRATOR_OPERATIONAL_ROLE_KEYS,
   A2FinanceRoleAdministrationService,
+  financeRoleAssignmentReference,
 } from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
@@ -34,6 +37,7 @@ import type {
 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import type { PrivilegedActionApprovalView } from './privileged-action-approval.types';
 import { ApprovalRejectionDto } from './approval-decision.dto';
 interface R extends FastifyRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
@@ -146,12 +150,77 @@ export class A2WorkforceAdministrationController {
       correlationId: r.requestContext?.correlationId ?? 'unknown',
     });
   }
+  /**
+   * Prepares the governed approval for a role change (Arena B9, configurable workforce roles).
+   *
+   * Before this route the only way to obtain the approval a Finance-role or custom-role change
+   * consumes was to compute the service's SHA-256 fingerprint out of band and POST it by hand,
+   * which is why the Admin Web asked operators to paste approval IDs they could not have derived.
+   * This route performs exactly the authorization the assignment route performs, then creates the
+   * approval with the server-computed fingerprint and the assignment reference as its resource, so
+   * the approval a checker decides is provably the one the assignment will verify.
+   */
+  @Post('roles/approval-requests') async prepareRoleChangeApproval(
+    @Body() b: PrepareRoleChangeApprovalDto,
+    @Req() r: R,
+  ) {
+    const p = this.principal(r),
+      action = b.operation === 'REVOKE' ? 'FINANCE_ROLE_REVOKE' : 'FINANCE_ROLE_ASSIGN';
+    await this.authorize(p, action, 'A2_FINANCE_ROLE_ASSIGNMENT');
+    await this.limits.consume(
+      this.rateRule('finance-role-administration'),
+      [p.principalId, p.sessionId ?? 'none', `${action}_APPROVAL_REQUEST`],
+      r.requestContext?.correlationId ?? 'unknown',
+    );
+    const command = {
+      targetPrincipalId: b.targetPrincipalId,
+      roleKey: b.roleKey,
+      effectiveFrom: b.effectiveFrom,
+      effectiveTo: b.effectiveTo,
+      ...(b.expectedVersion === undefined ? {} : { expectedVersion: b.expectedVersion }),
+    };
+    const actionFingerprint = this.roles.fingerprint(action, command as never);
+    const resourceId = financeRoleAssignmentReference(
+      b.targetPrincipalId,
+      b.roleKey,
+      this.config.environment,
+    );
+    const rule = this.rule(action);
+    const initiatingFunctionCodes = this.initiatingFunctionCodes(action);
+    const decision = await this.approvals.request({
+      principal: p,
+      policy: {
+        resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+        action,
+        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+        requiredRoles: rule.initiatingRoles,
+        ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
+        minimumAssurance: rule.minimumAssurance,
+        customerAccess: 'NONE',
+      },
+      resource: { type: 'A2_FINANCE_ROLE_ASSIGNMENT', id: resourceId },
+      actionFingerprint,
+      reason: b.reason,
+      ...(b.approvalScope === undefined ? {} : { approvalScope: b.approvalScope }),
+    });
+    if (!decision.approval)
+      throw new ForbiddenException(`Approval request denied: ${decision.reason}`);
+    return {
+      approvalId: decision.approval.id,
+      action,
+      status: decision.approval.status,
+      actionFingerprint,
+      resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+      resourceId,
+      expiresAt: decision.approval.expiresAt,
+    };
+  }
   @Get('approvals') async listApprovals(@Query() q: ListPrivilegedApprovalsDto, @Req() r: R) {
     const principal = this.principal(r);
     if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       throw new ForbiddenException('Workforce principal required');
     }
-    return this.approvals.listApprovals({
+    const result = await this.approvals.listApprovals({
       principal,
       status: q.status,
       actionType: q.actionType,
@@ -160,6 +229,25 @@ export class A2WorkforceAdministrationController {
       limit: q.limit,
       offset: q.offset,
     });
+    return { ...result, items: result.items.map((item) => this.withAuthority(item)) };
+  }
+  /**
+   * Authoritative single-approval read for the checker workspace (Arena B9).
+   *
+   * `listApprovals` already scopes every row to the caller (approval scope membership, MFA,
+   * SUPER_ADMIN agent-funding exclusion, per-action approving roles); this re-uses that exact
+   * predicate with an id filter so a checker can re-read ONE decision after an unconfirmed
+   * outcome. A row outside the caller's visibility is answered 404, identical to an unknown id —
+   * this route is not an enumeration or existence oracle, and it never mutates the approval.
+   */
+  @Get('approvals/:id') async getApproval(@Param('id') id: string, @Req() r: R) {
+    const principal = this.principal(r);
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
+      throw new ForbiddenException('Workforce principal required');
+    }
+    const approval = await this.approvals.getVisibleApproval(id, principal);
+    if (!approval) throw new NotFoundException('Approval not found');
+    return this.withAuthority(approval);
   }
   @Post('approvals/request') async requestApproval(
     @Body() b: RequestPrivilegedApprovalDto,
@@ -326,6 +414,40 @@ export class A2WorkforceAdministrationController {
     if (governed) return governed.approvingFunctionCodes;
     const code = ACTION_FUNCTION_CODES[action];
     return code ? [code] : [];
+  }
+  /**
+   * Decision-authority projection for the Approvals workspace (Arena B9).
+   *
+   * The screen must be able to state WHO may decide and under WHAT assurance before a checker
+   * acts. That policy already exists — it is the exact rule the approve/reject path enforces — so
+   * it is derived here from `rule()` plus the approval leg's catalogue function codes instead of
+   * being re-declared in the browser. An action whose rule cannot be resolved is returned with
+   * `authority: null` rather than a guess: the screen says the authority is unresolved, and the
+   * decide path still fails closed exactly as before.
+   */
+  private withAuthority(view: PrivilegedActionApprovalView) {
+    try {
+      const rule = this.rule(view.actionType);
+      return {
+        ...view,
+        authority: {
+          approvingRoles: [...rule.approvingRoles],
+          approvingFunctions: [...this.approvingFunctionCodes(view.actionType)],
+          minimumApprovals: rule.minimumApprovals,
+          // `decide()` refuses a requester's own decision unconditionally; a rule may only relax
+          // that by explicitly declaring BOTH `selfApprovalProhibited: false` and no separation
+          // requirement. Anything less definite is reported as prohibited (fail closed).
+          selfApprovalProhibited: !(
+            rule.selfApprovalProhibited === false && rule.separationRequired !== true
+          ),
+          minimumAssurance: rule.minimumAssurance,
+          approvalScope: governedAction(view.actionType)?.approvalScope ?? view.approvalScope,
+          governed: Boolean(governedAction(view.actionType)),
+        },
+      };
+    } catch {
+      return { ...view, authority: null };
+    }
   }
   private rateRule(category: string) {
     const rule = this.config.rateLimits.find((item) => item.category === category);

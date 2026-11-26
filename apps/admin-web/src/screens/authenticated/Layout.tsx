@@ -52,6 +52,15 @@ interface NavContext {
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
+  /** Finance operations deep links: open a ledger journal record by id. */
+  journalId?: string;
+  /** Finance operations deep links: run a ledger record search by reference. */
+  ledgerReference?: string;
+  /** Finance operations deep links: open a transaction and resolve its journal. */
+  transactionId?: string;
+  transactionType?: string;
+  /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
+  reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
   institutionId?: string;
   // Audit workspace pre-filters (ARENA 6 drill-downs). Search criteria only; see
   // `AdminNavigationContext` — the audit read surface stays server-restricted.
@@ -75,6 +84,12 @@ function getFocusable(root: HTMLElement | null): HTMLElement[] {
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  /**
+   * Principal selected in the Workforce Directory for a governed access change. It is a UI
+   * hand-off only: the value identifies WHICH identity the operator inspected, and every grant or
+   * revocation still goes through the existing server-enforced role routes.
+   */
+  const [roleTargetPrincipalId, setRoleTargetPrincipalId] = useState('');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -528,6 +543,9 @@ export const Layout: React.FC = () => {
     setNotificationGuard(false);
     setNotificationBusy(false);
     setNavigationQuery('');
+    // A directory hand-off prefill belongs to one visit only: leaving Role governance (or moving
+    // to any other view) drops it, while the hand-off's own navigation INTO roleGovernance keeps it.
+    if (canonicalAdminView(view) !== 'roleGovernance') setRoleTargetPrincipalId('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -676,6 +694,8 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="TRANSFER"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
             onBackToCustomer={
               navContext.customerId
                 ? () => handleNav('customers', { customerId: navContext.customerId })
@@ -688,6 +708,8 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="DEPOSIT"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
           />
         );
       case 'cashOut':
@@ -695,14 +717,38 @@ export const Layout: React.FC = () => {
           <TransactionObservabilityScreen
             initialType="WITHDRAWAL"
             initialCustomerId={navContext.customerId}
+            initialTransactionId={navContext.transactionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
           />
         );
       case 'ledgerExplorer':
-        return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
+        return (
+          <LedgerOperationsScreen
+            onLedgerGuardChange={reportLedgerGuard}
+            initialJournalId={navContext.journalId}
+            initialReference={navContext.ledgerReference}
+          />
+        );
       case 'reconciliation':
-        return <ReconciliationObservabilityScreen />;
+        return (
+          <ReconciliationObservabilityScreen
+            initialTab={navContext.reconciliationTab}
+            initialInstitutionId={navContext.institutionId}
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+          />
+        );
       case 'bankingOperations':
-        return <BankingOperationsScreen />;
+        return (
+          <BankingOperationsScreen
+            initialInstitutionId={navContext.institutionId}
+            onOpenReconciliation={(institutionId) =>
+              handleNav('reconciliation', {
+                institutionId,
+                reconciliationTab: 'evidence',
+              })
+            }
+          />
+        );
       case 'feeRules':
         return <CommercialRulesScreen initialTab="fees" />;
       case 'commissionRules':
@@ -767,9 +813,19 @@ export const Layout: React.FC = () => {
           />
         );
       case 'workforceAccess':
-        return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
+        return (
+          <WorkforceAdminScreen
+            onWorkforceGuardChange={reportWorkforceGuard}
+            onOpenDirectory={() => handleNav('workforceDirectory')}
+          />
+        );
       case 'roleGovernance':
-        return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
+        return (
+          <RoleAssignmentScreen
+            onRoleGuardChange={reportRoleGuard}
+            initialTargetPrincipalId={roleTargetPrincipalId || undefined}
+          />
+        );
       case 'approvalsInbox':
         return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
       case 'superAdminRecovery':
@@ -819,7 +875,15 @@ export const Layout: React.FC = () => {
           />
         );
       case 'workforceDirectory':
-        return <WorkforceDirectoryScreen />;
+        return (
+          <WorkforceDirectoryScreen
+            onGovernAccess={(principalId) => {
+              if (!canAccessAdminView('roleGovernance', principal.scopes, principal.roles)) return;
+              setRoleTargetPrincipalId(principalId);
+              performNav('roleGovernance');
+            }}
+          />
+        );
       case 'auditInspection':
         return <AuditInspectionScreen />;
       case 'institutions':

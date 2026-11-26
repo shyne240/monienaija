@@ -174,7 +174,10 @@ export function canAccessAdminView(
       const canManageOperational =
         (roles.includes('ADMINISTRATOR') || roles.includes('SUPER_ADMIN')) &&
         hasAny('workforce.role.assign_operational', 'workforce.role.revoke_operational');
-      return canManageFinance || canManageOperational;
+      // A checker holds no assignment authority but must reach the definitions awaiting its
+      // decision: the workspace renders the definition review without the assignment form.
+      const canReviewDefinitions = has('workforce.role.view') && has('workforce.role.create');
+      return canManageFinance || canManageOperational || canReviewDefinitions;
     }
     case 'approvalsInbox':
       // The implemented approval actions are assigned to FINANCE_CONTROLLER by the existing

@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-25T12:58:48.401Z",
+  "base": "http://127.0.0.1:4401",
+  "api": "REAL Nest application (AppModule) on a migrated disposable PostgreSQL",
+  "roleKey": "SOC_ANALYST",
+  "functions": [
+    "fee_rule.view",
+    "customer.view"
+  ],
+  "principal": "https://idp.example.com:local-admin-credential:32a8f2573da2952e8504c9e9a978c60f",
+  "total": 22,
+  "passed": 22,
+  "checks": [
+    {
+      "id": "DEFINITION-CATALOGUE-FROM-API",
+      "ok": true,
+      "detail": "the editor loaded 93 assignable catalogue functions from the real API"
+    },
+    {
+      "id": "DEFINITION-SUBMITTED",
+      "ok": true,
+      "detail": "SOC_ANALYST Awaiting independent approval SOC Analyst · CREATE · read-only Functions: customer.view (VIEW), fee_rule.view (VIEW) Requested 2026-11-25T12:58:10.469Z · expires 2026-11-25T13:13:10.469Z Awaiting an independe"
+    },
+    {
+      "id": "DEFINITION-SELF-APPROVAL-UNAVAILABLE",
+      "ok": true,
+      "detail": "decision controls offered to the proposer: 0"
+    },
+    {
+      "id": "DEFINITION-CHECKER-WORKSPACE",
+      "ok": true,
+      "detail": "the checker can open the definition but not the assignment form"
+    },
+    {
+      "id": "DEFINITION-APPROVED",
+      "ok": true,
+      "detail": "POST /api/v1/internal/a2/workforce/role-definitions/proposals/d463696f-5f65-460f-9700-c2623b221611/approve -> 201; card=\"SOC_ANALYST Approved — not yet applied SOC Analyst · CREATE · read-only Functions: customer.view (VIEW), fee_rule.view (\""
+    },
+    {
+      "id": "DEFINITION-APPLIED",
+      "ok": true,
+      "detail": "the approved definition was applied to the catalogue"
+    },
+    {
+      "id": "ASSIGNMENT-APPROVAL-PREPARED",
+      "ok": true,
+      "detail": "Approval 45f37eae-5cd8-4715-bab0-126d7df00951 prepared (FINANCE_ROLE_ASSIGN) for a2-fin-role-e322957fed38a1d617ff01c5bbbdd299. An independent checker must decide it before this change can be applied."
+    },
+    {
+      "id": "ASSIGNMENT-APPROVAL-DECIDED",
+      "ok": true,
+      "detail": "POST /approvals/45f37eae-5cd8-4715-bab0-126d7df00951/approve -> 201"
+    },
+    {
+      "id": "ASSIGNMENT-APPLIED",
+      "ok": true,
+      "detail": "POST /internal/a2/workforce/roles -> 201"
+    },
+    {
+      "id": "CUSTOM-ROLE-SIGNED-IN",
+      "ok": true,
+      "detail": "roles=[SOC_ANALYST] scopes=[customer.view,fee_rule.view]"
+    },
+    {
+      "id": "CUSTOM-ROLE-GRANTED-MENUS",
+      "ok": true,
+      "detail": "sidebar=[customerClasses, customers, dashboard, feeRules]"
+    },
+    {
+      "id": "CUSTOM-ROLE-DENIED-MENU",
+      "ok": true,
+      "detail": "Workforce directory and Role governance are absent from the sidebar"
+    },
+    {
+      "id": "CUSTOM-ROLE-GRANTED-PAGE",
+      "ok": true,
+      "detail": "the granted Fee rules workspace rendered for the custom role"
+    },
+    {
+      "id": "CUSTOM-ROLE-GRANTED-READS",
+      "ok": true,
+      "detail": "GET fee-rules=200 customers=200"
+    },
+    {
+      "id": "CUSTOM-ROLE-DENIED-API",
+      "ok": true,
+      "detail": "GET workforce/directory=403 role-definitions/proposals=403"
+    },
+    {
+      "id": "REVOCATION-APPROVAL-PREPARED",
+      "ok": true,
+      "detail": "Approval ec10e836-e227-46d6-9681-498744c2faf4 prepared (FINANCE_ROLE_REVOKE) for a2-fin-role-e322957fed38a1d617ff01c5bbbdd299. An independent checker must decide it before this change can be applied."
+    },
+    {
+      "id": "REVOCATION-APPROVED",
+      "ok": true,
+      "detail": "POST /approvals/ec10e836-e227-46d6-9681-498744c2faf4/approve -> 201"
+    },
+    {
+      "id": "REVOCATION-APPLIED",
+      "ok": true,
+      "detail": "DELETE /api/v1/internal/a2/workforce/roles/https%3A%2F%2Fidp.example.com%3Alocal-admin-credential%3A32a8f2573da2952e8504c9e9a978c60f/SOC_ANALYST -> 200"
+    },
+    {
+      "id": "ACCESS-LOST-IMMEDIATELY",
+      "ok": true,
+      "detail": "the same token that read fee rules returned 401 after the revocation"
+    },
+    {
+      "id": "SESSION-INVALIDATED-IN-UI",
+      "ok": true,
+      "detail": "reloading the analyst workspace returned the operator to the login screen"
+    },
+    {
+      "id": "ELEVEN-FIXTURES-UNCHANGED",
+      "ok": true,
+      "detail": "failures=0"
+    },
+    {
+      "id": "NO-UNEXPECTED-PAGE-ERRORS",
+      "ok": true,
+      "detail": "none"
+    }
+  ],
+  "pageErrors": []
+}
