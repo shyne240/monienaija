@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -23,6 +24,9 @@ import { BankingReadinessService } from './banking-readiness.service';
 import { BankingReconciliationService } from './banking-reconciliation.service';
 import { BankingProviderRegistry } from './banking-provider.registry';
 import { OperationalFundsVisibilityService } from './operational-funds-visibility.service';
+import { BankToWalletService } from './bank-to-wallet.service';
+import { BankToWalletExceptionService } from './bank-to-wallet-exception.service';
+import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -53,6 +57,9 @@ export class BankingAdminController {
     private readonly reconciliation: BankingReconciliationService,
     private readonly registry: BankingProviderRegistry,
     private readonly unresolvedFunds: OperationalFundsVisibilityService,
+    private readonly bankToWallet: BankToWalletService,
+    private readonly b2wExceptions: BankToWalletExceptionService,
+    private readonly institutionScope: InstitutionWorkforceScopeService,
   ) {}
 
   // ------------------------------------------------------------------ readiness
@@ -234,6 +241,101 @@ export class BankingAdminController {
    * Function gate. The resource type is distinct per concern so an audit record says which banking
    * surface was addressed, not merely that "banking" was.
    */
+  // ------------------------------------------------------------ Bank → Wallet (Monnify interim)
+
+  private async institutionIdsFor(principal: AuthorizationPrincipal): Promise<string[] | null> {
+    if (this.institutionScope.hasPlatformAuthority(principal)) return null;
+    return this.institutionScope.institutionIdsForPrincipal(principal.principalId);
+  }
+
+  @Get('bank-to-wallet/transactions')
+  async bankToWalletTransactions(
+    @Req() req: AuthenticatedRequest,
+    @Query('businessReference') businessReference?: string,
+  ) {
+    await this.require(req, 'reconciliation.view');
+    const institutionIds = await this.institutionIdsFor(req.authorizationPrincipal!);
+    if (institutionIds?.length === 0) return [];
+    return this.bankToWallet.adminLookup({ businessReference, institutionIds });
+  }
+
+  @Get('bank-to-wallet/exceptions/:id')
+  async bankToWalletException(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    await this.require(req, 'reconciliation.view');
+    const exception = await this.b2wExceptions.view(id);
+    const institutionIds = await this.institutionIdsFor(req.authorizationPrincipal!);
+    const exceptionInstitutionId =
+      typeof exception.institution_id === 'string' ? exception.institution_id : null;
+    if (institutionIds && !institutionIds.includes(exceptionInstitutionId ?? '')) {
+      throw new NotFoundException('Exception not found');
+    }
+    return exception;
+  }
+
+  @Post('bank-to-wallet/process')
+  async bankToWalletProcess(
+    @Req() req: AuthenticatedRequest,
+    @Body()
+    body: {
+      businessReference?: string;
+      providerTransactionReference?: string;
+      correlationId?: string;
+    },
+  ) {
+    await this.require(req, 'banking.reconciliation.resolve');
+    const correlationId = (body.correlationId ?? '').trim();
+    if (correlationId.length < 6 || correlationId.length > 160) {
+      throw new BadRequestException('correlationId is required');
+    }
+    const result = await this.bankToWallet.verifyAndPost({
+      businessReference: body.businessReference,
+      providerTransactionReference: body.providerTransactionReference,
+      correlationId,
+    });
+    if (result.status === 'DISABLED') {
+      throw new ServiceUnavailableException('Bank to Wallet processing is not enabled');
+    }
+    return result;
+  }
+
+  @Post('bank-to-wallet/exceptions/:id/decision')
+  async bankToWalletDecision(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { decision?: string; reason?: string },
+  ) {
+    await this.require(req, 'banking.reconciliation.resolve');
+    if (body.decision !== 'RELEASE' && body.decision !== 'RETURN') {
+      throw new BadRequestException('decision must be RELEASE or RETURN');
+    }
+    return this.b2wExceptions.requestDecision(req.authorizationPrincipal!, {
+      exceptionId: id,
+      decision: body.decision,
+      reason: body.reason ?? '',
+    });
+  }
+
+  @Post('bank-to-wallet/exceptions/:id/execute')
+  async bankToWalletExecute(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body()
+    body: { approvalId?: string; decision?: string; reason?: string; externalReference?: string },
+  ) {
+    await this.require(req, 'banking.reconciliation.resolve');
+    if (body.decision !== 'RELEASE' && body.decision !== 'RETURN') {
+      throw new BadRequestException('decision must be RELEASE or RETURN');
+    }
+    if (!body.approvalId) throw new BadRequestException('approvalId is required');
+    return this.b2wExceptions.executeDecision(req.authorizationPrincipal!, {
+      exceptionId: id,
+      approvalId: body.approvalId,
+      decision: body.decision,
+      reason: body.reason ?? '',
+      externalReference: body.externalReference,
+    });
+  }
+
   private async require(req: AuthenticatedRequest, functionCode: string): Promise<string> {
     return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'BANKING_ADMIN');
   }

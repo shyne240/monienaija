@@ -123,7 +123,19 @@ export const AddMoneyScreen: React.FC = () => {
     setAccountNotice('');
     try {
       const next = await BankingApi.requestReceivingAccount(walletId);
-      setAccount(next);
+      // Defensive normalisation: an older API returned only `{state, accounts}`; the current API
+      // returns the same view as GET. Never render a NUBAN that was not returned in a view.
+      const legacy = next as ReceivingAccount & {
+        accounts?: Array<{ accountNumber: string; bankName: string; accountName: string }>;
+      };
+      setAccount({
+        state: next.state,
+        accountNumber: next.accountNumber ?? legacy.accounts?.[0]?.accountNumber ?? null,
+        bankName: next.bankName ?? legacy.accounts?.[0]?.bankName ?? null,
+        accountName: next.accountName ?? legacy.accounts?.[0]?.accountName ?? null,
+        providerMessage: next.providerMessage ?? null,
+        unknownPending: next.unknownPending,
+      });
       if (next.state === 'PROVISIONED' && next.accountNumber) {
         setAccountNotice('Your account is ready. Transfers will appear below once confirmed.');
       } else if (next.state === 'UNKNOWN') {
@@ -289,14 +301,21 @@ export const AddMoneyScreen: React.FC = () => {
                             customer told otherwise would think their balance was wrong.
                           */}
                           <Text style={styles.depositState}>
-                            {deposit.state === 'FLOAT_CREDITED'
+                            {deposit.state === 'CREDITED'
                               ? 'Credited'
-                              : deposit.state === 'VERIFIED_AWAITING_FLOAT_CREDIT'
+                              : deposit.state === 'CONFIRMED_PENDING_CREDIT'
                                 ? 'Received — credit pending'
                                 : deposit.state === 'CONFIRMING'
                                   ? 'Confirming with bank'
-                                  : 'Rejected'}
+                                  : deposit.state === 'EXCEPTION'
+                                    ? 'Withheld — Finance review'
+                                    : 'Rejected'}
                           </Text>
+                          {deposit.businessReference ? (
+                            <Text style={styles.hint} selectable>
+                              Reference {deposit.businessReference}
+                            </Text>
+                          ) : null}
                         </View>
                       ))}
                     </View>

@@ -125,7 +125,7 @@ export class MonnifyProvider implements BankingProvider {
           maturity: 'SUPPORTED',
           documented: true,
           requiresCommercialEntitlement: true,
-          note: 'GET /api/v2/transactions/{transactionReference} — independent verification of an inbound observation.',
+          note: 'GET /api/v2/merchant/transactions/query?transactionReference= — documented independent verification of an inbound observation.',
         },
         {
           key: 'SETTLEMENT_VERIFICATION',
@@ -623,9 +623,12 @@ export class MonnifyProvider implements BankingProvider {
     providerTransactionReference: string,
     context: BankingRequestContext,
   ): Promise<BankingProviderResult<InboundPaymentVerificationResult>> {
+    // Monnify documents verification by transaction reference through the merchant transaction
+    // query endpoint. The reference is a query parameter there; using a different path would be a
+    // guess even if an older SDK happened to expose one.
     const result = await this.authorized(
       'GET',
-      `/api/v2/transactions/${encodeURIComponent(providerTransactionReference)}`,
+      `/api/v2/merchant/transactions/query?transactionReference=${encodeURIComponent(providerTransactionReference)}`,
       undefined,
       context,
     );
@@ -644,26 +647,38 @@ export class MonnifyProvider implements BankingProvider {
     const body = result.value as Record<string, unknown>;
     const status = typeof body.paymentStatus === 'string' ? body.paymentStatus.toUpperCase() : '';
     const amount = typeof body.amountPaid === 'number' ? body.amountPaid : undefined;
+    // The documented response has currencyCode, fee and settlementAmount. It does NOT carry the
+    // reserved account's destination; `paymentSourceInformation` is the PAYER's account, not ours.
+    // Destination attribution therefore comes from the stored assignment, validated against our
+    // accountReference, never from an invented "destination" field in this response.
+    const currency = typeof body.currencyCode === 'string' ? body.currencyCode : undefined;
+    const fee = typeof body.fee === 'number' ? body.fee : undefined;
+    const settlement =
+      typeof body.settlementAmount === 'number' ? body.settlementAmount : undefined;
     return {
       ok: true,
       value: {
-        outcome: status === 'PAID' ? 'VERIFIED' : status === 'PENDING' ? 'PENDING' : 'UNKNOWN',
+        outcome:
+          status === 'PAID'
+            ? 'VERIFIED'
+            : status === 'PENDING'
+              ? 'PENDING'
+              : status === 'PARTIALLY_PAID' || status === 'OVERPAID'
+                ? 'CONFLICT'
+                : 'UNKNOWN',
         providerTransactionReference,
-        ...(amount === undefined ? {} : { amountMinor: String(Math.round(amount * 100)) }),
-        ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
-        ...(typeof body.destinationAccountNumber === 'string'
-          ? { receivingAccountNumber: body.destinationAccountNumber }
-          : {}),
-        ...(typeof body.destinationBankCode === 'string'
-          ? { providerBankCode: body.destinationBankCode }
-          : {}),
+        ...(amount === undefined ? {} : { amountMinor: this.toMinor(amount) }),
+        ...(currency === undefined ? {} : { currency }),
         ...(typeof body.paidOn === 'string' ? { paidAt: body.paidOn } : {}),
         providerStatus: status,
-        ...(amount === undefined ? {} : { grossAmountMinor: String(Math.round(amount * 100)) }),
-        // Provider fee is reported only when the provider states it; never derived.
-        ...(typeof body.settlementAmount === 'number' && amount !== undefined
-          ? { providerFeeMinor: String(Math.round((amount - body.settlementAmount) * 100)) }
+        ...(typeof body.paymentReference === 'string'
+          ? { paymentReference: body.paymentReference }
           : {}),
+        ...(amount === undefined ? {} : { grossAmountMinor: this.toMinor(amount) }),
+        // Monnify publishes both `fee` (its deduction) and `settlementAmount` (merchant proceeds).
+        // Keep them separate and never infer a platform charge from either one.
+        ...(fee === undefined ? {} : { providerFeeMinor: this.toMinor(fee) }),
+        ...(settlement === undefined ? {} : { settlementAmountMinor: this.toMinor(settlement) }),
         correlationId: context.correlationId,
       },
     };
@@ -689,6 +704,11 @@ export class MonnifyProvider implements BankingProvider {
         'Wallet balance endpoint is documented as deprecated; not used for financial decisions',
       ),
     });
+  }
+
+  /** Money in Monnify's JSON is a major-unit number; all platform comparisons use integer minor units. */
+  private toMinor(value: number): string {
+    return String(Math.round(value * 100));
   }
 
   /** Exposed for diagnostics only; never includes credential material. */

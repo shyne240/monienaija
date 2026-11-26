@@ -220,6 +220,11 @@ export const environmentSchema = z
     // deploying this code cannot start a payment provider by itself.
     BANKING_ENABLED: booleanFromEnvironment.default(false),
     BANKING_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
+    // Bank → Wallet is a separate enablement gate. Even with banking enabled and Monnify
+    // registered, no inbound transfer is processed until this is explicitly true. Production
+    // needs both flags AND a separately authorized live test.
+    BANK_TO_WALLET_ENABLED: booleanFromEnvironment.default(false),
+    BANK_TO_WALLET_PRODUCTION_ENABLED: booleanFromEnvironment.default(false),
     // Monnify contract code is not a secret, but it is provider-issued configuration.
     BANKING_MONNIFY_CONTRACT_CODE: optionalEnvironmentString,
     // Banking secrets are separate variables from the identity-verification ones on purpose: the two

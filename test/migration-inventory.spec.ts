@@ -65,19 +65,19 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the customer class migration', () => {
+  it('ends at the Bank to Wallet migration', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
     // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
-    // dual-lane (customer/agent) A6 financial authorization + external-ops, and Arena 1 appended
-    // 0805 (customer classes). The head is pinned exactly — a head-only allowance would let a
-    // skipped earlier identity pass.
+    // dual-lane (customer/agent) A6 financial authorization + external-ops, Arena 1 appended
+    // 0805 (customer classes), and the Monnify interim Bank→Wallet journey appended 0900. The
+    // head is pinned exactly — a head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600900',
+      name: 'BankToWalletMonnifyJourney1785753600900',
     });
     expect(migrations.at(-2)).toMatchObject({
-      timestamp: '1785753600804',
-      name: 'GeneralizeExternalOperationsForAgents1785753600804',
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
     });
   });
 
@@ -182,7 +182,7 @@ describe('migration inventory', () => {
       name: 'CreateCustomerClasses1785753600805',
       file: '1785753600805-CreateCustomerClasses.ts',
     });
-    expect(migrations.length).toBe(169);
+    expect(migrations.length).toBe(170);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

@@ -286,6 +286,14 @@ export interface InboundPaymentVerificationResult {
    */
   readonly grossAmountMinor?: string;
   readonly providerFeeMinor?: string;
+  /** Merchant-destined amount after provider deductions (Monnify `settlementAmount`). */
+  readonly settlementAmountMinor?: string;
+  /**
+   * The payment reference the provider recorded. For reserved accounts this must be the account
+   * reference we issued; it is the identity check that stops a payment for somebody else being
+   * credited to this wallet merely because the account number matched.
+   */
+  readonly paymentReference?: string;
   readonly correlationId: string;
 }
 
