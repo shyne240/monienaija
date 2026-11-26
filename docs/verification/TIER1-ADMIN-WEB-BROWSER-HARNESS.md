@@ -34,7 +34,24 @@
       two issues (`WALLET_TO_CASH:FEE_NOT_CONFIGURED`, `WALLET_TRANSFER:FEE_NOT_CONFIGURED`). The refusal
       is rendered to staff naming the missing products and stating nothing changed; the customer stayed
       `DRAFT`.
-- [ ] **Tier 2 and Tier 3 browser coverage: NOT run.** See "Tier 2 / Tier 3" below for what remains.
+- [x] **Tier 2 runtime ceiling proof — RAN, passes.** A LEVEL_2 customer (BVN + NIN evidence) is
+      corroborated as LEVEL_2 by the governed eligibility gate, its OWN approved institution cap
+      (NGN 10,000,000, distinct from Tier 1's NGN 5,000,000) is what the effective configuration
+      displays (`source=TIER_POLICY`) and what runtime admission enforces: NGN 9,990,000 `COMPLETED`,
+      NGN 10,010,000 → `422 LIMIT_MAX_AMOUNT_EXCEEDED`, while a NGN 50,000,000 commercial cap is
+      configured throughout. `test/tier2-tier3-ceiling-coverage.integration.spec.ts`, evidence in
+      `tier-coverage-LEVEL_2.json`.
+- [x] **Tier 3 — proved UNREACHABLE, which is a finding rather than a pass.** Tier 3 requires a
+      non-BVN/NIN evidence type on every satisfying path (`tier3HasAdditionalRequirement`), and the
+      decision model defines 18 evidence types, but every persistence surface the governed reader binds
+      to — `kyc_consents`, `kyc_verification_attempts`, `kyc_identity_claims` — constrains `kind` to
+      exactly `('BVN','NIN')` in a `varchar(3)` column. No Tier 3 evidence can be stored, so the tier
+      cannot be reached. A policy demanding BIOMETRIC still tops out at LEVEL_2. Evidence:
+      `tier-coverage-LEVEL_3.json`. The spec asserts the schema constraint so it starts failing the day
+      the evidence store is widened.
+- [ ] **Tier 2 browser walkthrough: NOT run.** Tier 2 is proved at runtime (eligibility gate,
+      effective configuration, transfer admission, ledger) but not walked through the Admin Web UI. The
+      fixture seeds only a LEVEL_1 customer, so the browser run still cannot show a Tier 2 record.
 - [ ] **Customer App claim journey: NOT run here by design.** Owned by the separate Customer App
       Arena session; this repository only supplies the backend contract and fixture (see "Customer App
       contract" below).
@@ -92,17 +109,38 @@ TIER1_BASE_URL=http://127.0.0.1:4501 node scripts/tier1-admin-web-browser-accept
 The fixture is idempotent: it rewinds only what staff completion itself writes (the lifecycle status
 and the `TIER_DEFAULT` class assignment), so the run is repeatable rather than passing once.
 
-## Tier 2 / Tier 3 — what is still unproven
+## Tier 2 / Tier 3 — what is proved, what is not
 
-- **Tier 2 and Tier 3 were not exercised in a browser.** The fixture approves LEVEL_1 evidence only;
-  no LEVEL_2/LEVEL_3 customer, evidence set or tier-specific cap was seeded.
-- Consequently unproven in a browser: that a LEVEL_2/LEVEL_3 customer is shown its own tier, the
-  tier default class for that level, and a per-tier cap that differs from LEVEL_1's.
-- Also unproven in a browser: the KYC tier _transition_ path (LEVEL_1 → LEVEL_2) driven from the
-  Compliance screen, and automatic tier-class reassignment on transition. The transition service is
-  covered by `test/kyc-tier-transition.isolated-pg.test.ts` and the workforce review suites, not by
-  a browser walkthrough.
-- The runtime ceiling proof covers LEVEL_1 only.
+Proved at runtime on fully migrated disposable PostgreSQL
+(`test/tier2-tier3-ceiling-coverage.integration.spec.ts`, 4 cases, all passing):
+
+| Tier    | Corroborated tier | Approved cap   | Displayed source | Below cap               | Above cap            |
+| ------- | ----------------- | -------------- | ---------------- | ----------------------- | -------------------- |
+| LEVEL_1 | LEVEL_1           | NGN 5,000,000  | TIER_POLICY      | NGN 4,990,000 COMPLETED | NGN 5,010,000 → 422  |
+| LEVEL_2 | LEVEL_2           | NGN 10,000,000 | TIER_POLICY      | NGN 9,990,000 COMPLETED | NGN 10,010,000 → 422 |
+| LEVEL_3 | unreachable       | —              | —                | —                       | —                    |
+
+Each tier maps to its OWN approved profile, so the numbers above cannot be produced by one profile
+standing in for all three. A NGN 50,000,000 commercial cap is configured throughout and never
+governs.
+
+Two supporting cases pin how the gate behaves:
+
+- a customer row that _claims_ LEVEL_3 while the evidence supports only LEVEL_2 is **refused**
+  (`409`) rather than silently granted the lower tier's ceilings, and the displayed ceiling stays the
+  assignment profile instead of any governance-approved Tier 3 cap;
+- Tier 3 remains unavailable under a policy with no extra requirement (the
+  `tier3HasAdditionalRequirement` guard).
+
+**Not proved:**
+
+- **No Tier 2 or Tier 3 walkthrough in the browser.** The Admin Web fixture seeds only a LEVEL_1
+  customer, so the UI run cannot show a Tier 2/3 record, class or limit table. Closing this needs the
+  fixture to seed LEVEL_2 evidence (BVN + NIN) and a LEVEL_2 tier-default class.
+- **Tier 3 is not covered at all beyond the unreachability proof above.** There is no path to it in
+  this backend.
+- The LEVEL_1 → LEVEL_2 _transition_ driven from the Compliance screen is covered by
+  `test/kyc-tier-transition.isolated-pg.test.ts` and the workforce suites, not by a browser.
 
 ## Customer App contract (hand-off to the parallel session)
 
