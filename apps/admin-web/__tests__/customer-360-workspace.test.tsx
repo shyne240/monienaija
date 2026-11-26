@@ -725,7 +725,10 @@ test('wallet drawer presents only the validated customer wallet and restores foc
   trigger.focus();
   fireEvent.click(trigger);
   const dialog = view.getByRole('dialog', { name: 'Wallet details' });
-  expect(within(dialog).getByText('11111111-1111-4111-8111-111111111111')).toBeTruthy();
+  // The drawer shows the masked identifier, not the internal wallet id: staff never need the raw
+  // account id copied out of a customer record, and the printable statement masks it identically.
+  expect(within(dialog).getByText('•••• 1111')).toBeTruthy();
+  expect(within(dialog).queryByText('11111111-1111-4111-8111-111111111111')).toBeNull();
   expect(within(dialog).getByText('₦3,500.50')).toBeTruthy();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(view.queryByRole('dialog', { name: 'Wallet details' })).toBeNull();
