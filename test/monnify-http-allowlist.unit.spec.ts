@@ -20,6 +20,8 @@ describe('Monnify path allowlist', () => {
       '/api/v1/settlements',
       '/api/v1/disbursements/account/validate?accountNumber=0123456789&bankCode=058',
       '/api/v2/bank-transfer/reserved-accounts/ACC-REF-1',
+      '/api/v1/refunds/initiate-refund',
+      '/api/v1/refunds/RF-2W-TEST-0001',
     ];
     for (const path of allowed) {
       expect(isAllowedMonnifyPath(path)).toBe(true);

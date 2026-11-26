@@ -14,7 +14,7 @@ import type {
 
 type Handler = (req: MonnifyHttpRequest) => Promise<MonnifyHttpResponse> | MonnifyHttpResponse;
 
-function providerWith(handler: Handler) {
+function providerWith(handler: Handler, overrides: Partial<ConstructorParameters<typeof MonnifyProvider>[0]> = {}) {
   const requests: MonnifyHttpRequest[] = [];
   const http: MonnifyHttpClient = {
     send: async (req) => {
@@ -35,6 +35,9 @@ function providerWith(handler: Handler) {
     apiKey: 'MK_TEST_KEY',
     secretKey: 'secret-value',
     http,
+    // Documented disbursement wallet fixture. Tests that need it absent pass an override.
+    disbursementSourceAccountNumber: '8016472829',
+    ...overrides,
   });
   return { provider, requests };
 }
@@ -330,6 +333,50 @@ describe('Monnify outbound disbursement', () => {
     await provider.submitOutboundTransfer(request, ctx);
     expect((sent as { reference: string }).reference).toBe('op-ref-1');
   });
+
+  it('refuses to send when the documented source wallet is not configured', async () => {
+    let calls = 0;
+    const { provider } = providerWith(
+      () => {
+        calls += 1;
+        return {
+          status: 200,
+          body: { requestSuccessful: true, responseBody: { status: 'SUCCESS' } },
+        };
+      },
+      { disbursementSourceAccountNumber: undefined },
+    );
+    const result = await provider.submitOutboundTransfer(request, ctx);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.category).toBe('CONFIGURATION');
+    expect(calls).toBe(0);
+  });
+
+  it('maps PENDING_AUTHORIZATION to an OTP challenge, never to a completed transfer', async () => {
+    const { provider } = providerWith(() => ({
+      status: 200,
+      body: {
+        requestSuccessful: true,
+        responseBody: { status: 'PENDING_AUTHORIZATION', reference: 'ref-otp' },
+      },
+    }));
+    const result = await provider.submitOutboundTransfer(request, ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.outcome).toBe('PENDING');
+      expect(result.value.requiresAdditionalAuthorization).toBe(true);
+    }
+  });
+
+  it('treats Monnify D07 duplicate request as UNKNOWN so recovery uses status enquiry', async () => {
+    const { provider } = providerWith(() => ({
+      status: 200,
+      body: { requestSuccessful: false, responseCode: 'D07', responseMessage: 'duplicate' },
+    }));
+    const result = await provider.submitOutboundTransfer(request, ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.outcome).toBe('UNKNOWN');
+  });
 });
 
 describe('Monnify transfer status', () => {
@@ -376,6 +423,88 @@ describe('Monnify transfer status', () => {
       expect(result.value.outcome).toBe('NOT_FOUND');
       // NOT_FOUND is not REJECTED: the transfer may exist under a different reference.
       expect(result.value.outcome).not.toBe('REJECTED');
+    }
+  });
+});
+
+describe('Monnify documented refund contract', () => {
+  const refundRequest = {
+    originalProviderReference: 'MNFY|76|2021|000001',
+    refundReference: 'RF-2W-TEST-0001',
+    amountMinor: '150000',
+    currency: 'NGN',
+    reason: 'Governed return decision',
+    customerNote: 'Returned funds',
+    correlationId: 'corr-1',
+  };
+
+  it('refuses locally until refund activation is confirmed by the provider owner', async () => {
+    let calls = 0;
+    const { provider } = providerWith(
+      () => {
+        calls += 1;
+        return { status: 200, body: {} };
+      },
+      { refundsEnabled: false },
+    );
+    const result = await provider.initiateRefund(refundRequest, ctx);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.category).toBe('ENTITLEMENT');
+    expect(calls).toBe(0);
+  });
+
+  it('submits with the original transaction reference and a distinct durable refund reference', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const { provider } = providerWith(
+      (req) => {
+        if (req.path === '/api/v1/refunds/initiate-refund') {
+          sent = JSON.parse(String(req.body)) as Record<string, unknown>;
+          return {
+            status: 200,
+            body: {
+              requestSuccessful: true,
+              responseBody: { refundStatus: 'IN_PROGRESS', refundReference: 'RF-2W-TEST-0001' },
+            },
+          };
+        }
+        return {
+          status: 200,
+          body: {
+            requestSuccessful: true,
+            responseBody: { refundStatus: 'COMPLETED', transactionReference: refundRequest.originalProviderReference },
+          },
+        };
+      },
+      { refundsEnabled: true },
+    );
+    const submitted = await provider.initiateRefund(refundRequest, ctx);
+    expect(submitted.ok).toBe(true);
+    if (submitted.ok) expect(submitted.value.outcome).toBe('PENDING');
+    expect(sent?.transactionReference).toBe(refundRequest.originalProviderReference);
+    expect(sent?.refundReference).toBe(refundRequest.refundReference);
+    expect(sent?.destinationAccountNumber).toBeUndefined();
+
+    const status = await provider.getRefundStatus('RF-2W-TEST-0001', ctx);
+    expect(status.ok).toBe(true);
+    if (status.ok) {
+      expect(status.value.outcome).toBe('COMPLETED');
+      expect(status.value.originalProviderReference).toBe(refundRequest.originalProviderReference);
+    }
+  });
+
+  it('returns UNKNOWN for a repeated refund reference instead of minting a second one', async () => {
+    const { provider } = providerWith(
+      () => ({
+        status: 200,
+        body: { requestSuccessful: false, responseCode: 'R9', responseMessage: 'exists' },
+      }),
+      { refundsEnabled: true },
+    );
+    const result = await provider.initiateRefund(refundRequest, ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.outcome).toBe('UNKNOWN');
+      expect(result.value.refundReference).toBe(refundRequest.refundReference);
     }
   });
 });

@@ -262,6 +262,55 @@ export interface TransferStatusResult {
   readonly correlationId: string;
 }
 
+// ------------------------------------------------------------------- refunds
+
+/**
+ * A documented provider refund of an ORIGINAL collection. The original provider reference and our
+ * own durable refund reference are both required: one identifies the money being returned, the other
+ * makes a retry provably the same instruction rather than a second refund.
+ *
+ * A refund is only available where the provider contract has been activated. The adapter reports a
+ * configuration/capability refusal until that owner decision exists; no caller may infer success.
+ */
+export interface RefundInitiationRequest {
+  readonly originalProviderReference: string;
+  readonly refundReference: string;
+  readonly amountMinor: string;
+  readonly currency: string;
+  /** Internal reason, max 64 characters in Monnify's documented contract. */
+  readonly reason: string;
+  /** Customer-facing narration, max 16 characters in Monnify's documented contract. */
+  readonly customerNote: string;
+  /**
+   * Optional verified customer bank account. Never populated from the receiving virtual account:
+   * Monnify explicitly refuses refunds to virtual account numbers.
+   */
+  readonly destinationAccountNumber?: string;
+  readonly destinationBankCode?: string;
+  readonly correlationId: string;
+}
+
+export interface RefundInitiationResult {
+  readonly outcome: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'UNKNOWN';
+  readonly refundReference: string;
+  readonly originalProviderReference: string;
+  readonly providerStatus?: string;
+  readonly correlationId: string;
+}
+
+export type RefundStatusOutcome = 'PENDING' | 'COMPLETED' | 'FAILED' | 'NOT_FOUND' | 'UNKNOWN';
+
+export interface RefundStatusResult {
+  readonly outcome: RefundStatusOutcome;
+  readonly refundReference: string;
+  readonly originalProviderReference?: string;
+  readonly amountMinor?: string;
+  readonly currency?: string;
+  readonly providerStatus?: string;
+  readonly completedAt?: string;
+  readonly correlationId: string;
+}
+
 // ----------------------------------------------------------------- inbound verification
 
 export type InboundVerificationOutcome =
@@ -407,4 +456,14 @@ export interface BankingProvider {
     request: OutboundTransferRequest,
     context: BankingRequestContext,
   ): Promise<BankingProviderResult<OutboundTransferSubmissionResult>>;
+
+  // ---- refunds of an original collection (activation-gated, never inferred)
+  initiateRefund?(
+    request: RefundInitiationRequest,
+    context: BankingRequestContext,
+  ): Promise<BankingProviderResult<RefundInitiationResult>>;
+  getRefundStatus?(
+    refundReference: string,
+    context: BankingRequestContext,
+  ): Promise<BankingProviderResult<RefundStatusResult>>;
 }

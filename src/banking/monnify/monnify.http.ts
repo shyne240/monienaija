@@ -18,7 +18,10 @@ export type MonnifyPath =
   | '/api/v2/bank-transfer/reserved-accounts'
   | '/api/v2/disbursements/single'
   | '/api/v2/disbursements/single/validate-otp'
-  | '/api/v1/settlements'
+  // Documented refund contract. Activation is a separate owner decision; the path is allowlisted
+  // so an activated contract does not need a code change, but the adapter still fails closed.
+  | '/api/v1/refunds/initiate-refund'
+  | '/api/v1/refunds'
   // Documented merchant transaction query, with transactionReference or paymentReference as a query parameter.
   | '/api/v2/merchant/transactions/query';
 
@@ -56,6 +59,7 @@ const EXACT_PATHS = new Set<string>([
   '/api/v2/bank-transfer/reserved-accounts',
   '/api/v2/disbursements/single',
   '/api/v2/disbursements/single/validate-otp',
+  '/api/v1/refunds/initiate-refund',
   '/api/v1/settlements',
   // Documented server-to-server transaction verification (transactionReference/paymentReference
   // are query parameters, never path parameters).
@@ -83,6 +87,8 @@ const PREFIX_PATHS: ReadonlyArray<{
   { prefix: '/api/v1/disbursements/account/validate', allowQuery: true, queryOnExact: true },
   // Documented to carry an account reference as a path parameter, with no query.
   { prefix: '/api/v2/bank-transfer/reserved-accounts/', allowQuery: false, queryOnExact: false },
+  // Documented GET /api/v1/refunds/{refundReference} — one non-empty segment, no query string.
+  { prefix: '/api/v1/refunds/', allowQuery: false, queryOnExact: false },
 ];
 
 export function isAllowedMonnifyPath(path: string): boolean {

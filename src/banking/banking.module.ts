@@ -117,6 +117,13 @@ export interface BankingRuntime {
             contractCode: config.get('BANKING_MONNIFY_CONTRACT_CODE', { infer: true }),
             apiKey: config.get('BANKING_MONNIFY_API_KEY', { infer: true }),
             secretKey: config.get('BANKING_MONNIFY_SECRET_KEY', { infer: true }),
+            disbursementSourceAccountNumber: config.get(
+              'BANKING_MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER',
+              { infer: true },
+            ),
+            refundsEnabled: config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', {
+              infer: true,
+            }),
           },
           logger,
         );
@@ -142,6 +149,13 @@ export interface BankingRuntime {
             contractCode: config.get('BANKING_MONNIFY_CONTRACT_CODE', { infer: true }),
             apiKey: config.get('BANKING_MONNIFY_API_KEY', { infer: true }),
             secretKey: config.get('BANKING_MONNIFY_SECRET_KEY', { infer: true }),
+            disbursementSourceAccountNumber: config.get(
+              'BANKING_MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER',
+              { infer: true },
+            ),
+            refundsEnabled: config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', {
+              infer: true,
+            }),
           },
           logger,
         ).registry;

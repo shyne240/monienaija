@@ -22,6 +22,8 @@ export interface BankingRuntimeConfiguration {
   readonly contractCode?: string | undefined;
   readonly apiKey?: string | undefined;
   readonly secretKey?: string | undefined;
+  readonly disbursementSourceAccountNumber?: string | undefined;
+  readonly refundsEnabled?: boolean | undefined;
 }
 
 export interface BankingRegistrationResult {
@@ -62,6 +64,8 @@ export function buildBankingRegistry(
       contractCode: config.contractCode,
       apiKey: config.apiKey,
       secretKey: config.secretKey,
+      disbursementSourceAccountNumber: config.disbursementSourceAccountNumber,
+      refundsEnabled: config.refundsEnabled === true,
       http: createMonnifyHttpClient(),
     }),
   );

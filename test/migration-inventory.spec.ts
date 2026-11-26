@@ -78,18 +78,22 @@ describe('migration inventory', () => {
       name: 'BankToWalletMonnifyJourney1785753600900',
     });
     expect(migrations.at(-2)).toMatchObject({
+      timestamp: '1785753600813',
+      name: 'CreatePlatformFundsBankComparisons1785753600813',
+    });
+    expect(migrations.at(-3)).toMatchObject({
       timestamp: '1785753600807',
       name: 'CaptureCustomerFundingScope1785753600807',
     });
-    expect(migrations.at(-3)).toMatchObject({
+    expect(migrations.at(-4)).toMatchObject({
       timestamp: '1785753600806',
       name: 'DurableInboundIdentity1785753600806',
     });
-    expect(migrations.at(-4)).toMatchObject({
+    expect(migrations.at(-5)).toMatchObject({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
     });
-    expect(migrations.at(-5)).toMatchObject({
+    expect(migrations.at(-6)).toMatchObject({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });

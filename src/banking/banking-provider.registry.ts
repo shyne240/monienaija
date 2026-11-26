@@ -28,7 +28,7 @@ const CAPABILITY_METHOD: Readonly<Record<BankingCapabilityKey, keyof BankingProv
   RECONCILIATION_OBSERVATIONS: 'listReconciliationObservations',
   // Webhook ingestion is a route + signature concern, not an adapter method.
   WEBHOOK_INGESTION: 'descriptor',
-  REFUND_INITIATION: 'descriptor',
+  REFUND_INITIATION: 'initiateRefund',
 };
 
 export interface RegisteredBankingProvider {

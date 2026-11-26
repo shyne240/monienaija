@@ -233,6 +233,12 @@ export const environmentSchema = z
     BANKING_MONNIFY_API_KEY: optionalEnvironmentSecret,
     BANKING_MONNIFY_SECRET_KEY: optionalEnvironmentSecret,
     BANKING_MONNIFY_CLIENT_SECRET: optionalEnvironmentSecret,
+    // Documented disbursement sourceAccountNumber (the Monnify disbursement wallet number). It is
+    // provider-issued configuration, not a reserved account or a settlement bank account.
+    BANKING_MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER: optionalEnvironmentString,
+    // Refund API activation is a separate Monnify entitlement. Defaults off; a governed return
+    // decision remains an approval until the provider confirms the money was returned.
+    BANK_TO_WALLET_RETURN_EXECUTION_ENABLED: booleanFromEnvironment.default(false),
     // Disables NEW banking intake. Committed obligations and their recovery continue.
     BANKING_INTAKE_DISABLED: booleanFromEnvironment.default(false),
     BANKING_DISPATCH_WORKER_ENABLED: booleanFromEnvironment.optional(),
