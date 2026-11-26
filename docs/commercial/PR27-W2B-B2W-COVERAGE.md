@@ -8,8 +8,11 @@ Pinned to code by two suites:
 - `test/v1-commercial-bank-direction-coverage.spec.ts` — the static coverage contract (23 cases,
   including the all-nine-product checklist).
 - `test/v1-bank-direction-preview-runtime-parity.integration.spec.ts` — preview vs runtime parity on
-  disposable PostgreSQL with real workforce sessions (11 cases, including statutory-charge
-  zero-vs-missing and the commission gap).
+  disposable PostgreSQL with real workforce sessions (12 cases, including statutory-charge
+  zero-vs-missing and the three-way zero / missing / inapplicable-recipient distinction).
+- `test/v1-bank-commission-runtime.integration.spec.ts` — commission applied at settlement on
+  disposable PostgreSQL through the real commitment and settlement services (6 cases: nonzero parity,
+  explicit zero, no rule, released transfer, replay, wrong-agent attribution).
 
 Machine-readable result: `docs/commercial/evidence/pr27-bank-direction-parity.json`.
 
@@ -121,19 +124,51 @@ asserted — synthetic values are used only in tests.
 The full trace is product → fee → **commission** → **statutory charges** → limit → runtime decision.
 Fees and limits are wired (above). The last two are not, and this is what each one needs.
 
-### Commission: no bank direction evaluates it (recorded, not hidden)
+### Commission: outbound applies at settlement; inbound has no eligible recipient
 
-| Direction     | Rules authorable?                                                                                       | Preview                                                                                          | Runtime                                                                                                                                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wallet → Bank | **yes** — `commission_rules.product_code` is a FK to `products.code`, and `WALLET_TO_BANK` is a product | resolves and **says it will not be applied**, with a `COMMISSION_NOT_APPLIED_BY_RUNTIME` BLOCKER | **none.** `financial-commitment.service.ts` never calls `CommissionEngine` and never passes `agentCommissionMinor`, although `banking_operation_fee_bindings.agent_commission_minor` exists and would store it |
-| Bank → Wallet | **yes** (same product row)                                                                              | same explicit blocker                                                                            | **none.** No commission step on the inbound path                                                                                                                                                               |
+| Direction     | Rules authorable?                                                    | Preview                                                                         | Runtime                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet → Bank | **yes** — `commission_rules.product_code` is a FK to `products.code` | resolves, and states the event: applied **at settlement**, not at authorization | **applied.** `external-settlement.service.ts` calls `recordWalletToBankCommissionInTransaction` after the commitment becomes `SETTLED`; the snapshot is bound to the commitment id |
+| Bank → Wallet | **yes** (same product row)                                           | `NOT_APPLICABLE` + `COMMISSION_RECIPIENT_NOT_APPLICABLE` BLOCKER                | **never.** No eligible recipient, no attribution column on the inbound receipt, and no execution event to attach a decision to                                                     |
 
-That is the gap in one sentence: **a commission rule authored against either bank product would be
-previewable and never applied or settled.** Closing it needs the commitment to evaluate
-`CommissionEngine.decideWithManager(...)` inside its existing SERIALIZABLE transaction (as
-`transfer.service.ts` already does for `WALLET_TRANSFER`), persist the decision, and record it in a
-commercial decision snapshot — plus a settlement/accounting path for the agent share. None of that is
-invented here; the preview now refuses to imply it.
+**Wallet → Bank, where and why.** Commission is decided at the single event that proves the money left:
+the `RESERVED → SETTLED` transition, inside the settlement transaction, after the provider outcome is
+independently verified. Authorizing is not earning — a commitment can still be released or rejected
+afterwards, and accruing at authorization would pay commission on transfers that never happened and
+then require reversal accounting to undo. Three guarantees follow from that placement alone:
+
+| Event                   | Commission decision                          | Accounting legs                  |
+| ----------------------- | -------------------------------------------- | -------------------------------- |
+| Authorized (`RESERVED`) | none — nothing recorded                      | none                             |
+| Released / rejected     | none — the release path never reaches it     | none                             |
+| Settled (`SETTLED`)     | exactly one, `wallet-to-bank:<commitmentId>` | accrual per configured treatment |
+| Replayed settlement     | refused as a duplicate; snapshot idempotent  | none new                         |
+
+**Recipient attribution** comes from the commitment's own financial authorization (the acting agent and
+their class), read in the same locked transaction. A rule targeted at a different agent does not match,
+and a customer-initiated transfer produces no agent recipient — that is attribution, not a gap. The
+`beneficiaryId` the engine leaves null for class-targeted rules is filled from the acting agent, since
+they are the only possible recipient of their own transfer's commission.
+
+**Three fee realities stay three.** Unpriced (no binding — no approved rule priced the route),
+explicitly free (a bound zero) and charged (a bound non-zero) are distinct in the recorded decision;
+the settlement path previously collapsed them, and a NOT_CONFIGURED fee is now recorded as exactly
+that rather than a zero nobody authored.
+
+**Bank → Wallet stays unavailable, and the reason is now precise.** It is not "the wiring is missing":
+a bank credit has **no eligible commission recipient**. The recipient is the wallet-owning customer, no
+agent performs the movement, and `inbound_funding_receipts` carries no agent attribution to key a
+beneficiary on. Even if a rule could name one, inbound execution is deliberately unavailable
+(`A7_INBOUND_EXECUTION_AUTHORITY` is bound to the unavailable adapter) and there is no settlement event
+to attach a decision to. The preview therefore reports `NOT_APPLICABLE` with
+`COMMISSION_RECIPIENT_NOT_APPLICABLE` — deliberately distinct from both an authored **zero** (a rule
+that computes to 0) and **missing configuration** (no rule at all), so an operator is never sent to
+author a rule that could not apply.
+
+The exact missing piece for inbound, stated once: **a recipient model for receiver-side commission.**
+That needs a policy decision about who earns on an incoming credit (and on what basis) plus an
+attribution column on the inbound receipt — neither of which exists, and neither of which is invented
+here.
 
 ### Statutory charges: VAT is modelled, everything else is absent
 
@@ -156,9 +191,12 @@ and `BANK_TO_WALLET` reports `NOT_APPLICABLE` because it carries no fee for VAT 
 - [ ] PR #24 tier-ceiling alignment: the institution KYC tier path still resolves product mappings by
       product code, so a `WALLET_TO_BANK` tier mapping is authorable but has not been reconciled with
       that PR's ceiling model.
-- [ ] **Commission on bank directions**: preview now states the gap explicitly (BLOCKER); the runtime
-      still evaluates no commission for either direction. Needs a `CommissionEngine` call inside the
-      commitment transaction + decision snapshot + agent settlement.
+- [x] **Commission on Wallet → Bank**: applied at settlement, bound to the commitment, proven on
+      disposable PostgreSQL (`test/v1-bank-commission-runtime.integration.spec.ts`).
+- [ ] **Commission on Bank → Wallet**: no eligible recipient exists. Needs a receiver-side commission
+      policy decision + inbound agent attribution. Recorded as `COMMISSION_RECIPIENT_NOT_APPLICABLE`.
+- [ ] **Commission settlement rail**: accruals post to `COMMISSION_PAYABLE`; paying them out is V2 scope
+      (`ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED`).
 - [ ] **Statutory charges beyond VAT**: absent from the data model. Needs a real schema + a regulatory
       decision, not a configuration entry.
 - [ ] Inbound execution authority + suspense policy: the two blockers above.

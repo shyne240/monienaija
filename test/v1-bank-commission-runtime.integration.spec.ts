@@ -34,6 +34,8 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { AppModule } from '../src/app.module';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
@@ -104,6 +106,16 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
   let baselineJournalCount = '0';
   let baselineExpense = 0n;
   let baselinePayable = 0n;
+  /**
+   * Evidence is accumulated as each case runs rather than asserted at the end, so the artifact can only
+   * ever contain values that actually passed. PR27_COMMISSION_EVIDENCE_OUT selects the destination.
+   */
+  const evidence: Record<string, unknown> = {
+    note: 'Wallet-to-bank commission at settlement. Disposable per-process database; fixture rates only, no production policy.',
+    commissionEvent: 'financial_commitments.state RESERVED -> SETTLED',
+    transactionReference: 'financial_commitments.id',
+    cases: {},
+  };
   let verificationState: 'VERIFIED_SETTLED' | 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
     'VERIFIED_SETTLED';
 
@@ -216,9 +228,30 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
       delete process.env[key];
     }
     try {
-      if (app) await app.close();
+      const out = process.env.PR27_COMMISSION_EVIDENCE_OUT?.trim();
+      if (out) {
+        mkdirSync(dirname(out), { recursive: true });
+        writeFileSync(
+          out,
+          `${JSON.stringify(
+            {
+              generatedAt: new Date().toISOString(),
+              branch: 'arena/41dde913-monienaija',
+              suite: 'test/v1-bank-commission-runtime.integration.spec.ts',
+              database: 'disposable per-process PostgreSQL',
+              ...evidence,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      }
     } finally {
-      if (dataSource) await destroyIntegrationDataSource(dataSource);
+      try {
+        if (app) await app.close();
+      } finally {
+        if (dataSource) await destroyIntegrationDataSource(dataSource);
+      }
     }
   }, 60000);
 
@@ -656,6 +689,23 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
       treatment: 'EXPENSE_PAYABLE',
       settlementState: 'ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED',
     });
+
+    (evidence.cases as Record<string, unknown>).approvedNonzeroRule = {
+      rule: `PERCENTAGE 100bps of PRINCIPAL (${'1.00%'}), AGENT recipient, canonical WALLET_TO_BANK`,
+      principalAmountMinor: '100000',
+      previewMinor: previewMinor.toString(),
+      recordedDecisionMinor: recordedMinor.toString(),
+      accrualExpenseMinor: (await expenseDelta()).toString(),
+      accrualPayableMinor: (await payableDelta()).toString(),
+      allThreeAgree:
+        previewMinor === recordedMinor &&
+        previewMinor === -(await expenseDelta()) &&
+        previewMinor === (await payableDelta()),
+      beneficiaryIdAttributed: allocations[0]!.beneficiaryId,
+      commissionEvent: 'SETTLEMENT',
+      pendingHadNoDecision: true,
+      settlementState: 'ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED',
+    };
   }, 180000);
 
   // ─────────────────────────────────────────────────────────────────────────── C02 explicit zero
@@ -692,6 +742,14 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
       journalLegsPosted: false,
       reason: 'ZERO_AMOUNT_NO_LEGS_POSTED',
     });
+
+    (evidence.cases as Record<string, unknown>).explicitZero = {
+      rule: 'FIXED 0 minor, AGENT recipient',
+      decisionStatus: (snapshots[0]!.commission_decision as { status: string }).status,
+      recordedAmountMinor: allocations[0]!.amountMinor,
+      journalLegsPosted: false,
+      distinction: 'a configured rule that computed to zero — not an absent rule',
+    };
   }, 180000);
 
   it('C02b. no configured rule at all is recorded as an explicit NONE, never as a zero', async () => {
@@ -713,6 +771,13 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
     expect(snapshots[0]!.commission_decision.status).toBe('NONE');
     expect(snapshots[0]!.commission_decision.allocations).toEqual([]);
     expect(await newCommissionJournals()).toHaveLength(0);
+
+    (evidence.cases as Record<string, unknown>).noRuleConfigured = {
+      decisionStatus: (snapshots[0]!.commission_decision as { status: string }).status,
+      allocations: [],
+      journalLegsPosted: false,
+      distinction: 'evaluated and found nothing — never recorded as a zero',
+    };
   }, 180000);
 
   // ─────────────────────────────────────────────────────────────────────────── C03 failed
@@ -748,6 +813,15 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
     expect(await newCommissionJournals()).toHaveLength(0);
     expect(await payableDelta()).toBe(0n);
     expect(await expenseDelta()).toBe(0n);
+
+    (evidence.cases as Record<string, unknown>).releasedTransfer = {
+      rule: 'PERCENTAGE 100bps of PRINCIPAL — deliberately configured so absence is meaningful',
+      commitmentState: await commitmentState(run.commitment.id),
+      decisionRows: 0,
+      journals: 0,
+      payableDeltaMinor: '0',
+      conclusion: 'a transfer that never completed cannot pay anyone',
+    };
   }, 180000);
 
   // ─────────────────────────────────────────────────────────────────────────── C04 replay
@@ -787,6 +861,14 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
     expect(await newCommissionJournals()).toHaveLength(1);
     expect(await payableDelta()).toBe(1000n);
     expect(await expenseDelta()).toBe(-1000n);
+
+    (evidence.cases as Record<string, unknown>).replay = {
+      outcome: replay.error ? 'REFUSED_AS_DUPLICATE' : 'IDEMPOTENT_REPLAY',
+      decisionRows: 1,
+      journals: 1,
+      payableMinor: (await payableDelta()).toString(),
+      conclusion: 'commission cannot be paid twice',
+    };
   }, 180000);
 
   // ─────────────────────────────────────────────────────────────────────────── attribution
@@ -815,5 +897,12 @@ describe('PR27 wallet-to-bank commission at settlement (real PostgreSQL)', () =>
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.commission_decision.status).toBe('NONE');
     expect(await newCommissionJournals()).toHaveLength(0);
+
+    (evidence.cases as Record<string, unknown>).wrongAgentAttribution = {
+      rule: 'targeted at a DIFFERENT explicit agentId',
+      decisionStatus: (snapshots[0]!.commission_decision as { status: string }).status,
+      journals: 0,
+      conclusion: 'the recipient must be eligible, not merely present',
+    };
   }, 180000);
 });

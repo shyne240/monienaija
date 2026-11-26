@@ -770,6 +770,77 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
       expect(body.statutoryCharges.postsJournalLegs).toBe(false);
     });
 
+    it('keeps explicit zero, missing configuration and an inapplicable recipient distinct', async () => {
+      const operator = await provisionRole('SUPER_ADMIN');
+      const customerId = await seedCustomerWithProfile();
+
+      await dataSource.query(
+        `INSERT INTO fee_rules(product_code,currency,flat_fee_minor,percentage_bps,vat_bps,
+                                effective_from,is_active,created_by)
+         VALUES($1,'NGN',100,0,0,clock_timestamp()-interval '1 hour',true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+
+      // (1) MISSING CONFIGURATION — no commission rule exists at all.
+      const missing = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      expect(missing.commission.status).toBe('MISSING');
+      expect(missing.commission.allocations).toEqual([]);
+
+      // (2) EXPLICIT ZERO — a real, active rule whose arithmetic is zero. Same status family as a
+      // resolved rule because it IS resolved; the amounts are what distinguish it.
+      await dataSource.query(
+        `INSERT INTO commission_rules(product_code,currency,recipient_type,calculation_basis,
+                                      calculation_model,flat_commission_minor,effective_from,priority,
+                                      is_active,created_by)
+         VALUES($1,'NGN','AGENT','FEE','FIXED',0,clock_timestamp()-interval '1 hour',10,true,'fixture')`,
+        [WALLET_TO_BANK.productCode],
+      );
+      const zero = await preview(operator.token, {
+        productCode: WALLET_TO_BANK.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        amountMinor: '150000',
+      });
+      expect(zero.commission.status).toBe('RESOLVED');
+      expect(zero.commission.allocations).toHaveLength(1);
+      expect(zero.commission.allocations[0].amountMinor).toBe('0');
+
+      // (3) INAPPLICABLE RECIPIENT — inbound can never produce a beneficiary, and says so as its own
+      // state rather than as "missing config" (which would send an operator off to author a rule that
+      // could never apply).
+      const inbound = await preview(operator.token, {
+        productCode: BANK_TO_WALLET.productCode,
+        currency: CURRENCY,
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'INCOMING',
+        amountMinor: '150000',
+      });
+      expect(inbound.commission.status).toBe('NOT_APPLICABLE');
+      expect(inbound.explanation).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'COMMISSION_RECIPIENT_NOT_APPLICABLE',
+            severity: 'BLOCKER',
+          }),
+        ]),
+      );
+      // The three states are genuinely three, not aliases of one another.
+      expect(
+        new Set([missing.commission.status, zero.commission.status, inbound.commission.status])
+          .size,
+      ).toBe(3);
+    });
+
     it('states WHEN commission is evaluated: at settlement outbound, never inbound', async () => {
       const operator = await provisionRole('SUPER_ADMIN');
       const customerId = await seedCustomerWithProfile();
@@ -809,7 +880,9 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         (outbound.explanation as Array<{ code: string }>).map((entry) => entry.code),
       ).not.toContain('COMMISSION_NOT_APPLIED_BY_RUNTIME');
 
-      // Inbound: still genuinely unavailable, and the blocker must survive unchanged.
+      // Inbound: still genuinely unavailable, and the blocker must survive — now stated precisely as
+      // "no eligible recipient" rather than the generic "runtime does not apply it", because for
+      // inbound the recipient is what is missing, not the wiring.
       const inbound = await preview(operator.token, {
         productCode: BANK_TO_WALLET.productCode,
         currency: CURRENCY,
@@ -818,10 +891,11 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
         direction: 'INCOMING',
         amountMinor: '150000',
       });
+      expect(inbound.commission.status).toBe('NOT_APPLICABLE');
       expect(inbound.explanation).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
+            code: 'COMMISSION_RECIPIENT_NOT_APPLICABLE',
             severity: 'BLOCKER',
           }),
         ]),
@@ -954,8 +1028,14 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
                 },
                 commission: {
                   previewStatus: outbound.commission.status,
-                  appliedByRuntime: false,
-                  runtimeDecision: 'NONE — the commitment service never invokes CommissionEngine',
+                  appliedByRuntime: true,
+                  // Stated as the event, because the event IS the guarantee: a released transfer never
+                  // reaches this decision and a replay cannot record a second one.
+                  commissionEvent: 'SETTLEMENT (financial_commitments.state RESERVED -> SETTLED)',
+                  runtimeDecision:
+                    'CommissionEngine.decideWithManager + recordDecisionWithManager via src/banking/wallet-to-bank-commission.ts; snapshot keyed wallet-to-bank:<commitmentId>',
+                  evidence:
+                    'docs/commercial/evidence/pr27-bank-commission.json (test/v1-bank-commission-runtime.integration.spec.ts, 6 cases)',
                   note: outbound.commission.note,
                 },
                 limits: {
@@ -982,7 +1062,14 @@ describe('PR27 bank direction parity — preview vs runtime (real PostgreSQL)', 
                 commission: {
                   previewStatus: inbound.commission.status,
                   appliedByRuntime: false,
-                  runtimeDecision: 'NONE — the inbound credit path runs no commission step',
+                  // Not "unwired" but "unrecipientable": no agent acts, and the inbound receipt carries no
+                  // agent attribution to key a beneficiary on. Distinct from a zero and from missing config.
+                  inapplicableBecause:
+                    'NO_ELIGIBLE_RECIPIENT — the recipient is the wallet-owning customer; no agent performs the movement and inbound_funding_receipts carries no agent attribution',
+                  runtimeDecision:
+                    'NONE — no eligible recipient and no execution event to attach a decision to',
+                  missingPiece:
+                    'A receiver-side commission policy decision (who earns on an incoming credit, on what basis) plus an agent attribution column on the inbound receipt.',
                 },
                 limits: {
                   previewStatus: inbound.limits.status,

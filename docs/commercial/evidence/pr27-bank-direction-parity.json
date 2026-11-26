@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-25T23:11:10.107Z",
+  "generatedAt": "2026-11-26T09:03:16.540Z",
   "branch": "arena/41dde913-monienaija",
   "database": "monienaija",
   "note": "Preview-vs-runtime parity per banking direction. All reads; zero journals.",
@@ -18,7 +18,7 @@
           "calculationModel": "FLAT_PLUS_PERCENTAGE",
           "postsJournalLegs": false
         },
-        "runtimeRuleId": "d32d74b4-aead-43b7-96a7-de629b85641f",
+        "runtimeRuleId": "24f94e0b-aaaf-45e7-8d9f-237794e73a67",
         "sameRuleRow": true
       },
       "statutoryCharges": {
@@ -36,15 +36,17 @@
       },
       "commission": {
         "previewStatus": "MISSING",
-        "appliedByRuntime": false,
-        "runtimeDecision": "NONE — the commitment service never invokes CommissionEngine",
-        "note": "No commission is evaluated or recorded on a wallet→bank transfer. The commitment binds fee and limit only; it never invokes the commission engine, so an authored commission rule for this product would be previewable but never applied or settled. No commission rule resolves for this product, currency and targeting either."
+        "appliedByRuntime": true,
+        "commissionEvent": "SETTLEMENT (financial_commitments.state RESERVED -> SETTLED)",
+        "runtimeDecision": "CommissionEngine.decideWithManager + recordDecisionWithManager via src/banking/wallet-to-bank-commission.ts; snapshot keyed wallet-to-bank:<commitmentId>",
+        "evidence": "docs/commercial/evidence/pr27-bank-commission.json (test/v1-bank-commission-runtime.integration.spec.ts, 6 cases)",
+        "note": "No commission rule applies to this product, currency and targeting. Commission is decided once, at settlement, for the agent who initiated the transfer. Pending and released transfers carry no commission decision, and a replayed settlement cannot record a second one. When no commission rule is configured the transfer records an explicit NONE decision rather than a zero."
       },
       "limits": {
         "previewStatus": "RESOLVED",
-        "previewRuleIds": ["745e14af-aba8-4957-9382-64e5cba430b1"],
+        "previewRuleIds": ["97b5a26f-b063-4d97-ac00-5d71e245d955"],
         "runtimeAllowed": true,
-        "runtimeRuleIds": ["745e14af-aba8-4957-9382-64e5cba430b1"],
+        "runtimeRuleIds": ["97b5a26f-b063-4d97-ac00-5d71e245d955"],
         "rulesMatch": true
       }
     },
@@ -62,16 +64,18 @@
         "note": "No statutory charge other than VAT on our own service fee is modelled. This direction charges no customer service fee, so there is no fee for VAT to attach to. No statutory charge applies to a bank credit."
       },
       "commission": {
-        "previewStatus": "MISSING",
+        "previewStatus": "NOT_APPLICABLE",
         "appliedByRuntime": false,
-        "runtimeDecision": "NONE — the inbound credit path runs no commission step"
+        "inapplicableBecause": "NO_ELIGIBLE_RECIPIENT — the recipient is the wallet-owning customer; no agent performs the movement and inbound_funding_receipts carries no agent attribution",
+        "runtimeDecision": "NONE — no eligible recipient and no execution event to attach a decision to",
+        "missingPiece": "A receiver-side commission policy decision (who earns on an incoming credit, on what basis) plus an agent attribution column on the inbound receipt."
       },
       "limits": {
         "previewStatus": "RESOLVED",
-        "previewRuleIds": ["7de02a7f-a859-46f4-9d69-66d48d49cae2"],
+        "previewRuleIds": ["d96ed540-d9c1-4194-83f0-665b9cf75a64"],
         "runtimeKind": "SYNTHETIC (no live credit execution authority)",
         "runtimeAllowed": true,
-        "runtimeRuleIds": ["7de02a7f-a859-46f4-9d69-66d48d49cae2"],
+        "runtimeRuleIds": ["d96ed540-d9c1-4194-83f0-665b9cf75a64"],
         "rulesMatch": true
       }
     }

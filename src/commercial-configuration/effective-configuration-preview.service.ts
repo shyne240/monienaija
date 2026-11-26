@@ -1112,6 +1112,28 @@ export class EffectiveConfigurationPreviewService {
     // green RESOLVED. If no rules resolve either, the section is MISSING and the same gap is stated.
     if (input.commissionDisposition === 'NONE') {
       const resolved = allocations.length > 0;
+      // PR #27 — INBOUND is a different kind of absence from "rules exist but nothing runs them", and
+      // conflating them would tell an operator to go author something. A bank credit has no eligible
+      // recipient at all: the recipient is the wallet-owning customer, no agent acts, and the inbound
+      // path carries no agent attribution column. So a rule authored against the product could never
+      // name a beneficiary — the recipient is INAPPLICABLE, not merely unwired. Inbound execution is
+      // also deliberately unavailable (A7 execution authority + suspense policy), so no event exists
+      // to attach a decision to even if one were attributable.
+      if (input.productCode === 'BANK_TO_WALLET') {
+        input.explanation.push({
+          code: 'COMMISSION_RECIPIENT_NOT_APPLICABLE',
+          message: `A bank credit has no eligible commission recipient: the recipient is the wallet-owning customer, no agent performs the movement and the inbound receipt carries no agent attribution.${resolved ? ` ${allocations.length} rule(s) match by product and currency but target a recipient this direction cannot produce; they are not applied.` : ''}`,
+          severity: 'BLOCKER',
+        });
+        return {
+          status: 'NOT_APPLICABLE',
+          note: `Commission cannot apply to a bank credit: there is no eligible recipient, and inbound execution is deliberately unavailable so no settlement event exists.${resolved ? ' The matching rules below are therefore not applied.' : ''}`,
+          allocations,
+          ambiguousRuleIds: null,
+          ambiguousPriority: null,
+          accrualPosted: false,
+        };
+      }
       input.explanation.push({
         code: 'COMMISSION_NOT_APPLIED_BY_RUNTIME',
         message: resolved
