@@ -13,6 +13,7 @@ import { NotificationReceiptService } from './notification-receipt.service';
 import { NotificationDelivery } from './notification-delivery.entity';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
+import { NotificationOperationsService } from '../admin/notification-operations.service';
 import { NotificationInboxController } from './notification-inbox.controller';
 import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationProviderConfigController } from './notification-provider-config.controller';
@@ -71,6 +72,13 @@ import { NormalizingSmsNotificationProvider } from './normalizing-sms-notificati
     NotificationInboxService,
     NotificationWorkerService,
     NotificationRegistryService,
+    /*
+     * V1-ADMIN-DASHBOARD-DRILLDOWN (ARENA 6): the delivery-exception dashboard card is a projection
+     * of this service, so it is provided here (where its own collaborators already live) and
+     * exported for the dashboard module. `AdminNotificationController`/`NotificationOperationsController`
+     * keep resolving it through this module — one provider, one source of delivery aggregates.
+     */
+    NotificationOperationsService,
   ],
   exports: [
     NotificationChannelResolverService,
@@ -81,6 +89,7 @@ import { NormalizingSmsNotificationProvider } from './normalizing-sms-notificati
     NotificationRegistryService,
     NotificationSecretEncryptionService,
     NotificationProviderConfigService,
+    NotificationOperationsService,
     NOTIFICATION_PROVIDER_TOKEN,
     NOTIFICATION_EMAIL_PROVIDER_TOKEN,
     NOTIFICATION_EMAIL_TEMPLATE_TOKEN,

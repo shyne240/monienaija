@@ -62,6 +62,15 @@ interface NavContext {
   /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
   reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
   institutionId?: string;
+  // Audit workspace pre-filters (ARENA 6 drill-downs). Search criteria only; see
+  // `AdminNavigationContext` — the audit read surface stays server-restricted.
+  auditEntityId?: string;
+  auditEntityType?: string;
+  correlationId?: string;
+  notificationStatus?: string;
+  notificationFrom?: string;
+  notificationTo?: string;
+  notificationToExclusive?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -628,7 +637,7 @@ export const Layout: React.FC = () => {
       case 'dashboard':
         return (
           <DashboardScreen
-            onNavigate={(view) => handleNav(view)}
+            onNavigate={(view, context) => handleNav(view as View, context)}
             onNavigateToCustomers={() => handleNav('customers')}
             onNavigateToAgents={(opts) =>
               handleNav(
@@ -829,12 +838,42 @@ export const Layout: React.FC = () => {
             onOpenNotifications={
               isVisible('notifications') ? () => handleNav('notifications') : undefined
             }
+            onOpenNotificationOperations={
+              isVisible('notificationOperations')
+                ? () => handleNav('notificationOperations')
+                : undefined
+            }
           />
         );
       case 'auditEvents':
-        return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+        return (
+          <AuditTrailScreen
+            initialCustomerId={navContext.customerId}
+            initialEntityId={navContext.auditEntityId}
+            initialEntityType={navContext.auditEntityType}
+            initialCorrelationId={navContext.correlationId}
+          />
+        );
       case 'notificationOperations':
-        return <NotificationOperationsScreen />;
+        return (
+          <NotificationOperationsScreen
+            initialStatus={navContext.notificationStatus}
+            initialWindow={
+              navContext.notificationFrom || navContext.notificationTo
+                ? {
+                    from: navContext.notificationFrom ?? '',
+                    to: navContext.notificationTo ?? '',
+                    exclusive: navContext.notificationToExclusive === true,
+                  }
+                : undefined
+            }
+            onOpenAuditSearch={
+              isVisible('auditEvents')
+                ? (correlationId: string) => handleNav('auditEvents', { correlationId })
+                : undefined
+            }
+          />
+        );
       case 'workforceDirectory':
         return (
           <WorkforceDirectoryScreen

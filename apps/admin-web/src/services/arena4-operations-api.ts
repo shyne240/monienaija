@@ -11,7 +11,10 @@ import type { ApprovalRecord, ApprovalRecordPage } from '../utils/approval-evalu
  */
 
 export interface NotificationOperationsSummary {
-  window: { hours: number; from: string };
+  /** When the aggregates were computed — a figure without this is undated, not current. */
+  generatedAt?: string;
+  window: { hours: number; from: string; to?: string };
+  filters?: { channel: string | null };
   totals: { deliveries: number; byStatus: Array<{ status: string; count: number }> };
   retryBacklog: {
     pending: number;
@@ -22,6 +25,8 @@ export interface NotificationOperationsSummary {
     nextScheduledRetryAt: string | null;
   };
   failureDiagnostics: Array<{ errorCode: string; count: number; lastSeenAt: string | null }>;
+  /** Outbox consumer checkpoints, counted independently of delivery status. */
+  outboxReceipts?: Array<{ status: string; count: number }>;
   provider: {
     projectionScope: 'FULL' | 'MINIMAL';
     channels: Array<{ channel: string; available: boolean; provider?: string }>;
@@ -43,15 +48,83 @@ export interface NotificationDeliveryPage {
   page: number;
   limit: number;
   totalPages: number;
+  /**
+   * The interval the server actually applied, with the bound it used. `toExclusive` is how a drill-down
+   * from the dashboard asks for the card's own half-open window; an ordinary visit keeps the historical
+   * inclusive bound, and this field is what lets the screen say which of the two produced the count.
+   */
+  window?: {
+    from: string | null;
+    to: string | null;
+    upperBound: 'exclusive' | 'inclusive' | 'none';
+    boundary: string;
+  };
+}
+
+/**
+ * The upstream outbox event a delivery is the materialization of, plus the notification consumer's
+ * receipt for it. Three availabilities are kept distinct on purpose: `FOUND` (read), `NOT_FOUND`
+ * (nothing addressable — purged or pre-linkage), `UNAVAILABLE` (could not be read). The last two are
+ * statements about the read, never evidence that the event was healthy.
+ */
+export interface NotificationRelatedEvent {
+  availability: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE';
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  id?: string;
+  eventType?: string;
+  status?: string;
+  attempts?: number;
+  occurredAt?: string | null;
+  publishedAt?: string | null;
+  availableAt?: string | null;
+  eventHasError?: boolean;
+  receipt?: {
+    status: string;
+    reason: string | null;
+    attempts: number;
+    nextAttemptAt: string | null;
+    updatedAt: string | null;
+  } | null;
+}
+
+export interface NotificationProviderReceiptTrace {
+  availability: 'AVAILABLE' | 'NONE_RECORDED' | 'UNAVAILABLE';
+  checkedAt: string;
+  source: string;
+  reason?: string;
+  limit: number;
+  returned: number;
+  items: Array<{
+    id: string;
+    kind: string;
+    verification: 'SIGNED' | 'SHARED_SECRET' | 'UNVERIFIED';
+    providerCode: string | null;
+    occurredAt: string;
+    receivedAt: string;
+  }>;
 }
 
 export interface NotificationDeliveryDetail {
   delivery: Record<string, unknown> & {
     id: string;
-    status: string;
+    eventType: string;
+    eventKey: string;
+    recipientType: string;
+    /** Redacted server-side; the display form is the only form this surface ever receives. */
+    recipientId: string;
     channel: string;
+    status: string;
     attempts: number;
+    correlationId: string | null;
+    causationId: string | null;
     errorCode: string | null;
+    nextAttemptAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+    sentAt: string | null;
+    failedAt: string | null;
   };
   attempts: Array<{
     attemptNumber: number;
@@ -76,6 +149,8 @@ export interface NotificationDeliveryDetail {
     };
   };
   provider: { projectionScope: string; channel: string; available: boolean; provider?: string };
+  relatedEvent: NotificationRelatedEvent;
+  providerReceipts: NotificationProviderReceiptTrace;
 }
 
 export interface WorkforceDirectoryPage {
@@ -274,11 +349,20 @@ export const Arena4OperationsApi = {
     search?: string;
     from?: string;
     to?: string;
+    /** Use `created_at < to` instead of the historical `<=`, to match a half-open aggregate. */
+    toExclusive?: boolean;
     page?: number;
     limit?: number;
   }): Promise<NotificationDeliveryPage> {
+    // The bound flag is a query string, so it is spelled out rather than relying on a boolean coercing.
+    const { toExclusive, ...rest } = filters;
     return ApiClient.get<NotificationDeliveryPage>(
-      `/internal/notifications/deliveries?${queryString({ ...filters, page: filters.page ?? 1, limit: filters.limit ?? 20 })}`,
+      `/internal/notifications/deliveries?${queryString({
+        ...rest,
+        ...(toExclusive ? { toExclusive: 'true' } : {}),
+        page: filters.page ?? 1,
+        limit: filters.limit ?? 20,
+      })}`,
     );
   },
 
@@ -407,6 +491,8 @@ export const Arena4OperationsApi = {
     actor?: string;
     action?: string;
     entityType?: string;
+    entityId?: string;
+    correlationId?: string;
     outcome?: string;
     institutionId?: string;
     from?: string;

@@ -1,0 +1,210 @@
+{
+  "generatedAt": "2026-11-25T12:21:14.882Z",
+  "purpose": "ARENA 6 browser verification: dashboard drill-down, failed-delivery investigation, health source availability, audit trace, restricted-role containment.",
+  "bundle": "/tmp/arena6-dist",
+  "api": {
+    "origin": "http://127.0.0.1:4322/api/v1",
+    "note": "Stubbed at the browser network layer by this script with the synthetic fixtures defined in it; the backend refuses to boot while financial_dependencies_not_ready holds, so no assertion here is about the server."
+  },
+  "browser": "158.0.8127.0",
+  "viewport": "1440x1000",
+  "checks": [
+    {
+      "id": "CARD-SHOWS-MEASURED-EXCEPTIONS",
+      "ok": true,
+      "detail": "Notification Delivery Exceptions Failed, dead and outcome-unknown notifications in the selected period, with sanitized provider error codes. Today Last 7 days Last 30 days Custom range Investigate failures → EXCEPTIONS 3 FAILED + DEAD + UNKNOWN FAILED 2 DEAD LETTERED 1 OUTCOME UNKNOWN 0 DELIVERIES IN WINDOW 12 All statuses AWAITING AUTOMATIC RETRY 2 Next retry 5 Nov 2026, 02:00 PROVIDER_TIMEOUT 2 last seen 4 Nov 2026, 18:00 SMS_OPT_OUT 1 last seen — Read-only surface: manual retry is not part of the approved delivery policy (docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md). Recovery is the worker’s "
+    },
+    {
+      "id": "CARD-STATES-NO-MANUAL-RETRY",
+      "ok": true,
+      "detail": "policy sentence and reference rendered on the card"
+    },
+    {
+      "id": "CARD-OFFERS-NO-RETRY-CONTROL",
+      "ok": true,
+      "detail": "retry buttons on card=0"
+    },
+    {
+      "id": "RESTRICTED-TILE-NAMES-THE-MISSING-FUNCTION",
+      "ok": true,
+      "detail": "🔒 Restricted — your role does not hold the permission required to view this widget. Requires kyc.view."
+    },
+    {
+      "id": "RESTRICTED-TILE-ISSUES-NO-READ",
+      "ok": true,
+      "detail": "requests for the restricted widget=0"
+    },
+    {
+      "id": "DRILLDOWN-OPENS-DELIVERY-WORKSPACE",
+      "ok": true,
+      "detail": "navigated; first delivery read = api/v1/internal/notifications/deliveries?status=FAILED&page=1&limit=20"
+    },
+    {
+      "id": "DRILLDOWN-ARRIVES-with-FAILED-PREFILTER",
+      "ok": true,
+      "detail": "/api/v1/internal/notifications/deliveries?status=FAILED&page=1&limit=20"
+    },
+    {
+      "id": "PREFILTER-IS-VISIBLE-AND-STATED",
+      "ok": true,
+      "detail": "select=\"FAILED\" note=\"Opened with Status = FAILED already applied, from the record you came from. Clear it above to see the whole window — not\""
+    },
+    {
+      "id": "WORKSPACE-STATES-WINDOW-AND-PROVIDENCE",
+      "ok": true,
+      "detail": "Aggregates computed 11/5/2026, 10:05:00 AM · window 24h from 11/4/2026, 10:05:00 AM to 11/5/2026, 10:05:00 AM · these co | Projection: MINIMAL"
+    },
+    {
+      "id": "TRACE-COVERS-EVERY-STORE",
+      "ok": true,
+      "detail": "5 steps: event raised → consumer receipt → delivery outcome → provider receipts → channel availability now"
+    },
+    {
+      "id": "TRACE-SHOWS-UPSTREAM-EVENT-AND-RECEIPT",
+      "ok": true,
+      "detail": "EVENT RAISED Outbox event event-synthetic-9 · transfer.completed · status PUBLISHED · 1 delivery attempt(s) by the publisher occurred 11/5/2026, 9:34:00 AM · published not recorded"
+    },
+    {
+      "id": "TRACE-STATES-UNRECORDED-TIMES",
+      "ok": true,
+      "detail": "a missing timestamp prints as \"not recorded\", never blank"
+    },
+    {
+      "id": "TRACE-SHOWS-PROVIDER-VERIFICATION",
+      "ok": true,
+      "detail": "provider receipt with its verification level and classification code"
+    },
+    {
+      "id": "TRACE-EACH-STEP-SAYS-WHEN-AND-WHERE",
+      "ok": true,
+      "detail": "2 step(s) carry a \"Checked … source …\" line"
+    },
+    {
+      "id": "AUDIT-TRACE-RUNS-THE-CORRELATION-SEARCH",
+      "ok": true,
+      "detail": "read=/api/v1/internal/audit?limit=100&correlationId=corr-synthetic-77 rowsShown=true :: SYSTEM ADMINISTRATION Audit & Security Events Search read-only audit records by entity, type or correlation identifier. Read-only oversight Results are subject to server-side access restrictions and show up to the 100 most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results. SEARCH CRITERIA Find audit events Leave fields empty to search across available"
+    },
+    {
+      "id": "AUDIT-SEARCH-SHOWS-WHAT-RAN",
+      "ok": true,
+      "detail": "field=\"corr-synthetic-77\" request=\"/v1/internal/audit?limit=100&correlationId=corr-synthetic-77\""
+    },
+    {
+      "id": "HEALTH-LISTS-COMPONENT-CHECKS",
+      "ok": true,
+      "detail": "5 rows (database, migrations, reconciliation, outbox, workers); page begins: SYSTEM ADMINISTRATION System Health Read-only operational data. Each panel is requested only when its matching function is granted. Read-only diagnostics Metric"
+    },
+    {
+      "id": "HEALTH-UNREADABLE-SOURCE-IS-UNKNOWN-NOT-OK",
+      "ok": true,
+      "detail": "Worker supervision UNKNOWN UNAVAILABLEno completed tick observed in this process (single-process deployment) No completed tick was observed in this process, so liveness is unknown rather than absent. "
+    },
+    {
+      "id": "HEALTH-CARRIES-PER-SOURCE-TIMES",
+      "ok": true,
+      "detail": "5 component row(s) show their own check time, separate from the report assembly time"
+    },
+    {
+      "id": "HEALTH-VERDICT-IS-PARTIAL-NOT-CLEAR",
+      "ok": true,
+      "detail": "PARTIAL — at least one source could not be read Computed 11/5/2026, 10:06:01 AM · process- || INTEGRITY integrity history could not be read named by operations centre (/internal/operations-centre) · checked 11/5/2026, 10:06:01 AM SUPE"
+    },
+    {
+      "id": "HEALTH-OFFERS-ROUTES-FOR-ITS-FINDINGS",
+      "ok": true,
+      "detail": "Investigate notification deliveries →"
+    },
+    {
+      "id": "RESTRICTED-ROLE-LOSES-THE-OPERATIONS-ROUTES",
+      "ok": true,
+      "detail": "nav counts: notificationOperations=0 systemHealth=0 auditEvents=0"
+    },
+    {
+      "id": "RESTRICTED-ROLE-ISSUES-NO-DATA-READS",
+      "ok": true,
+      "detail": "0 protected read(s) attempted"
+    },
+    {
+      "id": "RESTRICTED-ROLE-SEES-A-LOCK-NOT-AN-EMPTY-CARD",
+      "ok": true,
+      "detail": "🔒 Restricted — your role does not hold the permission required to view this widget. Requires notification.view_deliveries."
+    },
+    {
+      "id": "RESTRICTED-ROLE-IS-GIVEN-NO-DEAD-CONTROLS",
+      "ok": true,
+      "detail": "drill-down controls rendered against a restricted placement=0"
+    },
+    {
+      "id": "NO-PAGE-ERRORS",
+      "ok": true,
+      "detail": "no uncaught errors"
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions?period=7d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/operations/summary?hours=24"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries?status=FAILED&page=1&limit=20"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries/delivery-1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit?limit=100&correlationId=corr-synthetic-77"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/operations-centre"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/operational-metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries?page=1&limit=20"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard"
+    }
+  ],
+  "pageErrors": []
+}
