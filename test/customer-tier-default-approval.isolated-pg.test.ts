@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 
+import { AuthorizationCatalogueRuntimeService } from '../src/authorization-catalogue/authorization-catalogue-runtime.service';
+import { AuthorizationCatalogueSeedService } from '../src/authorization-catalogue/authorization-catalogue-seed.service';
+import { AuthorizationFunction } from '../src/authorization-catalogue/authorization-function.entity';
+import { AuthorizationRoleFunction } from '../src/authorization-catalogue/authorization-role-function.entity';
+import { AuthorizationRole } from '../src/authorization-catalogue/authorization-role.entity';
 import { CommercialRuleGovernanceService } from '../src/authorization/commercial-rule-governance.service';
 import { CUSTOMER_CLASS_TIER_DEFAULTS_ACTION } from '../src/authorization/governed-action.registry';
 import { PrivilegedActionApproval } from '../src/authorization/privileged-action-approval.entity';
@@ -35,12 +40,10 @@ let db: DataSource;
 let tierDefaults: CustomerTierDefaultClassService;
 let approvals: PrivilegedActionApprovalService;
 
-// `CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.initiatingRoles` is ['SUPER_ADMIN','CUSTOMER_SERVICE'] and
-// AuthorizationService applies requiredRoles with all-of semantics, so a proposer must hold BOTH.
-// The approver gate (`PrivilegedActionApprovalService.decide`) uses `.some()`, i.e. either role.
-// No single one of the eleven seeded workforce accounts holds both, so the effective policy is
-// recorded in the checkpoint as an open decision rather than patched here.
-const MAKER_ROLES = ['SUPER_ADMIN', 'CUSTOMER_SERVICE'];
+// `CUSTOMER_CLASS_TIER_DEFAULTS_ACTION` delegates maker/checker eligibility to the
+// `customer.manage_classes` grant (`INITIATE`/`EXECUTE` for makers, `APPROVE`/`EXECUTE` for
+// independent checkers) so any active single seeded role (`CUSTOMER_SERVICE` or `SUPER_ADMIN`) or
+// configurable custom role with the applicable grant can participate without holding both roles.
 const FUNCTIONS = ['customer.manage_classes'];
 
 function principal(principalId: string, overrides: Partial<AuthorizationPrincipal> = {}) {
@@ -50,7 +53,7 @@ function principal(principalId: string, overrides: Partial<AuthorizationPrincipa
     sessionId: randomUUID(),
     assuranceLevel: 'MFA' as const,
     customerAccess: 'NONE' as const,
-    roles: [...MAKER_ROLES],
+    roles: ['CUSTOMER_SERVICE'],
     scopes: ['customer.manage_classes'],
     functions: FUNCTIONS,
     ...overrides,
@@ -78,6 +81,17 @@ beforeAll(async () => {
   const applied = await db.runMigrations({ transaction: 'all' });
   expect(applied.length).toBeGreaterThan(150);
 
+  const catalogueSeed = new AuthorizationCatalogueSeedService(
+    db.getRepository(AuthorizationFunction),
+    db.getRepository(AuthorizationRole),
+    db.getRepository(AuthorizationRoleFunction),
+  );
+  await catalogueSeed.seedIfEmpty();
+  const catalogueRuntime = new AuthorizationCatalogueRuntimeService(
+    db.getRepository(AuthorizationRole),
+    db.getRepository(AuthorizationRoleFunction),
+  );
+
   const audit = new AuditService(db.getRepository(AuditEvent));
   const authorization = new AuthorizationService(db, audit);
   approvals = new PrivilegedActionApprovalService(
@@ -86,6 +100,9 @@ beforeAll(async () => {
     db,
     audit,
     authorization,
+    undefined,
+    undefined,
+    catalogueRuntime,
   );
   const governance = new CommercialRuleGovernanceService(approvals, audit, db);
   tierDefaults = new CustomerTierDefaultClassService(db, audit, approvals, governance);
@@ -166,7 +183,7 @@ describe('tier default class maker/checker approval', () => {
     const premium = await classId('PREMIUM');
     const standard = await classId('STANDARD');
     const business = await classId('BUSINESS');
-    const maker = principal('maker-self');
+    const maker = principal('maker-self', { roles: ['SUPER_ADMIN', 'CUSTOMER_SERVICE'] });
 
     const request = await tierDefaults.propose(maker, {
       tierDefaults: { LEVEL_1: premium, LEVEL_2: premium, LEVEL_3: business },
@@ -179,7 +196,10 @@ describe('tier default class maker/checker approval', () => {
     const selfDecision = await approvals
       .approve({
         // Same principalId, brand-new session, both roles, MFA: still refused.
-        principal: principal('maker-self', { sessionId: randomUUID() }),
+        principal: principal('maker-self', {
+          sessionId: randomUUID(),
+          roles: ['SUPER_ADMIN', 'CUSTOMER_SERVICE'],
+        }),
         approvalId,
         comment: 'self approval attempt',
       })
@@ -194,8 +214,8 @@ describe('tier default class maker/checker approval', () => {
   it('lets an independent checker approve, then applies the approved request to the seeded mapping', async () => {
     const premium = await classId('PREMIUM');
     const business = await classId('BUSINESS');
-    const maker = principal('maker-independent');
-    const checker = principal('checker-independent');
+    const maker = principal('maker-independent', { roles: ['CUSTOMER_SERVICE'] });
+    const checker = principal('checker-independent', { roles: ['SUPER_ADMIN'] });
 
     const request = await tierDefaults.propose(maker, {
       tierDefaults: { LEVEL_1: premium, LEVEL_2: premium, LEVEL_3: business },
@@ -294,6 +314,122 @@ describe('tier default class maker/checker approval', () => {
       classId: business,
       status: 'APPROVED',
       approvalId,
+      approvedBy: 'checker-create',
+      version: 1,
+    });
+  });
+
+  it('supports configurable INITIATE/APPROVE catalogue roles and preserves checker approved_by', async () => {
+    const standard = await classId('STANDARD');
+    const premium = await classId('PREMIUM');
+    const business = await classId('BUSINESS');
+
+    const roleRepo = db.getRepository(AuthorizationRole);
+    const rfRepo = db.getRepository(AuthorizationRoleFunction);
+    const makerRole = await roleRepo.save(
+      roleRepo.create({
+        roleKey: 'CUSTOM_TIER_MAKER',
+        displayName: 'Custom Tier Maker',
+        description: 'Configurable INITIATE role for tier defaults',
+        readOnly: false,
+        administrativeCapability: false,
+        isSystemSeeded: false,
+        isActive: true,
+        definitionVersion: 1,
+        createdBy: 'isolated-pg-test',
+        updatedBy: 'isolated-pg-test',
+      }),
+    );
+    const checkerRole = await roleRepo.save(
+      roleRepo.create({
+        roleKey: 'CUSTOM_TIER_CHECKER',
+        displayName: 'Custom Tier Checker',
+        description: 'Configurable APPROVE role for tier defaults',
+        readOnly: false,
+        administrativeCapability: false,
+        isSystemSeeded: false,
+        isActive: true,
+        definitionVersion: 1,
+        createdBy: 'isolated-pg-test',
+        updatedBy: 'isolated-pg-test',
+      }),
+    );
+    const assignedAt = new Date();
+    await rfRepo.save([
+      rfRepo.create({
+        roleId: makerRole.id,
+        functionCode: 'customer.manage_classes',
+        accessType: 'INITIATE',
+        isActive: true,
+        assignedBy: 'isolated-pg-test',
+        assignedAt,
+      }),
+      rfRepo.create({
+        roleId: checkerRole.id,
+        functionCode: 'customer.manage_classes',
+        accessType: 'APPROVE',
+        isActive: true,
+        assignedBy: 'isolated-pg-test',
+        assignedAt,
+      }),
+    ]);
+
+    const customMaker = principal('custom-maker', { roles: ['CUSTOM_TIER_MAKER'] });
+    const customChecker = principal('custom-checker', { roles: ['CUSTOM_TIER_CHECKER'] });
+
+    // APPROVE-only configurable role cannot propose.
+    await expect(
+      tierDefaults.propose(customChecker, {
+        tierDefaults: { LEVEL_1: standard, LEVEL_2: premium, LEVEL_3: business },
+        reason: 'Checker should not initiate tier defaults',
+      }),
+    ).rejects.toThrow(/FUNCTION_MISSING/);
+
+    // INITIATE-only configurable role proposes.
+    const request = await tierDefaults.propose(customMaker, {
+      tierDefaults: { LEVEL_1: standard, LEVEL_2: premium, LEVEL_3: business },
+      reason: 'Configurable INITIATE maker proposes tier defaults',
+    });
+
+    // INITIATE-only principal (even independent) cannot approve.
+    const otherMaker = principal('custom-maker-2', { roles: ['CUSTOM_TIER_MAKER'] });
+    const makerApproveAttempt = await approvals.approve({
+      principal: otherMaker,
+      approvalId: request.approvalId,
+      comment: 'should be denied',
+    });
+    expect(makerApproveAttempt).toMatchObject({ approved: false, reason: 'FUNCTION_MISSING' });
+
+    // Independent APPROVE-only configurable role approves; privileged executor applies while preserving checker approved_by.
+    const approved = await approvals.approve({
+      principal: customChecker,
+      approvalId: request.approvalId,
+      comment: 'configurable checker approved',
+    });
+    expect(approved.approved).toBe(true);
+
+    const privilegedExecutor = principal('executor-admin', {
+      type: 'PRIVILEGED',
+      roles: ['SUPER_ADMIN'],
+      scopes: ['customer.manage_classes', 'privileged:execute'],
+    });
+    const executed = await tierDefaults.execute(privilegedExecutor, request.approvalId, {
+      tierDefaults: { LEVEL_1: standard, LEVEL_2: premium, LEVEL_3: business },
+      reason: 'Configurable INITIATE maker proposes tier defaults',
+    });
+    expect(executed.approvalId).toBe(request.approvalId);
+
+    const row = await mapping('LEVEL_1');
+    expect(row?.status).toBe('APPROVED');
+    expect(row?.approved_by).toBe('custom-checker');
+    const events = await auditRows('LEVEL_1');
+    const latest = events[events.length - 1];
+    expect(latest?.entity_id).toBe(tierDefaultAuditEntityId('LEVEL_1'));
+    expect(latest?.new_values).toMatchObject({
+      tier: 'LEVEL_1',
+      status: 'APPROVED',
+      approvalId: request.approvalId,
+      approvedBy: 'custom-checker',
     });
   });
 });

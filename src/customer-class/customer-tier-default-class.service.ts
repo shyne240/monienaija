@@ -139,6 +139,9 @@ export class CustomerTierDefaultClassService {
     }
     const payload = await this.normalizePayload(command.tierDefaults, command.reason);
     const definition = CUSTOMER_CLASS_TIER_DEFAULTS_ACTION;
+    if (definition.mfaRequired && principal.assuranceLevel !== 'MFA') {
+      throw new ForbiddenException('Tier default approval execution denied: MFA_REQUIRED');
+    }
     const approval = await this.approvals.getApproval(approvalId);
     if (
       !approval ||
@@ -180,9 +183,19 @@ export class CustomerTierDefaultClassService {
         throw governedChangeConsumptionError(decision.reason, decision.approval?.status);
       }
 
+      const requesterPrincipalId =
+        decision.approval?.requesterPrincipalId ?? approval.requesterPrincipalId;
+      const approvedBy = decision.approval?.approvedBy ?? approval.approvedBy;
+      if (!approvedBy || approvedBy === requesterPrincipalId) {
+        throw new ForbiddenException(
+          'Independent checker approval is required to execute tier default class configuration',
+        );
+      }
+
       const mappings = payload.tierDefaults as Record<CustomerKycTier, string>;
       const actor = principal.principalId;
       const now = new Date();
+      const approvedAt = decision.approval?.approvedAt ?? approval.approvedAt ?? now;
       await this.lockMappings(manager);
       const saved: TierDefaultClassView[] = [];
       for (const tier of CUSTOMER_KYC_TIERS) {
@@ -203,16 +216,32 @@ export class CustomerTierDefaultClassService {
             `INSERT INTO customer_tier_default_classes
               (tier, class_id, status, approved_at, approved_by, approval_id, reason, created_by, updated_by, version)
              VALUES ($1,$2,'APPROVED',$3,$4,$5,$6,$7,$7,1)`,
-            [tier, classId, now, actor, approvalId, payload.reason, actor],
+            [tier, classId, approvedAt, approvedBy, approvalId, payload.reason, actor],
           );
+          await this.auditService.record(manager, {
+            entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
+            entityId: tierDefaultAuditEntityId(tier),
+            action: 'CREATED',
+            actor,
+            newValues: {
+              tier,
+              classId,
+              status: 'APPROVED',
+              approvalId,
+              approvedBy,
+              reason: payload.reason as string,
+              version: 1,
+            },
+          });
         } else {
           const prev = existing[0] as Record<string, unknown>;
+          const nextVersion = Number(prev.version ?? 1) + 1;
           await manager.query(
             `UPDATE customer_tier_default_classes
                 SET class_id=$2, status='APPROVED', approved_at=$3, approved_by=$4, approval_id=$5,
                     reason=$6, updated_by=$7, version=version+1, updated_at=NOW()
               WHERE tier=$1`,
-            [tier, classId, now, actor, approvalId, payload.reason, actor],
+            [tier, classId, approvedAt, approvedBy, approvalId, payload.reason, actor],
           );
           await this.auditService.record(manager, {
             entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
@@ -231,17 +260,10 @@ export class CustomerTierDefaultClassService {
               classId,
               status: 'APPROVED',
               approvalId,
-              version: Number(prev.version ?? 1) + 1,
+              approvedBy,
+              reason: payload.reason as string,
+              version: nextVersion,
             },
-          });
-        }
-        if (existing.length === 0) {
-          await this.auditService.record(manager, {
-            entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
-            entityId: tierDefaultAuditEntityId(tier),
-            action: 'CREATED',
-            actor,
-            newValues: { tier, classId, status: 'APPROVED', approvalId },
           });
         }
         saved.push({
@@ -250,8 +272,8 @@ export class CustomerTierDefaultClassService {
           classCode: classRow.code,
           className: classRow.name,
           status: 'APPROVED',
-          approvedAt: now,
-          approvedBy: actor,
+          approvedAt,
+          approvedBy,
           approvalId,
           reason: payload.reason as string,
           globalDefaultClassCodeAtMigration:

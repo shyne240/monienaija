@@ -209,6 +209,7 @@ export class RuntimeAccessGuard implements CanActivate {
         !!declaredPolicy &&
         ((declaredPolicy.requiredFunctions?.length ?? 0) > 0 ||
           (declaredPolicy.requiredRoles?.length ?? 0) > 0 ||
+          (declaredPolicy.anyOfRoles?.length ?? 0) > 0 ||
           (declaredPolicy.requiredScopes?.length ?? 0) > 0);
       if (declaresCatalogueGate && declaredPolicy) {
         const gateDecision = this.authorizationService.evaluate(
@@ -222,6 +223,7 @@ export class RuntimeAccessGuard implements CanActivate {
             ...(declaredPolicy.requiredRoles
               ? { requiredRoles: declaredPolicy.requiredRoles }
               : {}),
+            ...(declaredPolicy.anyOfRoles ? { anyOfRoles: declaredPolicy.anyOfRoles } : {}),
             ...(declaredPolicy.requiredFunctions
               ? { requiredFunctions: declaredPolicy.requiredFunctions }
               : {}),
