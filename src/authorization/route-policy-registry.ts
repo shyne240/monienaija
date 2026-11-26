@@ -332,6 +332,104 @@ const FINANCE_OPERATIONS_ROUTE_POLICIES: ReadonlyArray<{
 ];
 
 /**
+ * Finance → Reconciliation, "Platform Funds vs. Bank Balance".
+ *
+ * Dedicated table (not the shared FINANCE_OPERATIONS list) because the workflow is write-capable
+ * in the record sense — a maker submits and a checker signs off — so each route declares its own
+ * resource type. The catalogue gate is `ledger.view`, the same capability FINANCE_PREPARER /
+ * FINANCE_CONTROLLER / SUPER_ADMIN / FINANCE_AUDITOR / TREASURY hold; there is deliberately no
+ * invented function. Role gates (FINANCE_PREPARER records/submits, FINANCE_CONTROLLER reviews)
+ * are enforced in the controller/service on top of this policy, and institution scope is resolved
+ * from workforce_institution_assignments on every request.
+ */
+const PLATFORM_FUNDS_ROUTE_POLICIES: readonly Readonly<{
+  method: string;
+  pattern: RegExp;
+  resourceType: string;
+  requiredFunctions: readonly string[];
+}>[] = [
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/scope$/,
+    resourceType: 'finance-platform-funds-scope',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/settlement-accounts$/,
+    resourceType: 'finance-platform-funds-settlement-accounts',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons$/,
+    resourceType: 'finance-platform-funds-comparisons',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/preview$/,
+    resourceType: 'finance-platform-funds-preview',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons$/,
+    resourceType: 'finance-platform-funds-comparison-create',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
+    resourceType: 'finance-platform-funds-comparison',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'PATCH',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}$/i,
+    resourceType: 'finance-platform-funds-comparison-update',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items$/i,
+    resourceType: 'finance-platform-funds-timing-item-add',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'DELETE',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/timing-items\/[0-9a-f-]{36}$/i,
+    resourceType: 'finance-platform-funds-timing-item-remove',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/submit$/i,
+    resourceType: 'finance-platform-funds-comparison-submit',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/review$/i,
+    resourceType: 'finance-platform-funds-comparison-review',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/platform-funds\/comparisons\/[0-9a-f-]{36}\/snapshots$/i,
+    resourceType: 'finance-platform-funds-snapshots',
+    requiredFunctions: ['ledger.view'],
+  },
+];
+
+/**
  * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
  *
  * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
@@ -537,6 +635,31 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: [...financeOperations.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Platform Funds vs. Bank Balance. Registered explicitly like the Finance Operations table:
+    // function gate `ledger.view`, denials audited as denied workforce functions. Every pattern is
+    // listed — none falls through to the generic `/internal/` branch, which authenticates without
+    // constraining what the caller may do.
+    const platformFunds = PLATFORM_FUNDS_ROUTE_POLICIES.find(
+      (route) => route.method === lookedUpMethod && route.pattern.test(path),
+    );
+    if (platformFunds) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: platformFunds.resourceType,
+        policy: {
+          resourceType: platformFunds.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [...platformFunds.requiredFunctions],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

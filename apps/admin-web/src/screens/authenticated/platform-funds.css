@@ -1,0 +1,209 @@
+/* Finance → Reconciliation · Platform Funds vs. Bank Balance */
+.mn-platform-funds__notice {
+  border: 1px solid var(--mn-border, #d8e2dd);
+  background: var(--mn-surface-muted, #f4f7f5);
+  color: var(--mn-text-secondary, #52655f);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+.mn-platform-funds__layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+@media (max-width: 1100px) {
+  .mn-platform-funds__layout {
+    grid-template-columns: 1fr;
+  }
+}
+.mn-platform-funds__panel {
+  border: 1px solid var(--mn-border, #d8e2dd);
+  border-radius: 12px;
+  background: var(--mn-surface, #ffffff);
+  padding: 16px;
+}
+.mn-platform-funds__list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--mn-border, #d8e2dd);
+  border-radius: 10px;
+  background: var(--mn-surface, #ffffff);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.mn-platform-funds__list-item:hover {
+  border-color: var(--mn-accent, #0b6e4f);
+}
+.mn-platform-funds__list-item[data-selected='true'] {
+  border-color: var(--mn-accent, #0b6e4f);
+  box-shadow: 0 0 0 1px var(--mn-accent, #0b6e4f);
+}
+.mn-platform-funds__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mn-platform-funds__chip--draft { background: #eef2f0; color: #3d544b; }
+.mn-platform-funds__chip--submitted { background: #fff4d6; color: #8c5600; }
+.mn-platform-funds__chip--approved { background: #e3f4ea; color: #0b6e4f; }
+.mn-platform-funds__chip--rejected { background: #fde3e1; color: #b3261e; }
+.mn-platform-funds__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.mn-platform-funds__tile {
+  border: 1px solid var(--mn-border, #d8e2dd);
+  border-radius: 10px;
+  padding: 12px;
+}
+.mn-platform-funds__tile--alert {
+  border-color: #b3261e;
+  background: #fdf0ef;
+}
+.mn-platform-funds__tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mn-text-secondary, #52655f);
+}
+.mn-platform-funds__tile-value {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.mn-platform-funds__tile-sub {
+  font-size: 11px;
+  color: var(--mn-text-secondary, #52655f);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+.mn-platform-funds__blockers {
+  border: 1px solid #b3261e;
+  background: #fdf0ef;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+.mn-platform-funds__blocker-item {
+  border-top: 1px solid rgba(179, 38, 30, 0.25);
+  padding: 8px 0;
+}
+.mn-platform-funds__blocker-item:first-of-type {
+  border-top: none;
+  padding-top: 4px;
+}
+.mn-platform-funds__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mn-platform-funds__table th,
+.mn-platform-funds__table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--mn-border, #d8e2dd);
+}
+.mn-platform-funds__table td.num,
+.mn-platform-funds__table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mn-platform-funds__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+.mn-platform-funds__form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.mn-platform-funds__form-row label {
+  font-size: 12px;
+  font-weight: 600;
+}
+.mn-platform-funds__form-row small {
+  color: var(--mn-text-secondary, #52655f);
+  font-size: 11px;
+}
+.mn-platform-funds__input,
+.mn-platform-funds__select,
+.mn-platform-funds__textarea {
+  border: 1px solid var(--mn-border, #d8e2dd);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--mn-surface, #ffffff);
+  color: inherit;
+}
+.mn-platform-funds__btn {
+  border: 1px solid var(--mn-accent, #0b6e4f);
+  background: var(--mn-accent, #0b6e4f);
+  color: #fff;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mn-platform-funds__btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mn-platform-funds__btn--secondary {
+  background: transparent;
+  color: var(--mn-accent, #0b6e4f);
+}
+.mn-platform-funds__btn--danger {
+  border-color: #b3261e;
+  background: #b3261e;
+}
+.mn-platform-funds__error {
+  border: 1px solid #b3261e;
+  background: #fdf0ef;
+  color: #b3261e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.mn-platform-funds__success {
+  border: 1px solid #0b6e4f;
+  background: #e3f4ea;
+  color: #0b6e4f;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.mn-platform-funds__decision {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.mn-platform-funds__decision--approved {
+  border: 1px solid #0b6e4f;
+  background: #e3f4ea;
+}
+.mn-platform-funds__decision--rejected {
+  border: 1px solid #b3261e;
+  background: #fdf0ef;
+}

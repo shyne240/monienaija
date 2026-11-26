@@ -13,6 +13,7 @@ import { CustomerClassesScreen } from './CustomerClassesScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
+import { PlatformFundsScreen } from './PlatformFundsScreen';
 import { BankingOperationsScreen } from './BankingOperationsScreen';
 import { AgentNetworkScreen } from './AgentNetworkScreen';
 import { AgentClassesScreen } from './AgentClassesScreen';
@@ -411,6 +412,11 @@ export const Layout: React.FC = () => {
           visible: isVisible('reconciliation'),
         },
         {
+          key: 'platformFunds' as View,
+          label: 'Platform funds vs. bank',
+          visible: isVisible('platformFunds'),
+        },
+        {
           key: 'bankingOperations' as View,
           label: 'Banking operations',
           visible: isVisible('bankingOperations'),
@@ -747,6 +753,8 @@ export const Layout: React.FC = () => {
             onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
           />
         );
+      case 'platformFunds':
+        return <PlatformFundsScreen />;
       case 'bankingOperations':
         return (
           <BankingOperationsScreen
