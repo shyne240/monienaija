@@ -1,0 +1,10 @@
+{"level":30,"time":1795627855421,"pid":8040,"hostname":"e2b.local","req":{"id":"req-52","method":"GET","url":"/api/v1/internal/finance-operations/ledger/journals/1e114982-4e01-4a28-a795-0dd8cbe2d524","headers":{"host":"127.0.0.1:3099","connection":"close","sec-ch-ua-platform":"\"Linux\"","authorization":"[REDACTED]","user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.0 Safari/537.36","sec-ch-ua":"\"HeadlessChrome\";v=\"153\", \"Not_A Brand\";v=\"8\", \"Chromium\";v=\"153\"","sec-ch-ua-mobile":"?0","accept":"*/*","sec-fetch-site":"same-origin","sec-fetch-mode":"cors","sec-fetch-dest":"empty","referer":"http://127.0.0.1:5173/","accept-encoding":"gzip, deflate, br, zstd"},"remoteAddress":"127.0.0.1","remotePort":44202},"requestId":"req-52","correlationId":"req-52","traceId":"3f6822d3-c43d-445c-a06a-bd912f74cd13","requestId":"req-52","correlationId":"req-52","traceId":"d24ef3cc-260f-4746-a758-835144f09bcf","res":{"statusCode":null},"responseTime":26,"msg":"request completed"}
+PASS test/finance25-history-roundtrip.integration.spec.ts (34.608 s)
+  PR23 + PR25 real browser integration diagnostic
+    ✓ records actual round-trip capability and scope/permission denials without mocking HTTP (25161 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        34.682 s, estimated 38 s
+Ran all test suites within paths "test/finance25-history-roundtrip.integration.spec.ts".

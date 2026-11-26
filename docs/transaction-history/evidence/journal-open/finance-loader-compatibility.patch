@@ -1,0 +1,15 @@
+--- a/apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
++++ b/apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx
+@@ -447,11 +447,9 @@
+     setReversalError('');
+   };
+ 
+-  const autoOpened = useRef(false);
+   useEffect(() => {
+-    if (autoOpened.current || !canViewLedger) return;
++    if (!canViewLedger) return;
+     if (!initialJournalId) return;
+-    autoOpened.current = true;
+     setSearchJournalId(initialJournalId);
+     void loadJournal(initialJournalId);
+     // eslint-disable-next-line react-hooks/exhaustive-deps

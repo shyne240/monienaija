@@ -69,9 +69,10 @@ describe('migration inventory', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
     // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
     // dual-lane (customer/agent) A6 financial authorization + external-ops, Arena 1 appended
-    // 0805 (customer classes), and this branch appended 0810-0812 (tier-default mappings,
-    // unlimited limits, configuration-review restriction). The head is pinned exactly — a
-    // head-only allowance would let a skipped earlier identity pass.
+    // 0805 (customer classes), followed by 0806–0807 (durable inbound identity and customer
+    // funding scope), and 0810-0812 (tier-default mappings, unlimited limits, configuration-review
+    // restriction). The head is pinned exactly — a head-only allowance would let a skipped earlier
+    // identity pass.
     expect(migrations.at(-1)).toMatchObject({
       timestamp: '1785753600812',
       name: 'CustomerRestrictionConfigurationReview1785753600812',
@@ -85,6 +86,14 @@ describe('migration inventory', () => {
       name: 'CustomerTierDefaultClassMappings1785753600810',
     });
     expect(migrations.at(-4)).toMatchObject({
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
+    });
+    expect(migrations.at(-5)).toMatchObject({
+      timestamp: '1785753600806',
+      name: 'DurableInboundIdentity1785753600806',
+    });
+    expect(migrations.at(-6)).toMatchObject({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
     });
@@ -149,7 +158,7 @@ describe('migration inventory', () => {
     // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
     // agent verified-phone proof, typed beneficiary ownership), Arena 5 appended 0803–0804
     // (dual-lane financial authorization + external-operations generalisation), Arena 1
-    // appended 0805 (customer classes), and this branch appended 0810-0812 (tier-default
+    // appended 0805 (customer classes), followed by 0806–0807 and 0810-0812 (tier-default
     // mappings, unlimited limits, configuration-review restriction). Each identity is published
     // and is never renumbered.
     const appended = [
@@ -159,6 +168,8 @@ describe('migration inventory', () => {
       ['1785753600803', 'GeneralizeFinancialAuthorizationsForAgents1785753600803'],
       ['1785753600804', 'GeneralizeExternalOperationsForAgents1785753600804'],
       ['1785753600805', 'CreateCustomerClasses1785753600805'],
+      ['1785753600806', 'DurableInboundIdentity1785753600806'],
+      ['1785753600807', 'CaptureCustomerFundingScope1785753600807'],
       ['1785753600810', 'CustomerTierDefaultClassMappings1785753600810'],
       ['1785753600811', 'LimitRuleUnlimited1785753600811'],
       ['1785753600812', 'CustomerRestrictionConfigurationReview1785753600812'],
@@ -174,13 +185,13 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 172 migration identities', () => {
-    // The consolidated inventory is the union of the two frozen branches plus this branch's
-    // additive migrations: 152 common identities (151 byte-identical plus one formatted 3D copy),
+  it('contains exactly 174 migration identities', () => {
+    // The consolidated inventory is the union of the two frozen branches plus additive
+    // migrations: 152 common identities (151 byte-identical plus one formatted 3D copy),
     // nine appended by Arena 3D, three by Arena 2C, two by Arena 5 (agent financial
     // authorization + external-ops), additive fee-targeting (0506), Prembly credential-governance
-    // (0507), customer-class (0805), and tier-default/unlimited-limit/configuration-review
-    // migrations (0810-0812). Any additional or missing file fails this assertion.
+    // (0507), customer-class (0805), durable inbound identity + funding scope (0806-0807), and
+    // tier-default/unlimited-limit/configuration-review migrations (0810-0812).
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
@@ -197,6 +208,16 @@ describe('migration inventory', () => {
       file: '1785753600805-CreateCustomerClasses.ts',
     });
     expect(migrations).toContainEqual({
+      timestamp: '1785753600806',
+      name: 'DurableInboundIdentity1785753600806',
+      file: '1785753600806-DurableInboundIdentity.ts',
+    });
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
+      file: '1785753600807-CaptureCustomerFundingScope.ts',
+    });
+    expect(migrations).toContainEqual({
       timestamp: '1785753600810',
       name: 'CustomerTierDefaultClassMappings1785753600810',
       file: '1785753600810-CustomerTierDefaultClassMappings.ts',
@@ -211,7 +232,7 @@ describe('migration inventory', () => {
       name: 'CustomerRestrictionConfigurationReview1785753600812',
       file: '1785753600812-CustomerRestrictionConfigurationReview.ts',
     });
-    expect(migrations.length).toBe(172);
+    expect(migrations.length).toBe(174);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

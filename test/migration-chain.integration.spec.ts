@@ -403,6 +403,8 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'GeneralizeFinancialAuthorizationsForAgents1785753600803',
         'GeneralizeExternalOperationsForAgents1785753600804',
         'CreateCustomerClasses1785753600805',
+        'DurableInboundIdentity1785753600806',
+        'CaptureCustomerFundingScope1785753600807',
         'CustomerTierDefaultClassMappings1785753600810',
         'LimitRuleUnlimited1785753600811',
         'CustomerRestrictionConfigurationReview1785753600812',

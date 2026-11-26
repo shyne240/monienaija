@@ -447,11 +447,9 @@ const LedgerWorkspace: React.FC<{
     setReversalError('');
   };
 
-  const autoOpened = useRef(false);
   useEffect(() => {
-    if (autoOpened.current || !canViewLedger) return;
+    if (!canViewLedger) return;
     if (!initialJournalId) return;
-    autoOpened.current = true;
     setSearchJournalId(initialJournalId);
     void loadJournal(initialJournalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps

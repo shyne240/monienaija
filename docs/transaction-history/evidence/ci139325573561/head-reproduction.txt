@@ -1,0 +1,37 @@
+FAIL test/v1-agent-cash-to-cash-operations.integration.spec.ts (7.566 s)
+  V1 Admin Cash-to-Cash operations HTTP/PostgreSQL
+    ✕ serves real filtered PostgreSQL transfer rows over the HTTP route with masked PII (46 ms)
+    ✓ rejects missing transaction.view over HTTP before querying the database (6 ms)
+    ✓ validates malformed filters over HTTP (4 ms)
+
+  ● V1 Admin Cash-to-Cash operations HTTP/PostgreSQL › serves real filtered PostgreSQL transfer rows over the HTTP route with masked PII
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+        "limit": 10,
+        "page": 1,
+    -   "total": 1,
+    -   "totalPages": 1,
+    +   "total": 0,
+    +   "totalPages": 0,
+      }
+
+      141 |       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+      142 |     );
+    > 143 |     expect(response.body).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+          |                           ^
+      144 |     expect((response.body as { data: unknown[] }).data[0]).toMatchObject({
+      145 |       id: transferId,
+      146 |       agentId,
+
+      at Object.<anonymous> (test/v1-agent-cash-to-cash-operations.integration.spec.ts:143:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 2 passed, 3 total
+Snapshots:   0 total
+Time:        7.638 s
+Ran all test suites matching test/v1-agent-cash-to-cash-operations.integration.spec.ts.

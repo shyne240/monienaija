@@ -1,7 +1,15 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
+import * as request from 'supertest';
+import { writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import type { Browser, Page } from 'playwright';
+import { BankingInboundService } from '../src/banking/banking-inbound.service';
+import { BankingProviderRegistry, capabilitiesOf } from '../src/banking/banking-provider.registry';
+import type { BankingProvider } from '../src/banking/banking-provider.types';
 
 import { DataSource } from 'typeorm';
 
@@ -37,6 +45,7 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
   let fixture: GovernedFinancialFixture;
   let service: AgentFloatFundingService;
   let policyAuthority: PolicyAgentFloatFundingAuthority;
+  let identityBrowser: Browser | undefined;
 
   beforeAll(async () => {
     db = await createIntegrationDataSource('a3dfloat');
@@ -60,6 +69,7 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
   }, 300_000);
 
   afterAll(async () => {
+    await identityBrowser?.close();
     await app?.close();
     /*
      * `app.close()` already tears down the TypeORM DataSource, because this suite overrides the
@@ -206,6 +216,272 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
       ...overrides,
     };
   }
+
+  it('keeps the original Bank to Wallet URL through verification and float credit with real workforce sessions', async () => {
+    const f = await fixtureFor();
+    const foreignFixture = new GovernedFinancialFixture({
+      app,
+      dataSource: db,
+      label: 'identity-foreign',
+    });
+    const foreign = await foreignFixture.createInstitution();
+    const foreignOperator = (await foreignFixture.workforce()).operator;
+    const seed = require('../scripts/local-dev-seed-11-roles.js');
+    const oldConfirm = process.env.LOCAL_DEV_SEED_CONFIRM;
+    process.env.LOCAL_DEV_SEED_CONFIRM = 'disposable-local-database';
+    try {
+      await seed.seedLocalRoles(db, app.get('A2_WORKFORCE_CONFIG'), app.get(AuditService));
+    } finally {
+      if (oldConfirm === undefined) delete process.env.LOCAL_DEV_SEED_CONFIRM;
+      else process.env.LOCAL_DEV_SEED_CONFIRM = oldConfirm;
+    }
+    const hashes = await db.query(
+      'SELECT id,password_hash FROM local_admin_credentials ORDER BY id',
+    );
+    expect(hashes).toHaveLength(11);
+    const sessions: Record<string, { accessToken: string; principal: { principalId: string } }> =
+      {};
+    for (const role of seed.ROLES) {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/internal/a2/workforce/local-admin-sessions')
+        .send({ email: seed.emailFor(role), password: seed.passwordFor(role) })
+        .expect(201);
+      sessions[role] = response.body;
+    }
+    const ownSession = sessions.OPERATIONS!;
+    const foreignSession = {
+      accessToken: foreignOperator.token,
+      principal: { principalId: foreignOperator.principalId },
+    };
+    await fixture.grantWorkforceScope(f.institutionId, ownSession.principal.principalId);
+    const registry = new BankingProviderRegistry();
+    registry.register({
+      descriptor: {
+        key: 'MONNIFY',
+        displayName: 'Controlled sandbox verifier',
+        environment: 'sandbox',
+        capabilities: capabilitiesOf({ INBOUND_PAYMENT_VERIFICATION: true }),
+        descriptors: [],
+      },
+      verifyInboundPayment: (reference: string) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            outcome: 'VERIFIED',
+            providerTransactionReference: reference,
+            currency: 'NGN',
+            grossAmountMinor: '250000',
+            correlationId: 'identity-test',
+          },
+        }),
+    } as BankingProvider);
+    const intake = new BankingInboundService(db, registry);
+    const cmd = command(f);
+    const bankCommand = {
+      institutionId: f.institutionId,
+      providerKey: 'MONNIFY',
+      environment: 'sandbox' as const,
+      providerTransactionReference: cmd.providerReference,
+      receivingAccountNumber: f.accountNumber,
+      currency: 'NGN',
+      grossAmountMinor: '250000',
+      providerFeeMinor: '0',
+      creditedAmountMinor: '250000',
+    };
+    const payment = await intake.record(bankCommand);
+    const hash = '#transaction-history/BANK_TO_WALLET/' + payment.id;
+    const path = '/api/v1/internal/admin/transaction-history/BANK_TO_WALLET/' + payment.id;
+    const read = (url: string, session = ownSession) =>
+      request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer ' + session.accessToken);
+    const before = (await read(path).expect(200)).body;
+    expect(before).toMatchObject({ id: payment.id, type: 'BANK_TO_WALLET', status: 'UNVERIFIED' });
+    await read(path, foreignSession).expect(404);
+    const savedBrowserUrl = 'http://127.0.0.1:5173/' + hash;
+    let identityPage: Page | undefined;
+    if (process.env.HISTORY_IDENTITY_BROWSER === 'yes') {
+      await app.listen(3099, '0.0.0.0');
+      const binary = JSON.parse(
+        spawnSync(
+          process.execPath,
+          [
+            '-e',
+            "const c=require('@sparticuz/chromium').default;c.executablePath().then(path=>console.log(JSON.stringify({path,args:c.args})))",
+          ],
+          { encoding: 'utf8' },
+        ).stdout,
+      );
+      const { chromium } = require('playwright');
+      identityBrowser = await chromium.launch({
+        executablePath: binary.path,
+        args: binary.args,
+        headless: true,
+      });
+      identityPage = await identityBrowser!.newPage({ viewport: { width: 1512, height: 982 } });
+      await identityPage.goto('http://127.0.0.1:5173');
+      await identityPage.getByPlaceholder('Workforce email').fill(seed.emailFor('OPERATIONS'));
+      await identityPage.getByPlaceholder('••••••••••••').fill(seed.passwordFor('OPERATIONS'));
+      await identityPage.getByRole('button', { name: 'Sign in', exact: false }).click();
+      await identityPage.getByTestId('section-money').waitFor();
+      await identityPage.goto(savedBrowserUrl);
+      await identityPage.getByRole('dialog').getByText('UNVERIFIED', { exact: true }).waitFor();
+      expect(identityPage.url()).toBe(savedBrowserUrl);
+      await identityPage.screenshot({
+        path: 'docs/transaction-history/evidence/inbound-identity-before.png',
+        fullPage: true,
+      });
+    }
+    expect((await intake.verify(payment.id, 'identity-test')).state).toBe('VERIFIED');
+    expect((await read(path).expect(200)).body.status).toBe('VERIFIED');
+    const credited = await policyBackedService().fundFromVerifiedInbound(cmd);
+    expect(credited.status).toBe('CREDITED');
+    const after = (await read(path).expect(200)).body;
+    expect(after).toMatchObject({
+      id: payment.id,
+      type: 'BANK_TO_WALLET',
+      status: 'CREDITED',
+      institutionId: f.institutionId,
+      investigation: { floatReceiptId: credited.receiptId, postingState: 'FLOAT_CREDITED' },
+    });
+    if (identityPage) {
+      // Full navigation reopens the URL captured before either transition, not a new detail link.
+      await identityPage.goto('about:blank');
+      await identityPage.goto(savedBrowserUrl);
+      await identityPage.getByRole('dialog').getByText('CREDITED', { exact: true }).waitFor();
+      expect(identityPage.url()).toBe(savedBrowserUrl);
+      await identityPage.screenshot({
+        path: 'docs/transaction-history/evidence/inbound-identity-after.png',
+        fullPage: true,
+      });
+      await identityBrowser!.close();
+      identityBrowser = undefined;
+    }
+    const referencePath =
+      '/api/v1/internal/admin/transaction-history?reference=' +
+      encodeURIComponent(cmd.providerReference);
+    const listed = (await read(referencePath).expect(200)).body.items;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: payment.id, type: 'BANK_TO_WALLET', status: 'CREDITED' });
+    const receiptAliasPath =
+      '/api/v1/internal/admin/transaction-history/AGENT_FUNDING/' + credited.receiptId;
+    expect((await read(receiptAliasPath).expect(200)).body).toEqual(after);
+    await read(path, foreignSession).expect(404);
+    await read(receiptAliasPath, foreignSession).expect(404);
+    expect((await read(referencePath, foreignSession).expect(200)).body.items).toEqual([]);
+    expect(await intake.record(bankCommand)).toEqual({ id: payment.id, alreadyRecorded: true });
+    expect((await policyBackedService().fundFromVerifiedInbound(cmd)).status).toBe('REPLAYED');
+    expect((await read(referencePath).expect(200)).body.items).toHaveLength(1);
+    expect(await accountBalance(f.floatAccountId)).toBe(250000n);
+    // Same reference is insufficient: account, environment, amount and institution must also agree.
+    for (const over of [
+      { providerTransactionReference: 'MNFY-MISMATCHED-REFERENCE' },
+      { receivingAccountNumber: '0000000000' },
+      { environment: 'production' as const },
+      { grossAmountMinor: '250001', creditedAmountMinor: '250001' },
+      { institutionId: foreign.id },
+    ]) {
+      const mismatchedCredit = command(f);
+      const mismatchReceipt = await policyBackedService().fundFromVerifiedInbound(mismatchedCredit);
+      const other = await intake.record({
+        ...bankCommand,
+        providerTransactionReference: mismatchedCredit.providerReference,
+        ...over,
+      });
+      // Controlled fixture verifier transition; production environment remains UNKNOWN through service.
+      await intake.verify(other.id, 'identity-mismatch-test');
+      expect(
+        await db.query('SELECT * FROM banking_inbound_float_links WHERE payment_id=$1', [other.id]),
+      ).toEqual([]);
+      await expect(
+        db.query(
+          'INSERT INTO banking_inbound_float_links(payment_id,float_receipt_id) VALUES($1,$2)',
+          [other.id, mismatchReceipt.receiptId],
+        ),
+      ).rejects.toThrow('Inbound identity requires matching');
+    }
+    // Receipt-first ordering: retain the already-saved AGENT_FUNDING URL as an alias when
+    // a later bank intake is verified. No record is hidden before a proven link exists.
+    const lateCmd = command(f);
+    const earlyReceipt = await policyBackedService().fundFromVerifiedInbound(lateCmd);
+    const earlyPath =
+      '/api/v1/internal/admin/transaction-history/AGENT_FUNDING/' + earlyReceipt.receiptId;
+    expect((await read(earlyPath).expect(200)).body.id).toBe(earlyReceipt.receiptId);
+    const lateBank = await intake.record({
+      ...bankCommand,
+      providerTransactionReference: lateCmd.providerReference,
+    });
+    expect(
+      await db.query('SELECT * FROM banking_inbound_float_links WHERE payment_id=$1', [
+        lateBank.id,
+      ]),
+    ).toEqual([]);
+    await intake.verify(lateBank.id, 'identity-late-bank');
+    expect((await read(earlyPath).expect(200)).body).toMatchObject({
+      id: lateBank.id,
+      type: 'BANK_TO_WALLET',
+      status: 'CREDITED',
+    });
+    await read(earlyPath, foreignSession).expect(404);
+    const lateReferencePath =
+      '/api/v1/internal/admin/transaction-history?reference=' +
+      encodeURIComponent(lateCmd.providerReference);
+    expect((await read(lateReferencePath).expect(200)).body.items).toHaveLength(1);
+    expect((await policyBackedService().fundFromVerifiedInbound(lateCmd)).status).toBe('REPLAYED');
+    expect(
+      await db.query('SELECT * FROM banking_inbound_float_links WHERE payment_id=$1', [
+        lateBank.id,
+      ]),
+    ).toHaveLength(1);
+    await expect(
+      db.query('UPDATE banking_inbound_payments SET institution_id=$2 WHERE id=$1', [
+        payment.id,
+        foreign.id,
+      ]),
+    ).rejects.toThrow('Inbound business identity is immutable');
+    await expect(
+      db.query('DELETE FROM banking_inbound_float_links WHERE payment_id=$1', [payment.id]),
+    ).rejects.toThrow();
+    expect(
+      await db.query(`SELECT
+      has_table_privilege('monienaija_runtime','banking_inbound_float_links','UPDATE') AS update,
+      has_table_privilege('monienaija_runtime','banking_inbound_float_links','DELETE') AS delete,
+      has_table_privilege('monienaija_runtime','banking_inbound_float_links','TRUNCATE') AS truncate`),
+    ).toEqual([{ update: false, delete: false, truncate: false }]);
+    expect(
+      await db.query('SELECT id,password_hash FROM local_admin_credentials ORDER BY id'),
+    ).toEqual(hashes);
+    writeFileSync(
+      'docs/transaction-history/evidence/inbound-identity-results.json',
+      JSON.stringify(
+        {
+          result: 'PASS',
+          session: 'real local-admin login; all 11 passwords authenticated, hashes unchanged',
+          verifier: 'controlled sandbox provider boundary; real BankingInboundService verification',
+          credit:
+            'real AgentFloatFundingService with controlled sandbox policy authority; balanced posted ledger',
+          savedHash: hash,
+          savedApiPath: path,
+          before,
+          after,
+          listed,
+          checks: [
+            'original URL survives UNVERIFIED → VERIFIED → CREDITED',
+            'one business row across all types',
+            'legacy AGENT_FUNDING receipt URL aliases canonical payment (including receipt-first arrival)',
+            'another institution list/detail/alias denied',
+            'bank replay and float replay produce one credit',
+            'reference/account/environment/amount/institution mismatch refused',
+            'scope and persisted link immutable',
+          ],
+          savedBrowserUrl,
+          browser: process.env.HISTORY_IDENTITY_BROWSER === 'yes',
+        },
+        null,
+        2,
+      ),
+    );
+  });
 
   it('credits float with a balanced journal and an immutable receipt', async () => {
     const f = await fixtureFor();

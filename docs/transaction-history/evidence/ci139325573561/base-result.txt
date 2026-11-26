@@ -1,0 +1,11 @@
+PASS test/v1-agent-cash-to-cash-operations.integration.spec.ts (11.115 s)
+  V1 Admin Cash-to-Cash operations HTTP/PostgreSQL
+    ✓ serves real filtered PostgreSQL transfer rows over the HTTP route with masked PII (59 ms)
+    ✓ rejects missing transaction.view over HTTP before querying the database (8 ms)
+    ✓ validates malformed filters over HTTP (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        11.198 s
+Ran all test suites within paths "test/v1-agent-cash-to-cash-operations.integration.spec.ts".

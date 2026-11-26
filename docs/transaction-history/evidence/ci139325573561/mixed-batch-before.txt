@@ -1,0 +1,20 @@
+
+=== PG integration run id: missingrepro (database namespace mn_it_*_missingrepro_*) ===
+
+=== PG integration batch 1/1 (1 files) starting ===
+ts-jest[ts-compiler] (WARN) Got a `.js` file to compile while `allowJs` option is not set to `true` (file: /home/user/monienaija/scripts/local-dev-seed-11-roles.js). To fix this:
+  - if you want TypeScript to process JS files, set `allowJs` to `true` in your TypeScript config (usually tsconfig.json)
+  - if you do not want TypeScript to process your `.js` files, in your Jest config change the `transform` key which value is `ts-jest` so that it does not match `.js` files anymore
+Test Suites: 1 skipped, 0 of 1 total
+Tests:       1 skipped, 1 total
+Snapshots:   0 total
+Time:        23.022 s
+Ran all test suites matching /home/user/monienaija/test/transaction-history-mixed-volume.integration.spec.ts.
+
+=== PG integration batch 1/1 finished (exit 0, signal none) ===
+
+=== PG integration suites: 0 passed, 0 failed, 1 without a result of 1 discovered ===
+
+PG_TEST_SUMMARY {"runId":"missingrepro","nodeEnv":"test","filesDiscovered":1,"batches":1,"batchSize":1,"concurrency":1,"maxOldSpaceMb":2560,"durationMs":33313,"passingBatches":1,"failingBatches":0,"memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"failingFiles":[],"suitesReported":0,"suitesPassed":0,"suitesFailed":0,"filesWithoutResult":["test/transaction-history-mixed-volume.integration.spec.ts"],"testTallies":["1 skipped, 1 total"],"failureCategories":{},"failures":[]}
+
+=== PG integration suite: 1 batch(es), 1 files, concurrency=1 — all passed ===

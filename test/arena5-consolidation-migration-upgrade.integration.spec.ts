@@ -26,7 +26,7 @@ import {
  *  2. upgrade from an Arena 2C database (chain applied through 0802) — the combined application must
  *     apply exactly 0506, 0507, 0606–0614 and then 0803–0812 on top of it, in order, and nothing else;
  *  3. a full fresh install plus idempotent replay, with the applied ledger compared identity-for-identity
- *     against the migration files on disk — 172 timestamp/name pairs, unique, head 1785753600812.
+ *     against the migration files on disk — 174 timestamp/name pairs, unique, head 1785753600812.
  *
  * No migration is renumbered, rewritten or skipped anywhere in this suite; the only variable is which
  * subset of the real configured chain a database has already applied.
@@ -64,6 +64,11 @@ const PREMBLY_GOVERNANCE = 'PremblyKycCredentialGovernance1785753600507';
 // Arena 1 appended the customer-class model (0805). Published identity; never renumber.
 const ARENA1_ONLY = ['CreateCustomerClasses1785753600805'] as const;
 
+const HISTORY_IDENTITY = [
+  'DurableInboundIdentity1785753600806',
+  'CaptureCustomerFundingScope1785753600807',
+] as const;
+
 // This branch appended tier-default mappings, unlimited limits, and configuration-review restriction.
 const THIS_BRANCH_ONLY = [
   'CustomerTierDefaultClassMappings1785753600810',
@@ -100,7 +105,7 @@ async function appliedLedger(ds: DataSource): Promise<Array<{ timestamp: number;
 
 async function expectLedgerMatchesFilesystem(ds: DataSource): Promise<void> {
   const onDisk = filesystemMigrations();
-  expect(onDisk).toHaveLength(172);
+  expect(onDisk).toHaveLength(174);
   const applied = await appliedLedger(ds);
   expect(applied).toHaveLength(onDisk.length);
   expect(applied).toEqual([...onDisk].sort((a, b) => a.timestamp - b.timestamp));
@@ -116,10 +121,10 @@ async function migrationNames(ds: DataSource): Promise<string[]> {
 }
 
 describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
-  it('contains the 172 identities from both frozen predecessors and later migration additions', () => {
-    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 3 this branch = 172.
+  it('contains the 174 identities from both frozen predecessors and later migration additions', () => {
+    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 0806 + 0807 + 3 this branch = 174.
     const onDisk = filesystemMigrations();
-    expect(onDisk).toHaveLength(172);
+    expect(onDisk).toHaveLength(174);
     const names = onDisk.map((m) => m.name);
     for (const name of [
       FEE_TARGETING,
@@ -128,6 +133,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
       ...ARENA2C_ONLY,
       ...ARENA5_ONLY,
       ...ARENA1_ONLY,
+      ...HISTORY_IDENTITY,
       ...THIS_BRANCH_ONLY,
     ]) {
       expect(names).toContain(name);
@@ -177,6 +183,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
               ...ARENA2C_ONLY,
               ...ARENA5_ONLY,
               ...ARENA1_ONLY,
+              ...HISTORY_IDENTITY,
               ...THIS_BRANCH_ONLY,
             ] as readonly string[]
           ).includes(name);
@@ -192,6 +199,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA2C_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
+        ...HISTORY_IDENTITY,
         ...THIS_BRANCH_ONLY,
       ]) {
         expect(historicalNames).not.toContain(name);
@@ -206,6 +214,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA2C_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
+        ...HISTORY_IDENTITY,
         ...THIS_BRANCH_ONLY,
       ]);
 
@@ -242,6 +251,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
               ...ARENA3D_ONLY,
               ...ARENA5_ONLY,
               ...ARENA1_ONLY,
+              ...HISTORY_IDENTITY,
               ...THIS_BRANCH_ONLY,
             ] as readonly string[]
           ).includes(name);
@@ -257,6 +267,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA3D_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
+        ...HISTORY_IDENTITY,
         ...THIS_BRANCH_ONLY,
       ]) {
         expect(historicalNames).not.toContain(name);
@@ -270,6 +281,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA3D_ONLY,
         ...ARENA5_ONLY,
         ...ARENA1_ONLY,
+        ...HISTORY_IDENTITY,
         ...THIS_BRANCH_ONLY,
       ]);
 
@@ -288,12 +300,12 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
     }
   }, 180_000);
 
-  it('fresh install from an empty database applies the full 172-identity chain exactly once; replay applies nothing', async () => {
+  it('fresh install from an empty database applies the full 174-identity chain exactly once; replay applies nothing', async () => {
     const ds = await createEmptyIntegrationDataSource('ar5fresh');
     try {
       await ds.initialize();
       const executed = await ds.runMigrations({ transaction: 'all' });
-      expect(executed).toHaveLength(172);
+      expect(executed).toHaveLength(174);
       await expect(ds.showMigrations()).resolves.toBe(false);
       await expect(ds.runMigrations({ transaction: 'all' })).resolves.toEqual([]);
       await expectLedgerMatchesFilesystem(ds);

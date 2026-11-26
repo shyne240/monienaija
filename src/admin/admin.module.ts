@@ -1,3 +1,4 @@
+import { TransactionHistoryController } from './transaction-history.controller';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -64,6 +65,7 @@ import { ProductCatalogModule } from '../product-catalog/product-catalog.module'
     AuthorizationModule,
   ],
   controllers: [
+    TransactionHistoryController,
     AdminAgentController,
     AdminCustomerController,
     AdminAggregatorController,

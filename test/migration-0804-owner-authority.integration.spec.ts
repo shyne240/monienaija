@@ -80,7 +80,7 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('migration 0804 remains applied beneath the branch migration head', async () => {
+  it('migration 0804 remains applied beneath customer classes, inbound identity, and branch head', async () => {
     const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`,
     );
@@ -89,6 +89,8 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
       timestamp: '1785753600812',
       name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
+    expect(names).toContain('DurableInboundIdentity1785753600806');
+    expect(names).toContain('CaptureCustomerFundingScope1785753600807');
     const idx0804 = names.indexOf('GeneralizeExternalOperationsForAgents1785753600804');
     const idx0805 = names.indexOf('CreateCustomerClasses1785753600805');
     expect(idx0804).toBeGreaterThan(-1);
