@@ -199,14 +199,25 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
 ]);
 
 /**
- * NOTE (finding PR27-BROWSER-02, not fixed here): a product registration cannot be executed from its
- * stored record. `redactRecord` classifies a bare `code` key as a credential carrier, so the product
- * code the operator approved is stored as `[REDACTED]` (and `privileged-action-approval.service`
- * re-redacts on write), while a `productCode` alias is injected for display. Neither the redacted
- * `code` nor the extra alias can reproduce the approved fingerprint, so `products/changes/:id/
- * execute-create` refuses the replay. Preserving an entity code through redaction is a security-shape
- * decision for the redaction boundary, deliberately not taken here; see
- * `docs/review/PR27-integration-review.md`.
+ * Per-action identifier keys that must survive redaction verbatim.
+ *
+ * A product registration's `code` is the identity being created, not a credential; the log redactor
+ * classifies a bare `code` key as credential-shaped by name alone, so without this the stored record
+ * would read `code: '[REDACTED]'` and the executor's replay could never reproduce the approved
+ * fingerprint (finding PR27-BROWSER-02). Only the actions listed here opt in, only for the keys below,
+ * and only for primitive values — every other field is still redacted, and every other action keeps
+ * the default behaviour.
+ */
+const COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS: Readonly<Record<string, readonly string[]>> = {
+  PRODUCT_MODIFY: ['code'],
+};
+
+/**
+ * Stored shape of an approved commercial change.
+ *
+ * The checker-execution endpoints replay this record as the change body and recompute the governed
+ * fingerprint from it, so the stored keys must be exactly the keys the action's payload builder emits
+ * — no aliases, no omissions (see `ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS`).
  */
 export function sanitizeCommercialRequestDetails(
   action: string,
@@ -218,14 +229,11 @@ export function sanitizeCommercialRequestDetails(
       filtered[key] = value;
     }
   }
-  if (
-    action === 'PRODUCT_MODIFY' &&
-    typeof payload.code === 'string' &&
-    filtered.productCode === undefined
-  ) {
-    filtered.productCode = payload.code;
-  }
-  return redactRecord(filtered);
+  // No aliasing: a `productCode` key synthesised from `code` is a key the approved payload never had,
+  // so it would break the fingerprint comparison it was meant to help.
+  return redactRecord(filtered, {
+    preserveKeys: COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS[action],
+  });
 }
 
 @Injectable()
@@ -260,6 +268,7 @@ export class CommercialRuleGovernanceService {
       actionFingerprint,
       reason: command.reason,
       requestDetails: sanitizeCommercialRequestDetails(definition.action, command.payload),
+      requestDetailsIdentityKeys: COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS[definition.action],
       approvalScope: definition.approvalScope,
       expiresInSeconds: command.expiresInSeconds,
       now: command.now,

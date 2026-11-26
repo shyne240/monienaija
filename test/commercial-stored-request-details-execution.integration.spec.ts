@@ -490,40 +490,79 @@ describe('governed commercial changes execute from their stored request details 
     expect((await stored(approvalId)).status).toBe('CONSUMED');
   });
 
-  it('documents that a product registration is still refused from its stored record (PR27-BROWSER-02)', async () => {
+  it('applies a product registration with its original code, and refuses an edited code or extra field', async () => {
     const body = {
       reason: 'replay: a new product registration',
       code: 'PR27_NEW_PRODUCT',
       name: 'PR27 New Product',
       description: 'created by the stored-details replay suite',
-      domain: 'TRANSFER',
+      domain: 'CUSTOMER',
       currency: CURRENCY,
-      productScope: 'CUSTOMER',
-      status: 'DRAFT',
+      productScope: 'V1',
+      status: 'DISABLED',
       enabled: false,
       configurationStatus: 'NOT_CONFIGURED',
     };
     const { approvalId, details } = await authorAndApprove('/api/v1/internal/products', body);
 
-    // Adjacent to PR27-BROWSER-01 but a different root cause: the redaction boundary treats a bare
-    // `code` key as a credential carrier, so the record carries `code: '[REDACTED]'` plus a
-    // `productCode` alias, and neither can reproduce the approved fingerprint. This case characterises
-    // today's behaviour so the day it is fixed shows up as a failing expectation, not a silent change.
-    expect(details.code).toBe('[REDACTED]');
-    expect(details.productCode).toBe('PR27_NEW_PRODUCT');
+    // The record must carry the approved product code under its own key — not `[REDACTED]`, not an
+    // alias — or the executor's replay can never reproduce the approved fingerprint.
+    expect(details).toMatchObject({
+      code: 'PR27_NEW_PRODUCT',
+      name: 'PR27 New Product',
+      domain: 'CUSTOMER',
+      productScope: 'V1',
+    });
+    expect(details.productCode).toBeUndefined();
 
     const checker = await provisionRole('FINANCE_CONTROLLER');
-    const refused = await request(app.getHttpServer())
-      .post(`/api/v1/internal/products/changes/${approvalId}/execute-create`)
-      .set(auth(checker.token))
-      .send(details);
-    expect(refused.status).toBe(403);
-    expect(`${refused.body?.message ?? ''}`).toMatch(/FINGERPRINT_MISMATCH/);
+    const execute = (payload: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/internal/products/changes/${approvalId}/execute-create`)
+        .set(auth(checker.token))
+        .send(payload);
+
+    // Edited replays stay refused: a different code, a flipped field, an extra field.
+    const refusals: Array<{ tamper: string; status: number; message: unknown }> = [];
+    for (const tampered of [
+      { ...details, code: 'PR27_OTHER_PRODUCT' },
+      { ...details, name: 'PR27 Renamed Product' },
+      // An extra field the create contract actually consumes (the approved payload had no
+      // description): unknown keys are dropped by the payload builder and can never alter the
+      // executed change, but a consumed field that was not approved must not ride along.
+      { ...details, description: 'description nobody approved' },
+    ]) {
+      const refused = await execute(tampered);
+      refusals.push({
+        tamper: JSON.stringify(tampered).slice(0, 90),
+        status: refused.status,
+        message: refused.body?.message ?? refused.body,
+      });
+    }
+    expect(refusals).toEqual([
+      expect.objectContaining({ status: 403 }),
+      expect.objectContaining({ status: 403 }),
+      expect.objectContaining({ status: 403 }),
+    ]);
     expect((await stored(approvalId)).status).toBe('APPROVED');
+    const nothing = await dataSource.query<Array<{ count: string }>>(
+      "SELECT count(*)::text AS count FROM products WHERE code IN ('PR27_NEW_PRODUCT','PR27_OTHER_PRODUCT')",
+    );
+    expect(nothing[0]!.count).toBe('0');
+
+    // The untouched record still applies, with the code the operator actually submitted.
+    const executed = await execute(details);
+    expect(executed.status).toBe(201);
+    expect(executed.body).toMatchObject({
+      code: 'PR27_NEW_PRODUCT',
+      status: 'DISABLED',
+      enabled: false,
+    });
     const rows = await dataSource.query<Array<{ count: string }>>(
       "SELECT count(*)::text AS count FROM products WHERE code = 'PR27_NEW_PRODUCT'",
     );
-    expect(rows[0]!.count).toBe('0');
+    expect(rows[0]!.count).toBe('1');
+    expect((await stored(approvalId)).status).toBe('CONSUMED');
   });
 
   it('refuses a stored request detail that was altered after approval and writes nothing', async () => {

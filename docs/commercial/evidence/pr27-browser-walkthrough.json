@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-26T20:28:04.785Z",
+  "generatedAt": "2026-11-26T21:57:13.216Z",
   "kind": "PR27_ADMIN_WEB_BROWSER_WALKTHROUGH",
-  "testedRevision": "working tree on top of merge df56a4b9 (PR #27 d953fcc1 onto integration aa8b1cf4) with the PR27-BROWSER-01 fix",
+  "testedRevision": "working tree on top of merge df56a4b9 (PR #27 d953fcc1 onto integration aa8b1cf4) with the PR27-BROWSER-01 and PR27-BROWSER-02 fixes",
   "adminWeb": "apps/admin-web/dist (production Vite bundle built with ADMIN_WEB_API_BASE_URL=/api/v1, served with a byte-for-byte /api proxy)",
-  "database": "disposable PostgreSQL 18.4 (run id pr27walk)",
+  "database": "disposable PostgreSQL 18.4 (run id pr27walkc)",
   "checks": [
     {
       "name": "no fee rule exists before authoring",
@@ -76,17 +76,50 @@
     {
       "name": "runtime evaluated the rule the browser applied",
       "ok": true
+    },
+    {
+      "name": "the product does not exist before authoring",
+      "ok": true
+    },
+    {
+      "name": "the product proposal alone writes nothing",
+      "ok": true
+    },
+    {
+      "name": "the maker is not offered the checker workspace for products",
+      "ok": true
+    },
+    {
+      "name": "the checker approved the product proposal",
+      "ok": true
+    },
+    {
+      "name": "the stored request keeps the approved product code under its own key",
+      "ok": true
+    },
+    {
+      "name": "a changed code is refused, the approval stays usable and no product is created",
+      "ok": true
+    },
+    {
+      "name": "the inbox applied the registration and the product carries the submitted code",
+      "ok": true
+    },
+    {
+      "name": "the registered product is listed in the Studio catalogue",
+      "ok": true
     }
   ],
   "findings": [],
   "regressionGuards": [
-    "PR27-BROWSER-01 (fixed in this revision): the authored fee carries vatBps 750 and a 50/500 minimum/maximum collar, and is applied by the inbox Execute button, not by an API replay."
+    "PR27-BROWSER-01 (fixed in this revision): the authored fee carries vatBps 750 and a 50/500 minimum/maximum collar, and is applied by the inbox Execute button, not by an API replay.",
+    "PR27-BROWSER-02 (fixed in this revision): a product registration is authored in the drawer, approved, then applied from the inbox; an edited replay (changed code) is refused with the approval still usable and no product written."
   ],
   "fee": {
     "maker": "finance-preparer@monienaija.local",
     "checker": "finance-controller@monienaija.local",
-    "approvalId": "c72c9f05-6927-460c-89fe-bd64e6b59b51",
-    "ruleId": "56f9f53f-eb8d-420f-b263-a8840aae6b8e",
+    "approvalId": "a6341594-7f90-44f5-a1a4-b005b5dc38cd",
+    "ruleId": "5f27b7c3-80ce-49c9-ba76-1bcb4ac1823d",
     "appliedRule": {
       "flatFeeMinor": "100",
       "minimumFeeMinor": "50",
@@ -113,8 +146,8 @@
   "limit": {
     "profileCode": "PR27_BROWSER_WALK",
     "maker": "finance-preparer@monienaija.local",
-    "approvalId": "1d026975-66bc-4854-abfc-ef834ead7cf4",
-    "ruleId": "b7472cb7-2b19-40b2-a61c-b61223c5b3eb",
+    "approvalId": "b9c99cad-7a86-4275-baff-093bfd334828",
+    "ruleId": "824f1e5d-8c32-4c93-9888-b668e9e6580f",
     "previewPanel": {
       "dimensionShown": true,
       "limitShown": true,
@@ -125,7 +158,7 @@
         "allowed": true,
         "limitProfileCode": "PR27_BROWSER_WALK",
         "evaluatedDimensions": ["DAILY_AMOUNT"],
-        "ruleIds": ["b7472cb7-2b19-40b2-a61c-b61223c5b3eb"]
+        "ruleIds": ["824f1e5d-8c32-4c93-9888-b668e9e6580f"]
       },
       "overLimitRefusal": {
         "message": "Limit DAILY_AMOUNT amount 200000 exceeds 100000 for window 2026-11-26:DAILY:Africa/Lagos",
@@ -134,6 +167,33 @@
       }
     },
     "previewEqualsRuntime": true
+  },
+  "product": {
+    "approvalId": "6381fb7f-3b9a-4385-9d24-66a0a67ecb8a",
+    "code": "PR27_WALK_PRODUCT",
+    "storedDetails": {
+      "code": "PR27_WALK_PRODUCT",
+      "name": "PR27 walkthrough product",
+      "domain": "CUSTOMER",
+      "reason": "PR27 browser walkthrough \u2014 governed product registration",
+      "status": "DISABLED",
+      "currency": "NGN",
+      "description": "registered through the governed drawer",
+      "productScope": "V1",
+      "configurationStatus": "NOT_CONFIGURED"
+    },
+    "tamperedReplay": {
+      "status": 403,
+      "message": "Governed change rejected: executed payload does not match the approved request (FINGERPRINT_MISMATCH)"
+    },
+    "applied": {
+      "code": "PR27_WALK_PRODUCT",
+      "name": "PR27 walkthrough product",
+      "status": "DISABLED",
+      "product_scope": "V1",
+      "enabled": false
+    },
+    "approvalStatus": "CONSUMED"
   },
   "screenshots": [
     "01-fee-rules-registry-before.png",
@@ -149,6 +209,12 @@
     "13-limit-approved-by-independent-checker.png",
     "14-limit-approved-change-executed.png",
     "15-limit-preview-in-browser.png",
-    "16-limit-runtime-compared.png"
+    "16-limit-runtime-compared.png",
+    "17-product-authoring-drawer-filled.png",
+    "18-product-proposal-submitted-drawer-closed.png",
+    "19-product-approved-by-independent-checker.png",
+    "20-product-edited-replay-refused.png",
+    "21-product-applied-from-inbox.png",
+    "22-product-visible-in-catalogue.png"
   ]
 }

@@ -205,7 +205,7 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
     });
   });
 
-  it('strips non-allowlisted and sensitive fields from requestDetails while preserving PRODUCT_MODIFY productCode', async () => {
+  it('keeps the product code verbatim and still strips secrets from PRODUCT_MODIFY requestDetails', async () => {
     const { governance, approvalRepository } = fixture();
     await governance.requestChange({
       principal: maker,
@@ -226,7 +226,11 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
     const stored = [...approvalRepository.records.values()][0]!;
     const details = stored.policy.requestDetails as Record<string, unknown>;
     expect(details).toBeDefined();
-    expect(details.productCode).toBe('WALLET_TRANSFER');
+    // `code` is the identity under change: it must survive redaction verbatim, under its own key, so
+    // the checker's replay reproduces the approved fingerprint (PR27-BROWSER-02).
+    expect(details.code).toBe('WALLET_TRANSFER');
+    // No synthesised alias: an extra key would itself break the fingerprint comparison.
+    expect(details.productCode).toBeUndefined();
     expect(details.name).toBe('Wallet Transfer');
     expect(details.apiKey).toBeUndefined();
     expect(details.password).toBeUndefined();

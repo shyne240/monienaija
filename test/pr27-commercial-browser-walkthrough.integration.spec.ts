@@ -495,6 +495,36 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
    * Waits for the inbox's own confirmation line. A timeout here is the interesting case (the API
    * refused the decision), so the inbox's rendered error and the network log are kept.
    */
+  /**
+   * Posts a body to a governed execute endpoint from the checker's own browser session, so an
+   * *edited* replay can be attempted exactly the way the inbox would attempt an unedited one.
+   */
+  async function postFromPage(
+    page: Page,
+    path: string,
+    body: unknown,
+  ): Promise<{ status: number; message: string }> {
+    return page.evaluate(
+      async ({ target, payload }) => {
+        const token = window.localStorage.getItem('admin_workforce_token');
+        const response = await fetch(target, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token ?? ''}` },
+          body: JSON.stringify(payload),
+        });
+        const text = await response.text();
+        let message = text;
+        try {
+          message = (JSON.parse(text) as { message?: string }).message ?? text;
+        } catch {
+          /* keep the raw text */
+        }
+        return { status: response.status, message: String(message).slice(0, 300) };
+      },
+      { target: path, payload: body },
+    );
+  }
+
   async function waitForNotice(page: Page, pattern: RegExp, tag: string): Promise<boolean> {
     const found = await page
       .getByText(pattern)
@@ -1008,6 +1038,156 @@ describeIfBrowser('PR27 Admin Web governed fee + limit walkthrough (real browser
     });
     report.limit.previewEqualsRuntime = runtimeRuleIds.includes(limitRuleId);
     await shot(checkerPage, '16-limit-runtime-compared');
+    await maker.context.close();
+  }, 900_000);
+  it('authors, approves and applies a PRODUCT registration from the inbox, and refuses an edited replay', async () => {
+    if (!checkerSession) throw new Error('the checker session from the fee walkthrough is missing');
+    const checkerPage = checkerSession.page;
+    const productCode = 'PR27_WALK_PRODUCT';
+
+    // ── 1. Maker: author the registration in the Studio.
+    const maker = await signIn('FINANCE_PREPARER');
+    await openView(maker.page, 'productCatalogue');
+    await maker.page.getByRole('tab', { name: 'Products' }).click();
+    const productsBefore = await dataSource.query<Array<{ count: string }>>(
+      'SELECT count(*)::text AS count FROM products WHERE code = $1',
+      [productCode],
+    );
+    check('the product does not exist before authoring', productsBefore[0]!.count === '0', {
+      count: productsBefore[0]!.count,
+    });
+
+    await maker.page.getByRole('button', { name: 'Propose a new product' }).click();
+    const form = maker.page.locator('form[aria-label="Product create form"]');
+    await form.waitFor({ timeout: 30_000 });
+    await form.locator('#authoring-code').fill(productCode);
+    await form.locator('#authoring-name').fill('PR27 walkthrough product');
+    await form.locator('#authoring-description').fill('registered through the governed drawer');
+    await form.locator('#authoring-domain').selectOption('CUSTOMER');
+    await form.locator('#authoring-currency').fill(CURRENCY);
+    await form.locator('#authoring-productScope').selectOption('V1');
+    await form.locator('#authoring-status').selectOption('DISABLED');
+    await form.locator('#authoring-configurationStatus').selectOption('NOT_CONFIGURED');
+    await form
+      .locator('#authoring-reason')
+      .fill('PR27 browser walkthrough — governed product registration');
+    await shot(maker.page, '17-product-authoring-drawer-filled');
+    await submitProposal(maker.page, form, 'product');
+    await shot(maker.page, '18-product-proposal-submitted-drawer-closed');
+    const productsAfterProposal = await dataSource.query<Array<{ count: string }>>(
+      'SELECT count(*)::text AS count FROM products WHERE code = $1',
+      [productCode],
+    );
+    check('the product proposal alone writes nothing', productsAfterProposal[0]!.count === '0', {
+      count: productsAfterProposal[0]!.count,
+    });
+    const makerSeesApprovals = await maker.page
+      .locator('[data-testid="nav-approvalsInbox"]')
+      .count();
+    check('the maker is not offered the checker workspace for products', makerSeesApprovals === 0, {
+      renderedNavItems: makerSeesApprovals,
+    });
+
+    // ── 2. Checker: independent approval of the registration.
+    await openView(checkerPage, 'approvalsInbox');
+    const [productApprovalId] = await pendingApprovalIds(checkerPage, 'PRODUCT_MODIFY');
+    report.product = { approvalId: productApprovalId, code: productCode };
+    await decideInInbox(checkerPage, productApprovalId!, 'approve');
+    check(
+      'the checker approved the product proposal',
+      await waitForNotice(
+        checkerPage,
+        new RegExp(`Approval ${productApprovalId} recorded as APPROVED`),
+        'product-approve',
+      ),
+      { approvalId: productApprovalId },
+    );
+    await shot(checkerPage, '19-product-approved-by-independent-checker');
+
+    // ── 3. The stored record must carry the real product code, not a redaction placeholder.
+    const storedRow = (
+      await dataSource.query<Array<{ policy: any }>>(
+        'SELECT policy FROM privileged_action_approvals WHERE id = $1',
+        [productApprovalId],
+      )
+    )[0]!;
+    const details = (storedRow.policy?.requestDetails ?? {}) as Record<string, unknown>;
+    report.product.storedDetails = details;
+    check(
+      'the stored request keeps the approved product code under its own key',
+      details.code === productCode && details.productCode === undefined,
+      { code: details.code, productCode: details.productCode },
+    );
+
+    // ── 4. An EDITED replay is refused before anything is written.
+    const tampered = await postFromPage(
+      checkerPage,
+      `/api/v1/internal/products/changes/${productApprovalId}/execute-create`,
+      { ...details, code: 'PR27_WALK_OTHER' },
+    );
+    report.product.tamperedReplay = tampered;
+    await shot(checkerPage, '20-product-edited-replay-refused');
+    const afterTamper = (
+      await dataSource.query<Array<{ status: string }>>(
+        'SELECT status FROM privileged_action_approvals WHERE id = $1',
+        [productApprovalId],
+      )
+    )[0]!;
+    const tamperedProduct = await dataSource.query<Array<{ count: string }>>(
+      "SELECT count(*)::text AS count FROM products WHERE code IN ($1, 'PR27_WALK_OTHER')",
+      [productCode],
+    );
+    check(
+      'a changed code is refused, the approval stays usable and no product is created',
+      tampered.status === 403 &&
+        /FINGERPRINT_MISMATCH/.test(tampered.message) &&
+        afterTamper.status === 'APPROVED' &&
+        tamperedProduct[0]!.count === '0',
+      { tampered, approvalStatus: afterTamper.status, products: tamperedProduct[0]!.count },
+    );
+
+    // ── 5. The checker applies the untouched registration from the inbox itself.
+    await decideInInbox(checkerPage, productApprovalId!, 'execute');
+    const productExecuted = await waitForNotice(
+      checkerPage,
+      new RegExp(`Approved change ${productApprovalId} executed and consumed`),
+      'product-execute',
+    );
+    await shot(checkerPage, '21-product-applied-from-inbox');
+    const productRows = await dataSource.query<
+      Array<{ code: string; name: string; status: string; product_scope: string; enabled: boolean }>
+    >(`SELECT code, name, status, product_scope, enabled FROM products WHERE code = $1`, [
+      productCode,
+    ]);
+    report.product.applied = productRows[0] ?? null;
+    report.product.approvalStatus = (
+      await dataSource.query<Array<{ status: string }>>(
+        'SELECT status FROM privileged_action_approvals WHERE id = $1',
+        [productApprovalId],
+      )
+    )[0]!.status;
+    check(
+      'the inbox applied the registration and the product carries the submitted code',
+      productExecuted &&
+        productRows.length === 1 &&
+        productRows[0]!.code === productCode &&
+        productRows[0]!.name === 'PR27 walkthrough product' &&
+        productRows[0]!.status === 'DISABLED' &&
+        productRows[0]!.product_scope === 'V1' &&
+        report.product.approvalStatus === 'CONSUMED',
+      {
+        executed: productExecuted,
+        product: productRows[0] ?? null,
+        approval: report.product.approvalStatus,
+      },
+    );
+
+    // ── 6. The new catalogue entry is visible to the Studio (the tab reads the same catalogue).
+    await openView(checkerPage, 'productCatalogue');
+    await checkerPage.getByRole('tab', { name: 'Products' }).click();
+    const visible = await checkerPage.getByText(productCode).count();
+    await shot(checkerPage, '22-product-visible-in-catalogue');
+    check('the registered product is listed in the Studio catalogue', visible > 0, { visible });
     await maker.context.close();
   }, 900_000);
 });

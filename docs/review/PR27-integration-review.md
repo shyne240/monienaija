@@ -60,12 +60,12 @@ CI:
 - Admin Web production bundle built with `ADMIN_WEB_API_BASE_URL=/api/v1`
   (`dist/assets/index-DpNX2UDe.js` 2,096.06 kB, `dist/assets/index-CY9AMcSI.css` 217.77 kB).
 
-### 2. Real Admin Web walkthrough — one fee rule and one limit rule
+### 2. Real Admin Web walkthrough — a fee rule, a limit rule and a product registration
 
 `test/pr27-commercial-browser-walkthrough.integration.spec.ts` drives the production Admin Web bundle
 in real Chromium against the real Nest application and a disposable database: real password login
 through the shipped login screen, no token injection, nothing stubbed on the `/api` path.
-**Result: 2/2 tests, 20/20 checks.** Machine-readable evidence:
+**Result: 3/3 tests, 26/26 checks.** Machine-readable evidence:
 `docs/commercial/evidence/pr27-browser-walkthrough.json`; screenshots and the full trace are written
 to `data/validation/pr27-browser-walkthrough/` (git-ignored) and are regenerable from the command in
 the spec header.
@@ -138,27 +138,55 @@ VAT `750` bps and a `50` / `500` min/max collar and applied from the inbox itsel
 Preview and runtime agree on the rule id and on all three amounts. 18/18 checks; evidence in
 `docs/commercial/evidence/pr27-browser-walkthrough.json`.
 
-### PR27-BROWSER-02 — OPEN: a product registration cannot be applied from its stored record
+### PR27-BROWSER-02 — FIXED: product registration could not be applied from its stored record
 
-Adjacent to the finding above, different root cause, and **not** changed by this revision.
+**Was.** `POST /api/v1/internal/products/changes/<id>/execute-create` refused every replay of an
+approved registration with 403 `FINGERPRINT_MISMATCH`, so a product could only be registered through
+the API, never from the Studio.
 
-`redactRecord` classifies a bare `code` key as a credential carrier
-(`src/common/sensitive-data-redaction.ts`, `SENSITIVE_KEY_NAMES`), and
-`privileged-action-approval.service` redacts `requestDetails` a second time on write. So a product
-registration approved with `code: 'PR27_NEW_PRODUCT'` is stored as `code: '[REDACTED]'` plus a
-`productCode: 'PR27_NEW_PRODUCT'` alias injected for display. Neither reproduces the approved
-fingerprint: `POST /api/v1/internal/products/changes/<id>/execute-create` returns 403
-`FINGERPRINT_MISMATCH`, the approval stays `APPROVED` and no product row is written.
+**Trace (three redaction passes, one identity key).** The record is written and read like this:
 
-Measured, not inferred: `test/commercial-stored-request-details-execution.integration.spec.ts` records
-the exact stored record and the refusal (`documents that a product registration is still refused from
-its stored record (PR27-BROWSER-02)`). It is a deliberate characterisation, so fixing the defect shows
-up as a failing expectation rather than a silent change.
+1. `CommercialRuleGovernanceService` filters the payload to the allowlist and calls `redactRecord`.
+2. `PrivilegedActionApprovalService.requestInTransaction` redacts `requestDetails` again before
+   persisting (defence in depth).
+3. `PrivilegedActionApprovalService.toView` redacts the whole `policy` on every read, i.e. the copy
+   the inbox replays.
 
-Remedy requires a decision this review should not take alone: either the redaction boundary must
-understand that a commercial payload's `code` is an entity identifier rather than a secret, or the
-approval record must keep the approved payload under a separate, non-redacted, integrity-checked
-field. Until then product registration stays an API-only flow.
+`redactRecord` classifies a bare `code` key as a credential carrier (correct for an authorization
+code, wrong for a product code), so all three passes rewrote `code` to `[REDACTED]`. A `productCode`
+alias was then synthesised for display — an extra key the approved payload never contained. Neither
+the redacted `code` nor the alias can reproduce the approved fingerprint.
+
+**Fix.** Identity is declared per action and carried with the record:
+
+- `COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS` maps `PRODUCT_MODIFY → ['code']`; nothing else opts in.
+- `redactRecord(value, { preserveKeys })` preserves only those named top-level keys, and only when the
+  value is a primitive — a structured value can never ride through unredacted. Default calls behave
+  exactly as before (the adversarial redaction suite still passes unchanged).
+- The approval stores `policy.requestDetailsIdentityKeys` next to the details, so `toView` can
+  preserve exactly those keys instead of re-redacting them into placeholders.
+- The `productCode` alias is gone: the record now carries the same keys, under the same names, that
+  the executor consumes.
+
+General credential redaction, the full-payload fingerprint, independent approval and refusal of
+edited replays are all unchanged: `test/commercial-stored-request-details-execution.integration.spec.ts`
+requires a changed `code`, a changed `name` and an unapproved extra `description` to be refused with
+403, with the approval left `APPROVED` and no product row written, and only then lets the untouched
+record apply. (An unknown key that no payload builder consumes is dropped before hashing, so it can
+never alter the executed change.)
+
+**Browser re-run (real Admin Web, real Chromium, disposable PostgreSQL).**
+
+| Step                            | Result                                                                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Author as `FINANCE_PREPARER`    | drawer `Product create form`; proposal recorded, `products` still empty for the code                                                           |
+| Maker self-approval             | `nav-approvalsInbox` not rendered                                                                                                              |
+| Approve as `FINANCE_CONTROLLER` | `APPROVED`; stored record carries `code: 'PR27_WALK_PRODUCT'`, no `productCode` alias                                                          |
+| Edited replay                   | 403 `FINGERPRINT_MISMATCH`; approval still `APPROVED`; no product row                                                                          |
+| **Apply from the inbox**        | _Execute approved change_ → `CONSUMED`; product `PR27_WALK_PRODUCT` exists with `name`, `status DISABLED`, `product_scope V1`, `enabled false` |
+| Catalogue tab                   | the new code is listed                                                                                                                         |
+
+Screenshots `17`–`22` in `data/validation/pr27-browser-walkthrough/`, 26/26 checks.
 
 ### Known gaps carried forward (unchanged by this turn)
 
@@ -170,12 +198,10 @@ field. Until then product registration stays an API-only flow.
 
 ## What still blocks merge review
 
-1. **PR27-BROWSER-02** (product registration cannot be applied from its stored record) — a
-   pre-existing defect the same mechanism exposed, left open on purpose; see above.
-2. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
+1. **GitHub reports #27 as `CONFLICTING`** against `arena/5-main-web-integration`. The conflicts were
    resolved offline in merge `df56a4b9` (every gate in this document ran on that merge plus the fix),
    but the PR branch itself has not been merged forward, so GitHub cannot merge it as-is.
-3. **A green `Backend (real PostgreSQL integration)` job.** On `df56a4b9` the job failed on one flaky
+2. **A green `Backend (real PostgreSQL integration)` job.** On `df56a4b9` the job failed on one flaky
    contention test (`a16-agent-cash-to-cash-claim`, see above) that passes locally; the fixed head's
    run [45898137816](https://github.com/shyne240/monienaija/actions/runs/45898137816) is the one to
    read. Until it lands, no run on the combined code is green end to end.
