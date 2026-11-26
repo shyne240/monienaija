@@ -339,7 +339,17 @@ describe('CUSTOMER-ONBOARDING-END-TO-END-01 (real PostgreSQL)', () => {
       // No identifier *values* leak: the projection names evidence types (which is safe and
       // useful) but never MACs, digests, document numbers or provider payloads.
       expect(JSON.stringify(review.body)).not.toMatch(/identityMac|identity_mac|macKeyVersion/i);
-      expect(JSON.stringify(review.body)).not.toMatch(/\d{11}/);
+      /*
+       * The 11-digit guard exists to catch leaked BVN/document numbers. A raw JSON dump also
+       * carries random UUID hex tails, which can coincide with an 11-digit run (observed twice
+       * on CI for two different customerIds) — strip UUIDs first so the guard tests values, not
+       * key material. ISO-8601 timestamps never contain an 11-digit run once UUIDs are masked.
+       */
+      const serializedWithoutUuids = JSON.stringify(review.body).replace(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+        '<uuid>',
+      );
+      expect(serializedWithoutUuids).not.toMatch(/\d{11}/);
     });
 
     it('is SUPPORT-readable but not SUPPORT-writable, and requires a workforce session', async () => {
