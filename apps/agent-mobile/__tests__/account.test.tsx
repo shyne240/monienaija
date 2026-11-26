@@ -261,7 +261,42 @@ describe('AccountScreen (real Agent information)', () => {
     expect(queryByTestId('limit-bucket-external_bank_transfer-outgoing')).toBeNull();
   });
 
-  test('limits card states plainly when nothing is configured', async () => {
+  test('limits card renders an unknown remaining amount as — instead of inventing 0', async () => {
+    mockApi.getAgentLimits.mockResolvedValue({
+      ...limitsFixture,
+      products: [
+        {
+          ...limitsFixture.products[0],
+          windows: [
+            {
+              ...limitsFixture.products[0].windows[0],
+              remainingMinor: null,
+              remainingCount: null,
+            },
+          ],
+        },
+      ],
+    });
+    const { getByTestId } = wrap(<AccountScreen />);
+    await waitFor(() => expect(getByTestId('limit-window-daily_amount')).toBeTruthy());
+    const rendered = JSON.stringify(getByTestId('limit-window-daily_amount').props.children);
+    expect(rendered).toContain('—');
+    expect(rendered).not.toContain('₦0');
+  });
+
+  test('limits card states plainly when nothing is configured, and says money movement stays blocked', async () => {
+    mockApi.getAgentLimits.mockResolvedValue({
+      ...limitsFixture,
+      products: [limitsFixture.products[1]],
+    });
+    const { getByTestId, getByText } = wrap(<AccountScreen />);
+    await waitFor(() => expect(getByTestId('account-limits-none')).toBeTruthy());
+    // Missing configuration is not a neutral state: agent money movement is refused until an
+    // operator assigns a limit, so the copy must not read as "you simply have no limits".
+    expect(getByText(/stay blocked until your institution assigns your limits/i)).toBeTruthy();
+  });
+
+  test('legacy: limits card states nothing is configured', async () => {
     mockApi.getAgentLimits.mockResolvedValue({
       ...limitsFixture,
       products: [limitsFixture.products[1]],

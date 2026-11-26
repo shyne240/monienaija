@@ -38,6 +38,10 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 /**
@@ -158,6 +162,11 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       isActive: true,
       applicableServices: services as unknown,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,
