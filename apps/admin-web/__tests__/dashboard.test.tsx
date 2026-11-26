@@ -255,7 +255,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
       if (url === '/internal/a2/workforce/dashboard/templates') return Promise.resolve(templates);
       if (url === '/internal/a2/workforce/dashboard/assignments')
         return Promise.resolve(assignments);
-      if (url === '/internal/a2/workforce/dashboard/widget-registry') return Promise.resolve([]);
+      if (url.endsWith('/widget-registry') || url.endsWith('/roles')) return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
     (ApiClient.put as jest.Mock).mockResolvedValue({
@@ -328,7 +328,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
       if (url === '/internal/a2/workforce/dashboard/templates') return Promise.resolve(templates);
       if (url === '/internal/a2/workforce/dashboard/assignments')
         return Promise.resolve(assignments);
-      if (url === '/internal/a2/workforce/dashboard/widget-registry') return Promise.resolve([]);
+      if (url.endsWith('/widget-registry') || url.endsWith('/roles')) return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
     (ApiClient.put as jest.Mock).mockRejectedValue(
