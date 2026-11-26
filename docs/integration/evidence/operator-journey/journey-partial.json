@@ -1,0 +1,6 @@
+{
+  "steps": [],
+  "apiCalls": [],
+  "consoleErrors": [],
+  "error": "page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"desktop-nav\"]') to be visible\n"
+}

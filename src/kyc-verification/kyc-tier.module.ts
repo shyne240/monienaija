@@ -52,6 +52,11 @@ import type { KycProvider } from './kyc.types';
 
 const KYC_PROVIDER_RUNTIME = 'KYC_PROVIDER_RUNTIME';
 const PREMBLY_TRANSPORT = 'PREMBLY_TRANSPORT';
+
+// Resolved once at startup: undefined in production and when no synthetic registry is configured.
+const deterministicPrembly = deterministicPremblyTransportFromEnvironment();
+const deterministicPremblyEnabled = deterministicPrembly !== undefined;
+const premblyTransport: PremblyTransport = deterministicPrembly ?? premblyHttpsTransport;
 const PREMBLY_VERIFICATION_ADAPTER = 'PREMBLY_VERIFICATION_ADAPTER';
 type ProviderRuntime = {
   providers: readonly KycProvider[];
@@ -61,6 +66,7 @@ function providerRuntimeFromConfig(
   config: ConfigService<Environment, true>,
   premblyCredentials: PremblyCredentialGovernanceService,
   premblyAdapter: PremblyVerificationProvider,
+  deterministicPrembly: boolean,
 ): ProviderRuntime {
   const monnifyOptions = monnifyOptionsFromEnvironment({
     MONNIFY_VERIFICATION_ENABLED: config.get('MONNIFY_VERIFICATION_ENABLED', { infer: true })
@@ -104,7 +110,12 @@ function providerRuntimeFromConfig(
   const readiness: KycProviderRuntimeReadiness = {
     ...readyValues,
     isReady: (provider) =>
-      provider === 'PREMBLY' ? premblyCredentials.isRuntimeReady() : readyValues[provider],
+      provider === 'PREMBLY'
+        ? // A deterministic acceptance adapter answers verification calls itself, so it is ready
+          // without a provider credential. Production never selects it, so the credential-governed
+          // readiness path is unchanged there.
+          deterministicPrembly || premblyCredentials.isRuntimeReady()
+        : readyValues[provider],
   };
   return {
     providers: [
@@ -147,11 +158,7 @@ function providerRuntimeFromConfig(
     // The HTTPS transport is the production path. A deterministic in-process adapter may replace it
     // only for a governed acceptance run, and only when the environment names a synthetic registry
     // (see `deterministicPremblyTransportFromEnvironment`, which also refuses NODE_ENV=production).
-    {
-      provide: PREMBLY_TRANSPORT,
-      useFactory: (): PremblyTransport =>
-        deterministicPremblyTransportFromEnvironment() ?? premblyHttpsTransport,
-    },
+    { provide: PREMBLY_TRANSPORT, useValue: premblyTransport },
     {
       provide: KycProviderSecretEncryptionService,
       inject: [ConfigService],
@@ -214,7 +221,7 @@ function providerRuntimeFromConfig(
         config: ConfigService<Environment, true>,
         credentials: PremblyCredentialGovernanceService,
         adapter: PremblyVerificationProvider,
-      ) => providerRuntimeFromConfig(config, credentials, adapter),
+      ) => providerRuntimeFromConfig(config, credentials, adapter, deterministicPremblyEnabled),
     },
     {
       provide: KycProviderGovernanceService,
