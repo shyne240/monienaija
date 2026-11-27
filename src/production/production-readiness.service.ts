@@ -14,8 +14,11 @@ import {
 // The schema head this build requires. A deployment whose database has not reached this migration
 // refuses to serve traffic, which is the intended behaviour — advancing this constant is part of shipping
 // a migration, not an afterthought.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600901';
-const EXPECTED_MIGRATION_NAME = 'BankToWalletReturnRefunds1785753600901';
+// The combined Banking + reconciliation chain appends 0900 (Monnify journey), 0901 (governed
+// return refunds) and 0910 (Arena 10 settlement-report reconciliation) after 0813. The newest
+// published identity is the expected head.
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600910';
+const EXPECTED_MIGRATION_NAME = 'SettlementReportReconciliation1785753600910';
 
 type Row = Record<string, unknown>;
 

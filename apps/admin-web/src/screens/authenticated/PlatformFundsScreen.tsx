@@ -3,8 +3,10 @@ import './reconciliation-workspace.css';
 import './platform-funds.css';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '../../design-system/primitives';
+import { WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import { useAuthStore } from '../../store/auth-store';
 import { formatFinancialAmount, formatMinorUnits } from '../../utils/financial-display';
+import { SettlementReportReconciliationPanel } from './SettlementReportReconciliationPanel';
 import {
   PlatformFundsApi,
   type PlatformFundsBlocker,
@@ -294,8 +296,14 @@ const emptyCreateForm = (): CreateFormState => ({
   bankBalanceMinor: '',
 });
 
-export const PlatformFundsScreen: React.FC = () => {
+export const PlatformFundsScreen: React.FC<{
+  onOpenJournal?: (journalId: string) => void;
+  initialWorkspace?: 'cutoff' | 'settlement-reports';
+}> = ({ onOpenJournal, initialWorkspace = 'cutoff' }) => {
   const { principal } = useAuthStore();
+  const [workspaceTab, setWorkspaceTab] = useState<'cutoff' | 'settlement-reports'>(
+    initialWorkspace,
+  );
   const roles = useMemo(() => principal?.roles ?? [], [principal]);
   const canRecord = roles.includes('FINANCE_PREPARER');
   const canReviewRole = roles.includes('FINANCE_CONTROLLER');
@@ -1362,18 +1370,33 @@ export const PlatformFundsScreen: React.FC = () => {
       <PageHeader
         eyebrow="Finance · Reconciliation"
         title="Platform Funds vs. Bank"
-        description="Map the ledger-backed holding into the bank or settlement account you select, compare it with the balance Finance verified independently, and sign the comparison off through maker/checker review. This is staff-entered evidence, not an automated provider reconciliation; it never moves money and never posts a ledger adjustment."
+        description="Map the ledger-backed holding into the bank or settlement account you select, compare it with the balance Finance verified independently, or reconcile imported provider settlement reports and account statements through maker/checker review. Nothing here moves money or posts a ledger adjustment."
       />
-      <div className="mn-platform-funds__notice">
-        Institution scope is resolved from your workforce assignments on every request. A platform
-        comparison needs platform finance authority; an institution comparison needs an active
-        assignment to that institution. Sign-off is blocked while the mapping is incomplete or
-        ambiguous — the blockers say exactly what Finance must resolve.
-      </div>
-      <div className="mn-platform-funds__layout">
-        {listPane}
-        {mode === 'create' ? createPane : detailPane}
-      </div>
+      <WorkspaceFilterTabs
+        label="Platform funds & settlement reconciliation"
+        value={workspaceTab}
+        options={[
+          { value: 'cutoff', label: 'Cutoff Bank-Balance Comparison' },
+          { value: 'settlement-reports', label: 'Provider Settlement Reports & Statements' },
+        ]}
+        onChange={(value) => setWorkspaceTab(value as 'cutoff' | 'settlement-reports')}
+      />
+      {workspaceTab === 'settlement-reports' ? (
+        <SettlementReportReconciliationPanel onOpenJournal={onOpenJournal} />
+      ) : (
+        <>
+          <div className="mn-platform-funds__notice">
+            Institution scope is resolved from your workforce assignments on every request. A
+            platform comparison needs platform finance authority; an institution comparison needs an
+            active assignment to that institution. Sign-off is blocked while the mapping is
+            incomplete or ambiguous — the blockers say exactly what Finance must resolve.
+          </div>
+          <div className="mn-platform-funds__layout">
+            {listPane}
+            {mode === 'create' ? createPane : detailPane}
+          </div>
+        </>
+      )}
     </div>
   );
 };

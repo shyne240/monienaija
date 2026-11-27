@@ -80,35 +80,39 @@ describe('Migration 0804 owner authority (real PostgreSQL)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('migration 0804 remains beneath customer classes, inbound identity, platform funds and the Monnify head', async () => {
+  it('migration 0804 remains beneath customer classes, inbound identity, platform funds, the Monnify head and settlement reconciliation', async () => {
     const rows: Array<{ timestamp: string; name: string }> = await dataSource.query(
-      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 7`,
+      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 8`,
     );
     expect(rows[0]).toEqual({
+      timestamp: '1785753600910',
+      name: 'SettlementReportReconciliation1785753600910',
+    });
+    expect(rows[1]).toEqual({
       timestamp: '1785753600901',
       name: 'BankToWalletReturnRefunds1785753600901',
     });
-    expect(rows[1]).toEqual({
+    expect(rows[2]).toEqual({
       timestamp: '1785753600900',
       name: 'BankToWalletMonnifyJourney1785753600900',
     });
-    expect(rows[2]).toEqual({
+    expect(rows[3]).toEqual({
       timestamp: '1785753600813',
       name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
-    expect(rows[3]).toEqual({
+    expect(rows[4]).toEqual({
       timestamp: '1785753600807',
       name: 'CaptureCustomerFundingScope1785753600807',
     });
-    expect(rows[4]).toEqual({
+    expect(rows[5]).toEqual({
       timestamp: '1785753600806',
       name: 'DurableInboundIdentity1785753600806',
     });
-    expect(rows[5]).toEqual({
+    expect(rows[6]).toEqual({
       timestamp: '1785753600805',
       name: 'CreateCustomerClasses1785753600805',
     });
-    expect(rows[6]).toEqual({
+    expect(rows[7]).toEqual({
       timestamp: '1785753600804',
       name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });

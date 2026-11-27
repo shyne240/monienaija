@@ -607,6 +607,34 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
           offset: 0,
           scope: { mode: 'PLATFORM', institutionIds: [], platformFunctionGranted: true },
         });
+      if (path.startsWith('/internal/finance-operations/settlement-reconciliation/overview'))
+        return Promise.resolve({
+          capabilities: {
+            canView: true,
+            canImportAndPropose: false,
+            canReview: false,
+            mfaVerified: true,
+            hasPlatformAuthority: true,
+            assignedInstitutionIds: [],
+          },
+          selectableInstitutions: [],
+          formatDescriptors: [],
+          summary: {
+            importsCount: 0,
+            unverifiedFormatImportsCount: 0,
+            matchedTransactionsCount: 0,
+            exceptionTransactionsCount: 0,
+            pendingTransactionReviewsCount: 0,
+            reconciledSettlementsCount: 0,
+            openSettlementBreaksCount: 0,
+            pendingSettlementReviewsCount: 0,
+            openReturnDisputeCasesCount: 0,
+            reconciledReturnDisputeCasesCount: 0,
+            pendingReturnDisputeReviewsCount: 0,
+          },
+        });
+      if (path.startsWith('/internal/finance-operations/settlement-reconciliation/'))
+        return Promise.resolve({ items: [] });
       return Promise.resolve([]);
     });
     (ApiClient.post as jest.Mock).mockResolvedValue({});
