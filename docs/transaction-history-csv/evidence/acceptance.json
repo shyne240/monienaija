@@ -1,6 +1,6 @@
 {
-  "date": "2026-11-25T18:54:40.114Z",
-  "commit": "bb816ac48d8c9b6a5dd178f199a3083d60693562",
+  "date": "2026-11-27T07:48:48.511Z",
+  "commit": "c9ce20752870b7cee99f2d855a76ebac6158582b",
   "scope": "Fully migrated disposable PostgreSQL, real AppModule, real local workforce email/password sign-in. Synthetic business rows; not a production record.",
   "browser": true,
   "checks": [
