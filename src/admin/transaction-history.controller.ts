@@ -2,14 +2,23 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Header,
   NotFoundException,
   Param,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DataSource } from 'typeorm';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { getRequestContext } from '../production/request-context';
+import {
+  TransactionHistoryExportService,
+  type HistoryListPage,
+  type TransactionHistoryExportQuery,
+} from './transaction-history-export.service';
 
 export const HISTORY_TYPES = [
   'WALLET_TRANSFER',
@@ -129,6 +138,7 @@ export class TransactionHistoryController {
   constructor(
     private readonly db: DataSource,
     private readonly auth: AuthorizationService,
+    private readonly exporter: TransactionHistoryExportService,
   ) {}
   private async scope(req: Request) {
     await this.auth.requireFunction(
@@ -143,7 +153,68 @@ export class TransactionHistoryController {
     ];
   }
   @Get()
-  async list(@Req() req: Request, @Query() q: Record<string, string>) {
+  list(@Req() req: Request, @Query() q: Record<string, string>) {
+    return this.page(req, q);
+  }
+
+  /**
+   * CSV export of every record matching the filters the page applies.
+   *
+   * Deliberately a sibling of `list()` on the same route prefix: the route policy that guards the
+   * list guards this too (workforce session, `transaction.view`, `transaction-history` resource),
+   * so export cannot be reached by any principal that cannot already read the list. The export
+   * drains `list()` page by page, so the filters, Lagos day boundaries, institution scope and
+   * masking are literally the same code path.
+   *
+   * `limit` and `cursor` are rejected rather than ignored: they are paging controls the export
+   * drives itself, and accepting them would let a caller ask for a partial file that looks whole.
+   */
+  @Get('export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  async exportCsv(
+    @Req() req: Request,
+    @Query() q: Record<string, string>,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    // Authorization, principal type and institution scope are established by the page read itself.
+    await this.scope(req);
+    if (Object.values(q).some((value) => typeof value !== 'string')) {
+      throw new BadRequestException('Query parameters must be single strings');
+    }
+    for (const paging of ['limit', 'cursor'] as const) {
+      if (q[paging] !== undefined) {
+        throw new BadRequestException(
+          `Export applies its own paging; remove the ${paging} parameter`,
+        );
+      }
+    }
+    const filters: TransactionHistoryExportQuery = {
+      type: q.type,
+      status: q.status,
+      reference: q.reference,
+      from: q.from,
+      to: q.to,
+    };
+    const reader = {
+      list: (request: Request, query: Record<string, string>) => this.page(request, query),
+    };
+    const result = await this.exporter.export(reader, req, filters);
+    const context = getRequestContext(req as unknown as FastifyRequest);
+    reply
+      .header('X-Export-Id', result.exportId)
+      .header('X-Export-Rows', String(result.rowCount))
+      .header('X-Request-Id', context.requestId)
+      .header(
+        'Content-Disposition',
+        `attachment; filename="${result.fileName}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+      )
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(result.body);
+  }
+
+  /** The single read implementation behind both the screen and the export. */
+  private async page(req: Request, q: Record<string, string>): Promise<HistoryListPage> {
     const values: unknown[] = await this.scope(req);
     if (Object.values(q).some((value) => typeof value !== 'string')) {
       throw new BadRequestException('Query parameters must be single strings');
@@ -203,14 +274,18 @@ export class TransactionHistoryController {
       values,
     );
     const more = rows.length > limit;
-    const items = rows.slice(0, limit);
+    const items = rows.slice(0, limit) as unknown as HistoryListPage['items'];
     const last = items[items.length - 1]!;
     return {
       items,
       nextCursor: more
-        ? Buffer.from(JSON.stringify({ at: last.cursorAt, type: last.type, id: last.id })).toString(
-            'base64url',
-          )
+        ? Buffer.from(
+            JSON.stringify({
+              at: (last as unknown as Record<string, unknown>).cursorAt,
+              type: last.type,
+              id: last.id,
+            }),
+          ).toString('base64url')
         : null,
     };
   }

@@ -175,6 +175,74 @@ async function requestBlob(endpoint: string, options: ApiRequestOptions = {}): P
   }
 }
 
+/**
+ * A downloaded file plus the metadata the export UI reports back to the operator: the server's
+ * own row count (from `X-Export-Rows`) and export id, so the UI states what the file contains
+ * instead of guessing from the current page.
+ */
+export interface DownloadedFile {
+  blob: Blob;
+  fileName: string;
+  /** Rows the server wrote into the file. Null when the server did not state a count. */
+  rowCount: number | null;
+  exportId: string | null;
+  /** Pages in a generated PDF. Null for formats that do not have pages. */
+  pageCount?: number | null;
+}
+
+function fileNameFrom(response: Response, fallback: string): string {
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8?.[1]) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      // fall through to the ASCII form
+    }
+  }
+  const ascii = /filename="?([^";]+)"?/i.exec(disposition);
+  return ascii?.[1] || fallback;
+}
+
+/**
+ * GET a file and return it with its server-stated metadata.
+ *
+ * A non-2xx response is read as JSON so the caller sees the real error (for example the export
+ * size refusal) rather than an empty download.
+ */
+async function requestFile(
+  endpoint: string,
+  accept: string,
+  fallbackName: string,
+  options: ApiRequestOptions = {},
+): Promise<DownloadedFile> {
+  assertApiBaseUrlConfigured();
+
+  const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: requestHeaders(undefined, accept),
+      signal: options.signal,
+    });
+    if (!response.ok) {
+      const data = await readResponseData(response);
+      throw apiErrorFrom(response, data);
+    }
+    const stated = Number(response.headers.get('x-export-rows'));
+    const statedPages = Number(response.headers.get('x-statement-pages'));
+    return {
+      blob: await response.blob(),
+      fileName: fileNameFrom(response, fallbackName),
+      rowCount: Number.isInteger(stated) && stated >= 0 ? stated : null,
+      exportId: response.headers.get('x-export-id'),
+      pageCount: Number.isInteger(statedPages) && statedPages > 0 ? statedPages : null,
+    };
+  } catch (error) {
+    throw asNetworkError(error);
+  }
+}
+
 export const ApiClient = {
   get: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'GET' }),
@@ -189,6 +257,14 @@ export const ApiClient = {
     requestForm<T>(endpoint, body, options),
 
   getBlob: (endpoint: string, options?: ApiRequestOptions) => requestBlob(endpoint, options),
+
+  /** Download a CSV report, keeping the server's stated row count and export id. */
+  getFile: (endpoint: string, options?: ApiRequestOptions) =>
+    requestFile(endpoint, 'text/csv, application/json', 'transaction-history.csv', options),
+
+  /** Download a generated PDF (a wallet statement), keeping the server's stated page count. */
+  getPdf: (endpoint: string, options?: ApiRequestOptions) =>
+    requestFile(endpoint, 'application/pdf, application/json', 'statement.pdf', options),
 
   patch: <T>(
     endpoint: string,

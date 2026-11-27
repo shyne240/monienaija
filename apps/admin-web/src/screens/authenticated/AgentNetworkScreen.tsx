@@ -2571,11 +2571,24 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   if (!canView) {
     return (
-      <div className="mn-operational" style={wrap}>
-        <div style={denied} data-testid="agent-directory-not-entitled">
-          <strong>Not entitled:</strong> Agent directory and Agent receiving-number lookup require{' '}
-          <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
-        </div>
+      <div className="mn-operational" style={wrap} data-testid="agent-funding-only-workspace">
+        {canManageFunding ? (
+          <header className="agent-network-header">
+            <div>
+              <p className="agent-network-eyebrow">FINANCE OPERATIONS</p>
+              <h2>Agent funding and defunding</h2>
+              <p>
+                This workspace is limited to funding actions granted to your role. Agent directory,
+                profile and receiving-number details are not loaded without <code>agent.view</code>.
+              </p>
+            </div>
+          </header>
+        ) : (
+          <div style={denied} data-testid="agent-directory-not-entitled">
+            <strong>Not entitled:</strong> Agent directory and Agent receiving-number lookup require{' '}
+            <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
+          </div>
+        )}
         {canManageFunding && <AgentFundingPanel onFundingGuardChange={reportFundingGuard} />}
       </div>
     );

@@ -8,6 +8,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { serializationRetryDelayMs } from '../common/serializable-transaction';
 import {
   CommissionDecisionSnapshot,
   FeeDecisionSnapshot,
@@ -199,6 +200,13 @@ function isRetryableSerialization(error: unknown): boolean {
   );
 }
 
+const SNAPSHOT_SELECT_COLUMNS = `
+  id, idempotency_key, request_hash, product, direction, channel, principal_type, principal_id,
+  currency, principal_amount_minor, transaction_reference, correlation_id, journal_id,
+  decision_status, finalized_at, decided_at, fee_decision, commission_decision, reward_decision,
+  limit_decision, revenue_decision, configuration_version, snapshot_schema_version,
+  supersedes_snapshot_id, superseded_reason, created_by, created_at, updated_at, version`;
+
 @Injectable()
 export class CommercialDecisionSnapshotService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -220,6 +228,8 @@ export class CommercialDecisionSnapshotService {
         );
       } catch (error) {
         if (attempt < MAX_SERIALIZATION_ATTEMPTS && isRetryableSerialization(error)) {
+          const delay = serializationRetryDelayMs(attempt);
+          if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
         throw error;
@@ -371,12 +381,38 @@ export class CommercialDecisionSnapshotService {
 
     const requestHash = hashRequest(input);
 
+    const inserted = await this.insertSnapshotRow(manager, {
+      idempotencyKey,
+      requestHash,
+      product,
+      direction,
+      channel,
+      principalType,
+      principalId,
+      currency,
+      principalAmountMinor,
+      transactionReference,
+      correlationId,
+      journalId,
+      decisionStatus,
+      finalizedAt,
+      decidedAt,
+      feeDecision: input.feeDecision,
+      commissionDecision: input.commissionDecision,
+      rewardDecision: input.rewardDecision,
+      limitDecision: input.limitDecision,
+      revenueDecision: input.revenueDecision ?? null,
+      configurationVersion,
+      supersedesSnapshotId,
+      supersededReason,
+      createdBy,
+    });
+    if (inserted.length > 0) {
+      return { snapshot: inserted[0]!, replayed: false };
+    }
+
     const existing: Array<Record<string, unknown>> = await manager.query(
-      `SELECT id, idempotency_key, request_hash, product, direction, channel, principal_type, principal_id,
-              currency, principal_amount_minor, transaction_reference, correlation_id, journal_id,
-              decision_status, finalized_at, decided_at, fee_decision, commission_decision, reward_decision,
-              limit_decision, revenue_decision, configuration_version, snapshot_schema_version,
-              supersedes_snapshot_id, superseded_reason, created_by, created_at, updated_at, version
+      `SELECT ${SNAPSHOT_SELECT_COLUMNS}
          FROM commercial_decision_snapshots
         WHERE idempotency_key = $1`,
       [idempotencyKey],
@@ -391,68 +427,24 @@ export class CommercialDecisionSnapshotService {
       return { snapshot: prior, replayed: true };
     }
 
-    let rows: Array<Record<string, unknown>>;
-    try {
-      rows = await this.insertSnapshotRow(manager, {
-        idempotencyKey,
-        requestHash,
-        product,
-        direction,
-        channel,
-        principalType,
-        principalId,
-        currency,
-        principalAmountMinor,
-        transactionReference,
-        correlationId,
-        journalId,
-        decisionStatus,
-        finalizedAt,
-        decidedAt,
-        feeDecision: input.feeDecision,
-        commissionDecision: input.commissionDecision,
-        rewardDecision: input.rewardDecision,
-        limitDecision: input.limitDecision,
-        revenueDecision: input.revenueDecision ?? null,
-        configurationVersion,
-        supersedesSnapshotId,
-        supersededReason,
-        createdBy,
-      });
-    } catch (error) {
-      // Defense-in-depth for callers that pass a non-SERIALIZABLE manager: a concurrent insert of
-      // the same idempotency key surfaces as 23505 instead of a serialization failure. Re-fetch
-      // and apply replay semantics instead of surfacing a raw constraint error.
-      const code = (error as { code?: string } | null)?.code;
-      const message = String((error as { message?: string })?.message ?? '');
-      if (code === '23505' && message.includes('uq_commercial_decision_reference')) {
+    if (supersedesSnapshotId === null) {
+      const conflictingReference: Array<{ id: string }> = await manager.query(
+        `SELECT id
+           FROM commercial_decision_snapshots
+          WHERE product = $1 AND transaction_reference = $2 AND supersedes_snapshot_id IS NULL
+          LIMIT 1`,
+        [product, transactionReference],
+      );
+      if (conflictingReference.length > 0) {
         throw new ConflictException(
           'COMMERCIAL_DECISION_REFERENCE_CONFLICT: an original (non-compensating) snapshot already exists for this product + transaction_reference; corrections must supersede it',
         );
       }
-      if (code === '23505' && message.includes('uq_commercial_decision_idempotency')) {
-        const retryRows: Array<Record<string, unknown>> = await manager.query(
-          `SELECT id, idempotency_key, request_hash, product, direction, channel, principal_type, principal_id,
-                  currency, principal_amount_minor, transaction_reference, correlation_id, journal_id,
-                  decision_status, finalized_at, decided_at, fee_decision, commission_decision, reward_decision,
-                  limit_decision, revenue_decision, configuration_version, snapshot_schema_version,
-                  supersedes_snapshot_id, superseded_reason, created_by, created_at, updated_at, version
-             FROM commercial_decision_snapshots WHERE idempotency_key = $1`,
-          [idempotencyKey],
-        );
-        if (retryRows.length > 0) {
-          const prior = retryRows[0]!;
-          if (prior.request_hash !== requestHash) {
-            throw new ConflictException(
-              'COMMERCIAL_DECISION_IDEMPOTENCY_CONFLICT: idempotencyKey already recorded a different commercial decision',
-            );
-          }
-          return { snapshot: prior, replayed: true };
-        }
-      }
-      throw error;
     }
-    return { snapshot: rows[0]!, replayed: false };
+
+    throw new ConflictException(
+      'COMMERCIAL_DECISION_CONFLICT: snapshot could not be recorded due to a uniqueness conflict',
+    );
   }
 
   private async insertSnapshotRow(
@@ -492,11 +484,8 @@ export class CommercialDecisionSnapshotService {
          limit_decision, revenue_decision, configuration_version, snapshot_schema_version,
          supersedes_snapshot_id, superseded_reason, created_by
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,1,$22,$23,$24)
-       RETURNING id, idempotency_key, request_hash, product, direction, channel, principal_type, principal_id,
-              currency, principal_amount_minor, transaction_reference, correlation_id, journal_id,
-              decision_status, finalized_at, decided_at, fee_decision, commission_decision, reward_decision,
-              limit_decision, revenue_decision, configuration_version, snapshot_schema_version,
-              supersedes_snapshot_id, superseded_reason, created_by, created_at, updated_at, version`,
+       ON CONFLICT DO NOTHING
+       RETURNING ${SNAPSHOT_SELECT_COLUMNS}`,
       [
         row.idempotencyKey,
         row.requestHash,
