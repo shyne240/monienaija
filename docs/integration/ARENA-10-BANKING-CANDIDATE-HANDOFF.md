@@ -6,14 +6,14 @@ the row → History → journal checks can be rerun without re-deriving the chai
 
 ## Candidate
 
-| Field | Value |
-| --- | --- |
-| Pull request | **#44** — `[DRAFT] Banking integration candidate: Monnify Bank→Wallet lifecycle, governed returns + #51 reconciliation` |
-| Base | `arena/5-main-web-integration` |
-| Head branch | `arena/74f08c9a-monienaija` |
-| Head SHA | `6caafcd587d5ff66b2d2cdebf2935c6a5a8bf7d2` |
-| State | draft, unmerged |
-| PR #40 | reviewed head `f59a1c87833a892524bc559f9a4a5d8d220bcaba` — **already in this ancestry** (`git merge-base --is-ancestor f59a1c87 <head>` → true). #40 itself stays red and unmerged. |
+| Field        | Value                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request | **#44** — `[DRAFT] Banking integration candidate: Monnify Bank→Wallet lifecycle, governed returns + #51 reconciliation`                                                             |
+| Base         | `arena/5-main-web-integration`                                                                                                                                                      |
+| Head branch  | `arena/74f08c9a-monienaija`                                                                                                                                                         |
+| Head SHA     | `6caafcd587d5ff66b2d2cdebf2935c6a5a8bf7d2`                                                                                                                                          |
+| State        | draft, unmerged                                                                                                                                                                     |
+| PR #40       | reviewed head `f59a1c87833a892524bc559f9a4a5d8d220bcaba` — **already in this ancestry** (`git merge-base --is-ancestor f59a1c87 <head>` → true). #40 itself stays red and unmerged. |
 
 The candidate also contains integration tip `9d15de47704b3f6d2db596069a352bb97919920a` and PR #51's
 head `8e8f0615aebece9988ea1a8476076d8db10e7cb6`.
@@ -24,12 +24,12 @@ Three identities were authored on separate branches and all extend the integrati
 `1785753600813`. Nothing was renumbered; the combined chain is strictly increasing and the head is
 the newest published identity.
 
-| Timestamp | Class | Origin | Position |
-| --- | --- | --- | --- |
-| `1785753600813` | `CreatePlatformFundsBankComparisons1785753600813` | integration (PR #33) | 172nd — last identity of the integration schema |
-| `1785753600900` | `BankToWalletMonnifyJourney1785753600900` | Banking (PR #40) | 173rd |
-| `1785753600901` | `BankToWalletReturnRefunds1785753600901` | Banking (governed returns) | 174th |
-| `1785753600910` | `SettlementReportReconciliation1785753600910` | Arena 10 (PR #51) | 175th — combined head |
+| Timestamp       | Class                                             | Origin                     | Position                                        |
+| --------------- | ------------------------------------------------- | -------------------------- | ----------------------------------------------- |
+| `1785753600813` | `CreatePlatformFundsBankComparisons1785753600813` | integration (PR #33)       | 172nd — last identity of the integration schema |
+| `1785753600900` | `BankToWalletMonnifyJourney1785753600900`         | Banking (PR #40)           | 173rd                                           |
+| `1785753600901` | `BankToWalletReturnRefunds1785753600901`          | Banking (governed returns) | 174th                                           |
+| `1785753600910` | `SettlementReportReconciliation1785753600910`     | Arena 10 (PR #51)          | 175th — combined head                           |
 
 - Combined inventory: **175** identities (integration's 172 + the three appended).
 - Upgrade from the integration schema applies **exactly** `0900`, `0901`, `0910`, in that order, and
