@@ -48,6 +48,9 @@ describe('capability matrix is grounded in the baseline routes', () => {
   test('every authorable contract states what it does NOT do financially', () => {
     expect(AUTHORING_CONTRACTS.fees.note).toMatch(/No fee is charged/);
     expect(AUTHORING_CONTRACTS.commissions.note).toMatch(/Definition only/);
+    expect(AUTHORING_CONTRACTS.commissions.note).toMatch(/calculate an eligible commission allocation/);
+    expect(AUTHORING_CONTRACTS.commissions.note).toMatch(/advisory preview shows what would be allocated/);
+    expect(AUTHORING_CONTRACTS.commissions.note).toMatch(/ledger posting remain disabled while commercial accounting is disabled/);
     expect(AUTHORING_CONTRACTS.rewards.note).toMatch(/No cashback credit/);
     for (const contract of Object.values(AUTHORING_CONTRACTS)) {
       expect(contract.reasonRequired).toBe(true);

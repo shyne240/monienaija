@@ -1,0 +1,27 @@
+{
+  "result": "PASS_EXPECTED_V1_BLOCK",
+  "executedAt": "2026-11-27",
+  "testedCommit": "9d15de47704b3f6d2db596069a352bb97919920a",
+  "database": "disposable local PostgreSQL; isolated integration fixture",
+  "testFile": "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts",
+  "suiteResult": "30/30 passed",
+  "seededRoleModifyAttempt": {
+    "roleKey": "OPERATIONS",
+    "route": "POST /internal/a2/workforce/role-definitions/proposals",
+    "proposalType": "MODIFY",
+    "httpStatus": 403,
+    "testCase": "9c. MODIFY cannot target one of the eleven seeded roles",
+    "serviceErrorTemplate": "Role ${roleKey} is one of the eleven V1-seeded roles and cannot be modified through this workflow",
+    "interpretation": "V1 role-definition governance supports custom-role definition changes only; it does not provide the requested maker/checker grant-edit flow for a seeded role."
+  },
+  "seededRoleSafety": {
+    "testCase": "14a. all eleven seeded roles remain active and ADMINISTRATOR grants are unchanged",
+    "result": "PASS",
+    "fixtureCredentialsOrGrantsChanged": false
+  },
+  "relevantSourceSha256": {
+    "src/authorization/role-definition-governance.service.ts": "6bbb025decb9c155e12b3a5369e49bdb3888719ea8ffc13eb4d3a85ea987ec9e",
+    "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts": "8f4a20c27771da9cf0dda1eaaa1468a56ae695db2dc357cbea44e1a735c493e0"
+  },
+  "boundary": "No seeded grant or workforce credential was modified. Dashboard template assignment is a separate workflow and was not changed or treated as role-grant evidence."
+}

@@ -283,6 +283,20 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
       beneficiaryId,
       idempotencyKey: randomUUID(),
     });
+    const syntheticBusinessReference = `ARENA11-W2B-${randomUUID()}`;
+    const [commitmentReference] = await dataSource.query(
+      'SELECT external_operation_id FROM financial_commitments WHERE id=$1',
+      [outbound.commitment.id],
+    );
+    // This synthetic CREATED operation supplies a real business reference for the reserved journal
+    // without dispatching to a provider or settling funds; it exists only in disposable PG.
+    await dataSource.query(
+      `INSERT INTO banking_outbound_operations
+       (institution_id,provider_key,environment,operation_reference,external_operation_id,currency,
+        amount_minor,destination_bank_code,destination_account_number,state)
+       VALUES($1,'SYNTHETIC','sandbox',$2,$3,'NGN',500,'000001','0123456789','CREATED')`,
+      [institutionId, syntheticBusinessReference, commitmentReference.external_operation_id],
+    );
     // Platform funding rails stay unchanged; request approval/execution uses the accepted domain fixture.
     const agentFunding = new AgentFundingGovernanceTestFacade(
       app.get(AgentFundingService),
@@ -359,7 +373,7 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
         id: outbound.commitment.id,
         status: 'RESERVED',
         role: 'FINANCE_AUDITOR',
-        reference: '',
+        reference: syntheticBusinessReference,
       },
       {
         type: 'CUSTOMER_FUNDING',
@@ -412,6 +426,7 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
         200,
       );
       entry.reference = result.body.reference;
+      if (entry.type === 'WALLET_TO_BANK') expect(entry.reference).toBe(syntheticBusinessReference);
       expect(result.body).toMatchObject({ id: entry.id, type: entry.type, status: entry.status });
       expect(
         (
@@ -539,6 +554,30 @@ describe('Transaction History five-product real-workforce browser matrix', () =>
         if (entry.type === 'BANK_TO_WALLET')
           await dialog.getByText('No journal recorded.', { exact: true }).waitFor();
         await shot(page, `${index}-${entry.type}-${entry.status}-detail`);
+        if (entry.type === 'WALLET_TO_BANK' && details[index]!.journals?.some(Boolean)) {
+          const journalId = details[index]!.journals!.find(Boolean)!;
+          await dialog.getByRole('button', { name: 'Open journal', exact: true }).first().click();
+          await page.getByText('Journal Entry Details', { exact: true }).waitFor();
+          await page.getByText(journalId, { exact: false }).first().waitFor();
+          await shot(page, `${index}-${entry.type}-${entry.status}-journal`);
+          const moneySection = page.getByTestId('section-money');
+          if ((await moneySection.getAttribute('aria-expanded')) !== 'true')
+            await moneySection.click();
+          await page.getByTestId('nav-transfers').click();
+          await page.getByRole('heading', { name: 'Transaction History', exact: true }).waitFor();
+          await page.getByPlaceholder('Enter a transaction reference').fill(entry.reference);
+          await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+          const returnedRow = page.getByRole('row').filter({ hasText: entry.reference });
+          await returnedRow.waitFor();
+          expect(await returnedRow.innerText()).toContain(entry.status.replaceAll('_', ' '));
+          await returnedRow.getByRole('link', { name: 'View details', exact: true }).click();
+          await page.getByRole('dialog').getByRole('heading', { name: entry.reference, exact: true }).waitFor();
+          expect(await page.getByRole('dialog').innerText()).toContain(entry.id);
+          await shot(page, `${index}-${entry.type}-${entry.status}-journal-return`);
+          browserChecks.push(
+            `${entry.role}: synthetic business reference ${entry.reference} → journal ${journalId} → Transaction History exact-search → reopened same ${entry.type}/${entry.id} detail`,
+          );
+        }
         const savedUrl = page.url();
         expect(savedUrl).toBe(origin + '/' + hash);
         await page.goto('about:blank');
