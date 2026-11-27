@@ -61,8 +61,8 @@ interface NavContext {
   /** Finance operations deep links: open a transaction and resolve its journal. */
   transactionId?: string;
   transactionType?: string;
-  /** Reconciliation deep links: open the evidence tab (and, with `institutionId`, its breaks). */
-  reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence';
+  /** Reconciliation deep links: open the evidence or settlement-reports tab. */
+  reconciliationTab?: 'runs' | 'trial-balance' | 'finance' | 'evidence' | 'settlement-reports';
   institutionId?: string;
   // Audit workspace pre-filters (ARENA 6 drill-downs). Search criteria only; see
   // `AdminNavigationContext` — the audit read surface stays server-restricted.
@@ -754,7 +754,11 @@ export const Layout: React.FC = () => {
           />
         );
       case 'platformFunds':
-        return <PlatformFundsScreen />;
+        return (
+          <PlatformFundsScreen
+            onOpenJournal={(journalId) => handleNav('ledgerExplorer', { journalId })}
+          />
+        );
       case 'bankingOperations':
         return (
           <BankingOperationsScreen

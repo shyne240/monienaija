@@ -74,9 +74,10 @@ const HISTORY_IDENTITY = [
 
 // PR #33 appended platform-funds bank comparisons (0813). Published identity; never renumber.
 const PLATFORM_FUNDS = ['CreatePlatformFundsBankComparisons1785753600813'] as const;
+const SETTLEMENT_RECONCILIATION = ['SettlementReportReconciliation1785753600910'] as const;
 
-const COMBINED_HEAD_TIMESTAMP = 1785753600813;
-const COMBINED_HEAD_NAME = 'CreatePlatformFundsBankComparisons1785753600813';
+const COMBINED_HEAD_TIMESTAMP = 1785753600910;
+const COMBINED_HEAD_NAME = 'SettlementReportReconciliation1785753600910';
 
 interface MigrationFile {
   timestamp: number;
@@ -104,7 +105,7 @@ async function appliedLedger(ds: DataSource): Promise<Array<{ timestamp: number;
 
 async function expectLedgerMatchesFilesystem(ds: DataSource): Promise<void> {
   const onDisk = filesystemMigrations();
-  expect(onDisk).toHaveLength(172);
+  expect(onDisk).toHaveLength(173);
   const applied = await appliedLedger(ds);
   expect(applied).toHaveLength(onDisk.length);
   expect(applied).toEqual([...onDisk].sort((a, b) => a.timestamp - b.timestamp));
@@ -120,10 +121,10 @@ async function migrationNames(ds: DataSource): Promise<string[]> {
 }
 
 describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
-  it('contains the 172 identities from both frozen predecessors and later migration additions', () => {
-    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 0806 + 0807 + 0813 = 172.
+  it('contains the 173 identities from both frozen predecessors and later migration additions', () => {
+    // 152 common + 9 Arena 3D + 3 Arena 2C + 2 Arena 5 + 0506 + 0507 + 0805 + 0806 + 0807 + 0813 + 0910 = 173.
     const onDisk = filesystemMigrations();
-    expect(onDisk).toHaveLength(172);
+    expect(onDisk).toHaveLength(173);
     const names = onDisk.map((m) => m.name);
     for (const name of [
       FEE_TARGETING,
@@ -134,6 +135,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
       ...ARENA1_ONLY,
       ...HISTORY_IDENTITY,
       ...PLATFORM_FUNDS,
+      ...SETTLEMENT_RECONCILIATION,
     ]) {
       expect(names).toContain(name);
     }
@@ -175,6 +177,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
               ...ARENA1_ONLY,
               ...HISTORY_IDENTITY,
               ...PLATFORM_FUNDS,
+              ...SETTLEMENT_RECONCILIATION,
             ] as readonly string[]
           ).includes(name);
         }),
@@ -191,6 +194,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA1_ONLY,
         ...HISTORY_IDENTITY,
         ...PLATFORM_FUNDS,
+        ...SETTLEMENT_RECONCILIATION,
       ]) {
         expect(historicalNames).not.toContain(name);
       }
@@ -206,6 +210,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA1_ONLY,
         ...HISTORY_IDENTITY,
         ...PLATFORM_FUNDS,
+        ...SETTLEMENT_RECONCILIATION,
       ]);
 
       // Idempotent replay: nothing remains pending and nothing is re-applied.
@@ -243,6 +248,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
               ...ARENA1_ONLY,
               ...HISTORY_IDENTITY,
               ...PLATFORM_FUNDS,
+              ...SETTLEMENT_RECONCILIATION,
             ] as readonly string[]
           ).includes(name);
         }),
@@ -259,6 +265,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA1_ONLY,
         ...HISTORY_IDENTITY,
         ...PLATFORM_FUNDS,
+        ...SETTLEMENT_RECONCILIATION,
       ]) {
         expect(historicalNames).not.toContain(name);
       }
@@ -273,6 +280,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
         ...ARENA1_ONLY,
         ...HISTORY_IDENTITY,
         ...PLATFORM_FUNDS,
+        ...SETTLEMENT_RECONCILIATION,
       ]);
 
       await expect(ds.showMigrations()).resolves.toBe(false);
@@ -290,12 +298,12 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
     }
   }, 180_000);
 
-  it('fresh install from an empty database applies the full 172-identity chain exactly once; replay applies nothing', async () => {
+  it('fresh install from an empty database applies the full 173-identity chain exactly once; replay applies nothing', async () => {
     const ds = await createEmptyIntegrationDataSource('ar5fresh');
     try {
       await ds.initialize();
       const executed = await ds.runMigrations({ transaction: 'all' });
-      expect(executed).toHaveLength(172);
+      expect(executed).toHaveLength(173);
       await expect(ds.showMigrations()).resolves.toBe(false);
       await expect(ds.runMigrations({ transaction: 'all' })).resolves.toEqual([]);
       await expectLedgerMatchesFilesystem(ds);

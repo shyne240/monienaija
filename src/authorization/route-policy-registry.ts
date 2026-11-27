@@ -430,6 +430,138 @@ const PLATFORM_FUNDS_ROUTE_POLICIES: readonly Readonly<{
 ];
 
 /**
+ * Provider Settlement Report & Statement Reconciliation (Arena 10).
+ *
+ * Strictly non-posting reconciliation evidence & review surface under `ledger.view`.
+ * Write actions additionally enforce MFA + `FINANCE_PREPARER` (import/propose) and independent
+ * `FINANCE_CONTROLLER` (review) inside `SettlementReconciliationService`, with dynamic institution
+ * scope resolved on every request.
+ */
+const SETTLEMENT_RECONCILIATION_ROUTE_POLICIES: readonly Readonly<{
+  method: string;
+  pattern: RegExp;
+  resourceType: string;
+  requiredFunctions: readonly string[];
+}>[] = [
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/overview$/,
+    resourceType: 'finance-settlement-reconciliation-overview',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/imports\/preview$/,
+    resourceType: 'finance-settlement-reconciliation-import-preview',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/imports$/,
+    resourceType: 'finance-settlement-reconciliation-import-create',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/imports$/,
+    resourceType: 'finance-settlement-reconciliation-imports-list',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/imports\/[^/]+$/i,
+    resourceType: 'finance-settlement-reconciliation-import-detail',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/transaction-matches$/,
+    resourceType: 'finance-settlement-reconciliation-matches-list',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/transaction-matches\/[^/]+$/i,
+    resourceType: 'finance-settlement-reconciliation-match-detail',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/transaction-matches\/[^/]+\/propose$/i,
+    resourceType: 'finance-settlement-reconciliation-match-propose',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/transaction-matches\/[^/]+\/review$/i,
+    resourceType: 'finance-settlement-reconciliation-match-review',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/settlement-batches$/,
+    resourceType: 'finance-settlement-reconciliation-batches-list',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/settlement-batches\/[^/]+$/i,
+    resourceType: 'finance-settlement-reconciliation-batch-detail',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/settlement-batches\/[^/]+\/propose$/i,
+    resourceType: 'finance-settlement-reconciliation-batch-propose',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/settlement-batches\/[^/]+\/review$/i,
+    resourceType: 'finance-settlement-reconciliation-batch-review',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/return-dispute-cases$/,
+    resourceType: 'finance-settlement-reconciliation-cases-list',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'GET',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/return-dispute-cases\/[^/]+$/i,
+    resourceType: 'finance-settlement-reconciliation-case-detail',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/return-dispute-cases\/[^/]+\/propose$/i,
+    resourceType: 'finance-settlement-reconciliation-case-propose',
+    requiredFunctions: ['ledger.view'],
+  },
+  {
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/finance-operations\/settlement-reconciliation\/return-dispute-cases\/[^/]+\/review$/i,
+    resourceType: 'finance-settlement-reconciliation-case-review',
+    requiredFunctions: ['ledger.view'],
+  },
+];
+
+/**
  * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
  *
  * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
@@ -660,6 +792,27 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: [...platformFunds.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    const settlementReconciliation = SETTLEMENT_RECONCILIATION_ROUTE_POLICIES.find(
+      (route) => route.method === lookedUpMethod && route.pattern.test(path),
+    );
+    if (settlementReconciliation) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: settlementReconciliation.resourceType,
+        policy: {
+          resourceType: settlementReconciliation.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [...settlementReconciliation.requiredFunctions],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

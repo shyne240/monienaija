@@ -633,6 +633,7 @@ export class FinanceOperationsService {
       principal,
     });
     const internal = await this.internalLedgerChecks(principal, institution, limit);
+    const settlementEvidence = await this.importedSettlementReportEvidence(institutionId);
 
     const includeInternal = source === 'ALL' || source === 'INTERNAL_LEDGER';
     const includeExternal = source === 'ALL' || source === 'EXTERNAL_PROVIDER';
@@ -645,6 +646,7 @@ export class FinanceOperationsService {
     const sources = this.sourceViews({
       internalChecks: internal.checks,
       external,
+      settlementEvidence,
       providerReadiness,
       generatedAt,
     });
@@ -1352,9 +1354,119 @@ export class FinanceOperationsService {
     return { breaks, source, openExceptions: Number(openCount[0]?.total ?? '0') };
   }
 
+  private async importedSettlementReportEvidence(institutionId: string): Promise<{
+    providerImportsCount: number;
+    statementImportsCount: number;
+    hasVerifiedStatement: boolean;
+    latestProviderImportedAt: string | null;
+    latestStatementImportedAt: string | null;
+    statementProviders: string[];
+    openProviderBreaks: number;
+    openStatementBreaks: number;
+  }> {
+    const imports = await this.dataSource.query<
+      Array<{
+        provider_key: string;
+        report_type: string;
+        verification_status: string;
+        imported_at: Date | string;
+      }>
+    >(
+      `SELECT provider_key, report_type, verification_status, imported_at
+         FROM settlement_report_imports
+        WHERE institution_id = $1
+        ORDER BY imported_at DESC`,
+      [institutionId],
+    );
+    if (imports.length === 0) {
+      return {
+        providerImportsCount: 0,
+        statementImportsCount: 0,
+        hasVerifiedStatement: false,
+        latestProviderImportedAt: null,
+        latestStatementImportedAt: null,
+        statementProviders: [],
+        openProviderBreaks: 0,
+        openStatementBreaks: 0,
+      };
+    }
+
+    const statementImports = imports.filter(
+      (i) => i.report_type === 'WALLET_STATEMENT' || i.report_type === 'BANK_STATEMENT',
+    );
+    const providerImports = imports.filter(
+      (i) => i.report_type !== 'WALLET_STATEMENT' && i.report_type !== 'BANK_STATEMENT',
+    );
+
+    const [txBreaks, batchBreaks, retBreaks] = await Promise.all([
+      this.dataSource.query<Array<{ provider_open: string; statement_open: string }>>(
+        `SELECT COUNT(*) FILTER (
+                  WHERE report_type NOT IN ('WALLET_STATEMENT', 'BANK_STATEMENT')
+                    AND match_status <> 'MATCHED'
+                    AND review_state <> 'APPROVED'
+                )::text AS provider_open,
+                COUNT(*) FILTER (
+                  WHERE report_type IN ('WALLET_STATEMENT', 'BANK_STATEMENT')
+                    AND match_status <> 'MATCHED'
+                    AND review_state <> 'APPROVED'
+                )::text AS statement_open
+           FROM settlement_transaction_matches
+          WHERE institution_id = $1`,
+        [institutionId],
+      ),
+      this.dataSource.query<Array<{ batch_open: string }>>(
+        `SELECT COUNT(*) FILTER (
+                  WHERE batch_status <> 'RECONCILED'
+                    AND review_state <> 'APPROVED'
+                )::text AS batch_open
+           FROM settlement_batch_reconciliations
+          WHERE institution_id = $1`,
+        [institutionId],
+      ),
+      this.dataSource.query<Array<{ ret_open: string }>>(
+        `SELECT COUNT(*) FILTER (
+                  WHERE lifecycle_status <> 'RECONCILED'
+                    AND review_state <> 'APPROVED'
+                )::text AS ret_open
+           FROM settlement_return_dispute_cases
+          WHERE institution_id = $1`,
+        [institutionId],
+      ),
+    ]);
+
+    return {
+      providerImportsCount: providerImports.length,
+      statementImportsCount: statementImports.length,
+      hasVerifiedStatement: statementImports.some(
+        (i) => i.verification_status === 'VERIFIED_OFFICIAL_API_JSON',
+      ),
+      latestProviderImportedAt: providerImports[0]
+        ? this.iso(providerImports[0].imported_at)
+        : null,
+      latestStatementImportedAt: statementImports[0]
+        ? this.iso(statementImports[0].imported_at)
+        : null,
+      statementProviders: Array.from(new Set(statementImports.map((i) => i.provider_key))),
+      openProviderBreaks:
+        Number(txBreaks[0]?.provider_open ?? '0') + Number(retBreaks[0]?.ret_open ?? '0'),
+      openStatementBreaks:
+        Number(txBreaks[0]?.statement_open ?? '0') + Number(batchBreaks[0]?.batch_open ?? '0'),
+    };
+  }
+
   private sourceViews(input: {
     internalChecks: FinanceCheckView[];
     external: { source: ReconciliationSourceView };
+    settlementEvidence: {
+      providerImportsCount: number;
+      statementImportsCount: number;
+      hasVerifiedStatement: boolean;
+      latestProviderImportedAt: string | null;
+      latestStatementImportedAt: string | null;
+      statementProviders: string[];
+      openProviderBreaks: number;
+      openStatementBreaks: number;
+    };
     providerReadiness: ProviderReadinessView[];
     generatedAt: string;
   }): ReconciliationSourceView[] {
@@ -1375,20 +1487,55 @@ export class FinanceOperationsService {
         : `${input.internalChecks.filter((entry) => entry.status !== 'PASS').length} of ${input.internalChecks.length} internal checks reported a difference at ${input.generatedAt}.`,
       providerKeys: [],
     } as ReconciliationSourceView;
-    const external = input.external.source;
-    const statement: ReconciliationSourceView = {
-      source: 'EXTERNAL_STATEMENT',
-      label: 'External bank statement reconciliation',
-      availability: 'UNAVAILABLE',
-      description:
-        'Compares our ledger to an ingested bank/partner statement file. This build has no statement-ingestion contract, so no statement reconciliation can be performed.',
-      evidenceKind: 'BANK_STATEMENT',
-      checkedAt: null,
-      result: 'NOT_PERFORMED',
-      detail:
-        'No statement ingestion, parsing or evidence store exists in this deployment. Absence of a statement result is unavailable evidence — never a successful reconciliation.',
-      providerKeys: [],
-    } as ReconciliationSourceView;
+    const ev = input.settlementEvidence;
+    const external: ReconciliationSourceView =
+      ev.providerImportsCount > 0 && input.external.source.result === 'NOT_PERFORMED'
+        ? ({
+            ...input.external.source,
+            availability: 'PARTIAL',
+            result: ev.openProviderBreaks > 0 ? 'DIFFERENCES' : 'EVIDENCE_RECORDED',
+            checkedAt: ev.latestProviderImportedAt,
+            detail:
+              ev.openProviderBreaks > 0
+                ? `${ev.providerImportsCount} settlement report(s) imported with ${ev.openProviderBreaks} unresolved provider break(s).`
+                : `${ev.providerImportsCount} settlement report(s) imported and matched against internal records.`,
+          } as ReconciliationSourceView)
+        : input.external.source;
+    const statement: ReconciliationSourceView =
+      ev.statementImportsCount > 0
+        ? ({
+            source: 'EXTERNAL_STATEMENT',
+            label: 'External bank statement reconciliation',
+            availability: ev.hasVerifiedStatement ? 'AVAILABLE' : 'PARTIAL',
+            description:
+              'Compares imported Monnify Wallet or corporate settlement bank statements against settlement batches, outbound payouts, and internal ledger records.',
+            evidenceKind: 'BANK_STATEMENT',
+            checkedAt: ev.latestStatementImportedAt,
+            result:
+              ev.openStatementBreaks > 0
+                ? 'DIFFERENCES'
+                : ev.hasVerifiedStatement
+                  ? 'AGREED'
+                  : 'EVIDENCE_RECORDED',
+            detail:
+              ev.openStatementBreaks > 0
+                ? `${ev.statementImportsCount} statement file(s) imported with ${ev.openStatementBreaks} unresolved statement or settlement batch break(s).`
+                : `${ev.statementImportsCount} statement file(s) imported with zero open statement breaks.`,
+            providerKeys: ev.statementProviders,
+          } as ReconciliationSourceView)
+        : ({
+            source: 'EXTERNAL_STATEMENT',
+            label: 'External bank statement reconciliation',
+            availability: 'UNAVAILABLE',
+            description:
+              'Compares our ledger to an ingested bank/partner statement file. No statement file has been imported for this institution yet.',
+            evidenceKind: 'BANK_STATEMENT',
+            checkedAt: null,
+            result: 'NOT_PERFORMED',
+            detail:
+              'No Monnify Wallet or settlement bank statement file has been imported for this institution yet. Absence of a statement result is unavailable evidence — never a successful reconciliation.',
+            providerKeys: [],
+          } as ReconciliationSourceView);
     return [internal, external, statement];
   }
 

@@ -64,6 +64,7 @@ import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { FinanceOperationsModule } from './finance-operations/finance-operations.module';
 import { PlatformFundsModule } from './platform-funds/platform-funds.module';
+import { SettlementReconciliationModule } from './settlement-reconciliation/settlement-reconciliation.module';
 import { InstitutionModule } from './institution/institution.module';
 import { LimitModule } from './limit/limit.module';
 import { MaturityModule } from './maturity/maturity.module';
@@ -179,6 +180,7 @@ import { WorkforceVisibilityModule } from './workforce-visibility/workforce-visi
     InstitutionModule,
     FinanceOperationsModule,
     PlatformFundsModule,
+    SettlementReconciliationModule,
     LimitModule,
     MaturityModule,
     OperationsModule,
