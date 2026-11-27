@@ -22,7 +22,14 @@ const api = ApiClient as unknown as { get: jest.Mock; post: jest.Mock };
  * possible defect here, because an operator would act on it.
  */
 describe('Admin Web banking operations workspace', () => {
-  function signIn() {
+  function signIn(
+    scopes = [
+      'reconciliation.view',
+      'banking.provider.view',
+      'banking.reconciliation.run',
+      'banking.reconciliation.resolve',
+    ],
+  ) {
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
@@ -34,7 +41,7 @@ describe('Admin Web banking operations workspace', () => {
         sessionId: 'banking-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['reconciliation.view'],
+        scopes,
       } as never,
     } as never);
   }
@@ -60,6 +67,67 @@ describe('Admin Web banking operations workspace', () => {
     expect(screen.getByText(/Load an institution to see provider readiness/i)).toBeTruthy();
     // Crucially: no account numbers, no balances, no invented readiness.
     expect(screen.queryByText(/^Operational/)).toBeNull();
+  });
+
+  it('loads a Treasury reconciliation-only view without requesting provider or resolve functions', async () => {
+    signIn(['reconciliation.view']);
+    api.get.mockImplementation((endpoint: string) => {
+      if (endpoint.includes('/reconciliation/') && endpoint.endsWith('/runs'))
+        return Promise.resolve([
+          {
+            id: 'run-1',
+            provider_key: 'sandbox-provider',
+            environment: 'sandbox',
+            state: 'COMPLETED',
+            observations: 2,
+            exceptions_raised: 1,
+            started_at: '2026-11-27T00:00:00.000Z',
+            completed_at: '2026-11-27T00:01:00.000Z',
+            failure_code: null,
+          },
+        ]);
+      if (endpoint.includes('/reconciliation/') && endpoint.includes('/exceptions'))
+        return Promise.resolve([
+          {
+            id: 'exception-1',
+            runId: 'run-1',
+            kind: 'MISSING_SETTLEMENT',
+            severity: 'WARNING',
+            state: 'OPEN',
+            operationReference: 'BIZ-REF-1',
+            amountMinor: null,
+            currency: null,
+            note: null,
+            assignedTo: null,
+            createdAt: '2026-11-27T00:00:00.000Z',
+            escalatedAt: null,
+          },
+        ]);
+      return Promise.reject(new Error(`unexpected GET ${endpoint}`));
+    });
+
+    await openWorkspace();
+    expect(screen.getByTestId('banking-reconciliation-only-access')).toBeTruthy();
+    expect(screen.queryByText('Adapter capabilities')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Institution ID'), {
+      target: { value: '11111111-1111-1111-1111-111111111111' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+    expect(await screen.findByText('sandbox-provider')).toBeTruthy();
+    expect(screen.getByText('BIZ-REF-1')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Run reconciliation/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record escalation' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    const requested = api.get.mock.calls.map(([path]) => String(path));
+    expect(requested.some((path) => path.includes('/internal/banking/capabilities'))).toBe(false);
+    expect(requested.some((path) => path.includes('/internal/banking/providers'))).toBe(false);
+    expect(
+      requested.some((path) => path.includes('/reconciliation/') && path.endsWith('/runs')),
+    ).toBe(true);
+    expect(
+      requested.some((path) => path.includes('/reconciliation/') && path.includes('/exceptions')),
+    ).toBe(true);
   });
 
   it('says the registry is empty instead of implying banking works', async () => {
