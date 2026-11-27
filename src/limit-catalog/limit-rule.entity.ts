@@ -52,12 +52,21 @@ const nullableBigintTransformer: ValueTransformer = {
   'chk_limit_rules_amount_count_exclusive',
   `
   (
-    dimension IN ('MIN_AMOUNT_PER_TX','MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','WALLET_BALANCE_MAX')
+    is_unlimited = TRUE
+    AND limit_value_minor IS NULL
+    AND limit_value_count IS NULL
+    AND dimension IN ('MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','WALLET_BALANCE_MAX','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')
+  )
+  OR
+  (
+    is_unlimited = FALSE
+    AND dimension IN ('MIN_AMOUNT_PER_TX','MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','WALLET_BALANCE_MAX')
     AND limit_value_minor IS NOT NULL AND limit_value_minor >= 0 AND limit_value_count IS NULL
   )
   OR
   (
-    dimension IN ('DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')
+    is_unlimited = FALSE
+    AND dimension IN ('DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')
     AND limit_value_count IS NOT NULL AND limit_value_count >= 0 AND limit_value_minor IS NULL
   )
 `,
@@ -99,6 +108,9 @@ export class LimitRule {
 
   @Column({ name: 'limit_value_count', type: 'integer', nullable: true })
   limitValueCount!: number | null;
+
+  @Column({ name: 'is_unlimited', type: 'boolean', default: false })
+  isUnlimited!: boolean;
 
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;

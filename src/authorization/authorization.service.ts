@@ -202,6 +202,16 @@ export class AuthorizationService {
         principalId: principal.principalId,
       };
     }
+    const anyOfRoles = policy.anyOfRoles ?? [];
+    if (anyOfRoles.length > 0 && !anyOfRoles.some((role) => principal.roles.includes(role))) {
+      return {
+        ...base,
+        allowed: false,
+        reason: 'ROLE_MISSING',
+        principalType: principal.type,
+        principalId: principal.principalId,
+      };
+    }
     // REPORT-34 H-01-R2: `requiredFunctionsExemptPrincipalTypes` is a narrow, per-route exception
     // for principal types that are not catalogue-governed but hold an expressly approved
     // capability on that route (today: SUPPORT on GET /internal/audit). It relaxes only this

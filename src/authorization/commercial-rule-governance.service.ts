@@ -196,6 +196,12 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'dimension',
   'limitValueMinor',
   'limitValueCount',
+  'tierDefaults',
+  'mappings',
+  'tier',
+  'classCode',
+  'classId',
+  'globalDefaultClassCode',
 ]);
 
 /**
@@ -259,7 +265,11 @@ export class CommercialRuleGovernanceService {
         resourceType: definition.resourceType,
         action: definition.action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        requiredRoles: definition.initiatingRoles,
+        ...(definition.initiatingRoles.length > 1
+          ? { anyOfRoles: definition.initiatingRoles }
+          : definition.initiatingRoles.length === 1
+            ? { requiredRoles: definition.initiatingRoles }
+            : {}),
         requiredFunctions: definition.initiatingFunctionCodes,
         minimumAssurance: definition.minimumAssurance,
         customerAccess: 'NONE',

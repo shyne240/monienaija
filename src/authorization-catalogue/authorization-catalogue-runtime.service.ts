@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
+import { RoleFunctionAccessType } from './authorization-catalogue.enums';
 import { AuthorizationRole } from './authorization-role.entity';
 import { AuthorizationRoleFunction } from './authorization-role-function.entity';
 
@@ -74,5 +75,89 @@ export class AuthorizationCatalogueRuntimeService {
       hasAdministrativeCapability: roles.some((r) => r.administrativeCapability),
       allRecognizedRolesReadOnly: roles.every((r) => r.readOnly),
     };
+  }
+
+  /**
+   * Evaluates whether the principal's active non-read-only catalogue roles grant every
+   * requested `functionCode` with one of `allowedAccessTypes` (`INITIATE | EXECUTE` on
+   * maker initiation, `APPROVE | EXECUTE` on checker approval).
+   *
+   * Returns `{ recognized: false, allowed: false }` when none of `roleKeys` exist as
+   * active rows in `authorization_roles` (allowing synthetic unit-test principals that
+   * do not seed catalogue tables to fall back cleanly to `principal.scopes`).
+   */
+  async evaluateFunctionAccess(
+    roleKeys: readonly string[],
+    functionCodes: readonly string[],
+    allowedAccessTypes: readonly RoleFunctionAccessType[],
+  ): Promise<{ recognized: boolean; allowed: boolean }> {
+    const uniqueRoles = [...new Set(roleKeys)].filter((k) => k.length > 0);
+    if (uniqueRoles.length === 0) {
+      return { recognized: false, allowed: false };
+    }
+    const roles = await this.roleRepo.find({
+      where: { roleKey: In(uniqueRoles), isActive: true } as never,
+    });
+    if (roles.length === 0) {
+      return { recognized: false, allowed: false };
+    }
+    const writableRoles = roles.filter((r) => !r.readOnly);
+    if (writableRoles.length === 0) {
+      return { recognized: true, allowed: false };
+    }
+    if (functionCodes.length === 0) {
+      return { recognized: true, allowed: true };
+    }
+    const assignments = await this.roleFunctionRepo.find({
+      where: {
+        roleId: In(writableRoles.map((r) => r.id)),
+        functionCode: In([...new Set(functionCodes)]),
+        isActive: true,
+      } as never,
+    });
+    const allowedSet = new Set<string>(allowedAccessTypes);
+    const allowed = functionCodes.every((code) =>
+      assignments.some((a) => a.functionCode === code && allowedSet.has(a.accessType)),
+    );
+    return { recognized: true, allowed };
+  }
+
+  /**
+   * Lists active, non-read-only catalogue role keys that grant every requested
+   * `functionCode` with one of `allowedAccessTypes`. Used to project dynamic
+   * checker authority on catalogue-governed approval records (`approvingRoles: []`).
+   */
+  async listRoleKeysWithFunctionAccess(
+    functionCodes: readonly string[],
+    allowedAccessTypes: readonly RoleFunctionAccessType[],
+  ): Promise<readonly string[]> {
+    if (functionCodes.length === 0) {
+      return [];
+    }
+    const roles = await this.roleRepo.find({
+      where: { isActive: true, readOnly: false } as never,
+    });
+    if (roles.length === 0) {
+      return [];
+    }
+    const assignments = await this.roleFunctionRepo.find({
+      where: {
+        roleId: In(roles.map((r) => r.id)),
+        functionCode: In([...new Set(functionCodes)]),
+        isActive: true,
+      } as never,
+    });
+    const allowedSet = new Set<string>(allowedAccessTypes);
+    const matchingRoleKeys = roles
+      .filter((role) =>
+        functionCodes.every((code) =>
+          assignments.some(
+            (a) => a.roleId === role.id && a.functionCode === code && allowedSet.has(a.accessType),
+          ),
+        ),
+      )
+      .map((role) => role.roleKey)
+      .sort();
+    return matchingRoleKeys;
   }
 }

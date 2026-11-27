@@ -1,7 +1,23 @@
-import { Controller, Get, Header, Param, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Optional,
+  Param,
+  Post,
+  Query,
+  Req,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { KycWorkforceReviewService } from './kyc-workforce-review.service';
+import {
+  KycWorkforceVerificationService,
+  type WorkforceIdentityVerificationCommand,
+} from './kyc-workforce-verification.service';
 
 interface WorkforceRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
@@ -9,7 +25,10 @@ interface WorkforceRequest {
 
 @Controller('internal/kyc/review-workspace')
 export class KycWorkforceReviewController {
-  constructor(private readonly reviews: KycWorkforceReviewService) {}
+  constructor(
+    private readonly reviews: KycWorkforceReviewService,
+    @Optional() private readonly verifications?: KycWorkforceVerificationService,
+  ) {}
 
   @Get('queue')
   @Header('Cache-Control', 'no-store')
@@ -34,7 +53,29 @@ export class KycWorkforceReviewController {
 
   @Get('customers/:customerId')
   @Header('Cache-Control', 'no-store')
-  inspectCustomer(@Req() req: WorkforceRequest, @Param('customerId') customerId: string) {
-    return this.reviews.inspectCustomer(req.authorizationPrincipal, customerId);
+  async inspectCustomer(@Req() req: WorkforceRequest, @Param('customerId') customerId: string) {
+    const dossier = await this.reviews.inspectCustomer(req.authorizationPrincipal, customerId);
+    return {
+      ...dossier,
+      consentNotice: this.verifications?.consentNotice() ?? null,
+    };
+  }
+
+  @Post('customers/:customerId/verify-identity')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  verifyIdentity(
+    @Req() req: WorkforceRequest,
+    @Param('customerId') customerId: string,
+    @Body() body: WorkforceIdentityVerificationCommand,
+  ) {
+    if (!this.verifications) {
+      throw new ServiceUnavailableException('Workforce KYC verification is unavailable');
+    }
+    return this.verifications.verifyRegisteredIdentity(
+      req.authorizationPrincipal,
+      customerId,
+      body,
+    );
   }
 }

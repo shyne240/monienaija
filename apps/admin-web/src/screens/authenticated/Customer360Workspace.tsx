@@ -213,6 +213,34 @@ async function safeGet<T>(path: string): Promise<SafeResult<T>> {
  * A partially-deployed backend must render "unavailable" rather than a half-empty readiness table —
  * a reviewer must never read a missing field as "requirement not met".
  */
+/**
+ * Renders the server's own refusal detail for a blocked activation.
+ *
+ * `PATCH /customers/:id` answers `409 ACTIVATION_CONFIGURATION_INCOMPLETE` with the exact products
+ * and issue codes that are missing. Telling staff to "refresh and review" would be actively
+ * misleading — refreshing never configures a missing fee rule. The server's issues are the only
+ * actionable information, so they are what the operator is shown.
+ */
+function activationConfigurationMessage(error: unknown): string {
+  const issues =
+    error && typeof error === 'object' && 'issues' in error
+      ? (error as { issues?: unknown }).issues
+      : undefined;
+  const described = Array.isArray(issues)
+    ? issues
+        .map((issue) => {
+          if (!issue || typeof issue !== 'object') return null;
+          const entry = issue as { code?: unknown; message?: unknown; productCode?: unknown };
+          return typeof entry.message === 'string'
+            ? entry.message
+            : [entry.productCode, entry.code].filter(Boolean).join(' · ');
+        })
+        .filter((entry): entry is string => Boolean(entry))
+    : [];
+  const detail = described.length > 0 ? ` Missing: ${described.join('; ')}.` : '';
+  return `Activation blocked — configuration is incomplete, so this customer cannot be activated yet.${detail} Nothing was changed; fix the commercial configuration, then return here.`;
+}
+
 function normalizeRegistrationReview(
   value: RegistrationReview | null,
   customerId: string,
@@ -538,18 +566,27 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
         error && typeof error === 'object' && 'status' in error
           ? Number((error as { status?: unknown }).status)
           : undefined;
-      if (![400, 401, 403, 404].includes(status ?? 0)) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: unknown }).code ?? '')
+          : '';
+      if (
+        ![400, 401, 403, 404].includes(status ?? 0) &&
+        code !== 'ACTIVATION_CONFIGURATION_INCOMPLETE'
+      ) {
         setStatusUnconfirmed(true);
         setStatusReviewLoaded(false);
       }
       setActionError(
-        status === 409
-          ? 'The status change conflicted with the current lifecycle state. Refresh and review the customer before another action.'
-          : status === 400
-            ? 'The status change was blocked by a customer lifecycle rule.'
-            : status === 401 || status === 403 || status === 404
-              ? 'The customer status change was rejected or the customer is unavailable.'
-              : 'The customer status change could not be confirmed. Return to the directory, refresh and review the customer record before any later action. This safeguard is local to this workspace.',
+        status === 409 && code === 'ACTIVATION_CONFIGURATION_INCOMPLETE'
+          ? activationConfigurationMessage(error)
+          : status === 409
+            ? 'The status change conflicted with the current lifecycle state. Refresh and review the customer before another action.'
+            : status === 400
+              ? 'The status change was blocked by a customer lifecycle rule.'
+              : status === 401 || status === 403 || status === 404
+                ? 'The customer status change was rejected or the customer is unavailable.'
+                : 'The customer status change could not be confirmed. Return to the directory, refresh and review the customer record before any later action. This safeguard is local to this workspace.',
       );
     } finally {
       statusLock.current = false;

@@ -50,6 +50,10 @@ export class UpdateLimitRuleDto {
   limitValueCount?: number | null;
 
   @IsOptional()
+  @IsBoolean()
+  isUnlimited?: boolean;
+
+  @IsOptional()
   @IsString()
   effectiveFrom?: string | null;
 

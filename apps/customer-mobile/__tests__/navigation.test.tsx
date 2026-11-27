@@ -1,6 +1,7 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { AppNavigator } from '../src/navigation/AppNavigator';
+import { WelcomeScreen } from '../src/screens/unauthenticated/WelcomeScreen';
 import { useAuthStore } from '../src/store/auth-store';
 
 // Mock navigation components to make it safe to run in node jest tests
@@ -38,15 +39,31 @@ jest.mock('@react-navigation/native-stack', () => {
   };
 });
 
+const mockNavigate = jest.fn();
+
 jest.mock('@react-navigation/native', () => {
   return {
     useNavigation: () => ({
-      navigate: jest.fn(),
+      navigate: mockNavigate,
     }),
   };
 });
 
 describe('Navigation flow tests', () => {
+  beforeEach(() => {
+    mockNavigate.mockClear();
+  });
+
+  test('WelcomeScreen routes Log In to Login and Create New Wallet to Registration', () => {
+    const { getByText } = render(<WelcomeScreen />);
+
+    fireEvent.press(getByText('Log In to Account'));
+    expect(mockNavigate).toHaveBeenCalledWith('Login');
+
+    mockNavigate.mockClear();
+    fireEvent.press(getByText('Create New Wallet'));
+    expect(mockNavigate).toHaveBeenCalledWith('Registration');
+  });
   test('should render SplashScreen when auth store isLoading is true', () => {
     useAuthStore.setState({
       isLoading: true,

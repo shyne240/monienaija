@@ -22,6 +22,7 @@ import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { phoneForms } from './support/controlled-onboarding';
 import { CustomerWalletActivationService } from '../src/customer-wallet/customer-wallet-activation.service';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 
 function encodePbkdf2(password: string, saltStr = 'onboarding03-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -134,6 +135,7 @@ describe('CUSTOMER-ONBOARDING-END-TO-END-01 (real PostgreSQL)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await seedActivationCommercialConfig(dataSource);
     provider.clear();
   });
 
@@ -312,6 +314,7 @@ describe('CUSTOMER-ONBOARDING-END-TO-END-01 (real PostgreSQL)', () => {
         'identity_conflict',
         'account_restriction',
         'financial_policy',
+        'commercial_configuration',
         'account_active',
         'wallet',
       ]);
