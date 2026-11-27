@@ -1170,7 +1170,7 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
               title="Limit profiles"
               endpoint="/internal/limit-profiles"
               columns={PROFILE_COLUMNS}
-              description="Profile configuration and availability. Profiles are not assignments."
+              description="Profile configuration and availability. Profiles are not assignments. Profile create/edit is a direct limit.modify action (audited); limit rule changes remain governed by maker-checker approval."
             />
             <RegistrySection
               title="Limit rules"
@@ -1199,7 +1199,9 @@ const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }
             description={TAB_DESCRIPTION[tab]}
             precedence={PRECEDENCE[tab]}
             authoringDomain={
-              tab === 'fees' || tab === 'commissions' || tab === 'rewards' ? tab : undefined
+              tab === 'fees' || tab === 'commissions' || tab === 'rewards' || tab === 'products'
+                ? tab
+                : undefined
             }
           />
         )}

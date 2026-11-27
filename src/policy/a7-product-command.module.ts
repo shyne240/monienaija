@@ -68,6 +68,7 @@ import {
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { A7ProductPersistenceService } from './a7-product-persistence.service';
 import { A7InboundController } from './a7-inbound.controller';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { OperationsModule } from '../operations/operations.module';
 import { PartnerModule } from '../partner/partner.module';
 import { VirtualAccountModule } from '../virtual-account/virtual-account.module';
@@ -121,6 +122,10 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
     CustomerAuthenticationModule,
     KycTierModule,
     LedgerModule,
+    // PR #27 — the bank-credit limit decision reuses the ONE limit engine. Without this import the
+    // optional LimitEnforcementService injection in InboundFundingService would be undefined and the
+    // inbound route would silently stay ungoverned.
+    LimitCatalogModule,
     PaymentModule,
     OperationsModule,
     PartnerModule,

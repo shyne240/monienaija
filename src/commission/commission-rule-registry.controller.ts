@@ -168,7 +168,8 @@ export class CommissionRuleRegistryController {
       action: 'COMMISSION_RULE_CREATE',
       approvalId,
       payload: this.buildCreatePayload(body),
-      write: () => this.service.createRule(this.buildCreateCommand(body), this.actorOf(req)),
+      write: (_resourceId, manager) =>
+        this.service.createRule(this.buildCreateCommand(body), this.actorOf(req), manager),
     });
   }
 
@@ -207,8 +208,13 @@ export class CommissionRuleRegistryController {
       action: 'COMMISSION_RULE_MODIFY',
       approvalId,
       payload: this.buildUpdatePayload(body),
-      write: (resourceId) =>
-        this.service.updateRule(resourceId!, this.buildUpdateCommand(body), this.actorOf(req)),
+      write: (resourceId, manager) =>
+        this.service.updateRule(
+          resourceId!,
+          this.buildUpdateCommand(body),
+          this.actorOf(req),
+          manager,
+        ),
     });
   }
 

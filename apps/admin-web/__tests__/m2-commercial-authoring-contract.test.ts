@@ -16,6 +16,7 @@ import {
   previewQuery,
   windowState,
 } from '../src/screens/authenticated/commercial-authoring-contract';
+import { resolveCommercialExecutionTarget } from '../src/components/CommercialApprovalInbox';
 
 const NOW = Date.parse('2026-03-01T12:00:00.000Z');
 
@@ -341,6 +342,115 @@ describe('authoring paths resolve from the contracts', () => {
   test('create paths for flat resources are used verbatim', () => {
     expect(authoringPath('fees', 'create')).toBe('/internal/fee-rules');
     expect(authoringPath('rewards', 'create')).toBe('/internal/reward-rules');
+  });
+});
+
+describe('open-ended effective windows (API contract alignment)', () => {
+  test('an empty Effective-until emits no effectiveTo key at all (open-ended), never null or a fabricated date', () => {
+    const payload = buildAuthoringPayload('fees', {
+      reason: 'Open-ended wallet transfer fee',
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      flatFeeMinor: '100',
+      percentageBps: 0,
+      vatBps: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      effectiveTo: '',
+      priority: 100,
+      isActive: true,
+    });
+    expect('effectiveTo' in payload).toBe(false);
+    expect(payload.effectiveFrom).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  test('an omitted Effective-until is likewise open-ended, and an explicit date is a real ISO instant', () => {
+    const base = {
+      reason: 'Window check',
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      flatFeeMinor: '100',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      priority: 10,
+    };
+    const openEnded = buildAuthoringPayload('fees', base);
+    expect('effectiveTo' in openEnded).toBe(false);
+
+    const bounded = buildAuthoringPayload('fees', {
+      ...base,
+      effectiveTo: '2026-06-30T00:00:00.000Z',
+    });
+    expect(bounded.effectiveTo).toBe('2026-06-30T00:00:00.000Z');
+  });
+
+  test('an unparseable Effective-until is a local validation error, not a payload the checker approves', () => {
+    expect(() =>
+      buildAuthoringPayload('fees', {
+        reason: 'Bad window',
+        productCode: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        flatFeeMinor: '100',
+        effectiveFrom: '2026-01-01T00:00:00.000Z',
+        effectiveTo: 'not-a-date',
+        priority: 10,
+      }),
+    ).toThrow(/valid date/i);
+  });
+
+  test('a modify with open-ended Effective-until sends no effectiveTo, so the approved payload stays byte-identical', () => {
+    const payload = buildModifyPayload(
+      'fees',
+      {
+        reason: 'Keep it open-ended',
+        flatFeeMinor: '120',
+        effectiveTo: '',
+        priority: 20,
+        isActive: true,
+      },
+      3,
+    );
+    expect(payload.version).toBe(3);
+    expect('effectiveTo' in payload).toBe(false);
+  });
+
+  test('the approval inbox replays exactly the approved requestDetails for execution', () => {
+    const item = {
+      id: 'approval-1',
+      actionType: 'FEE_RULE_CREATE',
+      resourceType: 'FEE_RULE',
+      resourceId: null,
+      requesterPrincipalId: 'maker-1',
+      approvedBy: 'checker-1',
+      approvalScope: 'fee_rule.create',
+      policy: {
+        requestDetails: {
+          productCode: 'WALLET_TRANSFER',
+          currency: 'NGN',
+          flatFeeMinor: '100',
+          percentageBps: 0,
+          vatBps: 0,
+          effectiveFrom: '2026-01-01T00:00:00.000Z',
+          priority: 100,
+          isActive: true,
+          reason: 'Open-ended wallet transfer fee',
+        },
+      },
+      status: 'APPROVED',
+      requestedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-01T00:10:00.000Z',
+      approvedAt: '2026-01-01T00:01:00.000Z',
+      rejectedAt: null,
+      consumedAt: null,
+      version: 2,
+    };
+    const target = resolveCommercialExecutionTarget(item);
+    expect(target).not.toBeNull();
+    expect(target!.path).toBe('/internal/fee-rules/changes/approval-1/execute-create');
+    expect('effectiveTo' in target!.body).toBe(false);
+    expect(target!.body).toMatchObject({
+      productCode: 'WALLET_TRANSFER',
+      flatFeeMinor: '100',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
   });
 });
 

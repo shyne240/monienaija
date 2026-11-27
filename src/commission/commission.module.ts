@@ -29,7 +29,10 @@ import { CommissionRuleDefinition } from './commission-rule.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([CommissionRuleDefinition]),
-    OperationsModule,
+    // Lazy: OperationsModule → ReconciliationModule → PartnerModule → CommissionModule closes a loop
+    // once the settlement path consumes this module. An eager edge here would be read before
+    // operations.module.ts finished evaluating, which Nest reports as "module at index [1] is undefined".
+    forwardRef(() => OperationsModule),
     forwardRef(() => AuthorizationModule),
   ],
   controllers: [CommissionRuleRegistryController, CommissionRuleResolverController],

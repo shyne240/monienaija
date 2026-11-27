@@ -1,4 +1,3 @@
-import type { QuotePaymentType } from '../quote/quote.enums';
 import {
   BadRequestException,
   Controller,
@@ -11,6 +10,11 @@ import { DataSource } from 'typeorm';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { FeeEngine } from '../fee/fee.engine';
+import { WALLET_TO_BANK } from '../product-catalog/banking-product-identities';
+import {
+  selectCurrentWalletToBankFeeRule,
+  WALLET_TO_BANK_PAYMENT_TYPE,
+} from './banking-fee-rule-selection';
 
 interface AuthenticatedRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
@@ -106,55 +110,16 @@ export class BankingTransferPricingController {
       if (wRows.length === 0) throw new BadRequestException('Wallet not found');
     }
 
-    // Resolve fee rule: exactly one active effective product for NGN with an active rule
-    // This mirrors BankingFeeBindingService's product-agnostic single-product check, but for preview
-    // we compute the fee so the user sees the same number the commitment would bind.
-    const products: Array<{ product_code: string }> = await this.dataSource.query(
-      `SELECT DISTINCT r.product_code FROM fee_rules r JOIN products p ON p.code=r.product_code WHERE r.currency=$1 AND r.is_active AND p.enabled AND p.status='ACTIVE' AND r.effective_from <= clock_timestamp() AND (r.effective_to IS NULL OR r.effective_to > clock_timestamp())`,
-      [currency],
-    );
-
-    if (products.length === 0) {
-      return {
-        principalMinor: amountMinor,
-        currency,
-        feeMinor: '0',
-        vatMinor: '0',
-        totalDebitMinor: amountMinor,
-        pricingSource: 'NO_FEE_RULE' as const,
-        beneficiaryId,
-        bankCode: ben.destination_institution,
-      };
-    }
-    if (products.length !== 1) {
-      // Ambiguous pricing — do not guess. Return unauthoritative preview with zero fee and flag.
-      return {
-        principalMinor: amountMinor,
-        currency,
-        feeMinor: '0',
-        vatMinor: '0',
-        totalDebitMinor: amountMinor,
-        pricingSource: 'AMBIGUOUS_PRICING' as const,
-        beneficiaryId,
-        bankCode: ben.destination_institution,
-      };
-    }
-
-    const productCode = products[0]!.product_code;
-    const rules: Array<{
-      id: string;
-      product_code: string;
-      flat_fee_minor: string;
-      percentage_bps: string;
-      minimum_fee_minor: string | null;
-      maximum_fee_minor: string | null;
-      vat_bps: string;
-      payment_type: string;
-    }> = await this.dataSource.query(
-      `SELECT id,product_code,flat_fee_minor::text,percentage_bps::text,minimum_fee_minor::text,maximum_fee_minor::text,vat_bps::text,payment_type FROM fee_rules WHERE product_code=$1 AND currency=$2 AND is_active AND effective_from <= clock_timestamp() AND (effective_to IS NULL OR effective_to > clock_timestamp()) ORDER BY effective_from DESC LIMIT 1`,
-      [productCode, currency],
-    );
-    const rule = rules[0];
+    // PR #27: price against the canonical product for this direction only.
+    //
+    // This used to resolve "whichever single product in NGN happens to have an active rule", which
+    // made the number the customer saw depend on unrelated products and made the preview report
+    // AMBIGUOUS_PRICING as soon as a second product was priced. The catalogue now names the product,
+    // and `BankingFeeBindingService` — the thing the commitment actually calls — selects by the same
+    // product code, so the preview and the bound fee cannot diverge.
+    const productCode = WALLET_TO_BANK.productCode;
+    // Same selector the commitment's binding uses — see banking-fee-rule-selection.ts.
+    const rule = await selectCurrentWalletToBankFeeRule(this.dataSource.manager, currency);
     if (!rule) {
       return {
         principalMinor: amountMinor,
@@ -169,12 +134,14 @@ export class BankingTransferPricingController {
     }
 
     const calc = this.feeEngine.calculate(amountMinor, currency, {
-      paymentType: rule.payment_type as unknown as QuotePaymentType,
-      flatFeeMinor: rule.flat_fee_minor,
-      percentageBps: rule.percentage_bps,
-      minimumFeeMinor: rule.minimum_fee_minor ?? undefined,
+      paymentType: WALLET_TO_BANK_PAYMENT_TYPE,
+      // A rule with NULL flat and NULL percentage is an approved "no charge" rule, distinct from a
+      // missing rule. Absent is zero here, exactly as in BankingFeeBindingService.
+      flatFeeMinor: rule.flat_fee_minor ?? '0',
+      percentageBps: rule.percentage_bps ?? 0,
+      minimumFeeMinor: rule.minimum_fee_minor ?? '0',
       maximumFeeMinor: rule.maximum_fee_minor ?? undefined,
-      vatBps: rule.vat_bps,
+      vatBps: rule.vat_bps ?? 0,
     });
 
     return {

@@ -1,0 +1,220 @@
+{
+  "generatedAt": "2026-11-26T21:57:13.216Z",
+  "kind": "PR27_ADMIN_WEB_BROWSER_WALKTHROUGH",
+  "testedRevision": "working tree on top of merge df56a4b9 (PR #27 d953fcc1 onto integration aa8b1cf4) with the PR27-BROWSER-01 and PR27-BROWSER-02 fixes",
+  "adminWeb": "apps/admin-web/dist (production Vite bundle built with ADMIN_WEB_API_BASE_URL=/api/v1, served with a byte-for-byte /api proxy)",
+  "database": "disposable PostgreSQL 18.4 (run id pr27walkc)",
+  "checks": [
+    {
+      "name": "no fee rule exists before authoring",
+      "ok": true
+    },
+    {
+      "name": "the proposal alone writes nothing",
+      "ok": true
+    },
+    {
+      "name": "the maker is not offered the checker workspace",
+      "ok": true
+    },
+    {
+      "name": "the independent checker approved the fee proposal",
+      "ok": true
+    },
+    {
+      "name": "the approval ledger records APPROVED",
+      "ok": true
+    },
+    {
+      "name": "the inbox applied the VAT + min/max fee and consumed the approval",
+      "ok": true
+    },
+    {
+      "name": "the preview panel names the applied rule id",
+      "ok": true
+    },
+    {
+      "name": "the preview panel renders a non-zero VAT and the authored flat fee",
+      "ok": true
+    },
+    {
+      "name": "preview and runtime agree on the rule, the fee, the VAT and the total",
+      "ok": true
+    },
+    {
+      "name": "no journal was posted by preview or quote",
+      "ok": true
+    },
+    {
+      "name": "the profile created from the Studio exists and is enabled",
+      "ok": true
+    },
+    {
+      "name": "the limit proposal writes no rule",
+      "ok": true
+    },
+    {
+      "name": "the checker approved the limit proposal",
+      "ok": true
+    },
+    {
+      "name": "the limit execution applied exactly one DAILY_AMOUNT rule",
+      "ok": true
+    },
+    {
+      "name": "the preview panel shows the authored DAILY_AMOUNT threshold",
+      "ok": true
+    },
+    {
+      "name": "runtime admits an amount inside the authored threshold",
+      "ok": true
+    },
+    {
+      "name": "runtime refuses an amount above the authored threshold",
+      "ok": true
+    },
+    {
+      "name": "runtime evaluated the rule the browser applied",
+      "ok": true
+    },
+    {
+      "name": "the product does not exist before authoring",
+      "ok": true
+    },
+    {
+      "name": "the product proposal alone writes nothing",
+      "ok": true
+    },
+    {
+      "name": "the maker is not offered the checker workspace for products",
+      "ok": true
+    },
+    {
+      "name": "the checker approved the product proposal",
+      "ok": true
+    },
+    {
+      "name": "the stored request keeps the approved product code under its own key",
+      "ok": true
+    },
+    {
+      "name": "a changed code is refused, the approval stays usable and no product is created",
+      "ok": true
+    },
+    {
+      "name": "the inbox applied the registration and the product carries the submitted code",
+      "ok": true
+    },
+    {
+      "name": "the registered product is listed in the Studio catalogue",
+      "ok": true
+    }
+  ],
+  "findings": [],
+  "regressionGuards": [
+    "PR27-BROWSER-01 (fixed in this revision): the authored fee carries vatBps 750 and a 50/500 minimum/maximum collar, and is applied by the inbox Execute button, not by an API replay.",
+    "PR27-BROWSER-02 (fixed in this revision): a product registration is authored in the drawer, approved, then applied from the inbox; an edited replay (changed code) is refused with the approval still usable and no product written."
+  ],
+  "fee": {
+    "maker": "finance-preparer@monienaija.local",
+    "checker": "finance-controller@monienaija.local",
+    "approvalId": "a6341594-7f90-44f5-a1a4-b005b5dc38cd",
+    "ruleId": "5f27b7c3-80ce-49c9-ba76-1bcb4ac1823d",
+    "appliedRule": {
+      "flatFeeMinor": "100",
+      "minimumFeeMinor": "50",
+      "maximumFeeMinor": "500",
+      "vatBps": 750,
+      "effectiveTo": null
+    },
+    "previewPanel": {
+      "ruleIdShown": true,
+      "feeMinor": "100",
+      "vatMinor": "7",
+      "totalMinor": "100107",
+      "excerpt": "EFFECTIVE CONFIGURATION \u00b7 ADVISORY What would govern this operation? The backend resolvers explain which approved configuration applies, and why. This is an explanation, not an admission decision: nothing is reserved, charged, accrued or credited. Product code Currency Principal type CUSTOMER AGENT Principal UUID Institution UUID Agent class UUID Service class Channel Direction OUTGOING INCOMING Amount (minor units) Evaluate configuration Everything is evaluated by the backend at the instant it receives the request. An unevaluated field is reported as missing, never defaulted. Advisory preview Effective-configuration preview. Advisory only: it explains which approved configuration would appl"
+    },
+    "runtimeQuote": {
+      "amountMinor": "100000",
+      "feeMinor": "100",
+      "vatMinor": "7",
+      "totalDebitMinor": "100107",
+      "status": "ACTIVE"
+    },
+    "journalsPosted": "0"
+  },
+  "limit": {
+    "profileCode": "PR27_BROWSER_WALK",
+    "maker": "finance-preparer@monienaija.local",
+    "approvalId": "b9c99cad-7a86-4275-baff-093bfd334828",
+    "ruleId": "824f1e5d-8c32-4c93-9888-b668e9e6580f",
+    "previewPanel": {
+      "dimensionShown": true,
+      "limitShown": true,
+      "excerpt": "EFFECTIVE CONFIGURATION \u00b7 ADVISORY What would govern this operation? The backend resolvers explain which approved configuration applies, and why. This is an explanation, not an admission decision: nothing is reserved, charged, accrued or credited. Product code Currency Principal type CUSTOMER AGENT Principal UUID Institution UUID Agent class UUID Service class Channel Direction OUTGOING INCOMING Amount (minor units) Evaluate configuration Everything is evaluated by the backend at the instant it receives the request. An unevaluated field is reported as missing, never defaulted. Advisory preview Effective-configuration preview. Advisory only: it explains which approved configuration would appl"
+    },
+    "runtime": {
+      "within": {
+        "allowed": true,
+        "limitProfileCode": "PR27_BROWSER_WALK",
+        "evaluatedDimensions": ["DAILY_AMOUNT"],
+        "ruleIds": ["824f1e5d-8c32-4c93-9888-b668e9e6580f"]
+      },
+      "overLimitRefusal": {
+        "message": "Limit DAILY_AMOUNT amount 200000 exceeds 100000 for window 2026-11-26:DAILY:Africa/Lagos",
+        "error": "LIMIT_DAILY_AMOUNT_EXCEEDED",
+        "code": "LIMIT_DAILY_AMOUNT_EXCEEDED"
+      }
+    },
+    "previewEqualsRuntime": true
+  },
+  "product": {
+    "approvalId": "6381fb7f-3b9a-4385-9d24-66a0a67ecb8a",
+    "code": "PR27_WALK_PRODUCT",
+    "storedDetails": {
+      "code": "PR27_WALK_PRODUCT",
+      "name": "PR27 walkthrough product",
+      "domain": "CUSTOMER",
+      "reason": "PR27 browser walkthrough \u2014 governed product registration",
+      "status": "DISABLED",
+      "currency": "NGN",
+      "description": "registered through the governed drawer",
+      "productScope": "V1",
+      "configurationStatus": "NOT_CONFIGURED"
+    },
+    "tamperedReplay": {
+      "status": 403,
+      "message": "Governed change rejected: executed payload does not match the approved request (FINGERPRINT_MISMATCH)"
+    },
+    "applied": {
+      "code": "PR27_WALK_PRODUCT",
+      "name": "PR27 walkthrough product",
+      "status": "DISABLED",
+      "product_scope": "V1",
+      "enabled": false
+    },
+    "approvalStatus": "CONSUMED"
+  },
+  "screenshots": [
+    "01-fee-rules-registry-before.png",
+    "02-fee-authoring-drawer-filled-vat.png",
+    "03-fee-proposal-submitted-drawer-closed.png",
+    "04-maker-has-no-checker-workspace.png",
+    "05-fee-approved-by-independent-checker.png",
+    "06-fee-approved-change-executed-from-inbox.png",
+    "07-fee-preview-in-browser.png",
+    "09-maker-session-after-apply.png",
+    "11-limit-profile-created-in-studio.png",
+    "12-limit-authoring-drawer-filled.png",
+    "13-limit-approved-by-independent-checker.png",
+    "14-limit-approved-change-executed.png",
+    "15-limit-preview-in-browser.png",
+    "16-limit-runtime-compared.png",
+    "17-product-authoring-drawer-filled.png",
+    "18-product-proposal-submitted-drawer-closed.png",
+    "19-product-approved-by-independent-checker.png",
+    "20-product-edited-replay-refused.png",
+    "21-product-applied-from-inbox.png",
+    "22-product-visible-in-catalogue.png"
+  ]
+}

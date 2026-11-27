@@ -17,6 +17,12 @@ export interface RequestPrivilegedActionCommand {
   reason: string;
   /** Redacted immutable business details shown to an independent checker. */
   requestDetails?: Record<string, unknown>;
+  /**
+   * Top-level `requestDetails` keys that are entity identifiers rather than secrets and must survive
+   * redaction verbatim (a product `code`, for example). Callers opt in per action; omitting it leaves
+   * the default redaction untouched.
+   */
+  requestDetailsIdentityKeys?: readonly string[];
   actor?: string;
   approvalScope?: string;
   expiresInSeconds?: number;

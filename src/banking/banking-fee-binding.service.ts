@@ -2,6 +2,8 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
 import { FeeEngine } from '../fee/fee.engine';
+import { WALLET_TO_BANK } from '../product-catalog/banking-product-identities';
+import { selectCurrentWalletToBankFeeRule } from './banking-fee-rule-selection';
 import { QuotePaymentType } from '../quote/quote.enums';
 
 export interface FeeBindingInput {
@@ -45,6 +47,11 @@ export interface FeeBindingView {
  * refusing to proceed. A missing fee rule is an operator problem, not something to paper over at the
  * moment a customer's money is in flight.
  *
+ * PR #27 replaced the product-agnostic scope with the canonical product. The old rule was "apply
+ * only when exactly one active product rule exists for the currency", which meant the very act of
+ * configuring a second product made bank transfers unpriced. `WALLET_TO_BANK` is now that product
+ * and only its rules price this route.
+ *
  * `pricingSource` records whether the rule is an approved catalogue rule or a controlled test policy.
  * It is stored rather than inferred, because a test-priced operation must never be mistaken for a
  * production-priced one when someone later asks why a customer was charged what they were.
@@ -83,33 +90,21 @@ export class BankingFeeBindingService {
     // operation either: the bridge declines the same case.
     if (!input.institutionId) return null;
 
-    const applicable = await manager.query<Array<{ count: string }>>(
-      `SELECT count(*)::text AS count FROM fee_rules r
-         JOIN products p ON p.code = r.product_code
-        WHERE r.currency=$1 AND r.is_active AND p.enabled AND p.status='ACTIVE'
-          AND r.effective_from <= clock_timestamp()
-          AND (r.effective_to IS NULL OR r.effective_to > clock_timestamp())`,
-      [input.currency],
-    );
-    if (applicable[0]?.count === '0') {
-      // No approved pricing for this currency: record nothing rather than invent a fee.
-      return null;
-    }
-
-    // Which product prices an outbound bank transfer is a commercial decision that has no approved
-    // answer in this repository. Rather than guess a product code, the binding applies only when
-    // exactly one active, effective product rule exists for the currency; otherwise it refuses to
-    // choose. That keeps the charge attributable to a real approval or to nothing at all.
-    const products = await manager.query<Array<{ product_code: string }>>(
-      `SELECT DISTINCT r.product_code FROM fee_rules r
-         JOIN products p ON p.code = r.product_code
-        WHERE r.currency=$1 AND r.is_active AND p.enabled AND p.status='ACTIVE'
-          AND r.effective_from <= clock_timestamp()
-          AND (r.effective_to IS NULL OR r.effective_to > clock_timestamp())`,
-      [input.currency],
-    );
-    if (products.length !== 1) {
-      // Ambiguous pricing scope is a configuration defect, not a reason to pick one.
+    // PR #27: the product is now a decision that HAS an approved answer.
+    //
+    // This method used to price against "whichever single product in this currency happens to have
+    // an active rule", because no commercial decision named the product for a bank transfer. That
+    // was honest but wrong in two ways: it made the tariff depend on unrelated products' rules, and
+    // it could never charge anything, because adding a second product's rule made the scope
+    // ambiguous and the binding returned null.
+    //
+    // The catalogue now carries `WALLET_TO_BANK` for this route (one identity for customer and
+    // agent — see `banking-product-identities.ts`), so the rule is selected for that product only.
+    // A missing rule still means no charge is bound (never a default fee); there is no
+    // "one product in the currency" fallback any more, and none is needed.
+    const inForce = await selectCurrentWalletToBankFeeRule(manager, input.currency);
+    if (!inForce) {
+      // No approved pricing for this route: record nothing rather than invent a fee.
       return null;
     }
 
@@ -120,7 +115,7 @@ export class BankingFeeBindingService {
       currency: input.currency,
       // The customer authorized `committedAmountMinor` as the total debit.
       beneficiaryAmountMinor: input.committedAmountMinor,
-      productCode: products[0]!.product_code,
+      productCode: WALLET_TO_BANK.productCode,
     });
   }
 
