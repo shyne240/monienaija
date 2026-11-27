@@ -2014,7 +2014,8 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
             Every supported and planned report adapter explicitly states whether its schema is
             verified against official provider documentation or awaiting a redacted dashboard/bank
             export sample. Unverified CSV exports are never presented as production-verified
-            formats.
+            formats. Adapter specifications are synthetic pending validation against production
+            exports; official API JSON verification refers to documentation, not export samples.
           </p>
           <div className="mn-sr__table-wrap">
             <table className="mn-sr__table">
@@ -2044,7 +2045,10 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
                         <div style={{ fontSize: 11, color: '#64748b' }}>Adapter stub (disabled)</div>
                       ) : null}
                     </td>
-                    <td>{fd.documentedSource}</td>
+                    <td>
+                      <div>{fd.adapterSpecProvenance}</div>
+                      {fd.documentedSource}
+                    </td>
                     <td>{fd.missingSampleNeeded ?? 'None — verified against official API JSON'}</td>
                   </tr>
                 ))}

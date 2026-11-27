@@ -19,6 +19,7 @@ export interface SettlementReportFormatDescriptor {
   fileFormat: 'CSV' | 'JSON';
   supported: boolean;
   verificationStatus: 'VERIFIED_OFFICIAL_API_JSON' | 'UNVERIFIED_MISSING_REDACTED_EXPORT';
+  adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC';
   documentedSource: string;
   missingSampleNeeded: string | null;
   note: string;

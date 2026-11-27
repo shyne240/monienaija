@@ -14,11 +14,7 @@ export const SETTLEMENT_REPORT_TYPES = [
 
 export type SettlementReportType = (typeof SETTLEMENT_REPORT_TYPES)[number];
 
-export const STATEMENT_DESTINATIONS = [
-  'MONNIFY_WALLET',
-  'BANK_ACCOUNT',
-  'UNSPECIFIED',
-] as const;
+export const STATEMENT_DESTINATIONS = ['MONNIFY_WALLET', 'BANK_ACCOUNT', 'UNSPECIFIED'] as const;
 
 export type StatementDestination = (typeof STATEMENT_DESTINATIONS)[number];
 export type SettlementDestinationType = StatementDestination;
@@ -125,6 +121,7 @@ export interface SettlementReportFormatDescriptor {
   readonly fileFormat: SettlementFileFormat;
   readonly supported: boolean;
   readonly verificationStatus: FormatVerificationStatus;
+  readonly adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC';
   readonly documentedSource: string;
   readonly missingSampleNeeded: string | null;
   readonly note: string;
@@ -209,7 +206,9 @@ export function maskBankAccountNumber(raw: string | null | undefined): string | 
  */
 export function sanitizeNarrationMaskingAccounts(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const collapsed = String(raw).replace(/[\r\n\t]+/g, ' ').trim();
+  const collapsed = String(raw)
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim();
   if (!collapsed) return null;
   // Mask standalone 10-digit NUBAN numbers without corrupting longer 20-36 digit NIP session IDs
   const masked = collapsed.replace(/(?<![0-9A-Za-z])(\d{6})(\d{4})(?![0-9A-Za-z])/g, '••••••$2');

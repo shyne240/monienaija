@@ -378,7 +378,10 @@ export async function findInboundCandidates(
         );
         if (existing) {
           existing.exceptionState = exc.state;
-          if (exc.resolution_journal_id && !existing.journalIds.includes(exc.resolution_journal_id)) {
+          if (
+            exc.resolution_journal_id &&
+            !existing.journalIds.includes(exc.resolution_journal_id)
+          ) {
             existing.journalIds.push(exc.resolution_journal_id);
           }
         }
@@ -537,8 +540,8 @@ export async function findOutboundCandidates(
   for (const row of rows) {
     const journalIds = Array.from(
       new Set(
-        [row.reservation_journal_id, row.resolution_journal_id].filter(
-          (j): j is string => Boolean(j),
+        [row.reservation_journal_id, row.resolution_journal_id].filter((j): j is string =>
+          Boolean(j),
         ),
       ),
     );

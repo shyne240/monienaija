@@ -18,6 +18,22 @@ describe('Settlement Report & Statement Adapters (Unit)', () => {
   const nibss = new NibssSettlementReportAdapter();
   const registry = new SettlementReportAdapterRegistry([monnify, bankStmt, nibss]);
 
+  it('labels every adapter specification as synthetic even when API documentation was verified', () => {
+    const descriptors = registry.listFormatDescriptors();
+    expect(descriptors.length).toBeGreaterThan(0);
+    expect(
+      descriptors.every(
+        (descriptor) => descriptor.adapterSpecProvenance === 'SYNTHETIC_ADAPTER_SPEC',
+      ),
+    ).toBe(true);
+    expect(
+      registry
+        .listProviders()
+        .flatMap((provider) => provider.formatDescriptors)
+        .every((descriptor) => descriptor.adapterSpecProvenance === 'SYNTHETIC_ADAPTER_SPEC'),
+    ).toBe(true);
+  });
+
   describe('maskBankAccountNumber & minor-unit math', () => {
     it('masks raw account numbers to last-4 bullets and never returns full digits', () => {
       expect(maskBankAccountNumber('0123456789')).toBe('••••••6789');
@@ -44,12 +60,7 @@ describe('Settlement Report & Statement Adapters (Unit)', () => {
         '\uFEFFTransaction Reference,Amount Paid,Fee,Narration\r\n' +
         'MNFY|01,1000.50,15.00,"Settlement for ""Batch A"", Lagos"\r\n';
       const parsed = parseCsvTable(csv);
-      expect(parsed.headers).toEqual([
-        'Transaction Reference',
-        'Amount Paid',
-        'Fee',
-        'Narration',
-      ]);
+      expect(parsed.headers).toEqual(['Transaction Reference', 'Amount Paid', 'Fee', 'Narration']);
       expect(parsed.rows).toHaveLength(1);
       expect(parsed.rows[0]!.values.narration).toBe('Settlement for "Batch A", Lagos');
     });

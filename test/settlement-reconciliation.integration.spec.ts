@@ -104,7 +104,10 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     foreignInstitutionId = (await fixture.createInstitution()).id;
 
     // Grant active institution scope to FINANCE_PREPARER for institutionId only (not foreignInstitutionId).
-    await fixture.grantWorkforceScope(institutionId, sessions.FINANCE_PREPARER!.principal.principalId);
+    await fixture.grantWorkforceScope(
+      institutionId,
+      sessions.FINANCE_PREPARER!.principal.principalId,
+    );
 
     // Seed internal banking_inbound_payments & banking_outbound_operations evidence on institutionId.
     inboundCleanId = randomUUID();
@@ -277,7 +280,12 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     }
 
     // 4 ledger.view workforce roles -> 200 OK on overview
-    for (const role of ['SUPER_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR']) {
+    for (const role of [
+      'SUPER_ADMIN',
+      'FINANCE_PREPARER',
+      'FINANCE_CONTROLLER',
+      'FINANCE_AUDITOR',
+    ]) {
       const res = await request(app.getHttpServer())
         .get(`${BASE}/overview?institutionId=${institutionId}`)
         .set('Authorization', `Bearer ${sessions[role]!.accessToken}`)
@@ -800,9 +808,7 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     const extProviderUntouched = untouchedBreaks.sources.find(
       (s) => s.source === 'EXTERNAL_PROVIDER',
     );
-    const extStmtUntouched = untouchedBreaks.sources.find(
-      (s) => s.source === 'EXTERNAL_STATEMENT',
-    );
+    const extStmtUntouched = untouchedBreaks.sources.find((s) => s.source === 'EXTERNAL_STATEMENT');
     expect(extProviderUntouched?.availability).toBe('UNAVAILABLE');
     expect(extStmtUntouched?.availability).toBe('UNAVAILABLE');
 
@@ -813,9 +819,7 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     const extProviderEnriched = enrichedBreaks.sources.find(
       (s) => s.source === 'EXTERNAL_PROVIDER',
     );
-    const extStmtEnriched = enrichedBreaks.sources.find(
-      (s) => s.source === 'EXTERNAL_STATEMENT',
-    );
+    const extStmtEnriched = enrichedBreaks.sources.find((s) => s.source === 'EXTERNAL_STATEMENT');
     expect(['DIFFERENCES', 'EVIDENCE_RECORDED']).toContain(extProviderEnriched?.result);
     expect(['DIFFERENCES', 'EVIDENCE_RECORDED', 'MATCHED']).toContain(extStmtEnriched?.result);
   });
@@ -924,18 +928,18 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     expect(origInbound).toEqual({ gross: '1000000', fee: '15000', net: '985000' });
 
     // Prove DB append-only / no-delete / immutability / masking invariants directly against PostgreSQL
-    await expect(
-      dataSource.query(`DELETE FROM settlement_report_rows`),
-    ).rejects.toThrow(/never deleted/i);
+    await expect(dataSource.query(`DELETE FROM settlement_report_rows`)).rejects.toThrow(
+      /never deleted/i,
+    );
     await expect(
       dataSource.query(`UPDATE settlement_report_rows SET provider_status = 'TAMPERED'`),
     ).rejects.toThrow(/append-only/i);
-    await expect(
-      dataSource.query(`DELETE FROM settlement_return_dispute_events`),
-    ).rejects.toThrow(/never deleted/i);
-    await expect(
-      dataSource.query(`DELETE FROM settlement_transaction_matches`),
-    ).rejects.toThrow(/never deleted/i);
+    await expect(dataSource.query(`DELETE FROM settlement_return_dispute_events`)).rejects.toThrow(
+      /never deleted/i,
+    );
+    await expect(dataSource.query(`DELETE FROM settlement_transaction_matches`)).rejects.toThrow(
+      /never deleted/i,
+    );
     await expect(
       dataSource.query(
         `UPDATE settlement_return_dispute_cases SET original_gross_minor = 1 WHERE id = $1`,
@@ -1131,7 +1135,10 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     try {
       await previewRowsTable.waitFor({ timeout: 4000 });
     } catch (err) {
-      const bodyText = await prepPage.locator('body').innerText({ timeout: 2000 }).catch(() => '');
+      const bodyText = await prepPage
+        .locator('body')
+        .innerText({ timeout: 2000 })
+        .catch(() => '');
       throw new Error(
         `Preview table did not appear.\nPageErrors:\n${pageErrors.join('\n---\n')}\nBodyText:\n${bodyText}\nOrig: ${String(err)}`,
       );
@@ -1149,9 +1156,7 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
       .getByRole('row')
       .filter({ has: prepPage.getByText('MNFY|SR|GHOST|004') });
     await ghostRow.getByRole('button', { name: 'Inspect' }).click();
-    await prepPage
-      .getByTestId('sr-tx-decision-select')
-      .selectOption('ESCALATE_MISSING_INTERNAL');
+    await prepPage.getByTestId('sr-tx-decision-select').selectOption('ESCALATE_MISSING_INTERNAL');
     await prepPage
       .getByTestId('sr-tx-propose-note')
       .fill('Escalating provider collection missing internal webhook receipt.');

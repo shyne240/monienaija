@@ -287,11 +287,7 @@ export class SettlementReconciliationService {
       : await this.scopeService.institutionIdsForPrincipal(principal.principalId);
 
     // Ensure internal return candidates (e.g. Arena 9 APPROVED_FOR_RETURN / reversed payouts) are synced
-    await this.syncInternalReturnCandidates(
-      this.dataSource,
-      principal,
-      query.institutionId,
-    );
+    await this.syncInternalReturnCandidates(this.dataSource, principal, query.institutionId);
 
     const institutionsRows = hasPlatformAuthority
       ? await this.dataSource.query<Array<{ id: string; code: string; display_name: string }>>(
@@ -605,7 +601,11 @@ export class SettlementReconciliationService {
       principal,
       dto.institutionId,
     );
-    if (dto.periodStart && dto.periodEnd && Date.parse(dto.periodEnd) < Date.parse(dto.periodStart)) {
+    if (
+      dto.periodStart &&
+      dto.periodEnd &&
+      Date.parse(dto.periodEnd) < Date.parse(dto.periodStart)
+    ) {
       throw new BadRequestException('periodEnd cannot precede periodStart');
     }
 
@@ -1022,7 +1022,10 @@ export class SettlementReconciliationService {
       [importId],
     );
     const header = rows[0];
-    if (!header || !(await this.isRecordVisible(principal, (header.institution_id as string | null) ?? null))) {
+    if (
+      !header ||
+      !(await this.isRecordVisible(principal, (header.institution_id as string | null) ?? null))
+    ) {
       throw new NotFoundException('Settlement report import not found');
     }
 
@@ -1202,7 +1205,8 @@ export class SettlementReconciliationService {
       internalPlatformFeeMinor: null,
       internalCustomerCreditMinor: null,
       ambiguousCandidatesCount: 0,
-      explanation: 'Statement line will be matched against settlement batches or return/recall cases.',
+      explanation:
+        'Statement line will be matched against settlement batches or return/recall cases.',
     };
   }
 
@@ -1271,7 +1275,9 @@ export class SettlementReconciliationService {
   // ------------------------------------------------ Workflow 2: Transactions
 
   private isProviderCollectionSuccess(status: string): boolean {
-    return ['PAID', 'OVERPAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED'].includes(status.toUpperCase());
+    return ['PAID', 'OVERPAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED'].includes(
+      status.toUpperCase(),
+    );
   }
 
   private isInternalInboundSuccess(status: string): boolean {
@@ -1834,12 +1840,7 @@ export class SettlementReconciliationService {
         continue;
       }
 
-      const ev = await this.evaluatePayoutRow(
-        manager,
-        ctx.institutionId,
-        ctx.providerKey,
-        row,
-      );
+      const ev = await this.evaluatePayoutRow(manager, ctx.institutionId, ctx.providerKey, row);
       if (ev.candidate) {
         matchedOutboundIds.add(ev.candidate.id);
       }
@@ -1943,8 +1944,8 @@ export class SettlementReconciliationService {
         if (matchedOutboundIds.has(miss.id)) continue;
         const jIds = Array.from(
           new Set(
-            [miss.reservation_journal_id, miss.resolution_journal_id].filter(
-              (x): x is string => Boolean(x),
+            [miss.reservation_journal_id, miss.resolution_journal_id].filter((x): x is string =>
+              Boolean(x),
             ),
           ),
         );
@@ -2296,7 +2297,10 @@ export class SettlementReconciliationService {
           : `Settlement batch ${settlementRef} matched ${matchedCount} internal collection(s), with ${missingCount} missing internal collection(s) (expected count: ${expectedTxCount}).`;
     } else if (expectedNetSettlement !== reportedNet) {
       const batchHeaderFee = BigInt(input.row.providerFeeMinor);
-      if (providerFeeTotal !== batchHeaderFee && grossCollections - batchHeaderFee === reportedNet) {
+      if (
+        providerFeeTotal !== batchHeaderFee &&
+        grossCollections - batchHeaderFee === reportedNet
+      ) {
         batchStatus = 'FEE_MISMATCH';
         explanation = `Settlement fee variance on ${settlementRef}: summed collection fees (${providerFeeTotal}) differ from settlement fee (${batchHeaderFee}).`;
       } else {
@@ -2868,9 +2872,7 @@ export class SettlementReconciliationService {
 
     const internalReversed = c?.internalStatus === 'REVERSED';
     const lifecycle: ReturnDisputeLifecycleStatus =
-      c && internalReversed
-        ? 'RECONCILED'
-        : 'PROVIDER_CONFIRMED_UNMATCHED_INTERNAL';
+      c && internalReversed ? 'RECONCILED' : 'PROVIDER_CONFIRMED_UNMATCHED_INTERNAL';
     const explanation =
       c && internalReversed
         ? `Outbound disbursement reversal for ${c.operationReference} aligns with internal REVERSED state; original amount (${c.amountMinor} minor) preserved immutably.`
@@ -3011,11 +3013,7 @@ export class SettlementReconciliationService {
               OR ($3::text IS NOT NULL AND return_reference = $3)
             )
           LIMIT 1`,
-        [
-          input.institutionId,
-          input.row.refundOrDisputeReference,
-          input.row.platformReference,
-        ],
+        [input.institutionId, input.row.refundOrDisputeReference, input.row.platformReference],
       );
       if (!resolvedOrigRef && b2wReturnRows[0]?.original_provider_reference) {
         resolvedOrigRef = b2wReturnRows[0].original_provider_reference;
@@ -3247,7 +3245,8 @@ export class SettlementReconciliationService {
         input.row.grossAmountMinor,
         input.row.providerFeeMinor,
         input.row.refundOrDisputeReference ?? input.row.providerTransactionReference,
-        input.row.narration ?? `${caseKind} reported (${input.row.grossAmountMinor} minor, status ${input.row.providerStatus}).`,
+        input.row.narration ??
+          `${caseKind} reported (${input.row.grossAmountMinor} minor, status ${input.row.providerStatus}).`,
         input.row.occurredAt ?? new Date().toISOString(),
         provFp,
       ],
@@ -3655,8 +3654,9 @@ export class SettlementReconciliationService {
 
       const chosenCand =
         approve && row.proposed_decision === 'SELECT_CANDIDATE' && row.selected_candidate_id
-          ? (row.ambiguous_candidates ?? []).find((c) => c.sourceId === row.selected_candidate_id) ??
-            null
+          ? ((row.ambiguous_candidates ?? []).find(
+              (c) => c.sourceId === row.selected_candidate_id,
+            ) ?? null)
           : null;
 
       await manager.query(
@@ -3908,9 +3908,7 @@ export class SettlementReconciliationService {
       }
 
       if (dto.decision === 'LINK_STATEMENT_ENTRY' && !dto.linkedStatementRowId) {
-        throw new BadRequestException(
-          'linkedStatementRowId is required for LINK_STATEMENT_ENTRY',
-        );
+        throw new BadRequestException('linkedStatementRowId is required for LINK_STATEMENT_ENTRY');
       }
       if (dto.linkedStatementRowId) {
         const stRows = await manager.query<Array<{ id: string }>>(

@@ -31,9 +31,10 @@ export class NibssSettlementReportAdapter implements SettlementReportProviderAda
       fileFormat: 'CSV',
       supported: false,
       verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
-      documentedSource: 'NIBSS NIP Inward Settlement Schedule (pending redacted institutional export)',
-      missingSampleNeeded:
-        'Redacted NIBSS NIP Inward Transaction & Settlement Schedule export',
+      adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
+      documentedSource:
+        'NIBSS NIP Inward Settlement Schedule (pending redacted institutional export)',
+      missingSampleNeeded: 'Redacted NIBSS NIP Inward Transaction & Settlement Schedule export',
       note: 'Registered behind the shared adapter interface for future NIBSS integration; parsing remains disabled until an official redacted NIBSS schedule is supplied.',
     },
     {
@@ -43,9 +44,10 @@ export class NibssSettlementReportAdapter implements SettlementReportProviderAda
       fileFormat: 'CSV',
       supported: false,
       verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
-      documentedSource: 'NIBSS NIP Outward Settlement Schedule (pending redacted institutional export)',
-      missingSampleNeeded:
-        'Redacted NIBSS NIP Outward Transaction & Settlement Schedule export',
+      adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
+      documentedSource:
+        'NIBSS NIP Outward Settlement Schedule (pending redacted institutional export)',
+      missingSampleNeeded: 'Redacted NIBSS NIP Outward Transaction & Settlement Schedule export',
       note: 'Registered behind the shared adapter interface for future NIBSS integration; parsing remains disabled until an official redacted NIBSS schedule is supplied.',
     },
     {
@@ -55,7 +57,9 @@ export class NibssSettlementReportAdapter implements SettlementReportProviderAda
       fileFormat: 'CSV',
       supported: false,
       verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
-      documentedSource: 'NIBSS NIP Cycle Settlement Summary (pending redacted institutional export)',
+      adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
+      documentedSource:
+        'NIBSS NIP Cycle Settlement Summary (pending redacted institutional export)',
       missingSampleNeeded: 'Redacted NIBSS NIP Cycle Settlement Summary export',
       note: 'Registered behind the shared adapter interface for future NIBSS integration.',
     },

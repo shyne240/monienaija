@@ -488,10 +488,7 @@ export class SettlementReportReconciliation1785753600910 implements MigrationInt
         RETURN NEW;
       END $$
     `);
-    for (const table of [
-      'settlement_transaction_matches',
-      'settlement_batch_reconciliations',
-    ]) {
+    for (const table of ['settlement_transaction_matches', 'settlement_batch_reconciliations']) {
       await q.query(`
         CREATE TRIGGER trg_${table}_no_delete
           BEFORE DELETE ON ${table}

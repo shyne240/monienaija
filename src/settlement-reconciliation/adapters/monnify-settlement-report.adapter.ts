@@ -35,6 +35,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'VERIFIED_OFFICIAL_API_JSON',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource:
       'Monnify API GET /api/v1/merchant/transactions/search, GET /api/v2/merchant/transactions/query & SUCCESSFUL_TRANSACTION webhook',
     missingSampleNeeded: null,
@@ -47,6 +48,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Monnify Knowledge Base: Dashboard → Transactions → Export CSV',
     missingSampleNeeded:
       'Redacted Monnify Dashboard Collections CSV export (Dashboard → Transactions → Export CSV)',
@@ -59,6 +61,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'VERIFIED_OFFICIAL_API_JSON',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource:
       'Monnify API GET /api/v2/disbursements/search-transactions, GET /api/v2/disbursements/single/summary & SUCCESSFUL/FAILED/REVERSED_DISBURSEMENT webhooks',
     missingSampleNeeded: null,
@@ -71,6 +74,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Monnify Knowledge Base: Dashboard → Transfers → Export CSV',
     missingSampleNeeded:
       'Redacted Monnify Dashboard Payouts/Transfers CSV export (Dashboard → Transfers → Export CSV)',
@@ -83,6 +87,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'VERIFIED_OFFICIAL_API_JSON',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource:
       'Monnify API GET /api/v1/settlement-detail, GET /api/v1/transactions/find-by-settlement-reference & SETTLEMENT webhook',
     missingSampleNeeded: null,
@@ -95,6 +100,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource:
       'Monnify Knowledge Base: Dashboard → Settlement → Export Settlements → select start & end date → Export Transaction',
     missingSampleNeeded:
@@ -108,6 +114,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'VERIFIED_OFFICIAL_API_JSON',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Monnify API GET /api/v1/disbursements/wallet/{accountNumber}/statement',
     missingSampleNeeded: null,
     note: 'Verified against official Monnify Wallet Statement API JSON schema (walletTransactionReference, monnifyTransactionReference, availableBalanceBefore/After, amount, transactionDate, transactionType, narration <txRef>/#/<batchRef>/#/<text>/#/<bank>/#/<acct>).',
@@ -119,6 +126,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Monnify Knowledge Base: Dashboard → Balances → Download Statement',
     missingSampleNeeded:
       'Redacted Monnify Dashboard Full Wallet Statement CSV export (Dashboard → Balances → Download Statement)',
@@ -131,6 +139,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'External Nigerian commercial bank / Moniepoint corporate account statement',
     missingSampleNeeded:
       'Redacted corporate settlement bank statement CSV from the designated settlement bank account (when settlement destination policy selects Bank Account instead of Monnify Wallet)',
@@ -143,6 +152,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Normalized settlement bank statement feed (synthetic/redacted)',
     missingSampleNeeded:
       'Redacted corporate settlement bank statement export from the designated settlement bank account',
@@ -155,6 +165,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'JSON',
     supported: true,
     verificationStatus: 'VERIFIED_OFFICIAL_API_JSON',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource:
       'Monnify API GET /api/v1/refunds, GET /api/v1/refunds/{refundReference} & SUCCESSFUL_REFUND / FAILED_REFUND webhooks (disputes/chargebacks/liens are email-notified in Monnify)',
     missingSampleNeeded:
@@ -168,6 +179,7 @@ const MONNIFY_FORMAT_DESCRIPTORS: readonly SettlementReportFormatDescriptor[] = 
     fileFormat: 'CSV',
     supported: true,
     verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+    adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
     documentedSource: 'Monnify Refunds / Chargeback & Fraud Team dispute log CSV',
     missingSampleNeeded:
       'Redacted Monnify Refunds export and Chargeback/Fraud Team dispute log CSV sample',
@@ -217,12 +229,20 @@ function resolveMinorAmount(
   options: { allowNegative?: boolean } = {},
 ): string | null {
   for (const key of minorKeys) {
-    if (record[key] !== undefined && record[key] !== null && asScalarText(record[key]).trim() !== '') {
+    if (
+      record[key] !== undefined &&
+      record[key] !== null &&
+      asScalarText(record[key]).trim() !== ''
+    ) {
       return integerMinorString(record[key], options);
     }
   }
   for (const key of majorKeys) {
-    if (record[key] !== undefined && record[key] !== null && asScalarText(record[key]).trim() !== '') {
+    if (
+      record[key] !== undefined &&
+      record[key] !== null &&
+      asScalarText(record[key]).trim() !== ''
+    ) {
       return majorDecimalToMinor(record[key], options);
     }
   }
@@ -323,10 +343,9 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       }
     }
 
-    const verificationStatus: FormatVerificationStatus =
-      sawDisputeWithoutOfficialSchema
-        ? 'UNVERIFIED_MISSING_REDACTED_EXPORT'
-        : descriptor.verificationStatus;
+    const verificationStatus: FormatVerificationStatus = sawDisputeWithoutOfficialSchema
+      ? 'UNVERIFIED_MISSING_REDACTED_EXPORT'
+      : descriptor.verificationStatus;
 
     return {
       providerKey: this.providerKey,
@@ -390,7 +409,8 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
 
     return items.map((entry, idx) => ({
       rowNumber: idx + 1,
-      record: entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as AnyRecord) : {},
+      record:
+        entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as AnyRecord) : {},
     }));
   }
 
@@ -455,9 +475,7 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       'account_reference',
     ]);
     const product =
-      record.product && typeof record.product === 'object'
-        ? (record.product as AnyRecord)
-        : null;
+      record.product && typeof record.product === 'object' ? (record.product as AnyRecord) : null;
     const productRef = product ? pickString(product, ['reference']) : null;
     const platformRef = pickString(record, [
       'businessReference',
@@ -472,7 +490,8 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       return {
         ok: false,
         reasonCode: 'MISSING_REFERENCE',
-        message: 'Collection row is missing transactionReference, paymentReference, and platformReference.',
+        message:
+          'Collection row is missing transactionReference, paymentReference, and platformReference.',
       };
     }
 
@@ -480,7 +499,11 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       pickString(record, ['currency', 'currencyCode', 'currency_code']) ?? defaultCurrency
     ).toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) {
-      return { ok: false, reasonCode: 'INVALID_CURRENCY', message: `Invalid currency "${currency}".` };
+      return {
+        ok: false,
+        reasonCode: 'INVALID_CURRENCY',
+        message: `Invalid currency "${currency}".`,
+      };
     }
 
     const grossMinor = resolveMinorAmount(
@@ -596,7 +619,11 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
     const maskedCounterparty = maskBankAccountNumber(
       accountDetails
         ? pickString(accountDetails, ['accountNumber', 'account_number'])
-        : pickString(record, ['payerAccountNumber', 'payer_account_number', 'source_account_number']),
+        : pickString(record, [
+            'payerAccountNumber',
+            'payer_account_number',
+            'source_account_number',
+          ]),
     );
     const maskedDestination = maskBankAccountNumber(
       destInfo
@@ -714,7 +741,11 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       pickString(record, ['currency', 'currencyCode', 'currency_code']) ?? defaultCurrency
     ).toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) {
-      return { ok: false, reasonCode: 'INVALID_CURRENCY', message: `Invalid currency "${currency}".` };
+      return {
+        ok: false,
+        reasonCode: 'INVALID_CURRENCY',
+        message: `Invalid currency "${currency}".`,
+      };
     }
 
     const grossMinor = resolveMinorAmount(
@@ -757,7 +788,9 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       };
     }
 
-    const status = (pickString(record, ['status', 'transferStatus', 'transfer_status']) ?? 'UNKNOWN').toUpperCase();
+    const status = (
+      pickString(record, ['status', 'transferStatus', 'transfer_status']) ?? 'UNKNOWN'
+    ).toUpperCase();
     const maskedDestination = maskBankAccountNumber(
       pickString(record, [
         'destinationAccountNumber',
@@ -865,7 +898,11 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       pickString(record, ['currency', 'currencyCode', 'currency_code']) ?? defaultCurrency
     ).toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) {
-      return { ok: false, reasonCode: 'INVALID_CURRENCY', message: `Invalid currency "${currency}".` };
+      return {
+        ok: false,
+        reasonCode: 'INVALID_CURRENCY',
+        message: `Invalid currency "${currency}".`,
+      };
     }
 
     const underlyingRaw = Array.isArray(record.transactions) ? record.transactions : [];
@@ -893,13 +930,19 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       underlyingItems.push({
         providerTransactionReference: uTxRef,
         paymentReference: pickString(u, ['paymentReference', 'payment_reference']),
-        platformReference: pickString(u, ['businessReference', 'business_reference', 'platformReference']),
+        platformReference: pickString(u, [
+          'businessReference',
+          'business_reference',
+          'platformReference',
+        ]),
         grossAmountMinor: uGross,
         providerFeeMinor: uFee,
         netSettlementMinor: uNet,
         currency,
         paidAt: parseIsoTimestamp(pickString(u, ['paidOn', 'paid_on', 'createdOn'])),
-        providerStatus: (pickString(u, ['paymentStatus', 'payment_status', 'status']) ?? 'PAID').toUpperCase(),
+        providerStatus: (
+          pickString(u, ['paymentStatus', 'payment_status', 'status']) ?? 'PAID'
+        ).toUpperCase(),
       });
     }
 
@@ -930,12 +973,28 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       resolveMinorAmount(
         settlementInfo,
         ['providerFeeMinor', 'provider_fee_minor', 'settlementFeeMinor', 'settlement_fee_minor'],
-        ['totalFee', 'total_fee', 'incurredFee', 'incurred_fee', 'settlementFee', 'settlement_fee', 'fee'],
+        [
+          'totalFee',
+          'total_fee',
+          'incurredFee',
+          'incurred_fee',
+          'settlementFee',
+          'settlement_fee',
+          'fee',
+        ],
       ) ??
       resolveMinorAmount(
         record,
         ['providerFeeMinor', 'provider_fee_minor', 'settlementFeeMinor', 'settlement_fee_minor'],
-        ['totalFee', 'total_fee', 'incurredFee', 'incurred_fee', 'settlementFee', 'settlement_fee', 'fee'],
+        [
+          'totalFee',
+          'total_fee',
+          'incurredFee',
+          'incurred_fee',
+          'settlementFee',
+          'settlement_fee',
+          'fee',
+        ],
       );
     const explicitGross =
       resolveMinorAmount(
@@ -986,7 +1045,11 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
     const status = (
       pickString(record, ['settlementStatus', 'settlement_status', 'status']) ?? 'SUCCESS'
     ).toUpperCase();
-    const txCountRaw = pickString(record, ['transactionsCount', 'transactions_count', 'collection_count']);
+    const txCountRaw = pickString(record, [
+      'transactionsCount',
+      'transactions_count',
+      'collection_count',
+    ]);
     const reportedCount =
       txCountRaw && /^\d+$/.test(txCountRaw)
         ? Number(txCountRaw)
@@ -1020,9 +1083,7 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       maskedCounterpartyAccount: null,
       maskedDestinationAccount: maskedDest,
       counterpartyBankCode: destBankCode,
-      narration: sanitizeNarrationMaskingAccounts(
-        pickString(record, ['narration', 'description']),
-      ),
+      narration: sanitizeNarrationMaskingAccounts(pickString(record, ['narration', 'description'])),
       underlyingItems,
       normalizedAttributes: {
         destinationBankName: destBankName,
@@ -1082,7 +1143,10 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       };
     }
 
-    let extractedSettlementRef = pickString(record, ['settlementReference', 'settlement_reference']);
+    let extractedSettlementRef = pickString(record, [
+      'settlementReference',
+      'settlement_reference',
+    ]);
     let extractedPayoutRef = pickString(record, ['payoutReference', 'payout_reference']);
     let extractedNarrationAccount: string | null = null;
     if (rawNarration && rawNarration.includes('/#/')) {
@@ -1093,8 +1157,13 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
     }
 
     const txTypeRaw = (
-      pickString(record, ['transactionType', 'transaction_type', 'entryType', 'entry_type', 'type']) ??
-      ''
+      pickString(record, [
+        'transactionType',
+        'transaction_type',
+        'entryType',
+        'entry_type',
+        'type',
+      ]) ?? ''
     ).toUpperCase();
     const creditMajor = pickString(record, ['credit', 'creditAmount', 'credit_amount']);
     const debitMajor = pickString(record, ['debit', 'debitAmount', 'debit_amount']);
@@ -1125,7 +1194,8 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       return {
         ok: false,
         reasonCode: 'INVALID_STATEMENT_DIRECTION',
-        message: 'Statement row must specify transactionType (CREDIT/DEBIT) or positive credit/debit column.',
+        message:
+          'Statement row must specify transactionType (CREDIT/DEBIT) or positive credit/debit column.',
       };
     }
 
@@ -1140,7 +1210,13 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
     const balanceAfterMinor = resolveMinorAmount(
       record,
       ['availableBalanceAfterMinor', 'available_balance_after_minor', 'balanceAfterMinor'],
-      ['availableBalanceAfter', 'available_balance_after', 'balanceAfter', 'balance', 'closing_balance'],
+      [
+        'availableBalanceAfter',
+        'available_balance_after',
+        'balanceAfter',
+        'balance',
+        'closing_balance',
+      ],
       { allowNegative: true },
     );
 
@@ -1167,8 +1243,12 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
 
     const status = (pickString(record, ['status']) ?? 'COMPLETED').toUpperCase();
     const maskedAccount = maskBankAccountNumber(
-      pickString(record, ['accountNumber', 'account_number', 'walletAccountNumber', 'wallet_account_number']) ??
-        extractedNarrationAccount,
+      pickString(record, [
+        'accountNumber',
+        'account_number',
+        'walletAccountNumber',
+        'wallet_account_number',
+      ]) ?? extractedNarrationAccount,
     );
     const sanitizedNarration = sanitizeNarrationMaskingAccounts(rawNarration);
 
@@ -1180,7 +1260,12 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       paymentReference: null,
       settlementReference: extractedSettlementRef,
       payoutReference: extractedPayoutRef,
-      nipSessionId: pickString(record, ['sessionId', 'session_id', 'nipSessionId', 'nip_session_id']),
+      nipSessionId: pickString(record, [
+        'sessionId',
+        'session_id',
+        'nipSessionId',
+        'nip_session_id',
+      ]),
       refundOrDisputeReference: null,
       currency,
       grossAmountMinor: amountMinor,
@@ -1258,7 +1343,8 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       return {
         ok: false,
         reasonCode: 'MISSING_RETURN_REFERENCE',
-        message: 'Refund/dispute row must include refundReference/disputeReference or original transactionReference.',
+        message:
+          'Refund/dispute row must include refundReference/disputeReference or original transactionReference.',
       };
     }
 
@@ -1299,8 +1385,13 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
             : 'VOLUNTARY_REFUND';
 
     const status = (
-      pickString(record, ['refundStatus', 'refund_status', 'disputeStatus', 'dispute_status', 'status']) ??
-      'PENDING'
+      pickString(record, [
+        'refundStatus',
+        'refund_status',
+        'disputeStatus',
+        'dispute_status',
+        'status',
+      ]) ?? 'PENDING'
     ).toUpperCase();
 
     const rawDate = pickString(record, [
@@ -1334,7 +1425,12 @@ export class MonnifySettlementReportAdapter implements SettlementReportProviderA
       paymentReference: paymentRef,
       settlementReference: null,
       payoutReference: null,
-      nipSessionId: pickString(record, ['sessionId', 'session_id', 'nipSessionId', 'nip_session_id']),
+      nipSessionId: pickString(record, [
+        'sessionId',
+        'session_id',
+        'nipSessionId',
+        'nip_session_id',
+      ]),
       refundOrDisputeReference: refundOrDisputeRef,
       currency,
       grossAmountMinor: amountMinor,

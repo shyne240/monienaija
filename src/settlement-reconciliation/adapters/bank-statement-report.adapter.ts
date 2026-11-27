@@ -56,6 +56,7 @@ export class BankStatementReportAdapter implements SettlementReportProviderAdapt
       fileFormat: 'CSV',
       supported: true,
       verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
+      adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
       documentedSource: 'Corporate Settlement Bank Account Statement CSV (pending bank export)',
       missingSampleNeeded:
         'Redacted corporate settlement bank statement CSV from the designated Nigerian settlement bank',
@@ -68,7 +69,9 @@ export class BankStatementReportAdapter implements SettlementReportProviderAdapt
       fileFormat: 'JSON',
       supported: true,
       verificationStatus: 'UNVERIFIED_MISSING_REDACTED_EXPORT',
-      documentedSource: 'Corporate Settlement Bank Account Statement JSON feed (synthetic/redacted)',
+      adapterSpecProvenance: 'SYNTHETIC_ADAPTER_SPEC',
+      documentedSource:
+        'Corporate Settlement Bank Account Statement JSON feed (synthetic/redacted)',
       missingSampleNeeded:
         'Redacted corporate settlement bank statement export from the designated Nigerian settlement bank',
       note: 'UNVERIFIED bank statement layout.',
@@ -161,16 +164,32 @@ export class BankStatementReportAdapter implements SettlementReportProviderAdapt
 
       let direction: 'STATEMENT_CREDIT' | 'STATEMENT_DEBIT' | null = null;
       let amountMinor: string | null = null;
-      if (creditMinorRaw && integerMinorString(creditMinorRaw) && BigInt(integerMinorString(creditMinorRaw)!) > 0n) {
+      if (
+        creditMinorRaw &&
+        integerMinorString(creditMinorRaw) &&
+        BigInt(integerMinorString(creditMinorRaw)!) > 0n
+      ) {
         direction = 'STATEMENT_CREDIT';
         amountMinor = integerMinorString(creditMinorRaw);
-      } else if (debitMinorRaw && integerMinorString(debitMinorRaw) && BigInt(integerMinorString(debitMinorRaw)!) > 0n) {
+      } else if (
+        debitMinorRaw &&
+        integerMinorString(debitMinorRaw) &&
+        BigInt(integerMinorString(debitMinorRaw)!) > 0n
+      ) {
         direction = 'STATEMENT_DEBIT';
         amountMinor = integerMinorString(debitMinorRaw);
-      } else if (creditRaw && majorDecimalToMinor(creditRaw) && BigInt(majorDecimalToMinor(creditRaw)!) > 0n) {
+      } else if (
+        creditRaw &&
+        majorDecimalToMinor(creditRaw) &&
+        BigInt(majorDecimalToMinor(creditRaw)!) > 0n
+      ) {
         direction = 'STATEMENT_CREDIT';
         amountMinor = majorDecimalToMinor(creditRaw);
-      } else if (debitRaw && majorDecimalToMinor(debitRaw) && BigInt(majorDecimalToMinor(debitRaw)!) > 0n) {
+      } else if (
+        debitRaw &&
+        majorDecimalToMinor(debitRaw) &&
+        BigInt(majorDecimalToMinor(debitRaw)!) > 0n
+      ) {
         direction = 'STATEMENT_DEBIT';
         amountMinor = majorDecimalToMinor(debitRaw);
       }
@@ -207,7 +226,9 @@ export class BankStatementReportAdapter implements SettlementReportProviderAdapt
         continue;
       }
 
-      const rowCurrency = (pickString(record, ['currency', 'currency_code']) ?? currency).toUpperCase();
+      const rowCurrency = (
+        pickString(record, ['currency', 'currency_code']) ?? currency
+      ).toUpperCase();
       currency = rowCurrency;
       const balanceMinor =
         integerMinorString(record.balance_minor ?? record.balanceMinor, { allowNegative: true }) ??
@@ -223,7 +244,8 @@ export class BankStatementReportAdapter implements SettlementReportProviderAdapt
 
       const settlementRef =
         pickString(record, ['settlement_reference', 'settlementReference']) ??
-        (rawNarration?.match(/\b(SET[-_][A-Za-z0-9_-]{4,64})\b/i)?.[1] ?? null);
+        rawNarration?.match(/\b(SET[-_][A-Za-z0-9_-]{4,64})\b/i)?.[1] ??
+        null;
       const payoutRef = pickString(record, ['payout_reference', 'payoutReference']);
 
       validRows.push({

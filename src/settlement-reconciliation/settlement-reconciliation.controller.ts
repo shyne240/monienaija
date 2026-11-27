@@ -57,10 +57,7 @@ export class SettlementReconciliationController {
   }
 
   @Post('imports/preview')
-  async previewImport(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: ImportSettlementReportDto,
-  ) {
+  async previewImport(@Req() req: AuthenticatedRequest, @Body() dto: ImportSettlementReportDto) {
     const principal = await this.require(
       req,
       'ledger.view',
@@ -70,10 +67,7 @@ export class SettlementReconciliationController {
   }
 
   @Post('imports')
-  async importReport(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: ImportSettlementReportDto,
-  ) {
+  async importReport(@Req() req: AuthenticatedRequest, @Body() dto: ImportSettlementReportDto) {
     const principal = await this.require(
       req,
       'ledger.view',
