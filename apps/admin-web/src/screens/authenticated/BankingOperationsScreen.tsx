@@ -8,6 +8,7 @@ import {
   StatusBadge,
 } from '../../design-system/primitives';
 import { ApiError, NetworkError } from '../../services/api-client';
+import { useAuthStore } from '../../store/auth-store';
 import {
   BankingAdminApi,
   type ExceptionResolution,
@@ -74,6 +75,12 @@ export const BankingOperationsScreen: React.FC<{
   onOpenReconciliation?: (institutionId: string) => void;
   initialInstitutionId?: string;
 }> = ({ onOpenReconciliation, initialInstitutionId }) => {
+  const { principal } = useAuthStore();
+  const hasFunction = (functionCode: string) => principal?.scopes.includes(functionCode) ?? false;
+  const canViewProviderConfiguration = hasFunction('banking.provider.view');
+  const canRunReconciliation = hasFunction('banking.reconciliation.run');
+  const canResolveExceptions = hasFunction('banking.reconciliation.resolve');
+  const canViewReconciliation = hasFunction('reconciliation.view');
   const [institutionId, setInstitutionId] = useState(initialInstitutionId ?? '');
   const [readiness, setReadiness] = useState<ProviderReadiness[] | null>(null);
   const [registered, setRegistered] = useState<string[]>([]);
@@ -93,12 +100,15 @@ export const BankingOperationsScreen: React.FC<{
   };
 
   const loadCapabilities = useCallback(async () => {
+    // Provider descriptors are governed by the separate provider-read function. A
+    // reconciliation-only operator must not make a request they are expected to fail.
+    if (!canViewProviderConfiguration) return;
     try {
       setCapabilities(await BankingAdminApi.capabilities());
     } catch (caught) {
       setError(describeError(caught));
     }
-  }, []);
+  }, [canViewProviderConfiguration]);
 
   useEffect(() => {
     void loadCapabilities();
@@ -113,17 +123,36 @@ export const BankingOperationsScreen: React.FC<{
       if (!options.keepNotice) clearFeedback();
       else setError(null);
       try {
-        const [readinessResponse, runList, exceptionList] = await Promise.all([
-          BankingAdminApi.readiness(target),
+        if (!canViewReconciliation) {
+          setRuns([]);
+          setExceptions([]);
+          setError('Reconciliation data requires reconciliation.view.');
+          return;
+        }
+        const [runList, exceptionList] = await Promise.all([
           BankingAdminApi.reconciliationRuns(target),
           BankingAdminApi.exceptions(target),
         ]);
-        setReadiness(readinessResponse.providers);
-        setRegistered(readinessResponse.registered);
         setRuns(runList);
         setExceptions(exceptionList);
+
+        if (canViewProviderConfiguration) {
+          try {
+            const readinessResponse = await BankingAdminApi.readiness(target);
+            setReadiness(readinessResponse.providers);
+            setRegistered(readinessResponse.registered);
+          } catch (caught) {
+            // Keep the authorized reconciliation evidence visible if the distinct provider-read
+            // capability is absent or its readiness source is unavailable.
+            setReadiness(null);
+            setRegistered([]);
+            setError(describeError(caught));
+          }
+        } else {
+          setReadiness(null);
+          setRegistered([]);
+        }
       } catch (caught) {
-        setReadiness(null);
         setRuns([]);
         setExceptions([]);
         setError(describeError(caught));
@@ -131,7 +160,7 @@ export const BankingOperationsScreen: React.FC<{
         setBusy(false);
       }
     },
-    [],
+    [canViewProviderConfiguration, canViewReconciliation],
   );
 
   const startRun = async (providerKey: string) => {
@@ -251,65 +280,72 @@ export const BankingOperationsScreen: React.FC<{
         </Alert>
       ) : null}
 
-      <ScrollRegion label="Provider readiness">
-        {readiness === null ? (
-          <p className="mn-muted">
-            Load an institution to see provider readiness. Nothing is shown until the server
-            answers, because readiness is a statement about a specific institution.
-          </p>
-        ) : readiness.length === 0 ? (
-          <Alert tone="warning" title="No banking provider is configured">
-            No provider is registered for this deployment, so no banking capability is available.
-            {registered.length === 0
-              ? ' The registry is empty: banking is disabled unless credentials and approval are both present.'
-              : null}
-          </Alert>
-        ) : (
-          <>
-            {!anyUsable ? (
-              <Alert tone="warning" title="No provider is operational for this institution">
-                Every provider below is in a state that cannot carry a live operation. New banking
-                operations will be refused until one reaches operational readiness.
-              </Alert>
-            ) : null}
-            <table className="mn-table">
-              <caption className="mn-visually-hidden">
-                Provider readiness states for the selected institution
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Provider</th>
-                  <th scope="col">State</th>
-                  <th scope="col">Approved</th>
-                  <th scope="col">Credentialed</th>
-                  <th scope="col">Entitlement</th>
-                </tr>
-              </thead>
-              <tbody>
-                {readiness.map((entry) => (
-                  <tr key={`${entry.providerKey}-${entry.capability}`}>
-                    <td>{entry.providerKey}</td>
-                    <td>
-                      <StatusBadge tone={READINESS_TONE[entry.state]}>
-                        {READINESS_LABEL[entry.state]}
-                      </StatusBadge>
-                    </td>
-                    <td>{entry.approved ? 'Yes' : 'No'}</td>
-                    <td>{entry.credentialed ? 'Yes' : 'No'}</td>
-                    <td>
-                      {/*
+      {!canViewProviderConfiguration ? (
+        <p className="mn-muted" data-testid="banking-reconciliation-only-access">
+          Reconciliation-only access: provider readiness, adapter capabilities and provider
+          governance require <code>banking.provider.view</code> and are not requested in this view.
+        </p>
+      ) : (
+        <ScrollRegion label="Provider readiness">
+          {readiness === null ? (
+            <p className="mn-muted">
+              Load an institution to see provider readiness. Nothing is shown until the server
+              answers, because readiness is a statement about a specific institution.
+            </p>
+          ) : readiness.length === 0 ? (
+            <Alert tone="warning" title="No banking provider is configured">
+              No provider is registered for this deployment, so no banking capability is available.
+              {registered.length === 0
+                ? ' The registry is empty: banking is disabled unless credentials and approval are both present.'
+                : null}
+            </Alert>
+          ) : (
+            <>
+              {!anyUsable ? (
+                <Alert tone="warning" title="No provider is operational for this institution">
+                  Every provider below is in a state that cannot carry a live operation. New banking
+                  operations will be refused until one reaches operational readiness.
+                </Alert>
+              ) : null}
+              <table className="mn-table">
+                <caption className="mn-visually-hidden">
+                  Provider readiness states for the selected institution
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Provider</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Approved</th>
+                    <th scope="col">Credentialed</th>
+                    <th scope="col">Entitlement</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {readiness.map((entry) => (
+                    <tr key={`${entry.providerKey}-${entry.capability}`}>
+                      <td>{entry.providerKey}</td>
+                      <td>
+                        <StatusBadge tone={READINESS_TONE[entry.state]}>
+                          {READINESS_LABEL[entry.state]}
+                        </StatusBadge>
+                      </td>
+                      <td>{entry.approved ? 'Yes' : 'No'}</td>
+                      <td>{entry.credentialed ? 'Yes' : 'No'}</td>
+                      <td>
+                        {/*
                         Rendered in words on purpose. A blank or a dash would read as "none needed";
                         the truth is that we cannot confirm it.
                       */}
-                      <span className="mn-muted">Unknown — not asserted by the system</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </ScrollRegion>
+                        <span className="mn-muted">Unknown — not asserted by the system</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </ScrollRegion>
+      )}
 
       <ScrollRegion label="Reconciliation runs">
         {runs.length === 0 ? (
@@ -351,7 +387,7 @@ export const BankingOperationsScreen: React.FC<{
             </tbody>
           </table>
         )}
-        {readiness && readiness.length > 0 ? (
+        {canRunReconciliation && readiness && readiness.length > 0 ? (
           <div className="mn-toolbar">
             {readiness
               .filter((entry) => entry.usable)
@@ -414,7 +450,7 @@ export const BankingOperationsScreen: React.FC<{
                 <th scope="col">Severity</th>
                 <th scope="col">Reference</th>
                 <th scope="col">Recorded</th>
-                <th scope="col">Action</th>
+                {canResolveExceptions ? <th scope="col">Action</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -428,22 +464,24 @@ export const BankingOperationsScreen: React.FC<{
                   </td>
                   <td>{exception.operationReference ?? '—'}</td>
                   <td>{new Date(exception.createdAt).toLocaleString()}</td>
-                  <td>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        void resolve(
-                          exception.id,
-                          'ESCALATED',
-                          'Escalated for investigation from the banking workspace; no financial correction applied.',
-                        )
-                      }
-                    >
-                      Record escalation
-                    </Button>
-                  </td>
+                  {canResolveExceptions ? (
+                    <td>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          void resolve(
+                            exception.id,
+                            'ESCALATED',
+                            'Escalated for investigation from the banking workspace; no financial correction applied.',
+                          )
+                        }
+                      >
+                        Record escalation
+                      </Button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -457,36 +495,38 @@ export const BankingOperationsScreen: React.FC<{
         </p>
       </ScrollRegion>
 
-      <ScrollRegion label="Adapter capabilities">
-        {capabilities.length === 0 ? (
-          <p className="mn-muted">No provider adapters are registered in this build.</p>
-        ) : (
-          <table className="mn-table">
-            <caption className="mn-visually-hidden">Registered provider adapters</caption>
-            <thead>
-              <tr>
-                <th scope="col">Provider</th>
-                <th scope="col">Environment</th>
-                <th scope="col">Capabilities</th>
-              </tr>
-            </thead>
-            <tbody>
-              {capabilities.map((capability) => (
-                <tr key={capability.providerKey}>
-                  <td>{capability.displayName}</td>
-                  <td>{capability.environment}</td>
-                  <td>
-                    {Object.entries(capability.capabilities)
-                      .filter(([, enabled]) => enabled)
-                      .map(([name]) => name)
-                      .join(', ') || 'None'}
-                  </td>
+      {canViewProviderConfiguration ? (
+        <ScrollRegion label="Adapter capabilities">
+          {capabilities.length === 0 ? (
+            <p className="mn-muted">No provider adapters are registered in this build.</p>
+          ) : (
+            <table className="mn-table">
+              <caption className="mn-visually-hidden">Registered provider adapters</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Environment</th>
+                  <th scope="col">Capabilities</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </ScrollRegion>
+              </thead>
+              <tbody>
+                {capabilities.map((capability) => (
+                  <tr key={capability.providerKey}>
+                    <td>{capability.displayName}</td>
+                    <td>{capability.environment}</td>
+                    <td>
+                      {Object.entries(capability.capabilities)
+                        .filter(([, enabled]) => enabled)
+                        .map(([name]) => name)
+                        .join(', ') || 'None'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </ScrollRegion>
+      ) : null}
     </div>
   );
 };

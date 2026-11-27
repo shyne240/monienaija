@@ -669,9 +669,17 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
           fireEvent.click(getByTestId(`nav-${key}`));
           await new Promise((resolve) => setTimeout(resolve, 0));
         });
+        const roleScopes = ROLE_PRINCIPALS[roleKey].scopes as readonly string[];
+        const fundingOnlyAgentView =
+          key === 'agents' &&
+          !roleScopes.includes('agent.view') &&
+          (roleKey === 'FINANCE_CONTROLLER' || roleKey === 'AGENT_NETWORK_MANAGER') &&
+          (roleScopes.includes('agent.fund') || roleScopes.includes('agent.defund'));
         const marker =
-          key === 'agents' && !ROLE_PRINCIPALS[roleKey].scopes.includes('agent.view' as never)
-            ? /Agent directory and Agent receiving-number lookup require/
+          key === 'agents' && !roleScopes.includes('agent.view')
+            ? fundingOnlyAgentView
+              ? /Agent funding and defunding/
+              : /Agent directory and Agent receiving-number lookup require/
             : SCREEN_MARKERS[key];
         if (!marker.test(container.textContent ?? ''))
           throw new Error(`Missing screen marker for ${key} (${roleKey})`);
@@ -679,6 +687,22 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
       }
     },
   );
+
+  test('FINANCE_CONTROLLER gets a funding-only agent workspace without directory calls', async () => {
+    setPrincipal('FINANCE_CONTROLLER');
+    const view = render(<AgentNetworkScreen />);
+
+    expect(
+      await view.findAllByRole('heading', { name: 'Agent funding and defunding' }),
+    ).toHaveLength(2);
+    expect(view.getByTestId('agent-funding-only-workspace')).toBeTruthy();
+    expect(view.queryByTestId('agent-directory-not-entitled')).toBeNull();
+
+    const requestedPaths = (ApiClient.get as jest.Mock).mock.calls.map(([path]) => String(path));
+    expect(requestedPaths.some((path) => path.startsWith('/internal/agents?'))).toBe(false);
+    expect(requestedPaths.some((path) => /\/internal\/agents\/[^/]+$/.test(path))).toBe(false);
+    expect(requestedPaths.some((path) => path.includes('receiving-number'))).toBe(false);
+  });
 
   test('customer-scoped history is contextual; it is not a substitute for global transaction.view', () => {
     expect(
