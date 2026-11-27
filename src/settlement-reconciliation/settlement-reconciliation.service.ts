@@ -50,6 +50,7 @@ import type {
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const DATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CHECKER_FUNCTION = 'reconciliation.settlement_report.review';
 
 function rAccountFallback(row: NormalizedSettlementReportRow): string | null {
   return row.maskedCounterpartyAccount;
@@ -144,14 +145,39 @@ export class SettlementReconciliationService {
 
   private requireChecker(principal: AuthorizationPrincipal): void {
     this.requireWorkforceLedgerReader(principal);
-    if (!principal.roles.includes('FINANCE_CONTROLLER')) {
+    if (!principal.scopes.includes(CHECKER_FUNCTION)) {
       throw new ForbiddenException(
-        'Reviewing settlement reconciliation proposals requires the FINANCE_CONTROLLER role',
+        'Reviewing settlement reconciliation proposals requires reconciliation.settlement_report.review',
       );
     }
     if (principal.assuranceLevel !== 'MFA') {
       throw new ForbiddenException(
         'Reviewing settlement reconciliation proposals requires an MFA-verified session',
+      );
+    }
+  }
+
+  /** Reviewers must be independent of both the proposal maker and the source upload. */
+  private async requireIndependentImporters(
+    q: SqlQueryable,
+    principalId: string,
+    importIds: readonly (string | null)[],
+    reportRowIds: readonly (string | null)[],
+  ): Promise<void> {
+    const rows = await q.query<Array<{ own: boolean }>>(
+      `SELECT EXISTS (
+         SELECT 1 FROM settlement_report_imports i
+          WHERE i.imported_by = $1 AND (
+            i.id = ANY($2::uuid[]) OR i.id IN (
+              SELECT r.import_id FROM settlement_report_rows r WHERE r.id = ANY($3::uuid[])
+            )
+          )
+       ) AS own`,
+      [principalId, importIds.filter(Boolean), reportRowIds.filter(Boolean)],
+    );
+    if (rows[0]?.own) {
+      throw new ForbiddenException(
+        'Separation of duties: the checker cannot review their own upload',
       );
     }
   }
@@ -319,7 +345,7 @@ export class SettlementReconciliationService {
       return {
         capabilities: {
           canImportAndPropose: principal.roles.includes('FINANCE_PREPARER'),
-          canReview: principal.roles.includes('FINANCE_CONTROLLER'),
+          canReview: principal.scopes.includes(CHECKER_FUNCTION),
           mfaVerified: principal.assuranceLevel === 'MFA',
           hasPlatformAuthority,
           assignedInstitutionIds,
@@ -385,7 +411,7 @@ export class SettlementReconciliationService {
     return {
       capabilities: {
         canImportAndPropose: principal.roles.includes('FINANCE_PREPARER'),
-        canReview: principal.roles.includes('FINANCE_CONTROLLER'),
+        canReview: principal.scopes.includes(CHECKER_FUNCTION),
         mfaVerified: principal.assuranceLevel === 'MFA',
         hasPlatformAuthority,
         assignedInstitutionIds,
@@ -3620,6 +3646,7 @@ export class SettlementReconciliationService {
         Array<{
           id: string;
           institution_id: string | null;
+          import_id: string;
           review_state: string;
           proposed_by: string | null;
           proposed_decision: string | null;
@@ -3629,6 +3656,7 @@ export class SettlementReconciliationService {
       >(
         `SELECT id::text AS id,
                 institution_id::text AS institution_id,
+                import_id::text AS import_id,
                 review_state,
                 proposed_by,
                 proposed_decision,
@@ -3651,6 +3679,8 @@ export class SettlementReconciliationService {
           'Separation of duties: the checker cannot review their own reconciliation proposal',
         );
       }
+
+      await this.requireIndependentImporters(manager, principal.principalId, [row.import_id], []);
 
       const chosenCand =
         approve && row.proposed_decision === 'SELECT_CANDIDATE' && row.selected_candidate_id
@@ -3998,16 +4028,22 @@ export class SettlementReconciliationService {
         Array<{
           id: string;
           institution_id: string | null;
+          settlement_row_id: string | null;
+          statement_row_id: string | null;
+          provider_key: string;
+          settlement_reference: string;
           review_state: string;
           proposed_by: string | null;
           proposed_decision: string | null;
-          statement_row_id: string | null;
           reported_net_settlement_minor: string;
           statement_amount_minor: string | null;
         }>
       >(
         `SELECT b.id::text AS id,
                 b.institution_id::text AS institution_id,
+                b.settlement_row_id::text AS settlement_row_id,
+                b.statement_row_id::text AS statement_row_id,
+                b.provider_key, b.settlement_reference,
                 b.review_state,
                 b.proposed_by,
                 b.proposed_decision,
@@ -4032,6 +4068,21 @@ export class SettlementReconciliationService {
           'Separation of duties: the checker cannot review their own settlement batch proposal',
         );
       }
+
+      const collectionImports = await manager.query<Array<{ id: string }>>(
+        `SELECT DISTINCT i.id::text AS id FROM settlement_report_rows r
+          JOIN settlement_report_imports i ON i.id = r.import_id
+         WHERE i.institution_id IS NOT DISTINCT FROM $1::uuid
+           AND i.provider_key = $2 AND i.report_type = 'COLLECTIONS'
+           AND r.settlement_reference = $3`,
+        [row.institution_id, row.provider_key, row.settlement_reference],
+      );
+      await this.requireIndependentImporters(
+        manager,
+        principal.principalId,
+        collectionImports.map((i) => i.id),
+        [row.settlement_row_id, row.statement_row_id],
+      );
 
       const markReconciled =
         approve &&
@@ -4394,6 +4445,8 @@ export class SettlementReconciliationService {
         Array<{
           id: string;
           institution_id: string | null;
+          provider_report_row_id: string | null;
+          statement_row_id: string | null;
           review_state: string;
           proposed_by: string | null;
           proposed_decision: string | null;
@@ -4401,6 +4454,8 @@ export class SettlementReconciliationService {
       >(
         `SELECT id::text AS id,
                 institution_id::text AS institution_id,
+                provider_report_row_id::text AS provider_report_row_id,
+                statement_row_id::text AS statement_row_id,
                 review_state,
                 proposed_by,
                 proposed_decision
@@ -4421,6 +4476,13 @@ export class SettlementReconciliationService {
           'Separation of duties: the checker cannot review their own return/dispute proposal',
         );
       }
+
+      await this.requireIndependentImporters(
+        manager,
+        principal.principalId,
+        [],
+        [row.provider_report_row_id, row.statement_row_id],
+      );
 
       const markReconciled =
         approve &&
@@ -4445,7 +4507,7 @@ export class SettlementReconciliationService {
       );
 
       const fp = eventFingerprint([
-        'FINANCE_CONTROLLER',
+        CHECKER_FUNCTION,
         principal.principalId,
         dto.decision,
         dto.note,
@@ -4456,7 +4518,7 @@ export class SettlementReconciliationService {
            case_id, event_source, event_type, status_label, amount_minor, fee_minor,
            reference, actor, detail, event_fingerprint
          )
-         VALUES ($1::uuid, 'FINANCE_CONTROLLER', $2, $3, NULL, NULL, NULL, $4, $5, $6)`,
+         VALUES ($1::uuid, 'INTERNAL_RECORD', $2, $3, NULL, NULL, NULL, $4, $5, $6)`,
         [
           caseId,
           approve ? 'RESOLUTION_APPROVED' : 'RESOLUTION_REJECTED',

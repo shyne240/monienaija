@@ -332,7 +332,7 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
           Imports external provider settlement reports and account statements, matches gross
           collections, provider deductions, merchant settlement net, MonieNaija platform charges,
           customer wallet credits, payouts, and returns/disputes, and records governed{' '}
-          <code>FINANCE_PREPARER</code> → <code>FINANCE_CONTROLLER</code> review decisions. Nothing
+          <code>FINANCE_PREPARER</code> → an independent <code>reconciliation.settlement_report.review</code> checker. Nothing
           in this workspace posts journals or moves money.
         </span>
         {overview ? (
@@ -341,7 +341,7 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
             {overview.capabilities.canImportAndPropose
               ? 'Maker (FINANCE_PREPARER)'
               : overview.capabilities.canReview
-                ? 'Checker (FINANCE_CONTROLLER)'
+                ? 'Checker (reconciliation.settlement_report.review)'
                 : 'Read-only Finance Viewer'}{' '}
             · MFA: <strong>{overview.capabilities.mfaVerified ? 'VERIFIED' : 'REQUIRED FOR WRITES'}</strong>
           </span>
@@ -1249,7 +1249,7 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
 
                     {canReview && selectedTx.reviewState === 'PROPOSED' ? (
                       <div>
-                        <h4>Controller Review (FINANCE_CONTROLLER)</h4>
+                        <h4>Independent checker review (reconciliation.settlement_report.review)</h4>
                         <div className="mn-sr__field">
                           <label htmlFor="tx-review-note">Controller Decision Note</label>
                           <input
@@ -1615,7 +1615,7 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
 
                     {canReview && selectedBatch.reviewState === 'PROPOSED' ? (
                       <div>
-                        <h4>Controller Review (FINANCE_CONTROLLER)</h4>
+                        <h4>Independent checker review (reconciliation.settlement_report.review)</h4>
                         <div className="mn-sr__field">
                           <label htmlFor="batch-rev-note">Controller Note</label>
                           <input
@@ -1932,7 +1932,7 @@ export const SettlementReportReconciliationPanel: React.FC<Props> = ({
 
                     {canReview && selectedCase.reviewState === 'PROPOSED' ? (
                       <div>
-                        <h4>Controller Review (FINANCE_CONTROLLER)</h4>
+                        <h4>Independent checker review (reconciliation.settlement_report.review)</h4>
                         <div className="mn-sr__field">
                           <label htmlFor="case-review-note">Controller Note</label>
                           <input

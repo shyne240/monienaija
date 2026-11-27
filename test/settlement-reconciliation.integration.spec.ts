@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-require-imports */
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -20,11 +20,12 @@ import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentStatus } from '../src/agent/agent.enums';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
+import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { FinanceOperationsService } from '../src/finance-operations/finance-operations.service';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { AuditService } from '../src/operations/audit.service';
 import { SettlementReconciliationService } from '../src/settlement-reconciliation/settlement-reconciliation.service';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
@@ -33,7 +34,7 @@ import {
   destroyIntegrationDataSource,
 } from './support/pg-harness';
 
-const seed = require('../scripts/local-dev-seed-11-roles.js');
+import * as seed from './support/settlement-synthetic-roles';
 const kyc = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 const BASE = '/api/v1/internal/finance-operations/settlement-reconciliation';
@@ -55,7 +56,11 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
 
   const sessions: Record<
     string,
-    { accessToken: string; principal: { principalId: string; roles: string[]; scopes: string[] } }
+    {
+      accessToken: string;
+      sessionId: string;
+      principal: { principalId: string; roles: string[]; scopes: string[] };
+    }
   > = {};
 
   let inboundCleanId: string;
@@ -66,8 +71,35 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
   let inboundAmbiguousBId: string;
   let inboundLateId: string;
   let outboundOpId: string;
+  let customChecker: { principalId: string; accessToken: string };
+  let customPrincipalForTest: AuthorizationPrincipal;
+  let noChecker: { principalId: string; accessToken: string };
+  let secondMaker: { principalId: string; accessToken: string };
+  let secondMakerSecondSession: { principalId: string; accessToken: string };
+  let uploaderSecondSession: { principalId: string; accessToken: string; sessionId: string };
   let postedJournalCountBefore: number;
   let postedLinesCountBefore: number;
+  let baselineAccountIds: string[];
+  let financialSnapshotBefore: unknown;
+  async function financialSnapshot() {
+    const accounts = await dataSource.query(
+      `SELECT a.id::text AS id, a.normal_balance,
+          COALESCE(SUM(CASE WHEN l.direction = 'CREDIT' THEN l.amount_minor ELSE -l.amount_minor END), 0)::text AS balance
+         FROM ledger_accounts a LEFT JOIN ledger_lines l ON l.ledger_account_id = a.id
+        WHERE a.id = ANY($1::uuid[]) GROUP BY a.id ORDER BY a.id`,
+      [baselineAccountIds],
+    );
+    const journals = await dataSource.query(
+      `SELECT to_jsonb(j) AS value FROM ledger_journals j ORDER BY j.id`,
+    );
+    const lines = await dataSource.query(
+      `SELECT to_jsonb(l) AS value FROM ledger_lines l ORDER BY l.id`,
+    );
+    const wallets = await dataSource.query(
+      `SELECT to_jsonb(w) AS value FROM wallet_accounts w ORDER BY w.id`,
+    );
+    return { accounts, journals, lines, wallets };
+  }
 
   const nipSessionId = '000013261126113000000009876543';
 
@@ -90,7 +122,7 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
-    await seed.seedLocalRoles(dataSource, app.get('A2_WORKFORCE_CONFIG'), app.get(AuditService));
+    await seed.seedLocalRoles(dataSource, app.get('A2_WORKFORCE_CONFIG'));
     for (const role of seed.ROLES) {
       const res = await request(app.getHttpServer())
         .post('/api/v1/internal/a2/workforce/local-admin-sessions')
@@ -107,6 +139,110 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     await fixture.grantWorkforceScope(
       institutionId,
       sessions.FINANCE_PREPARER!.principal.principalId,
+    );
+
+    // Create configurable checker and negative-control roles through the real, independently
+    // approved role-definition workflow; no canonical workforce account is altered.
+    const roleApi = '/api/v1/internal/a2/workforce/role-definitions/proposals';
+    for (const [roleKey, grants] of [
+      [
+        'SR_TEST_CHECKER',
+        [
+          { functionCode: 'ledger.view', accessType: 'VIEW' },
+          { functionCode: 'reconciliation.settlement_report.review', accessType: 'APPROVE' },
+        ],
+      ],
+      ['SR_TEST_LEDGER_ONLY', [{ functionCode: 'ledger.view', accessType: 'VIEW' }]],
+    ] as const) {
+      const created = await request(app.getHttpServer())
+        .post(roleApi)
+        .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+        .send({
+          proposalType: 'CREATE',
+          roleKey,
+          displayName: roleKey,
+          description: 'Disposable settlement review test role',
+          readOnly: false,
+          functionGrants: grants,
+          reason: 'Verify independent reconciliation checker',
+        })
+        .expect(201);
+      const proposalId = created.body.proposal.id as string;
+      await request(app.getHttpServer())
+        .post(`${roleApi}/${proposalId}/approve`)
+        .set('Authorization', `Bearer ${sessions.FINANCE_CONTROLLER!.accessToken}`)
+        .send({ comment: 'Independent approval for synthetic test' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`${roleApi}/${proposalId}/apply`)
+        .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+        .send({})
+        .expect(201);
+    }
+    async function assignRole(principalId: string, roleKey: string) {
+      const now = new Date();
+      await dataSource.getRepository(A2FinanceRoleAssignment).save({
+        id: randomUUID(),
+        assignmentReference: `sr-checker-${randomUUID()}`,
+        assignmentVersion: 1,
+        principalId,
+        roleKey,
+        scopes: [],
+        status: 'ACTIVE',
+        initiatedScope: 'SUPER_ADMIN_SCOPE',
+        interim: true,
+        effectiveFrom: new Date(now.getTime() - 60_000),
+        effectiveTo: new Date(now.getTime() + 86400_000),
+        assignedBy: 'synthetic-fixture',
+        assignedAt: now,
+        revokedBy: null,
+        revokedAt: null,
+        bootstrapReference: null,
+        approvalIds: [],
+        auditReferences: [],
+      });
+    }
+    async function establish(principalId: string) {
+      const now = new Date();
+      return app.get(A2WorkforceSessionService).establish({
+        issuer: 'https://test-identity.example.invalid',
+        subject: principalId,
+        principalId,
+        audience: ['workforce-admin'],
+        issuedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 3600_000).toISOString(),
+        authenticatedAt: now.toISOString(),
+        assuranceLevel: 'MFA',
+        amr: ['pwd', 'otp'],
+        acr: null,
+        signingKeyId: 'synthetic-test-key',
+      });
+    }
+    const customPrincipal = `sr-checker:${randomUUID()}`;
+    const noCheckerPrincipal = `sr-viewer:${randomUUID()}`;
+    const secondMakerPrincipal = `sr-maker:${randomUUID()}`;
+    await assignRole(customPrincipal, 'SR_TEST_CHECKER');
+    await assignRole(noCheckerPrincipal, 'SR_TEST_LEDGER_ONLY');
+    await assignRole(secondMakerPrincipal, 'FINANCE_PREPARER');
+    await assignRole(secondMakerPrincipal, 'SR_TEST_CHECKER');
+    const uploaderId = sessions.FINANCE_PREPARER!.principal.principalId;
+    await assignRole(uploaderId, 'SR_TEST_CHECKER');
+    for (const p of [customPrincipal, noCheckerPrincipal, secondMakerPrincipal]) {
+      await fixture.grantWorkforceScope(institutionId, p);
+    }
+    const customSession = await establish(customPrincipal);
+    customPrincipalForTest = customSession.principal;
+    customChecker = { principalId: customPrincipal, ...customSession };
+    noChecker = { principalId: noCheckerPrincipal, ...(await establish(noCheckerPrincipal)) };
+    secondMaker = { principalId: secondMakerPrincipal, ...(await establish(secondMakerPrincipal)) };
+    secondMakerSecondSession = {
+      principalId: secondMakerPrincipal,
+      ...(await establish(secondMakerPrincipal)),
+    };
+    uploaderSecondSession = { principalId: uploaderId, ...(await establish(uploaderId)) };
+    expect(uploaderSecondSession.sessionId).not.toBe(sessions.FINANCE_PREPARER!.sessionId);
+    expect((await establish(customPrincipal)).principal.scopes).toContain(
+      'reconciliation.settlement_report.review',
     );
 
     // Seed internal banking_inbound_payments & banking_outbound_operations evidence on institutionId.
@@ -162,14 +298,23 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     cleanJournalId = cleanJournal.id;
 
     // 1. Clean inbound payment linked to cleanJournalId
+    const [{ has_direct_credit: hasDirectCredit }] = await dataSource.query<
+      [{ has_direct_credit: boolean }]
+    >(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'banking_inbound_payments' AND column_name = 'credit_journal_id') AS has_direct_credit`,
+    );
+    const directColumns = hasDirectCredit
+      ? 'credit_journal_id, settlement_amount_minor, monienaija_fee_minor, customer_credit_minor, resolution_state'
+      : 'ledger_transaction_id';
+    const directValues = hasDirectCredit ? "$3::uuid,985000,5000,980000,'CREDITED'" : '$3::uuid';
     await dataSource.query(
       `INSERT INTO banking_inbound_payments (
          id, institution_id, provider_key, environment,
          provider_transaction_reference, provider_payment_reference,
          receiving_account_number, receiving_bank_code, currency,
          gross_amount_minor, provider_fee_minor, credited_amount_minor,
-         paid_at, verification_state, ledger_transaction_id
-       ) VALUES ($1,$2,'MONNIFY','sandbox','MNFY|SR|CLEAN|001','MNJ-PAY-CLEAN-001','8011223344','50515','NGN',1000000,15000,985000,'2026-11-26T09:10:00.000Z','VERIFIED',$3::uuid)`,
+         paid_at, verification_state, ${directColumns}
+       ) VALUES ($1,$2,'MONNIFY','sandbox','MNFY|SR|CLEAN|001','MNJ-PAY-CLEAN-001','8011223344','50515','NGN',1000000,15000,985000,'2026-11-26T09:10:00.000Z','VERIFIED',${directValues})`,
       [inboundCleanId, institutionId, cleanJournalId],
     );
 
@@ -244,6 +389,12 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     );
     postedJournalCountBefore = Number(jc);
     postedLinesCountBefore = Number(lc);
+    baselineAccountIds = (
+      await dataSource.query<Array<{ id: string }>>(
+        'SELECT id::text FROM ledger_accounts ORDER BY id',
+      )
+    ).map((r) => r.id);
+    financialSnapshotBefore = await financialSnapshot();
   }, 180000);
 
   afterAll(async () => {
@@ -681,10 +832,10 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     const feeMis = byStatus.get('FEE_MISMATCH')![0]!;
     expect(feeMis.feeVarianceMinor).toBe('10000');
 
-    // Maker proposes fee variance disposition
+    // A different maker proposes; the original uploader also holds the checker function.
     const propRes = await request(app.getHttpServer())
       .post(`${BASE}/transaction-matches/${feeMis.id}/propose`)
-      .set('Authorization', `Bearer ${sessions.FINANCE_PREPARER!.accessToken}`)
+      .set('Authorization', `Bearer ${secondMaker.accessToken}`)
       .send({
         decision: 'CONFIRM_FEE_VARIANCE',
         note: 'Verified Monnify tiered stamp/collection fee deduction on invoice.',
@@ -692,24 +843,57 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
       .expect(201);
     expect(propRes.body.reviewState).toBe('PROPOSED');
 
-    // Maker cannot review own proposal -> 403 Forbidden
+    // The uploader's second independently issued session holds checker authority, but the
+    // principal is the same as the source uploader and cannot review another maker's proposal.
+    const ownProposalReview = await request(app.getHttpServer())
+      .post(`${BASE}/transaction-matches/${feeMis.id}/review`)
+      .set('Authorization', `Bearer ${secondMakerSecondSession.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Attempting review of own proposal' })
+      .expect(403);
+    expect(ownProposalReview.body.message).toMatch(/own reconciliation proposal/i);
+    await expect(
+      app
+        .get(SettlementReconciliationService)
+        .reviewTransactionMatchResolution(
+          { ...customPrincipalForTest, assuranceLevel: 'PASSWORD' },
+          feeMis.id,
+          { decision: 'APPROVE', note: 'No MFA' },
+        ),
+    ).rejects.toThrow(/MFA/i);
+    const uploadOwnerReview = await request(app.getHttpServer())
+      .post(`${BASE}/transaction-matches/${feeMis.id}/review`)
+      .set('Authorization', `Bearer ${uploaderSecondSession.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Attempting review of own upload' })
+      .expect(403);
+    expect(uploadOwnerReview.body.message).toMatch(/own upload/i);
     await request(app.getHttpServer())
       .post(`${BASE}/transaction-matches/${feeMis.id}/review`)
-      .set('Authorization', `Bearer ${sessions.FINANCE_PREPARER!.accessToken}`)
-      .send({ decision: 'APPROVE', note: 'Attempting self-approval' })
+      .set('Authorization', `Bearer ${noChecker.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Missing checker function' })
       .expect(403);
+    const customOverview = await request(app.getHttpServer())
+      .get(`${BASE}/overview?institutionId=${institutionId}`)
+      .set('Authorization', `Bearer ${customChecker.accessToken}`)
+      .expect(200);
+    expect(customOverview.body.capabilities.canReview).toBe(true);
+    const viewerOverview = await request(app.getHttpServer())
+      .get(`${BASE}/overview?institutionId=${institutionId}`)
+      .set('Authorization', `Bearer ${noChecker.accessToken}`)
+      .expect(200);
+    expect(viewerOverview.body.capabilities.canReview).toBe(false);
+    await request(app.getHttpServer())
+      .get(`${BASE}/overview?institutionId=${foreignInstitutionId}`)
+      .set('Authorization', `Bearer ${customChecker.accessToken}`)
+      .expect(404);
 
-    // Distinct Checker (FINANCE_CONTROLLER) approves -> APPROVED
     const revRes = await request(app.getHttpServer())
       .post(`${BASE}/transaction-matches/${feeMis.id}/review`)
-      .set('Authorization', `Bearer ${sessions.FINANCE_CONTROLLER!.accessToken}`)
-      .send({
-        decision: 'APPROVE',
-        note: 'Independently verified against Monnify fee schedule.',
-      })
+      .set('Authorization', `Bearer ${customChecker.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Independent checker verified the fee variance.' })
       .expect(201);
     expect(revRes.body.reviewState).toBe('APPROVED');
-    expect(revRes.body.reviewedBy).toBe(sessions.FINANCE_CONTROLLER!.principal.principalId);
+    expect(revRes.body.reviewedBy).toBe(customChecker.principalId);
+    expect(await financialSnapshot()).toEqual(financialSnapshotBefore);
   });
 
   it('executes Workflow 3: reconciles Settlement Batch -> Gross Collections / Monnify Fee / Net Settlement -> Bank Statement Credit, and enriches FinanceOperationsService', async () => {
@@ -796,6 +980,26 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     expect(afterStmt.body.items[0].batchStatus).toBe('RECONCILED');
     expect(afterStmt.body.items[0].statementCreditMinor).toBe('985000');
     expect(afterStmt.body.items[0].varianceMinor).toBe('0');
+    const batchId = afterStmt.body.items[0].id as string;
+    await request(app.getHttpServer())
+      .post(`${BASE}/settlement-batches/${batchId}/propose`)
+      .set('Authorization', `Bearer ${secondMaker.accessToken}`)
+      .send({
+        decision: 'CONFIRM_RECONCILED',
+        note: 'Independent maker proposes settlement check.',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${BASE}/settlement-batches/${batchId}/review`)
+      .set('Authorization', `Bearer ${uploaderSecondSession.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Uploader cannot review own settlement.' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`${BASE}/settlement-batches/${batchId}/review`)
+      .set('Authorization', `Bearer ${customChecker.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Independent settlement checker.' })
+      .expect(201);
+    expect(await financialSnapshot()).toEqual(financialSnapshotBefore);
 
     // Verify FinanceOperationsService.reconciliationBreaks:
     // - foreignInstitutionId (0 imports) keeps EXTERNAL_PROVIDER & EXTERNAL_STATEMENT as UNAVAILABLE/NOT_PERFORMED
@@ -894,6 +1098,31 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
       (c) => c.returnOrDisputeReference === 'MNFY-CBK-9002',
     )!;
     expect(chargeback.lifecycleStatus).toBe('PROVIDER_CONFIRMED_UNMATCHED_INTERNAL');
+    await request(app.getHttpServer())
+      .post(`${BASE}/return-dispute-cases/${chargeback.id}/propose`)
+      .set('Authorization', `Bearer ${secondMaker.accessToken}`)
+      .send({ decision: 'ESCALATE_UNMATCHED_CHARGEBACK', note: 'Independent maker escalates.' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${BASE}/return-dispute-cases/${chargeback.id}/review`)
+      .set('Authorization', `Bearer ${uploaderSecondSession.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Uploader cannot review own case.' })
+      .expect(403);
+    const reviewedChargeback = await request(app.getHttpServer())
+      .post(`${BASE}/return-dispute-cases/${chargeback.id}/review`)
+      .set('Authorization', `Bearer ${customChecker.accessToken}`)
+      .send({ decision: 'APPROVE', note: 'Independent configurable checker.' })
+      .expect(201);
+    expect(reviewedChargeback.body.reviewedBy).toBe(customChecker.principalId);
+    expect(reviewedChargeback.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventSource: 'INTERNAL_RECORD',
+          eventType: 'RESOLUTION_APPROVED',
+          actor: customChecker.principalId,
+        }),
+      ]),
+    );
 
     // Maker proposes awaiting provider completion on voluntary refund & Checker approves
     await request(app.getHttpServer())
@@ -962,6 +1191,7 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     );
     expect(Number(jcAfter)).toBe(postedJournalCountBefore);
     expect(Number(lcAfter)).toBe(postedLinesCountBefore);
+    expect(await financialSnapshot()).toEqual(financialSnapshotBefore);
 
     // Prove audit trail recorded imports, proposals, and reviews
     const [{ c: auditCount }] = await dataSource.query<[{ c: string }]>(
@@ -1233,5 +1463,17 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     const dialog = audPage.getByRole('dialog');
     await dialog.waitFor();
     await dialog.getByText(cleanJournalId).waitFor();
+    const journalResponsePromise = audPage.waitForResponse((response) =>
+      response.url().includes(`/api/v1/ledger/journals/${cleanJournalId}`),
+    );
+    await dialog.getByRole('button', { name: 'Open journal' }).click();
+    const journalResponse = await journalResponsePromise;
+    expect(journalResponse.status()).toBe(200);
+    expect((await journalResponse.json()).id).toBe(cleanJournalId);
+    await request(app.getHttpServer())
+      .get(`/api/v1/ledger/journals/${cleanJournalId}`)
+      .set('Authorization', `Bearer ${sessions.FINANCE_AUDITOR!.accessToken}`)
+      .expect(200);
+    expect(await financialSnapshot()).toEqual(financialSnapshotBefore);
   }, 180000);
 });

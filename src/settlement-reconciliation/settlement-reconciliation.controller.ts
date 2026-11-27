@@ -34,7 +34,7 @@ const WORKFORCE_TYPES = ['OPERATOR', 'SERVICE', 'PRIVILEGED'] as const;
  *
  * Strictly non-posting: imports provider reports/statements, matches transaction/fee/settlement/statement
  * and return/reversal/dispute records against internal evidence, and enforces MFA maker-checker review
- * (`FINANCE_PREPARER` proposes / imports; distinct `FINANCE_CONTROLLER` reviews).
+ * (`FINANCE_PREPARER` proposes / imports; a distinct holder of `reconciliation.settlement_report.review` reviews).
  */
 @Controller('internal/finance-operations/settlement-reconciliation')
 export class SettlementReconciliationController {
