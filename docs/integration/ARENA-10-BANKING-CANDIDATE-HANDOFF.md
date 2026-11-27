@@ -17,7 +17,7 @@ the row → History → journal checks can be rerun without re-deriving the chai
 | PR #40       | reviewed head `f59a1c87833a892524bc559f9a4a5d8d220bcaba` — **already in this ancestry** (`git merge-base --is-ancestor f59a1c87 <head>` → true). #40 itself stays red and unmerged. |
 
 The candidate also contains the current integration tip (`arena/5-main-web-integration` @
-`f982fd39daada817553e2e3dc9d790a7122c5435`, which merged PR #50) and PR #51's head
+`6472dea8c25a332710a3a6c45f05c9284afe4434`, which merged PR #50 and PR #54) and PR #51's head
 `8e8f0615aebece9988ea1a8476076d8db10e7cb6`.
 
 ## Migration resolution
@@ -50,6 +50,22 @@ newest published identity.
   `arena5-consolidation`, `migration-0804-owner-authority`, `a8`, `a19`, `a20`) and the
   `migration-inventory` unit suite pin the combined head, the ordered tail, and the 178-identity
   inventory.
+
+### Permission checks re-run after #54
+
+PR #54 lets the governed role-definition workflow change grants on seeded roles. The reconciliation
+review gate is therefore re-proven end to end in
+`test/settlement-reconciliation.integration.spec.ts`:
+
+- an authorized holder of `reconciliation.settlement_report.review` can review a proposal (the suite's
+  maker-checker flow completes with an `APPROVED` review);
+- the proposer and the source uploader are refused (`own reconciliation proposal` / `own upload`);
+- revoking the function through the governed MODIFY workflow removes access for the **same** session
+  token (roles and scopes are resolved per request, not frozen into the token), and restoring the
+  grant returns access — the new `revoking the review function removes checker access` test.
+
+No new migration came with #54, so the combined inventory is unchanged: **178 identities, head
+`1785753600910`**.
 
 ## How it is proven
 

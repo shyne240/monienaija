@@ -1201,6 +1201,138 @@ describe('Settlement Report & Statement Reconciliation (Real PostgreSQL + 11-Rol
     expect(Number(auditCount)).toBeGreaterThanOrEqual(7);
   });
 
+  it('revoking the review function removes checker access, and restoring it returns access', async () => {
+    const roleApi = '/api/v1/internal/a2/workforce/role-definitions/proposals';
+    const grantsFor = async (roleKey: string) => {
+      const [role] = await dataSource.query<
+        Array<{
+          id: string;
+          definition_version: string;
+          display_name: string;
+          description: string;
+          read_only: boolean;
+        }>
+      >(
+        `SELECT id::text AS id, definition_version::text AS definition_version,
+                display_name, description, read_only
+           FROM authorization_roles WHERE role_key = $1`,
+        [roleKey],
+      );
+      expect(role).toBeDefined();
+      const grants = await dataSource.query<Array<{ function_code: string; access_type: string }>>(
+        `SELECT function_code, access_type FROM authorization_role_functions
+          WHERE role_id = $1::uuid AND is_active = true ORDER BY function_code`,
+        [role!.id],
+      );
+      return { role: role!, grants };
+    };
+    const andAuthenticationState = async (token: string) => {
+      const overview = await request(app.getHttpServer())
+        .get(`${BASE}/overview?institutionId=${institutionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      // A review attempt on an unknown identifier separates "gate passed" (404) from "no authority" (403).
+      const probe = await request(app.getHttpServer())
+        .post(`${BASE}/transaction-matches/${randomUUID()}/review`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ decision: 'APPROVE', note: 'Authorization probe' });
+      return {
+        canReview: overview.body.capabilities.canReview as boolean,
+        probeStatus: probe.status,
+        probeMessage: (probe.body as { message?: string }).message ?? '',
+      };
+    };
+
+    // Baseline: the review function is granted through the governed workflow, so the checker passes
+    // the authorization gate (a 404 on an unknown id, never a 403).
+    const before = await grantsFor('SR_TEST_CHECKER');
+    expect(before.grants.map((grant) => grant.function_code)).toContain(
+      'reconciliation.settlement_report.review',
+    );
+    const authorized = await andAuthenticationState(customChecker.accessToken);
+    expect(authorized).toMatchObject({ canReview: true, probeStatus: 404 });
+
+    // Revoke the review function through the same governed maker-checker workflow.
+    const revoked = await request(app.getHttpServer())
+      .post(roleApi)
+      .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+      .send({
+        proposalType: 'MODIFY',
+        roleKey: 'SR_TEST_CHECKER',
+        displayName: before.role.display_name,
+        description: before.role.description,
+        readOnly: before.role.read_only,
+        functionGrants: before.grants
+          .filter((grant) => grant.function_code !== 'reconciliation.settlement_report.review')
+          .map((grant) => ({ functionCode: grant.function_code, accessType: grant.access_type })),
+        expectedDefinitionVersion: Number(before.role.definition_version),
+        reason: 'Revoke settlement reconciliation review during the permission acceptance test.',
+      })
+      .expect(201);
+    const revokedId = revoked.body.proposal.id as string;
+    await request(app.getHttpServer())
+      .post(`${roleApi}/${revokedId}/approve`)
+      .set('Authorization', `Bearer ${sessions.FINANCE_CONTROLLER!.accessToken}`)
+      .send({ comment: 'Independent approval of the revocation' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${roleApi}/${revokedId}/apply`)
+      .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+      .send({})
+      .expect(201);
+
+    // The very same session token loses review authority, because roles and scopes are resolved per
+    // request from the role catalogue rather than frozen into the token.
+    const afterRevoke = await andAuthenticationState(customChecker.accessToken);
+    expect(afterRevoke.canReview).toBe(false);
+    expect(afterRevoke.probeStatus).toBe(403);
+    expect(afterRevoke.probeMessage).toMatch(/reconciliation\.settlement_report\.review/i);
+
+    // Restore the grant through the same workflow; access returns without a new session.
+    const stripped = await grantsFor('SR_TEST_CHECKER');
+    expect(stripped.grants.map((grant) => grant.function_code)).not.toContain(
+      'reconciliation.settlement_report.review',
+    );
+    const restored = await request(app.getHttpServer())
+      .post(roleApi)
+      .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+      .send({
+        proposalType: 'MODIFY',
+        roleKey: 'SR_TEST_CHECKER',
+        displayName: stripped.role.display_name,
+        description: stripped.role.description,
+        readOnly: stripped.role.read_only,
+        functionGrants: [
+          ...stripped.grants.map((grant) => ({
+            functionCode: grant.function_code,
+            accessType: grant.access_type,
+          })),
+          { functionCode: 'reconciliation.settlement_report.review', accessType: 'APPROVE' },
+        ],
+        expectedDefinitionVersion: Number(stripped.role.definition_version),
+        reason: 'Restore settlement reconciliation review after the permission acceptance test.',
+      })
+      .expect(201);
+    const restoredId = restored.body.proposal.id as string;
+    await request(app.getHttpServer())
+      .post(`${roleApi}/${restoredId}/approve`)
+      .set('Authorization', `Bearer ${sessions.FINANCE_CONTROLLER!.accessToken}`)
+      .send({ comment: 'Independent approval of the restoration' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${roleApi}/${restoredId}/apply`)
+      .set('Authorization', `Bearer ${sessions.SUPER_ADMIN!.accessToken}`)
+      .send({})
+      .expect(201);
+
+    const afterRestore = await andAuthenticationState(customChecker.accessToken);
+    expect(afterRestore).toMatchObject({ canReview: true, probeStatus: 404 });
+    // The revoked function never leaked to the ledger-only control role.
+    const control = await andAuthenticationState(noChecker.accessToken);
+    expect(control.canReview).toBe(false);
+    expect(control.probeStatus).toBe(403);
+  });
+
   it('drives the real built Admin Web SPA in headless Chromium against the live NestJS + PostgreSQL backend when SR_BROWSER_E2E=yes', async () => {
     if (process.env.SR_BROWSER_E2E !== 'yes') {
       return;
