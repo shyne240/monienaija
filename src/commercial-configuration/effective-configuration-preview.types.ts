@@ -219,11 +219,38 @@ interface PreviewCommissionSectionBody {
   status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   allocations: PreviewCommissionAllocation[];
+  /** Present only when status === 'AMBIGUOUS': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds: string[] | null;
+  ambiguousPriority: number | null;
   /** Stated explicitly: nothing is accrued or settled here. */
   accrualPosted: false;
 }
 
 export type PreviewCommissionSection = PreviewCommissionSectionBody | PreviewRestrictedSection;
+
+/**
+ * PR #27 — statutory charges, reported separately from the service fee.
+ *
+ * The point of the separate section is the zero-vs-missing distinction the mission demands:
+ * VAT on our own fee is modelled and authored per rule; every OTHER statutory charge is absent from
+ * the data model entirely. Those are different facts and must never collapse into one number.
+ */
+export interface PreviewStatutoryChargeLine {
+  charge: string;
+  rateBps: number | null;
+  amountMinor: string | null;
+  provenance: 'AUTHORED' | 'NOT_MODELLED';
+  note: string;
+}
+
+export interface PreviewStatutoryChargesSection {
+  status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
+  note: string;
+  lines: PreviewStatutoryChargeLine[];
+  /** Charges with no representation in the schema/resolver/engine layer. Never given a zero rate. */
+  notModelled: Array<{ charge: string; reason: string }>;
+  postsJournalLegs: false;
+}
 
 export interface PreviewRewardGrant {
   beneficiaryType: string;
@@ -246,6 +273,9 @@ interface PreviewRewardSectionBody {
   status: Exclude<PreviewSectionStatus, 'RESTRICTED'>;
   note: string | null;
   grants: PreviewRewardGrant[];
+  /** Present only when status === 'AMBIGUOUS': conflicting rule ids, sorted ASC. */
+  ambiguousRuleIds: string[] | null;
+  ambiguousPriority: number | null;
   /** Reward financial execution stays unwired; the preview never credits a wallet. */
   creditPosted: false;
 }
@@ -280,6 +310,7 @@ export interface EffectiveConfigurationPreview {
   kycRestriction: PreviewKycRestriction;
   limits: PreviewLimitSection;
   fee: PreviewFeeSection;
+  statutoryCharges: PreviewStatutoryChargesSection;
   commission: PreviewCommissionSection;
   reward: PreviewRewardSection;
   /** Every missing/ambiguous/inactive fact, in one ordered list. */
@@ -289,6 +320,7 @@ export interface EffectiveConfigurationPreview {
     sections: {
       limits: PreviewSectionStatus;
       fee: PreviewSectionStatus;
+      statutoryCharges: PreviewSectionStatus;
       commission: PreviewSectionStatus;
       reward: PreviewSectionStatus;
     };

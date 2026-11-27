@@ -21,6 +21,7 @@ import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import { isRetryableTransactionError } from '../payment/payment-support';
+import { WALLET_TO_BANK } from '../product-catalog/banking-product-identities';
 import { ExternalOperationResourceType } from '../partner/external-operation.enums';
 import { ExternalOperationService } from '../partner/external-operation.service';
 import { WithdrawalService } from '../withdrawal/withdrawal.service';
@@ -480,7 +481,11 @@ export class FinancialCommitmentService {
       await this.limits.enforceWithManager(manager, {
         principalType: 'CUSTOMER',
         principalId: input.id,
-        product: 'WITHDRAWAL',
+        // PR #27: the canonical product for a wallet→bank transfer, not the legacy `WITHDRAWAL`
+        // string. `WITHDRAWAL` was never a `products.code`, so no authored fee or limit rule could
+        // ever be attached to it through a catalogue-governed surface. It remains a declared alias,
+        // so limit rules already written against it keep governing this operation.
+        product: WALLET_TO_BANK.productCode,
         direction: 'OUTGOING',
         currency: input.currency,
         amountMinor: input.amountMinor,
@@ -506,7 +511,13 @@ export class FinancialCommitmentService {
         principalType: 'AGENT',
         principalId: input.id,
         agentClassId: input.agentClassId,
-        product: 'EXTERNAL_BANK_TRANSFER',
+        // PR #27: the SAME canonical product the customer lane uses. An agent wallet→bank transfer is
+        // the same commercial route as a customer's — PR #23 records both under the single
+        // transaction-history type `WALLET_TO_BANK` keyed by `financial_commitments.id`, and there is
+        // no second agent-external-bank-transfer type. `EXTERNAL_BANK_TRANSFER` stays an agent
+        // capability/service code and is declared a legacy limit alias here, so rules authored
+        // against it still apply.
+        product: WALLET_TO_BANK.productCode,
         direction: 'OUTGOING',
         channel: null,
         currency: input.currency,

@@ -97,7 +97,11 @@ export class FeeRuleRegistryService {
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
-  async createRule(input: FeeRuleCreateInput, actor: string): Promise<FeeRuleSafeProjection> {
+  async createRule(
+    input: FeeRuleCreateInput,
+    actor: string,
+    manager?: EntityManager,
+  ): Promise<FeeRuleSafeProjection> {
     const productCode = this.normalizeProductCode(input.productCode);
     await this.assertProductExists(productCode);
 
@@ -124,7 +128,9 @@ export class FeeRuleRegistryService {
     }
     const effectiveFrom = this.parseDate(input.effectiveFrom ?? new Date(), 'effectiveFrom');
     const effectiveTo =
-      input.effectiveTo === undefined ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+      input.effectiveTo === undefined || input.effectiveTo === null
+        ? null
+        : this.parseDate(input.effectiveTo, 'effectiveTo');
     if (effectiveTo !== null && effectiveTo.getTime() <= effectiveFrom.getTime()) {
       throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
@@ -132,32 +138,36 @@ export class FeeRuleRegistryService {
     const isActive =
       input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
 
+    const run = async (m: EntityManager): Promise<FeeRuleDefinition> => {
+      await this.assertTargetsExist(m, customerClassCode, agentClassId, institutionId);
+      const repository = m.getRepository(FeeRuleDefinition);
+      const entity = repository.create({
+        productCode,
+        currency,
+        customerClassCode,
+        agentClassId,
+        institutionId,
+        flatFeeMinor,
+        percentageBps,
+        minimumFeeMinor,
+        maximumFeeMinor,
+        vatBps,
+        effectiveFrom,
+        effectiveTo,
+        priority,
+        isActive,
+        createdBy: actor,
+        updatedBy: actor,
+        version: 1,
+      } as never);
+      const row = (await repository.save(entity as never)) as unknown as FeeRuleDefinition;
+      await this.audit(row.id, 'CREATED', actor, undefined, this.ruleValues(row), m);
+      return row;
+    };
+
     let saved: FeeRuleDefinition;
     try {
-      saved = await this.dataSource.transaction(async (manager) => {
-        await this.assertTargetsExist(manager, customerClassCode, agentClassId, institutionId);
-        const repository = manager.getRepository(FeeRuleDefinition);
-        const entity = repository.create({
-          productCode,
-          currency,
-          customerClassCode,
-          agentClassId,
-          institutionId,
-          flatFeeMinor,
-          percentageBps,
-          minimumFeeMinor,
-          maximumFeeMinor,
-          vatBps,
-          effectiveFrom,
-          effectiveTo,
-          priority,
-          isActive,
-          createdBy: actor,
-          updatedBy: actor,
-          version: 1,
-        } as never);
-        return (await repository.save(entity as never)) as unknown as FeeRuleDefinition;
-      });
+      saved = manager ? await run(manager) : await this.dataSource.transaction(run);
     } catch (e) {
       if (this.isUniqueViolation(e)) {
         throw new ConflictException(
@@ -166,7 +176,6 @@ export class FeeRuleRegistryService {
       }
       throw e;
     }
-    await this.audit(saved.id, 'CREATED', actor, undefined, this.ruleValues(saved));
     return this.toSafe(saved);
   }
 
@@ -174,25 +183,12 @@ export class FeeRuleRegistryService {
     id: string,
     input: FeeRuleUpdateInput,
     actor: string,
+    manager?: EntityManager,
   ): Promise<FeeRuleSafeProjection> {
     const ruleId = this.normalizeId(id);
 
-    // V1-TEST-01: a plain `this.repo.findOne()` followed later by `this.repo.save()` does NOT
-    // give @VersionColumn any actual compare-and-swap protection in TypeORM —
-    // OptimisticLockVersionMismatchError (see isVersionConflict below) is only ever raised by
-    // a SelectQueryBuilder configured with `.setLock('optimistic', expectedVersion)`, which
-    // this method never used. Two genuinely concurrent callers that both read the same
-    // starting version could therefore both have their writes applied (a real lost update),
-    // with whichever commits second silently discarding the other's change — proven by
-    // V1-TEST-01's reproduction of test 08 ("concurrent updates: exactly one writer wins per
-    // version"), which intermittently observed BOTH concurrent updateRule calls resolve
-    // instead of exactly one. This is closed with the same pattern already used everywhere
-    // else in this codebase for row-level contention (OTP challenges, idempotency records, A2
-    // rate-limit buckets): a `SELECT ... FOR UPDATE` pessimistic lock inside an explicit
-    // transaction, so a second concurrent caller blocks until the first commits, then reads
-    // the POST-update version and correctly hits the existing assertVersion conflict path.
-    const { saved, previous } = await this.dataSource.transaction(async (manager) => {
-      const repository = manager.getRepository(FeeRuleDefinition);
+    const run = async (m: EntityManager): Promise<FeeRuleDefinition> => {
+      const repository = m.getRepository(FeeRuleDefinition);
       const rule = await repository
         .createQueryBuilder('rule')
         .where('rule.id = :id', { id: ruleId })
@@ -235,22 +231,30 @@ export class FeeRuleRegistryService {
       if (input.isActive !== undefined)
         rule.isActive = this.parseBoolean(input.isActive, 'isActive');
       if (input.isActive === true && rule.customerClassCode !== null) {
-        await this.assertCustomerClassTargetUsable(manager, rule.customerClassCode);
+        await this.assertCustomerClassTargetUsable(m, rule.customerClassCode);
       }
       rule.updatedBy = actor;
 
       try {
         const savedRule = (await repository.save(rule as never)) as unknown as FeeRuleDefinition;
-        return { saved: savedRule, previous: previousValues };
+        await this.audit(
+          savedRule.id,
+          'UPDATED',
+          actor,
+          previousValues,
+          this.ruleValues(savedRule),
+          m,
+        );
+        return savedRule;
       } catch (e) {
         if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
           throw new ConflictException('Fee rule version conflict — stale version');
         }
         throw e;
       }
-    });
+    };
 
-    await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved));
+    const saved = manager ? await run(manager) : await this.dataSource.transaction(run);
     return this.toSafe(saved);
   }
 
@@ -494,19 +498,22 @@ export class FeeRuleRegistryService {
     actor: string,
     previousValues: Record<string, unknown> | undefined,
     newValues: Record<string, unknown>,
+    manager?: EntityManager,
   ): Promise<void> {
     if (!this.auditService) return;
+    const write = async (m: EntityManager): Promise<void> => {
+      await this.auditService!.record(m, {
+        entityType: 'FEE_RULE',
+        entityId,
+        action,
+        actor,
+        previousValues,
+        newValues,
+      } as never);
+    };
     try {
-      await this.dataSource.transaction(async (manager: EntityManager) => {
-        await this.auditService!.record(manager, {
-          entityType: 'FEE_RULE',
-          entityId,
-          action,
-          actor,
-          previousValues,
-          newValues,
-        } as never);
-      });
+      if (manager) await manager.transaction(write);
+      else await this.dataSource.transaction(write);
     } catch {
       // best-effort audit, consistent with limit-catalog/product-catalog convention
     }

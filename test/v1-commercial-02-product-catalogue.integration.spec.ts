@@ -261,21 +261,23 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     }
   });
 
-  // ── 2. seeding: exactly the 7 established V1 products ──
+  // ── 2. seeding: the established V1 products, including the two bank directions ──
 
-  it('02. seeds exactly the seven established V1 products with honest defaults', async () => {
+  it('02. seeds every V1 product, including both bank directions, with honest defaults', async () => {
     const rows: Array<Record<string, unknown>> = await dataSource.query(
       `SELECT * FROM products ORDER BY code`,
     );
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(9);
     const codes = rows.map((r) => r.code);
     expect(codes).toEqual([...V1_PRODUCT_CODES].sort());
     expect(codes).toEqual([
       'AGENT_DEFUNDING',
       'AGENT_FUNDING',
+      'BANK_TO_WALLET',
       'CASH_TO_CASH',
       'CASH_TO_WALLET',
       'CUSTOMER_FUNDING',
+      'WALLET_TO_BANK',
       'WALLET_TO_CASH',
       'WALLET_TRANSFER',
     ]);
@@ -283,9 +285,17 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     for (const row of rows) {
       expect(row.currency).toBe('NGN'); // V1 is internal NGN-only
       expect(row.product_scope).toBe('V1');
-      expect(row.status).toBe('ACTIVE');
-      expect(row.enabled).toBe(true); // the flows genuinely exist in the runtime
-      expect(row.configuration_status).toBe('NOT_CONFIGURED'); // no commercial pricing configured — honest
+      // PR #27: BANK_TO_WALLET is deliberately DISABLED — production binds no live inbound
+      // execution authority, so the product must not pretend to be priceable/executable.
+      if (row.code === 'BANK_TO_WALLET') {
+        expect(row.status).toBe('DISABLED');
+        expect(row.enabled).toBe(false);
+        expect(row.configuration_status).toBe('DISABLED');
+      } else {
+        expect(row.status).toBe('ACTIVE');
+        expect(row.enabled).toBe(true); // the flows genuinely exist in the runtime
+        expect(row.configuration_status).toBe('NOT_CONFIGURED'); // no pricing configured — honest
+      }
       expect(row.created_by).toBe('system-seed');
       expect(row.deleted_at).toBeNull();
       expect(row.name).toBeTruthy();
@@ -294,6 +304,9 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     // domain mapping follows audit doc §12
     const byCode = Object.fromEntries(rows.map((r) => [r.code as string, r]));
     expect(byCode['WALLET_TRANSFER']!.domain).toBe('CUSTOMER');
+    // PR #27: a customer or an agent can send wallet→bank; the credit lands in a customer wallet.
+    expect(byCode['WALLET_TO_BANK']!.domain).toBe('CUSTOMER');
+    expect(byCode['BANK_TO_WALLET']!.domain).toBe('CUSTOMER');
     for (const c of ['WALLET_TO_CASH', 'CASH_TO_WALLET', 'CASH_TO_CASH'])
       expect(byCode[c]!.domain).toBe('AGENT');
     for (const c of ['CUSTOMER_FUNDING', 'AGENT_FUNDING', 'AGENT_DEFUNDING'])
@@ -310,13 +323,13 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       `SELECT name FROM products WHERE code='WALLET_TRANSFER'`,
     );
     expect(rows[0]!.name).toBe('Operator Renamed');
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
 
     // a missing seed code is inserted on later boots
     await dataSource.query(`DELETE FROM products WHERE code='CASH_TO_CASH'`);
     const inserted2 = await seedService.seedIfEmpty();
     expect(inserted2).toBe(1);
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
   });
 
   // ── 3. uniqueness & V2/out-of-scope guards ──
@@ -349,7 +362,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .set('Authorization', auth('PRIVILEGED'))
       .send(dupBody)
       .expect(409);
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
 
     const all: Array<{ code: string; product_scope: string; enabled: boolean }> =
       await dataSource.query(`SELECT code, product_scope, enabled FROM products`);
@@ -415,7 +428,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     for (const a of attempts) {
       await expect(service.createProduct(a as any, 'test')).rejects.toMatchObject({ status: 400 });
     }
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
   });
 
   it('07. update is version-checked and audited: stale version 409, correct version succeeds and bumps', async () => {
@@ -506,14 +519,15 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     expect(deprecated.enabled).toBe(false);
 
     const onlyDisabled = await service.listProducts({ enabled: false });
-    expect(onlyDisabled.data.map((p) => p.code)).toEqual(['WALLET_TO_CASH']);
+    // PR #27: BANK_TO_WALLET is seeded disabled (no live inbound execution authority).
+    expect(onlyDisabled.data.map((p) => p.code)).toEqual(['BANK_TO_WALLET', 'WALLET_TO_CASH']);
     const deprecatedList = await service.listProducts({ status: 'DEPRECATED' });
     expect(deprecatedList.data.map((p) => p.code)).toEqual(['WALLET_TO_CASH']);
     const configured = await service.listProducts({ configurationStatus: 'CONFIGURED' });
     expect(configured.total).toBe(0); // no commercial configuration exists anywhere — honest
 
     // soft-delete column exists and rows are never hard-deleted by the API
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
   });
 
   // ── 5. API surface: authorization, safe projection, pagination, read-only boundary ──
@@ -551,7 +565,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
         .get('/api/v1/internal/products')
         .set('Authorization', auth(type))
         .expect(200);
-      expect(list.body.total).toBe(7);
+      expect(list.body.total).toBe(9);
       const one = await request(app.getHttpServer())
         .get('/api/v1/internal/products/WALLET_TRANSFER')
         .set('Authorization', auth(type))
@@ -594,7 +608,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .get('/api/v1/internal/products')
       .set('Authorization', auth('OPERATOR'))
       .expect(200);
-    expect(all.body.total).toBe(7);
+    expect(all.body.total).toBe(9);
     const codes = all.body.data.map((p: any) => p.code);
     expect([...codes].sort()).toEqual(codes); // deterministic code ASC
 
@@ -615,20 +629,21 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .get('/api/v1/internal/products?enabled=true')
       .set('Authorization', auth('OPERATOR'))
       .expect(200);
-    expect(enabled.body.total).toBe(7);
+    expect(enabled.body.total).toBe(8); // every seeded product except BANK_TO_WALLET
 
     const page1 = await request(app.getHttpServer())
       .get('/api/v1/internal/products?page=1&limit=3')
       .set('Authorization', auth('OPERATOR'))
       .expect(200);
     expect(page1.body.data).toHaveLength(3);
+    // 9 seeded products at 3 per page => 3 pages, the last holding the remaining 3.
     expect(page1.body.totalPages).toBe(3);
     expect(page1.body.hasNextPage).toBe(true);
     const page3 = await request(app.getHttpServer())
       .get('/api/v1/internal/products?page=3&limit=3')
       .set('Authorization', auth('OPERATOR'))
       .expect(200);
-    expect(page3.body.data).toHaveLength(1);
+    expect(page3.body.data).toHaveLength(3);
     expect(page3.body.hasNextPage).toBe(false);
     const ids1 = page1.body.data.map((p: any) => p.code);
     const ids3 = page3.body.data.map((p: any) => p.code);
@@ -657,7 +672,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .delete('/api/v1/internal/products/WALLET_TRANSFER')
       .set('Authorization', auth('PRIVILEGED'))
       .expect(404);
-    expect(await rowCount('products')).toBe(7);
+    expect(await rowCount('products')).toBe(9);
   });
 
   // ── 6. financial isolation & snapshot compatibility ──
@@ -674,7 +689,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       'test',
     );
     const list = await service.listProducts({});
-    expect(list.total).toBe(8);
+    expect(list.total).toBe(10);
     const after = await financialTables();
     expect(after).toEqual(before);
   });

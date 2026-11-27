@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { redactRecord } from '../common/sensitive-data-redaction';
@@ -59,11 +59,13 @@ export interface CommercialChangeExecuteCommand<T> {
   action: string;
   payload: Readonly<Record<string, unknown>>;
   /**
-   * Performs the registry write. Runs only after the approval has been consumed successfully.
+   * Performs the registry write inside the same database transaction as approval consumption.
    * Receives the fingerprint-bound resourceId taken from the approved request (null for
-   * creates) — the caller never re-supplies it.
+   * creates) and the transactional EntityManager. If the write throws, the transaction
+   * (including approval consumption) rolls back so the approval remains usable for the
+   * approved payload.
    */
-  write: (resourceId: string | null) => Promise<T>;
+  write: (resourceId: string | null, manager: EntityManager) => Promise<T>;
   correlationId?: string;
   now?: Date;
 }
@@ -110,7 +112,31 @@ export function governedChangeConsumptionError(
   }
 }
 
+/**
+ * Field names a governed commercial change may keep in `policy.requestDetails`.
+ *
+ * The checker-execution endpoints replay these stored details as the change body and recompute the
+ * governed-change fingerprint from it (`governedChangeFingerprint`), then compare against the
+ * fingerprint recorded at approval time. That comparison is only sound if this list covers *every*
+ * field the create/update payload builders emit: a dropped key makes an untouched approval fail with
+ * `FINGERPRINT_MISMATCH`, and — worse — leaves a field the executor writes that the approver never
+ * saw the value of. The names below therefore mirror, field for field:
+ *
+ *   - `FeeRuleRegistryController.buildCreateCommand/buildUpdateCommand`                 (fees)
+ *   - `CommissionRuleRegistryController.buildCreateCommand/buildUpdateCommand`          (commissions)
+ *   - `RewardRuleRegistryController.buildCreateCommand/buildUpdateCommand`              (rewards)
+ *   - `ProductCatalogController.buildCreateCommand/buildUpdateCommand`                  (products)
+ *   - `LimitRuleGovernanceService.createPayload/updatePayload`                          (limits)
+ *
+ * `test/commercial-stored-request-details-execution.integration.spec.ts` fails if this list drifts
+ * from those builders again: for fees, commissions and rewards it authors a change, replays the
+ * stored details and requires the execution to succeed, then tampers with a stored field and requires
+ * the refusal. Product registration is covered the same way but is currently refused for an unrelated
+ * reason (see the note on `sanitizeCommercialRequestDetails`); limits are covered by
+ * `v1-commercial-configuration-authoring` and the browser walkthrough.
+ */
 const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
+  // Shared identity / lifecycle
   'productCode',
   'product',
   'code',
@@ -122,15 +148,6 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'status',
   'enabled',
   'configurationStatus',
-  'flatFeeMinor',
-  'percentageBps',
-  'minFeeMinor',
-  'maxFeeMinor',
-  'taxable',
-  'customerClassCode',
-  'customerClassId',
-  'agentClassId',
-  'institutionId',
   'priority',
   'effectiveFrom',
   'effectiveTo',
@@ -138,16 +155,40 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'version',
   'expectedVersion',
   'reason',
-  'calculationBasis',
+  'institutionId',
+  'customerClassCode',
+  'customerClassId',
+  'agentClassId',
+  // Fees (fee_rules: flat / rate / minimum / maximum / VAT band)
+  'flatFeeMinor',
+  'percentageBps',
+  'minimumFeeMinor',
+  'maximumFeeMinor',
+  'vatBps',
+  // Commissions
+  'recipientType',
   'calculationModel',
+  'calculationBasis',
+  'flatCommissionMinor',
+  'minimumCommissionMinor',
+  'maximumCommissionMinor',
   'agentShareBps',
   'aggregatorShareBps',
   'platformShareBps',
-  'beneficiaryType',
-  'flatRewardMinor',
-  'rewardBps',
+  'agentId',
+  'aggregatorId',
   'tiers',
+  // Rewards
+  'beneficiaryType',
+  'rewardType',
+  'flatRewardMinor',
+  'minimumRewardMinor',
+  'maximumRewardMinor',
+  'rewardBps',
   'campaignCode',
+  'customerId',
+  'customerKycLevel',
+  // Limits
   'limitProfileCode',
   'ruleId',
   'direction',
@@ -157,6 +198,27 @@ const ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS = new Set([
   'limitValueCount',
 ]);
 
+/**
+ * Per-action identifier keys that must survive redaction verbatim.
+ *
+ * A product registration's `code` is the identity being created, not a credential; the log redactor
+ * classifies a bare `code` key as credential-shaped by name alone, so without this the stored record
+ * would read `code: '[REDACTED]'` and the executor's replay could never reproduce the approved
+ * fingerprint (finding PR27-BROWSER-02). Only the actions listed here opt in, only for the keys below,
+ * and only for primitive values — every other field is still redacted, and every other action keeps
+ * the default behaviour.
+ */
+const COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS: Readonly<Record<string, readonly string[]>> = {
+  PRODUCT_MODIFY: ['code'],
+};
+
+/**
+ * Stored shape of an approved commercial change.
+ *
+ * The checker-execution endpoints replay this record as the change body and recompute the governed
+ * fingerprint from it, so the stored keys must be exactly the keys the action's payload builder emits
+ * — no aliases, no omissions (see `ALLOWED_COMMERCIAL_REQUEST_DETAIL_KEYS`).
+ */
 export function sanitizeCommercialRequestDetails(
   action: string,
   payload: Readonly<Record<string, unknown>>,
@@ -167,14 +229,11 @@ export function sanitizeCommercialRequestDetails(
       filtered[key] = value;
     }
   }
-  if (
-    action === 'PRODUCT_MODIFY' &&
-    typeof payload.code === 'string' &&
-    filtered.productCode === undefined
-  ) {
-    filtered.productCode = payload.code;
-  }
-  return redactRecord(filtered);
+  // No aliasing: a `productCode` key synthesised from `code` is a key the approved payload never had,
+  // so it would break the fingerprint comparison it was meant to help.
+  return redactRecord(filtered, {
+    preserveKeys: COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS[action],
+  });
 }
 
 @Injectable()
@@ -209,6 +268,7 @@ export class CommercialRuleGovernanceService {
       actionFingerprint,
       reason: command.reason,
       requestDetails: sanitizeCommercialRequestDetails(definition.action, command.payload),
+      requestDetailsIdentityKeys: COMMERCIAL_REQUEST_DETAIL_IDENTITY_KEYS[definition.action],
       approvalScope: definition.approvalScope,
       expiresInSeconds: command.expiresInSeconds,
       now: command.now,
@@ -225,6 +285,8 @@ export class CommercialRuleGovernanceService {
 
   async executeChange<T>(command: CommercialChangeExecuteCommand<T>): Promise<T> {
     const definition = this.definition(command.action);
+    // Shape checks that cannot depend on the write happen before the transaction opens: a request
+    // that does not even describe this governed action must not be audited as a failed execution.
     const approval = await this.approvals.getApproval(command.approvalId);
     if (!approval) {
       throw new NotFoundException('Approval not found');
@@ -245,36 +307,54 @@ export class CommercialRuleGovernanceService {
       resourceId,
       command.payload,
     );
-    const consumed = await this.approvals.consume({
-      principal: command.principal,
-      approvalId: command.approvalId,
-      actionType: definition.action,
-      resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
-      actionFingerprint,
-      now: command.now,
-    });
-    if (!consumed.approved) {
-      throw this.consumptionException(consumed.reason, consumed.approval);
-    }
+
+    // Tracks whether this attempt got as far as consuming the approval. It decides what the
+    // failure audit below may honestly claim: a write failure means the approval was rolled back
+    // to APPROVED and is still usable; a consumption refusal (replay, expiry, wrong executor)
+    // means the approval was never this attempt's to use.
+    let consumptionRefused = false;
     try {
-      return await command.write(resourceId);
-    } catch (error) {
-      // The approval is already irreversibly CONSUMED but the write did not take effect
-      // (e.g. a duplicate-identity conflict inside the registry service). The same tradeoff the
-      // finance-role administration flow makes (consume approvals, then persist): no live rule
-      // was written, and the failure is durably auditable so the maker can re-request.
-      await this.audit.record(this.dataSource.manager, {
-        entityType: 'COMMERCIAL_RULE_CHANGE',
-        entityId: command.approvalId,
-        action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
-        actor: command.principal.principalId,
-        correlationId: command.correlationId,
-        newValues: {
+      return await this.dataSource.transaction(async (manager) => {
+        const consumed = await this.approvals.consumeInTransaction(manager, {
+          principal: command.principal,
+          approvalId: command.approvalId,
           actionType: definition.action,
-          resourceId,
-          error: error instanceof Error ? error.message.slice(0, 500) : 'unknown',
-        },
+          resource: { type: definition.resourceType, ...(resourceId ? { id: resourceId } : {}) },
+          actionFingerprint,
+          now: command.now,
+        });
+        if (!consumed.approved) {
+          consumptionRefused = true;
+          throw this.consumptionException(consumed.reason, consumed.approval);
+        }
+        // Execute the write in the same transaction. If it throws (invalid input, conflict,
+        // persistence failure), the transaction rolls back — including the CONSUMED transition —
+        // so the still-APPROVED approval stays usable for the identical approved payload.
+        return await command.write(resourceId, manager);
       });
+    } catch (error) {
+      // Tampering and entitlement refusals are not "execution failures" and are already audited by
+      // the authorization surface; do not manufacture a second, misleading record.
+      if (error instanceof ForbiddenException) throw error;
+      // Recorded OUTSIDE the rolled-back transaction, so the refusal survives while the approval
+      // does too (or, for a replay, so the duplicate attempt is visible without touching state).
+      await this.audit
+        .record(this.dataSource.manager, {
+          entityType: 'COMMERCIAL_RULE_CHANGE',
+          entityId: command.approvalId,
+          action: 'GOVERNED_CHANGE_EXECUTION_FAILED',
+          actor: command.principal.principalId,
+          correlationId: command.correlationId,
+          newValues: {
+            actionType: definition.action,
+            resourceId,
+            approvalRefusedNotConsumed: consumptionRefused,
+            approvalConsumed: false,
+            approvalUsable: consumptionRefused ? false : true,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'unknown',
+          },
+        })
+        .catch(() => undefined);
       throw error;
     }
   }

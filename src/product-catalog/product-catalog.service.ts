@@ -81,9 +81,14 @@ export class ProductCatalogService {
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
-  async createProduct(input: ProductCreateInput, actor: string): Promise<ProductSafeProjection> {
+  async createProduct(
+    input: ProductCreateInput,
+    actor: string,
+    manager?: EntityManager,
+  ): Promise<ProductSafeProjection> {
+    const repo = manager ? manager.getRepository(Product) : this.repo;
     const code = this.normalizeCode(input.code);
-    const existing = await this.repo.findOne({ where: { code } as never });
+    const existing = await repo.findOne({ where: { code } as never });
     if (existing) throw new ConflictException(`Product ${code} already exists`);
 
     const name = this.requireName(input.name);
@@ -101,7 +106,7 @@ export class ProductCatalogService {
       'configurationStatus',
     );
 
-    const entity = this.repo.create({
+    const entity = repo.create({
       code,
       name,
       description: input.description?.trim() || null,
@@ -118,12 +123,12 @@ export class ProductCatalogService {
 
     let saved: Product;
     try {
-      saved = (await this.repo.save(entity as never)) as unknown as Product;
+      saved = (await repo.save(entity as never)) as unknown as Product;
     } catch (e) {
       if (this.isUniqueViolation(e)) throw new ConflictException(`Product ${code} already exists`);
       throw e;
     }
-    await this.audit('CREATED', actor, undefined, this.productValues(saved));
+    await this.audit('CREATED', actor, undefined, this.productValues(saved), manager);
     return this.toSafe(saved);
   }
 
@@ -131,6 +136,7 @@ export class ProductCatalogService {
     code: string,
     input: ProductUpdateInput,
     actor: string,
+    manager?: EntityManager,
   ): Promise<ProductSafeProjection> {
     const normalizedCode = this.normalizeCode(code);
     // ARENA 3 (PostgreSQL regression triage, V1-COMMERCIAL-02 suite test 08 — verified
@@ -144,8 +150,8 @@ export class ProductCatalogService {
     // contract deterministic: the second writer now re-reads the winner's committed version
     // and is rejected by assertVersion with the same 409 as the sequential stale-version
     // replay. This strengthens the governance control; nothing is relaxed.
-    const { saved, previous } = await this.dataSource.transaction(async (manager) => {
-      const repository = manager.getRepository(Product);
+    const run = async (m: EntityManager) => {
+      const repository = m.getRepository(Product);
       const product = await repository.findOne({
         where: { code: normalizedCode } as never,
         lock: { mode: 'pessimistic_write' },
@@ -184,8 +190,11 @@ export class ProductCatalogService {
         }
         throw e;
       }
-    });
-    await this.audit('UPDATED', actor, previous, this.productValues(saved));
+    };
+    const { saved, previous } = manager
+      ? await run(manager)
+      : await this.dataSource.transaction(run);
+    await this.audit('UPDATED', actor, previous, this.productValues(saved), manager);
     return this.toSafe(saved);
   }
 
@@ -320,19 +329,22 @@ export class ProductCatalogService {
     actor: string,
     previousValues: Record<string, unknown> | undefined,
     newValues: Record<string, unknown>,
+    manager?: EntityManager,
   ): Promise<void> {
     if (!this.auditService) return;
+    const write = async (m: EntityManager): Promise<void> => {
+      await this.auditService!.record(m, {
+        entityType: 'PRODUCT',
+        entityId: this.auditEntityId(newValues.code as string),
+        action,
+        actor,
+        previousValues,
+        newValues,
+      } as never);
+    };
     try {
-      await this.dataSource.transaction(async (manager: EntityManager) => {
-        await this.auditService!.record(manager, {
-          entityType: 'PRODUCT',
-          entityId: this.auditEntityId(newValues.code as string),
-          action,
-          actor,
-          previousValues,
-          newValues,
-        } as never);
-      });
+      if (manager) await manager.transaction(write);
+      else await this.dataSource.transaction(write);
     } catch {
       // best-effort audit, consistent with limit-catalog convention
     }

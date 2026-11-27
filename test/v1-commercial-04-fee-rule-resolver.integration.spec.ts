@@ -789,8 +789,10 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     const products: Array<{ configuration_status: string }> = await dataSource.query(
       `SELECT configuration_status FROM products ORDER BY code`,
     );
-    expect(products.length).toBe(7);
-    for (const p of products) expect(p.configuration_status).toBe('NOT_CONFIGURED');
+    // PR #27: nine products; BANK_TO_WALLET is seeded DISABLED (no inbound execution authority).
+    expect(products.length).toBe(9);
+    for (const p of products)
+      expect(['NOT_CONFIGURED', 'DISABLED']).toContain(p.configuration_status);
     // Resolver wiring boundary (updated with each pilot; justified reality, never weakened):
     //  - V1-COMMERCIAL-DECISION-02: WALLET_TRANSFER via TransferService
     //  - V1-COMMERCIAL-DECISION-03A/03B: CASH_TO_WALLET + WALLET_TO_CASH via the shared

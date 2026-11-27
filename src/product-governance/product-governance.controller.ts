@@ -73,7 +73,7 @@ export class ProductGovernanceController {
       action: 'PRODUCT_GOVERNANCE',
       approvalId,
       payload: this.buildCreatePayload(dto),
-      write: () => this.service.create(this.buildCreateCommand(dto)),
+      write: (_resourceId, manager) => this.service.create(this.buildCreateCommand(dto), manager),
     });
   }
 
@@ -122,7 +122,8 @@ export class ProductGovernanceController {
       action: 'PRODUCT_GOVERNANCE',
       approvalId,
       payload: this.buildUpdatePayload(dto),
-      write: (resourceId) => this.service.update(resourceId!, this.buildUpdateCommand(dto)),
+      write: (resourceId, manager) =>
+        this.service.update(resourceId!, this.buildUpdateCommand(dto), manager),
     });
   }
 
