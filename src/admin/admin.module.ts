@@ -1,4 +1,11 @@
 import { TransactionHistoryController } from './transaction-history.controller';
+import {
+  MAX_EXPORT_ROWS,
+  TRANSACTION_HISTORY_EXPORT_LIMITS,
+  TransactionHistoryExportService,
+} from './transaction-history-export.service';
+import { WalletStatementService } from './wallet-statement/wallet-statement.service';
+import { WalletStatementRenderService } from './wallet-statement/wallet-statement-render.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -28,6 +35,8 @@ import { AdminSupportCredentialsController } from './admin-support-credentials.c
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { InstitutionModule } from '../institution/institution.module';
 
 @Module({
   imports: [
@@ -47,6 +56,10 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
     AuthorizationModule,
+    // The statement reads balances through LedgerService and scope through the institution
+    // workforce assignment service, so it reuses both rather than re-deriving either.
+    LedgerModule,
+    InstitutionModule,
   ],
   controllers: [
     TransactionHistoryController,
@@ -64,6 +77,19 @@ import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module'
   // `NotificationOperationsService` is provided by NotificationModule (imported below) and consumed
   // here by NotificationOperationsController; a second provider would give the delivery-log
   // aggregates two instances with independent caches of nothing but confusion.
-  providers: [CustomerTransactionHistoryService],
+  providers: [
+    CustomerTransactionHistoryService,
+    // CSV export shares the history list's read path; it only serialises and audits.
+    TransactionHistoryExportService,
+    // Wallet statement: the ledger read and the scoped, audited PDF generation.
+    WalletStatementService,
+    WalletStatementRenderService,
+    // The supported export ceiling. Above it the export is refused with an explanation, never
+    // truncated; a deployment may override this provider from measured capacity.
+    {
+      provide: TRANSACTION_HISTORY_EXPORT_LIMITS,
+      useValue: { maxRows: MAX_EXPORT_ROWS },
+    },
+  ],
 })
 export class AdminModule {}

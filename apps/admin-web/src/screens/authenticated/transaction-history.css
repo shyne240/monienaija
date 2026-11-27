@@ -158,3 +158,70 @@
   outline: 3px solid #d6ae54;
   outline-offset: 3px;
 }
+
+/* CSV export: the button sits with the other page actions, the outcome is announced inline. */
+.th-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.th-export {
+  margin: 18px 0 0;
+}
+.th-export-progress,
+.th-export-success,
+.th-export-error {
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.th-export-progress {
+  background: #f2f7f4;
+  border: 1px solid #dbe7e0;
+  color: #173b2d;
+}
+.th-export-success {
+  background: #e3f4eb;
+  border: 1px solid #bfe3d1;
+  color: #116447;
+}
+.th-export-error {
+  background: #fdece9;
+  border: 1px solid #f5c9c1;
+  color: #8c2f24;
+  display: block;
+}
+.th-export-error strong {
+  font-size: 13px;
+}
+.th-export-error p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+.th-export-error .th-muted {
+  color: #8c5b52;
+}
+/* A slow export must look alive, not frozen. */
+.th-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #b9d3c6;
+  border-top-color: #09684d;
+  border-radius: 50%;
+  animation: th-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes th-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-spinner {
+    animation-duration: 2.4s;
+  }
+}
