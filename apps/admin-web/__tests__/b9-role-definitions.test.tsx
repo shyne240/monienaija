@@ -102,6 +102,86 @@ test('a definition submits the selected catalogue functions and states why it ca
   expect(screen.getByRole('status').textContent).toContain('independent checker');
 });
 
+test('seeded-role grant editor submits a MODIFY proposal and preserves locked authority grants', async () => {
+  const seededRole = {
+    roleKey: 'OPERATIONS',
+    displayName: 'Operations',
+    description: 'Operational staff role.',
+    readOnly: false,
+    isActive: true,
+    isSystemSeeded: true,
+    definitionVersion: 4,
+    functionGrants: [
+      { functionCode: 'workforce.role.modify', accessType: 'INITIATE' },
+      { functionCode: 'institution.view', accessType: 'VIEW' },
+    ],
+  };
+  const agentView = {
+    functionCode: 'agent.view',
+    name: 'View agent profile',
+    domain: 'agent',
+    sensitivity: 'READ',
+    v1Status: 'IMPLEMENTED',
+    financeClassRestricted: false,
+  };
+  const institutionView = {
+    functionCode: 'institution.view',
+    name: 'View institution',
+    domain: 'institution',
+    sensitivity: 'READ',
+    v1Status: 'IMPLEMENTED',
+    financeClassRestricted: false,
+  };
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+    if (url.endsWith('/functions'))
+      return Promise.resolve([...FUNCTIONS, agentView, institutionView]);
+    if (url.endsWith('/roles')) return Promise.resolve([seededRole]);
+    return Promise.resolve([]);
+  });
+  (ApiClient.post as jest.Mock).mockResolvedValue({
+    success: true,
+    proposal: proposal({
+      proposalType: 'MODIFY',
+      targetRoleKey: 'OPERATIONS',
+      priorSnapshot: { isSystemSeeded: true, functionGrants: seededRole.functionGrants },
+    }),
+  });
+
+  render(<RoleDefinitionsPanel canDefine canDecide canApply />);
+  fireEvent.click(screen.getByTestId('rd-open'));
+  await waitFor(() =>
+    expect(screen.getByRole('option', { name: /Operations \(OPERATIONS\)/ })).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId('rd-seeded-role-select'), {
+    target: { value: 'OPERATIONS' },
+  });
+  await waitFor(() => expect(screen.getByTestId('rd-seeded-function-agent.view')).toBeTruthy());
+  expect(screen.getByTestId('rd-seeded-locked-workforce.role.modify')).toBeTruthy();
+  fireEvent.click(screen.getByTestId('rd-seeded-function-agent.view'));
+  fireEvent.change(screen.getByLabelText('Reason for the grant change'), {
+    target: { value: 'Operations needs read-only agent directory access.' },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByTestId('rd-seeded-submit'));
+  });
+
+  expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/role-definitions/proposals', {
+    proposalType: 'MODIFY',
+    roleKey: 'OPERATIONS',
+    displayName: 'Operations',
+    description: 'Operational staff role.',
+    readOnly: false,
+    functionGrants: [
+      { functionCode: 'workforce.role.modify', accessType: 'INITIATE' },
+      { functionCode: 'agent.view', accessType: 'VIEW' },
+      { functionCode: 'institution.view', accessType: 'VIEW' },
+    ],
+    expectedDefinitionVersion: 4,
+    reason: 'Operations needs read-only agent directory access.',
+  });
+  expect(screen.getByRole('status').textContent).toContain('independent FINANCE_CONTROLLER');
+});
+
 test('a checker decides a pending definition and a SUPER_ADMIN applies the approved one', async () => {
   let proposals = [proposal()];
   (ApiClient.get as jest.Mock).mockImplementation((url: string) =>

@@ -18,6 +18,9 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -88,7 +91,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
   // ---------------------------------------------------------------- session helpers (identical
   // pattern to v1-administrator-role-and-assignment-implementation-01.integration.spec.ts)
 
-  async function loginSuperAdmin(): Promise<string> {
+  async function loginSuperAdminSession(): Promise<any> {
     await localAdminService.seedDefaultAdmin({
       email: 'admin@monienaija.local',
       password: 'MonieNaijaAdmin123!',
@@ -99,7 +102,11 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
     if (login.status !== 201) {
       throw new Error(`SUPER_ADMIN login failed: ${login.status} ${JSON.stringify(login.body)}`);
     }
-    return login.body.accessToken as string;
+    return login.body;
+  }
+
+  async function loginSuperAdmin(): Promise<string> {
+    return (await loginSuperAdminSession()).accessToken as string;
   }
 
   /** Direct, non-HTTP role provisioning for test setup. */
@@ -107,7 +114,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
     roleKey: string,
     principalSuffix = roleKey,
     principalId = `roledefgov01:${principalSuffix}:${randomUUID()}`.slice(0, 160),
-  ): Promise<{ principalId: string; token: string }> {
+  ): Promise<{ principalId: string; token: string; session: any }> {
     const now = new Date();
     await dataSource.getRepository(A2FinanceRoleAssignment).save({
       id: randomUUID(),
@@ -142,7 +149,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       acr: null,
       signingKeyId: 'test-harness-key',
     });
-    return { principalId, token: result.accessToken };
+    return { principalId, token: result.accessToken, session: result };
   }
 
   function auth(token: string) {
@@ -650,23 +657,387 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       expect(res.status).toBe(403);
     });
 
-    it('9c. MODIFY cannot target one of the eleven seeded roles', async () => {
+    // The integration harness exposes Supertest and dynamically-loaded Playwright as `any`.
+    /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-require-imports */
+    it('9c. seeded-role grant add and removal require independent approval and change access for an existing session', async () => {
       const superAdmin = await loginSuperAdmin();
-      const res = await request(app.getHttpServer())
+      const checker = await provisionRole('FINANCE_CONTROLLER');
+      const operations = await provisionRole('OPERATIONS');
+      const definition = await dataSource.query(
+        `SELECT id, display_name, description, read_only, is_active, is_system_seeded, definition_version
+           FROM authorization_roles WHERE role_key = 'OPERATIONS'`,
+      );
+      expect(definition).toHaveLength(1);
+      expect(definition[0].is_system_seeded).toBe(true);
+      const currentGrants = await dataSource.query(
+        `SELECT function_code AS "functionCode", access_type AS "accessType"
+           FROM authorization_role_functions WHERE role_id = $1 AND is_active = true ORDER BY function_code`,
+        [definition[0].id],
+      );
+      expect(currentGrants.some((grant: any) => grant.functionCode === 'agent.view')).toBe(false);
+      const listBefore = await request(app.getHttpServer())
+        .get('/api/v1/internal/agents')
+        .set(auth(operations.token));
+      expect(listBefore.status).toBe(403);
+
+      const propose = (
+        grants: Array<{ functionCode: string; accessType: string }>,
+        reason: string,
+      ) =>
+        request(app.getHttpServer())
+          .post(BASE_PATH)
+          .set(auth(superAdmin))
+          .send({
+            proposalType: 'MODIFY',
+            roleKey: 'OPERATIONS',
+            displayName: definition[0].display_name,
+            description: definition[0].description,
+            readOnly: definition[0].read_only,
+            functionGrants: grants,
+            expectedDefinitionVersion: Number(definition[0].definition_version),
+            reason,
+          });
+      const add = await propose(
+        [...currentGrants, { functionCode: 'agent.view', accessType: 'VIEW' }],
+        'Grant Operations read-only agent directory access for this acceptance test.',
+      );
+      expect(add.status).toBe(201);
+      const addId = add.body.proposal.id as string;
+      expect((await approve(operations.token, addId)).status).toBe(403);
+      expect((await approve(checker.token, addId)).status).toBe(201);
+      expect((await apply(superAdmin, addId)).status).toBe(201);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/v1/internal/agents')
+            .set(auth(operations.token))
+        ).status,
+      ).toBe(200);
+
+      const updated = await dataSource.query(
+        `SELECT definition_version FROM authorization_roles WHERE role_key = 'OPERATIONS'`,
+      );
+      const grantsAfterAdd = await dataSource.query(
+        `SELECT function_code AS "functionCode", access_type AS "accessType"
+           FROM authorization_role_functions WHERE role_id = $1 AND is_active = true ORDER BY function_code`,
+        [definition[0].id],
+      );
+      const remove = await request(app.getHttpServer())
         .post(BASE_PATH)
         .set(auth(superAdmin))
         .send({
           proposalType: 'MODIFY',
           roleKey: 'OPERATIONS',
-          displayName: 'Hijacked',
-          description: 'Attempted modification of a seeded role.',
-          functionGrants: [{ functionCode: 'customer.view', accessType: 'VIEW' }],
-          expectedDefinitionVersion: 1,
-          reason: 'Should be rejected',
+          displayName: definition[0].display_name,
+          description: definition[0].description,
+          readOnly: definition[0].read_only,
+          functionGrants: grantsAfterAdd.filter(
+            (grant: any) => grant.functionCode !== 'agent.view',
+          ),
+          expectedDefinitionVersion: Number(updated[0].definition_version),
+          reason: 'Revoke temporary agent directory access through the same governed workflow.',
         });
-      expect(res.status).toBe(403);
+      expect(remove.status).toBe(201);
+      const removeId = remove.body.proposal.id as string;
+      expect((await approve(checker.token, removeId)).status).toBe(201);
+      expect((await apply(superAdmin, removeId)).status).toBe(201);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/v1/internal/agents')
+            .set(auth(operations.token))
+        ).status,
+      ).toBe(403);
     });
   });
+
+  it('9d. removing the seeded independent role-approval path is surfaced for owner review', async () => {
+    const superAdmin = await loginSuperAdmin();
+    const role = (
+      await dataSource.query(
+        `SELECT id, display_name, description, read_only, definition_version
+           FROM authorization_roles WHERE role_key = 'FINANCE_CONTROLLER'`,
+      )
+    )[0];
+    const currentGrants = await dataSource.query(
+      `SELECT function_code AS "functionCode", access_type AS "accessType"
+         FROM authorization_role_functions WHERE role_id = $1 AND is_active = true ORDER BY function_code`,
+      [role.id],
+    );
+    const attempt = await request(app.getHttpServer())
+      .post(BASE_PATH)
+      .set(auth(superAdmin))
+      .send({
+        proposalType: 'MODIFY',
+        roleKey: 'FINANCE_CONTROLLER',
+        displayName: role.display_name,
+        description: role.description,
+        readOnly: role.read_only,
+        functionGrants: currentGrants.filter(
+          (grant: any) =>
+            !(grant.functionCode === 'workforce.role.modify' && grant.accessType === 'APPROVE'),
+        ),
+        expectedDefinitionVersion: Number(role.definition_version),
+        reason: 'Attempt to remove the seeded role-governance checker path.',
+      });
+    expect(attempt.status).toBe(409);
+    expect(attempt.body.code).toBe('OWNER_REVIEW_REQUIRED');
+    expect(attempt.body.protectedPaths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ functionCode: 'workforce.role.modify', accessType: 'APPROVE' }),
+      ]),
+    );
+    const unchanged = await dataSource.query(
+      `SELECT definition_version FROM authorization_roles WHERE role_key = 'FINANCE_CONTROLLER'`,
+    );
+    expect(Number(unchanged[0].definition_version)).toBe(Number(role.definition_version));
+  });
+
+  const browserAcceptance = process.env.ROLE_GOVERNANCE_BROWSER_ACCEPTANCE === 'yes' ? it : it.skip;
+
+  browserAcceptance(
+    '9e. real Admin Web sessions expose and revoke a seeded-role function in Chromium',
+    async () => {
+      const superAdmin = await loginSuperAdmin();
+      const checker = await provisionRole('FINANCE_CONTROLLER', 'browser-checker');
+      const baselineOperations = await provisionRole('OPERATIONS', 'browser-operations-before');
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/v1/internal/agents')
+            .set(auth(baselineOperations.token))
+        ).status,
+      ).toBe(403);
+
+      const role = (
+        await dataSource.query(
+          `SELECT id, display_name, description, read_only, definition_version
+             FROM authorization_roles WHERE role_key = 'OPERATIONS'`,
+        )
+      )[0];
+      const existingGrants = await dataSource.query(
+        `SELECT function_code AS "functionCode", access_type AS "accessType"
+           FROM authorization_role_functions WHERE role_id = $1 AND is_active = true ORDER BY function_code`,
+        [role.id],
+      );
+      expect(existingGrants.some((grant: any) => grant.functionCode === 'agent.view')).toBe(false);
+      const submitModify = (
+        functionGrants: any[],
+        expectedDefinitionVersion: number,
+        reason: string,
+      ) =>
+        request(app.getHttpServer()).post(BASE_PATH).set(auth(superAdmin)).send({
+          proposalType: 'MODIFY',
+          roleKey: 'OPERATIONS',
+          displayName: role.display_name,
+          description: role.description,
+          readOnly: role.read_only,
+          functionGrants,
+          expectedDefinitionVersion,
+          reason,
+        });
+      const add = await submitModify(
+        [...existingGrants, { functionCode: 'agent.view', accessType: 'VIEW' }],
+        Number(role.definition_version),
+        'Browser acceptance: grant read-only agent directory access.',
+      );
+      expect(add.status).toBe(201);
+      const addId = add.body.proposal.id as string;
+      expect((await approve(checker.token, addId)).status).toBe(201);
+      expect((await apply(superAdmin, addId)).status).toBe(201);
+
+      const authorizedOperations = await provisionRole(
+        'OPERATIONS',
+        'browser-operations-after-add',
+      );
+      await app.listen(0, '127.0.0.1');
+      const apiAddress = app.getHttpServer().address();
+      if (!apiAddress || typeof apiAddress === 'string')
+        throw new Error('Backend did not bind a TCP port');
+      const apiPort = apiAddress.port;
+      const webPort = 5187;
+      const viteBin = resolve(process.cwd(), 'apps/admin-web/node_modules/vite/bin/vite.js');
+      const vite = spawn(
+        process.execPath,
+        [viteBin, '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
+        {
+          cwd: resolve(process.cwd(), 'apps/admin-web'),
+          env: { ...process.env, ADMIN_WEB_DEV_PROXY_TARGET: `http://127.0.0.1:${apiPort}` },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      let viteLogs = '';
+      vite.stdout.on('data', (chunk: Buffer) => {
+        viteLogs += chunk.toString();
+      });
+      vite.stderr.on('data', (chunk: Buffer) => {
+        viteLogs += chunk.toString();
+      });
+      const ready = new Promise<void>((resolveReady, rejectReady) => {
+        const timeout = setTimeout(
+          () => rejectReady(new Error(`Vite did not start: ${viteLogs}`)),
+          60_000,
+        );
+        vite.stdout.on('data', () => {
+          if (viteLogs.includes(`http://127.0.0.1:${webPort}/`)) {
+            clearTimeout(timeout);
+            resolveReady();
+          }
+        });
+        vite.once('error', (error) => {
+          clearTimeout(timeout);
+          rejectReady(error);
+        });
+      });
+      let browser: any;
+      try {
+        await ready;
+        const runtimeLibraries = spawnSync(
+          process.execPath,
+          [
+            '-e',
+            "import('@sparticuz/chromium').then(async m=>{await m.inflate(require('path').join(require('path').dirname(require.resolve('@sparticuz/chromium')),'../bin/al2023.tar.br'))})",
+          ],
+          { encoding: 'utf8' },
+        );
+        if (runtimeLibraries.status !== 0)
+          throw new Error(
+            `Chromium runtime libraries failed to extract: ${runtimeLibraries.stderr}`,
+          );
+        process.env.LD_LIBRARY_PATH = [
+          '/tmp/al2023/lib',
+          ...(process.env.LD_LIBRARY_PATH ?? '').split(':').filter(Boolean),
+        ].join(':');
+        const { chromium } = require('playwright');
+        const binary = JSON.parse(
+          spawnSync(
+            process.execPath,
+            [
+              '-e',
+              "const c=require('@sparticuz/chromium').default;c.executablePath().then(path=>console.log(JSON.stringify({path,args:c.args})))",
+            ],
+            { encoding: 'utf8' },
+          ).stdout,
+        );
+        browser = await chromium.launch({
+          executablePath: binary.path,
+          args: binary.args,
+          headless: true,
+        });
+        const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+        await page.addInitScript((session: any) => {
+          localStorage.setItem('admin_workforce_token', session.accessToken);
+          localStorage.setItem('admin_workforce_session_id', session.sessionId);
+          localStorage.setItem('admin_workforce_principal', JSON.stringify(session.principal));
+        }, authorizedOperations.session);
+        const baseUrl = `http://127.0.0.1:${webPort}`;
+        await page.goto(baseUrl);
+        await page.getByTestId('main-content').waitFor();
+        const agentNav = page.getByTestId('nav-agents');
+        if (!(await agentNav.isVisible())) await page.getByTestId('section-servicing').click();
+        expect(await agentNav.isVisible()).toBe(true);
+        const allowedApi = await page.evaluate(async () => {
+          const token = localStorage.getItem('admin_workforce_token');
+          return (
+            await fetch('/api/v1/internal/agents', {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          ).status;
+        });
+        expect(allowedApi).toBe(200);
+        const evidenceDir = resolve(
+          process.cwd(),
+          'docs/V1/evidence/seeded-role-governance-browser',
+        );
+        mkdirSync(evidenceDir, { recursive: true });
+        await page.screenshot({
+          path: `${evidenceDir}/operations-agent-menu-allowed.png`,
+          fullPage: true,
+        });
+
+        const changed = await dataSource.query(
+          `SELECT definition_version FROM authorization_roles WHERE role_key = 'OPERATIONS'`,
+        );
+        const grantsAfterAdd = await dataSource.query(
+          `SELECT function_code AS "functionCode", access_type AS "accessType"
+             FROM authorization_role_functions WHERE role_id = $1 AND is_active = true ORDER BY function_code`,
+          [role.id],
+        );
+        const remove = await submitModify(
+          grantsAfterAdd.filter((grant: any) => grant.functionCode !== 'agent.view'),
+          Number(changed[0].definition_version),
+          'Browser acceptance: revoke agent directory access through the same maker/checker workflow.',
+        );
+        expect(remove.status).toBe(201);
+        const removeId = remove.body.proposal.id as string;
+        expect((await approve(checker.token, removeId)).status).toBe(201);
+        expect((await apply(superAdmin, removeId)).status).toBe(201);
+        const revokedExistingSessionApi = await page.evaluate(async () => {
+          const token = localStorage.getItem('admin_workforce_token');
+          return (
+            await fetch('/api/v1/internal/agents', {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          ).status;
+        });
+        expect(revokedExistingSessionApi).toBe(403);
+        await page.screenshot({
+          path: `${evidenceDir}/operations-agent-api-revoked.png`,
+          fullPage: true,
+        });
+
+        const freshOperations = await provisionRole(
+          'OPERATIONS',
+          'browser-operations-after-remove',
+        );
+        const freshPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+        await freshPage.addInitScript((session: any) => {
+          localStorage.setItem('admin_workforce_token', session.accessToken);
+          localStorage.setItem('admin_workforce_session_id', session.sessionId);
+          localStorage.setItem('admin_workforce_principal', JSON.stringify(session.principal));
+        }, freshOperations.session);
+        await freshPage.goto(baseUrl);
+        await freshPage.getByTestId('main-content').waitFor();
+        expect(await freshPage.getByTestId('nav-agents').count()).toBe(0);
+        await freshPage.screenshot({
+          path: `${evidenceDir}/operations-agent-menu-revoked.png`,
+          fullPage: true,
+        });
+        writeFileSync(
+          `${evidenceDir}/results.json`,
+          `${JSON.stringify(
+            {
+              browser: 'Chromium 153',
+              frontend: baseUrl,
+              realSessions: true,
+              makerChecker:
+                'SUPER_ADMIN initiated; independent FINANCE_CONTROLLER approved; SUPER_ADMIN applied',
+              seededRole: 'OPERATIONS',
+              functionCode: 'agent.view',
+              deniedBefore: 403,
+              allowedAfterGrant: allowedApi,
+              revokedForExistingSession: revokedExistingSessionApi,
+              menuAfterGrant: 'visible',
+              menuOnFreshSessionAfterRevocation: 'hidden',
+              screenshots: [
+                'operations-agent-menu-allowed.png',
+                'operations-agent-api-revoked.png',
+                'operations-agent-menu-revoked.png',
+              ],
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      } finally {
+        if (browser) await browser.close();
+        vite.kill('SIGTERM');
+      }
+    },
+    180_000,
+  );
+
+  /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-require-imports */
 
   // =====================================================================================
   // 10. FINANCE_AUDITOR cannot exploit the workflow for write privileges

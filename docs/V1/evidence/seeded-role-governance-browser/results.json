@@ -1,0 +1,18 @@
+{
+  "browser": "Chromium 153",
+  "frontend": "http://127.0.0.1:5187",
+  "realSessions": true,
+  "makerChecker": "SUPER_ADMIN initiated; independent FINANCE_CONTROLLER approved; SUPER_ADMIN applied",
+  "seededRole": "OPERATIONS",
+  "functionCode": "agent.view",
+  "deniedBefore": 403,
+  "allowedAfterGrant": 200,
+  "revokedForExistingSession": 403,
+  "menuAfterGrant": "visible",
+  "menuOnFreshSessionAfterRevocation": "hidden",
+  "screenshots": [
+    "operations-agent-menu-allowed.png",
+    "operations-agent-api-revoked.png",
+    "operations-agent-menu-revoked.png"
+  ]
+}

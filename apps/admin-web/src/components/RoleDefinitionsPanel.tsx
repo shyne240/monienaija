@@ -5,6 +5,7 @@ import {
   describeHttpError,
   type RoleDefinitionFunctionOption,
   type RoleDefinitionProposal,
+  type RoleDefinitionRole,
 } from '../services/arena4-operations-api';
 
 /**
@@ -142,6 +143,7 @@ export const RoleDefinitionsPanel: React.FC<{
   canApply: boolean;
 }> = ({ canDefine, canDecide, canApply }) => {
   const [functions, setFunctions] = useState<RoleDefinitionFunctionOption[] | null>(null);
+  const [roles, setRoles] = useState<RoleDefinitionRole[] | null>(null);
   const [proposals, setProposals] = useState<RoleDefinitionProposal[] | null>(null);
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -154,20 +156,26 @@ export const RoleDefinitionsPanel: React.FC<{
   const [description, setDescription] = useState('');
   const [readOnly, setReadOnly] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedSeededRoleKey, setSelectedSeededRoleKey] = useState('');
+  const [selectedSeededGrants, setSelectedSeededGrants] = useState<string[]>([]);
+  const [seededReason, setSeededReason] = useState('');
   const [reason, setReason] = useState('');
   const [filter, setFilter] = useState('');
 
   const reload = useCallback(async () => {
     setLoadError('');
     try {
-      const [functionList, proposalList] = await Promise.all([
+      const [functionList, roleList, proposalList] = await Promise.all([
         Arena4OperationsApi.roleDefinitionFunctions(),
+        Arena4OperationsApi.roleDefinitions(),
         Arena4OperationsApi.roleDefinitionProposals(),
       ]);
       setFunctions(functionList);
+      setRoles(roleList);
       setProposals(proposalList);
     } catch (error) {
       setFunctions([]);
+      setRoles([]);
       setProposals([]);
       setLoadError(
         describeHttpError(
@@ -196,10 +204,87 @@ export const RoleDefinitionsPanel: React.FC<{
     );
   }, [functions, filter]);
 
+  const seededRoles = useMemo(
+    () => (roles ?? []).filter((role) => role.isSystemSeeded && role.isActive),
+    [roles],
+  );
+  const selectedSeededRole = seededRoles.find((role) => role.roleKey === selectedSeededRoleKey);
+  const lockedSeededGrants = (selectedSeededRole?.functionGrants ?? []).filter(
+    (grant) => !functions?.some((fn) => fn.functionCode === grant.functionCode),
+  );
+
+  useEffect(() => {
+    if (selectedSeededRole)
+      setSelectedSeededGrants(selectedSeededRole.functionGrants.map((grant) => grant.functionCode));
+  }, [selectedSeededRole]);
+
   const toggle = (code: string) =>
     setSelected((current) =>
       current.includes(code) ? current.filter((item) => item !== code) : [...current, code],
     );
+  const toggleSeeded = (code: string) =>
+    setSelectedSeededGrants((current) =>
+      current.includes(code) ? current.filter((item) => item !== code) : [...current, code],
+    );
+
+  const submitSeededModify = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setActionError('');
+    setActionNotice('');
+    if (!selectedSeededRole) {
+      setActionError('Select an active seeded role to modify.');
+      return;
+    }
+    if (!seededReason.trim()) {
+      setActionError('A reason is required for a seeded-role grant change.');
+      return;
+    }
+    const grants = [
+      ...lockedSeededGrants,
+      ...(functions ?? [])
+        .filter((fn) => selectedSeededGrants.includes(fn.functionCode))
+        .map((fn) => {
+          const prior = selectedSeededRole.functionGrants.find(
+            (grant) => grant.functionCode === fn.functionCode,
+          );
+          return {
+            functionCode: fn.functionCode,
+            accessType: prior?.accessType ?? (fn.sensitivity === 'READ' ? 'VIEW' : 'EXECUTE'),
+          };
+        }),
+    ];
+    if (grants.length === 0) {
+      setActionError('A seeded role must retain at least one function grant.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await Arena4OperationsApi.submitRoleDefinition({
+        proposalType: 'MODIFY',
+        roleKey: selectedSeededRole.roleKey,
+        displayName: selectedSeededRole.displayName,
+        description: selectedSeededRole.description,
+        readOnly: selectedSeededRole.readOnly,
+        functionGrants: grants,
+        expectedDefinitionVersion: selectedSeededRole.definitionVersion,
+        reason: seededReason.trim(),
+      });
+      setActionNotice(
+        `Grant change for ${result.proposal.targetRoleKey} submitted. An independent FINANCE_CONTROLLER must approve it before it can be applied.`,
+      );
+      setSeededReason('');
+      await reload();
+    } catch (error) {
+      setActionError(
+        describeHttpError(
+          error,
+          'The seeded-role grant proposal was not accepted. Protected recovery and approval grants may require authorization-owner review.',
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -456,6 +541,114 @@ export const RoleDefinitionsPanel: React.FC<{
           </Button>
         </form>
       ) : null}
+      {open && canDefine ? (
+        <form
+          style={styles.form}
+          onSubmit={submitSeededModify}
+          data-testid="seeded-role-grant-form"
+        >
+          <h3 style={{ ...styles.title, margin: 0 }}>Modify a seeded role’s grants</h3>
+          <p style={styles.muted}>
+            Role identity, seeded status, read-only class, accounts and passwords are immutable
+            here. Grant changes use the same independent FINANCE_CONTROLLER approval and SUPER_ADMIN
+            apply flow.
+          </p>
+          <div style={styles.field}>
+            <label style={styles.label} htmlFor="rd-seeded-role">
+              Seeded role
+            </label>
+            <select
+              id="rd-seeded-role"
+              value={selectedSeededRoleKey}
+              onChange={(event) => {
+                const next = seededRoles.find((role) => role.roleKey === event.target.value);
+                setSelectedSeededRoleKey(event.target.value);
+                setSelectedSeededGrants(
+                  next?.functionGrants.map((grant) => grant.functionCode) ?? [],
+                );
+              }}
+              disabled={busy || roles === null}
+              style={styles.input}
+              data-testid="rd-seeded-role-select"
+            >
+              <option value="">Select one of the eleven seeded roles</option>
+              {seededRoles.map((role) => (
+                <option key={role.roleKey} value={role.roleKey}>
+                  {role.displayName} ({role.roleKey})
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedSeededRole ? (
+            <>
+              <p style={styles.muted}>
+                Definition version {selectedSeededRole.definitionVersion};{' '}
+                {selectedSeededRole.functionGrants.length} active grants.
+              </p>
+              <div style={styles.functionList} data-testid="rd-seeded-function-list">
+                {functions === null ? (
+                  <p style={styles.muted}>Loading the function catalogue…</p>
+                ) : (
+                  visibleFunctions.map((fn) => (
+                    <label
+                      key={fn.functionCode}
+                      style={{ display: 'flex', gap: '0.45rem', fontSize: '0.82rem' }}
+                      data-testid={`rd-seeded-function-${fn.functionCode}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSeededGrants.includes(fn.functionCode)}
+                        onChange={() => toggleSeeded(fn.functionCode)}
+                        disabled={busy}
+                      />
+                      <span>
+                        <code style={styles.code}>{fn.functionCode}</code> — {fn.name}{' '}
+                        <span style={styles.muted}>
+                          ({fn.domain}, {fn.sensitivity})
+                        </span>
+                      </span>
+                    </label>
+                  ))
+                )}
+                {lockedSeededGrants.map((grant) => (
+                  <label
+                    key={grant.functionCode}
+                    style={{ display: 'flex', gap: '0.45rem', fontSize: '0.82rem', opacity: 0.78 }}
+                    data-testid={`rd-seeded-locked-${grant.functionCode}`}
+                  >
+                    <input type="checkbox" checked disabled />
+                    <span>
+                      <code style={styles.code}>{grant.functionCode}</code> ({grant.accessType}) —
+                      protected authority grant; owner review required for changes
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p style={styles.notice} role="note">
+                Removing or changing the last protected recovery, role-review or approval path is
+                blocked and surfaced for authorization-owner review. MFA and maker/checker controls
+                remain required.
+              </p>
+              <div style={styles.field}>
+                <label style={styles.label} htmlFor="rd-seeded-reason">
+                  Reason for the grant change
+                </label>
+                <input
+                  id="rd-seeded-reason"
+                  style={styles.input}
+                  value={seededReason}
+                  onChange={(event) => setSeededReason(event.target.value)}
+                  placeholder="Recorded on the proposal and audit trail"
+                  disabled={busy}
+                />
+              </div>
+              <Button type="submit" disabled={busy} data-testid="rd-seeded-submit">
+                {busy ? 'Submitting…' : 'Submit seeded-role grant change'}
+              </Button>
+            </>
+          ) : null}
+        </form>
+      ) : null}
       {open && !canDefine ? (
         <p style={styles.muted} data-testid="rd-no-authoring">
           Your session cannot author role definitions. Only SUPER_ADMIN holds the initiating
@@ -488,6 +681,7 @@ export const RoleDefinitionsPanel: React.FC<{
                 <p style={styles.muted}>
                   {proposal.proposedDisplayName} · {proposal.proposalType}
                   {proposal.proposedReadOnly ? ' · read-only' : ''}
+                  {proposal.priorSnapshot?.isSystemSeeded ? ' · seeded role grant change' : ''}
                 </p>
                 <p style={styles.muted}>
                   Functions:{' '}
@@ -511,7 +705,7 @@ export const RoleDefinitionsPanel: React.FC<{
                         disabled={busy}
                         data-testid={`rd-approve-${proposal.id}`}
                       >
-                        Approve definition
+                        Approve role change
                       </Button>
                       <Button
                         type="button"
@@ -537,7 +731,7 @@ export const RoleDefinitionsPanel: React.FC<{
                       disabled={busy}
                       data-testid={`rd-apply-${proposal.id}`}
                     >
-                      Apply to catalogue
+                      Apply approved role change
                     </Button>
                   ) : null}
                   {proposal.status === 'APPLIED' ? (

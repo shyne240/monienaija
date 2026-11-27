@@ -769,14 +769,15 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     functionCode: 'workforce.role.modify',
     domain: 'WORKFORCE',
     name: 'Modify workforce role',
-    description: 'Modify an existing role definition/bundle.',
+    description:
+      'Modify grants on a seeded role or a configurable role definition/bundle through independent maker/checker governance.',
     sensitivity: PRIVILEGED,
     v1Status: IMPLEMENTED,
     assignable: true,
     makerCheckerRequired: true,
     approvalRequired: true,
     notes:
-      'Decision 10: dual-control governance. Implemented by V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 via RoleDefinitionGovernanceService; only ever targets roles created through that same workflow (is_system_seeded = FALSE) — the eleven V1-seeded roles are immutable through this path. SUPER_ADMIN holds this as INITIATE, FINANCE_CONTROLLER holds it as APPROVE. Not assigned to ADMINISTRATOR or any other role.',
+      'Decision 10: dual-control governance. SUPER_ADMIN initiates grant changes for seeded or configurable roles; FINANCE_CONTROLLER independently approves. Seeded role keys/identity and protected recovery, role-administration, approval, and restricted Finance grants remain guarded; MFA and owner-review controls apply.',
   },
   // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (GOVERNANCE-DECISIONS-01 Decision 2):
   // deliberately DISTINCT function codes from workforce.role.assign/.revoke, not a reuse of them

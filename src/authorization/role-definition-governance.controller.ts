@@ -154,6 +154,17 @@ export class RoleDefinitionGovernanceController {
     });
   }
 
+  /** Current role definitions and active grants for the governed seeded-role editor. */
+  @Get('roles')
+  async roles(@Req() r: R) {
+    const p = this.principal(r);
+    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_ROLE', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
+    return this.governance.listDefinitions();
+  }
+
   /**
    * Catalogue functions the role-definition editor may select from (Arena B9 configurable roles).
    * `workforce.role.view` is the same read gate the proposal reads use; the payload is metadata.

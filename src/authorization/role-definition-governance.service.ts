@@ -56,6 +56,17 @@ export interface RoleDefinitionFunctionOption {
   readonly financeClassRestricted: boolean;
 }
 
+export interface RoleDefinitionTarget {
+  readonly roleKey: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly readOnly: boolean;
+  readonly isActive: boolean;
+  readonly isSystemSeeded: boolean;
+  readonly definitionVersion: number;
+  readonly functionGrants: readonly RoleDefinitionFunctionGrant[];
+}
+
 export interface SubmitRoleDefinitionProposalCommand {
   principal: AuthorizationPrincipal;
   proposalType: 'CREATE' | 'MODIFY';
@@ -137,6 +148,35 @@ export class RoleDefinitionGovernanceService {
       }));
   }
 
+  /** Current catalogue definitions for the governed editor; this is read-only metadata. */
+  async listDefinitions(): Promise<RoleDefinitionTarget[]> {
+    const roles = await this.roleRepo.find({ order: { roleKey: 'ASC' } });
+    if (roles.length === 0) return [];
+    const grants = await this.dataSource.getRepository(AuthorizationRoleFunction).find({
+      where: { roleId: In(roles.map((role) => role.id)), isActive: true } as never,
+      order: { functionCode: 'ASC' },
+    });
+    const byRole = new Map<string, RoleDefinitionFunctionGrant[]>();
+    for (const grant of grants) {
+      const rows = byRole.get(grant.roleId) ?? [];
+      rows.push({
+        functionCode: grant.functionCode,
+        accessType: grant.accessType as RoleDefinitionFunctionGrant['accessType'],
+      });
+      byRole.set(grant.roleId, rows);
+    }
+    return roles.map((role) => ({
+      roleKey: role.roleKey,
+      displayName: role.displayName,
+      description: role.description,
+      readOnly: role.readOnly,
+      isActive: role.isActive,
+      isSystemSeeded: role.isSystemSeeded,
+      definitionVersion: role.definitionVersion,
+      functionGrants: byRole.get(role.id) ?? [],
+    }));
+  }
+
   // ------------------------------------------------------------------ submit
 
   async submit(
@@ -163,8 +203,6 @@ export class RoleDefinitionGovernanceService {
     const reason = this.normalizeText(command.reason, 'reason', 500);
     const readOnly = command.readOnly === true;
     const grants = this.normalizeFunctionGrants(command.functionGrants);
-    await this.validateFunctionGrants(this.functionRepo, grants, readOnly);
-
     const existing = await this.roleRepo.findOne({ where: { roleKey } });
     let priorSnapshot: RoleDefinitionPriorSnapshot | null = null;
     let expectedDefinitionVersion: number | null = null;
@@ -176,14 +214,10 @@ export class RoleDefinitionGovernanceService {
       if (command.deactivate === true) {
         throw new BadRequestException('deactivate is only valid for MODIFY proposals');
       }
+      await this.validateFunctionGrants(this.functionRepo, grants, readOnly);
     } else {
       if (!existing) {
         throw new NotFoundException(`Role ${roleKey} does not exist`);
-      }
-      if (existing.isSystemSeeded) {
-        throw new ForbiddenException(
-          `Role ${roleKey} is one of the eleven V1-seeded roles and cannot be modified through this workflow`,
-        );
       }
       if (!existing.isActive) {
         throw new ConflictException(`Role ${roleKey} is deactivated and cannot be modified`);
@@ -210,6 +244,7 @@ export class RoleDefinitionGovernanceService {
         readOnly: existing.readOnly,
         isActive: existing.isActive,
         definitionVersion: existing.definitionVersion,
+        isSystemSeeded: existing.isSystemSeeded,
         functionGrants: activeGrants
           .map((g) => ({
             functionCode: g.functionCode,
@@ -217,6 +252,30 @@ export class RoleDefinitionGovernanceService {
           }))
           .sort((a, b) => a.functionCode.localeCompare(b.functionCode)),
       };
+      if (existing.isSystemSeeded) {
+        if (
+          displayName !== existing.displayName ||
+          description !== existing.description ||
+          readOnly !== existing.readOnly ||
+          command.deactivate === true
+        ) {
+          throw new ForbiddenException(
+            'Seeded role governance may change grants only; role identity, read-only class and active state are immutable',
+          );
+        }
+        await this.assertSeededProtectedPathsPreserved(
+          this.functionRepo,
+          roleKey,
+          priorSnapshot.functionGrants,
+          grants,
+        );
+      }
+      await this.validateFunctionGrants(
+        this.functionRepo,
+        grants,
+        readOnly,
+        existing.isSystemSeeded ? priorSnapshot.functionGrants : undefined,
+      );
     }
 
     const now = command.now ?? new Date();
@@ -725,9 +784,28 @@ export class RoleDefinitionGovernanceService {
       if (!existing) {
         throw new NotFoundException(`Role ${proposal.targetRoleKey} no longer exists`);
       }
+      if (existing.isSystemSeeded !== Boolean(proposal.priorSnapshot?.isSystemSeeded)) {
+        throw new ConflictException(`Role ${proposal.targetRoleKey} seed provenance changed`);
+      }
       if (existing.isSystemSeeded) {
-        throw new ForbiddenException(
-          `Role ${proposal.targetRoleKey} is a seeded V1 role and cannot be modified`,
+        const prior = proposal.priorSnapshot;
+        if (
+          !prior ||
+          prior.displayName !== existing.displayName ||
+          prior.description !== existing.description ||
+          prior.readOnly !== existing.readOnly ||
+          !prior.isActive ||
+          proposal.deactivate
+        ) {
+          throw new ConflictException(
+            `Seeded role ${proposal.targetRoleKey} identity changed since proposal submission`,
+          );
+        }
+        await this.assertSeededProtectedPathsPreserved(
+          functionRepo,
+          proposal.targetRoleKey,
+          prior.functionGrants,
+          proposal.proposedFunctionGrants,
         );
       }
       if (proposal.expectedDefinitionVersion !== existing.definitionVersion) {
@@ -741,26 +819,149 @@ export class RoleDefinitionGovernanceService {
       functionRepo,
       proposal.proposedFunctionGrants,
       proposal.proposedReadOnly,
+      existing?.isSystemSeeded ? proposal.priorSnapshot?.functionGrants : undefined,
     );
+  }
+
+  private async assertSeededProtectedPathsPreserved(
+    functionRepo: Repository<AuthorizationFunction>,
+    roleKey: string,
+    prior: readonly RoleDefinitionFunctionGrant[],
+    proposed: readonly RoleDefinitionFunctionGrant[],
+  ): Promise<void> {
+    const fixedPaths = [
+      {
+        roleKey: 'SUPER_ADMIN',
+        functionCode: 'workforce.role.create',
+        accessType: 'INITIATE',
+        path: 'role-definition initiation',
+      },
+      {
+        roleKey: 'SUPER_ADMIN',
+        functionCode: 'workforce.role.modify',
+        accessType: 'INITIATE',
+        path: 'role-definition modification initiation',
+      },
+      {
+        roleKey: 'FINANCE_CONTROLLER',
+        functionCode: 'workforce.role.create',
+        accessType: 'APPROVE',
+        path: 'independent role-definition creation approval',
+      },
+      {
+        roleKey: 'FINANCE_CONTROLLER',
+        functionCode: 'workforce.role.modify',
+        accessType: 'APPROVE',
+        path: 'independent role-definition modification approval',
+      },
+      {
+        roleKey: 'ADMINISTRATOR',
+        functionCode: 'workforce.super_admin.recover',
+        accessType: 'EXECUTE',
+        path: 'super-admin recovery',
+      },
+    ];
+    const fixedRemoved = fixedPaths.filter((protectedPath) => {
+      if (protectedPath.roleKey !== roleKey) return false;
+      const wasPresent = prior.some(
+        (grant) =>
+          grant.functionCode === protectedPath.functionCode &&
+          grant.accessType === protectedPath.accessType,
+      );
+      const remains = proposed.some(
+        (grant) =>
+          grant.functionCode === protectedPath.functionCode &&
+          grant.accessType === protectedPath.accessType,
+      );
+      return wasPresent && !remains;
+    });
+    const priorCodes = prior.map((grant) => grant.functionCode);
+    const functionRows = priorCodes.length
+      ? await functionRepo.find({ where: { functionCode: In(priorCodes) } as never })
+      : [];
+    const protectedCodes = new Set(
+      functionRows
+        .filter(
+          (fn) =>
+            fn.functionCode.startsWith('workforce.role.') ||
+            fn.functionCode === 'workforce.super_admin.recover' ||
+            fn.financeClassRestricted ||
+            fn.sensitivity === 'CRITICAL_FINANCIAL',
+        )
+        .map((fn) => fn.functionCode),
+    );
+    const restrictedRemoved = prior
+      .filter((grant) => protectedCodes.has(grant.functionCode))
+      .filter(
+        (grant) =>
+          !proposed.some(
+            (next) =>
+              next.functionCode === grant.functionCode && next.accessType === grant.accessType,
+          ),
+      )
+      .map((grant) => ({
+        functionCode: grant.functionCode,
+        accessType: grant.accessType,
+        path:
+          grant.functionCode === 'workforce.super_admin.recover'
+            ? 'protected super-admin recovery authority'
+            : grant.functionCode.startsWith('workforce.role.')
+              ? 'protected role administration / approval authority'
+              : 'restricted Finance authority',
+      }));
+    const removedPaths = [
+      ...fixedRemoved.map(({ functionCode, accessType, path }) => ({
+        functionCode,
+        accessType,
+        path,
+      })),
+      ...restrictedRemoved,
+    ].filter(
+      (path, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.functionCode === path.functionCode &&
+            candidate.accessType === path.accessType,
+        ) === index,
+    );
+    if (removedPaths.length > 0) {
+      throw new ConflictException({
+        code: 'OWNER_REVIEW_REQUIRED',
+        message:
+          'This seeded-role grant change could remove protected recovery, role-administration, approval, or Finance authority. Obtain authorization-owner review before proposing it.',
+        roleKey,
+        protectedPaths: removedPaths,
+      });
+    }
   }
 
   private async validateFunctionGrants(
     functionRepo: Repository<AuthorizationFunction>,
     grants: readonly RoleDefinitionFunctionGrant[],
     readOnly: boolean,
+    unchangedSeededGrants?: readonly RoleDefinitionFunctionGrant[],
   ): Promise<void> {
     if (grants.length === 0) return;
     const codes = grants.map((g) => g.functionCode);
     const rows = await functionRepo.find({ where: { functionCode: In(codes) } as never });
     const byCode = new Map(rows.map((r) => [r.functionCode, r]));
+    const preserved = new Map(
+      (unchangedSeededGrants ?? []).map((grant) => [grant.functionCode, grant.accessType]),
+    );
     for (const grant of grants) {
       const fn = byCode.get(grant.functionCode);
       if (!fn) throw new BadRequestException(`Unknown function code: ${grant.functionCode}`);
-      this.assertGrantable(fn, readOnly);
+      const isExactExistingSeedGrant = preserved.get(grant.functionCode) === grant.accessType;
+      this.assertGrantable(fn, readOnly, isExactExistingSeedGrant);
     }
   }
 
-  private assertGrantable(fn: AuthorizationFunction, readOnly: boolean): void {
+  private assertGrantable(
+    fn: AuthorizationFunction,
+    readOnly: boolean,
+    preserveExistingSeedGrant = false,
+  ): void {
+    if (preserveExistingSeedGrant) return;
     if (!fn.assignable) {
       throw new BadRequestException(`Function ${fn.functionCode} is not assignable`);
     }
@@ -817,10 +1018,12 @@ export class RoleDefinitionGovernanceService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!role) throw new NotFoundException(`Role ${proposal.targetRoleKey} no longer exists`);
-      role.displayName = proposal.proposedDisplayName;
-      role.description = proposal.proposedDescription;
-      role.readOnly = proposal.proposedReadOnly;
-      role.isActive = !proposal.deactivate;
+      if (!role.isSystemSeeded) {
+        role.displayName = proposal.proposedDisplayName;
+        role.description = proposal.proposedDescription;
+        role.readOnly = proposal.proposedReadOnly;
+        role.isActive = !proposal.deactivate;
+      }
       role.updatedBy = actor;
       role.definitionVersion = role.definitionVersion + 1;
       await roleRepo.save(role);

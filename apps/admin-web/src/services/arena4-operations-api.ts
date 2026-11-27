@@ -308,6 +308,17 @@ export interface RoleDefinitionFunctionOption {
   financeClassRestricted: boolean;
 }
 
+export interface RoleDefinitionRole {
+  roleKey: string;
+  displayName: string;
+  description: string;
+  readOnly: boolean;
+  isActive: boolean;
+  isSystemSeeded: boolean;
+  definitionVersion: number;
+  functionGrants: Array<{ functionCode: string; accessType: string }>;
+}
+
 export interface RoleDefinitionProposal {
   id: string;
   proposalType: 'CREATE' | 'MODIFY';
@@ -316,6 +327,10 @@ export interface RoleDefinitionProposal {
   proposedDescription: string;
   proposedReadOnly: boolean;
   proposedFunctionGrants: Array<{ functionCode: string; accessType: string }>;
+  priorSnapshot?: {
+    isSystemSeeded: boolean;
+    functionGrants: Array<{ functionCode: string; accessType: string }>;
+  } | null;
   deactivate: boolean;
   status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'APPLIED' | 'EXPIRED' | 'FAILED';
   approvalId: string | null;
@@ -384,6 +399,10 @@ export const Arena4OperationsApi = {
     return ApiClient.get<RoleDefinitionFunctionOption[]>(
       '/internal/a2/workforce/role-definitions/functions',
     );
+  },
+
+  roleDefinitions(): Promise<RoleDefinitionRole[]> {
+    return ApiClient.get<RoleDefinitionRole[]>('/internal/a2/workforce/role-definitions/roles');
   },
 
   roleDefinitionProposals(
