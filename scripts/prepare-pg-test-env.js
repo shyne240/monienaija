@@ -88,6 +88,12 @@ function main() {
   const overrides = readKeysFromTemplate(BOOTSTRAP_TEMPLATE, workforceKeys);
   // Explicit synthetic origin for AppModule tests; an empty JSON array is invalid.
   overrides.set("HTTP_CORS_ORIGINS_JSON", '["https://admin.example.test"]');
+  // The real-PostgreSQL integration suites own their fixtures and frequently TRUNCATE all
+  // application tables between cases. The production KYC reevaluation worker must not race
+  // that fixture lifecycle; worker-specific tests enable it explicitly in their own harness.
+  // .env.example intentionally defaults it on for development, so override it in this generated
+  // test-only environment.
+  overrides.set('KYC_TIER_WORKER_ENABLED', 'false');
   for (const key of workforceKeys) {
     if (!overrides.has(key)) {
       console.error(`Bootstrap template does not define ${key}; aborting.`);

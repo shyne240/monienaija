@@ -102,6 +102,10 @@ jobs:
       DB_SSL: 'false'
       NOTIFICATION_WORKER_ENABLED: 'false'
       CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'false'
+      # Integration suites use wholesale table truncation for per-case fixture isolation.
+      # Keep the periodic KYC evaluator out of that database; worker behavior is covered by
+      # dedicated tests that opt in explicitly.
+      KYC_TIER_WORKER_ENABLED: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

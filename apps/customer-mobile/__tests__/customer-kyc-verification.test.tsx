@@ -103,7 +103,7 @@ describe('CustomerKycVerificationPanel', () => {
 
       fireEvent.changeText(getByLabelText(`${kind} number, secure entry`), '91234567890');
       fireEvent.press(getByText('Submit for verification'));
-      await waitFor(() => expect(getByText(/identity check completed/)).toBeTruthy());
+      await waitFor(() => expect(getByText(/authoritative match/)).toBeTruthy());
       expect(api.verify).toHaveBeenCalledTimes(1);
 
       expect(api.grantConsent).toHaveBeenCalledWith(
@@ -153,7 +153,7 @@ describe('CustomerKycVerificationPanel', () => {
     await waitFor(() => expect(getByText(/Your active consent was recovered/)).toBeTruthy());
     fireEvent.changeText(getByLabelText('BVN number, secure entry'), '91234567890');
     fireEvent.press(getByText('Submit for verification'));
-    await waitFor(() => expect(getByText(/identity check completed/)).toBeTruthy());
+    await waitFor(() => expect(getByText(/authoritative match/)).toBeTruthy());
     expect(api.availability).toHaveBeenCalledWith('BVN');
     expect(api.grantConsent).not.toHaveBeenCalled();
     expect(api.verify).toHaveBeenCalledWith(
@@ -190,7 +190,7 @@ describe('CustomerKycVerificationPanel', () => {
     await waitFor(() => expect(getByText(/Retry only with the same number/)).toBeTruthy());
 
     fireEvent.press(getByText('Check the same request'));
-    await waitFor(() => expect(getByText(/still processing/)).toBeTruthy());
+    await waitFor(() => expect(getByText(/still being processed/)).toBeTruthy());
     expect(verify).toHaveBeenCalledTimes(2);
     expect(verify.mock.calls[0]?.[0].requestId).toBe(verify.mock.calls[1]?.[0].requestId);
     expect(verify.mock.calls[0]?.[0].identifier).toBe('91234567890');
@@ -223,5 +223,33 @@ describe('CustomerKycVerificationPanel', () => {
     expect(queryByText('Check BVN verification availability')).toBeNull();
     expect(api.availability).not.toHaveBeenCalled();
     expect(api.verify).not.toHaveBeenCalled();
+  });
+
+  it('presents an expired verification as not verified and allows a fresh availability check', () => {
+    const api = client();
+    const { getByText, queryByText } = render(
+      <CustomerKycVerificationPanel
+        api={api}
+        workflow={workflow({
+          history: [
+            {
+              id: '00000000-0000-4000-8000-000000000103',
+              kind: 'BVN',
+              provider: 'PREMBLY',
+              status: 'EXPIRED',
+              createdAt: '2026-11-15T00:00:00.000Z',
+              completedAt: '2026-11-15T00:00:01.000Z',
+              expiresAt: '2026-11-16T00:00:00.000Z',
+            },
+          ],
+        })}
+        onRefresh={jest.fn()}
+      />,
+    );
+
+    expect(getByText(/Latest BVN check: Expired/)).toBeTruthy();
+    expect(getByText(/not a verified identity result/)).toBeTruthy();
+    expect(queryByText(/prior request has no safe final outcome/)).toBeNull();
+    expect(getByText('Check BVN verification availability')).toBeTruthy();
   });
 });

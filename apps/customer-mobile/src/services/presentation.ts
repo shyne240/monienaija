@@ -71,6 +71,16 @@ export function statusLabel(status: string | null | undefined): string {
     case 'CLAIMED':
     case 'ACTIVE':
       return 'Completed';
+    case 'MATCH':
+      return 'Verified';
+    case 'DISPATCHING':
+      return 'Processing';
+    case 'UNKNOWN':
+      return 'Outcome unknown';
+    case 'REVIEW':
+      return 'Needs review';
+    case 'CONSENT_WITHDRAWN':
+      return 'Consent withdrawn';
     case 'PENDING':
     case 'PROCESSING':
     case 'PENDING_RECOVERY':
@@ -97,7 +107,7 @@ export function statusLabel(status: string | null | undefined): string {
 
 export function statusTone(status: string | null | undefined): BadgeStatus {
   const value = (status ?? '').toUpperCase();
-  if (['COMPLETED', 'APPROVED', 'CLAIMED', 'ACTIVE'].includes(value)) return 'SUCCESS';
+  if (['COMPLETED', 'APPROVED', 'CLAIMED', 'ACTIVE', 'MATCH'].includes(value)) return 'SUCCESS';
   if (['FAILED', 'REJECTED', 'CANCELLED'].includes(value)) return 'FAILED';
   if (['EXPIRED', 'REVERSED'].includes(value)) return 'EXPIRED';
   if (value === 'SUSPENDED') return 'SUSPENDED';
@@ -109,6 +119,107 @@ export function isTerminalStatus(status: string | null | undefined): boolean {
   return ['COMPLETED', 'FAILED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REVERSED'].includes(
     (status ?? '').toUpperCase(),
   );
+}
+
+/**
+ * Actual BVN/NIN verification attempt outcomes returned by the backend contract
+ * (`AttemptOutcome` in kyc.types.ts). Do not invent statuses; unknown values must fail closed.
+ */
+export type KycVerificationOutcome =
+  | 'DISPATCHING'
+  | 'MATCH'
+  | 'REVIEW'
+  | 'UNKNOWN'
+  | 'CONSENT_WITHDRAWN'
+  | 'EXPIRED';
+
+export interface KycVerificationOutcomePresentation {
+  /** Customer-facing label. */
+  label: string;
+  /** Badge/status tone. Only AUTHORITATIVE MATCH may map to a success tone. */
+  tone: BadgeStatus;
+  /** True only for an authoritative backend MATCH outcome. */
+  authoritativeVerified: boolean;
+  /** Whether the outcome is final for this attempt (no more provider progress expected). */
+  terminal: boolean;
+  /** Short customer-safe explanation; never implies verification when unverified. */
+  detail: string;
+}
+
+const KYC_OUTCOME_PRESENTATION: Record<
+  KycVerificationOutcome,
+  KycVerificationOutcomePresentation
+> = {
+  MATCH: {
+    label: 'Verified',
+    tone: 'SUCCESS',
+    authoritativeVerified: true,
+    terminal: true,
+    detail:
+      'The provider returned an authoritative match for this identity check. This does not by itself change your tier or financial eligibility.',
+  },
+  REVIEW: {
+    label: 'Needs review',
+    tone: 'PENDING',
+    authoritativeVerified: false,
+    terminal: true,
+    detail:
+      'The identity check could not be confirmed as an authoritative match. It needs review before any verification can be relied on.',
+  },
+  DISPATCHING: {
+    label: 'Processing',
+    tone: 'PENDING',
+    authoritativeVerified: false,
+    terminal: false,
+    detail:
+      'The verification request has been sent and is still being processed. Do not submit a duplicate request.',
+  },
+  UNKNOWN: {
+    label: 'Outcome unknown',
+    tone: 'PENDING',
+    authoritativeVerified: false,
+    terminal: false,
+    detail:
+      'The provider outcome could not be confirmed. Do not submit a duplicate request; the check needs safe review.',
+  },
+  CONSENT_WITHDRAWN: {
+    label: 'Consent withdrawn',
+    tone: 'PENDING',
+    authoritativeVerified: false,
+    terminal: true,
+    detail: 'Consent for this verification was withdrawn before a verified outcome could be used.',
+  },
+  EXPIRED: {
+    label: 'Expired',
+    tone: 'EXPIRED',
+    authoritativeVerified: false,
+    terminal: true,
+    detail:
+      'This verification outcome expired before it could be used. It is not a verified identity result.',
+  },
+};
+
+const KYC_OUTCOME_FALLBACK: KycVerificationOutcomePresentation = {
+  label: 'Status unavailable',
+  tone: 'PENDING',
+  authoritativeVerified: false,
+  terminal: false,
+  detail:
+    'The verification status is not recognized. It is not treated as verified; refresh or contact support.',
+};
+
+/**
+ * Presentation for a BVN/NIN verification attempt outcome. Fails closed: only `MATCH` is
+ * authoritative verified/success; unknown statuses are never presented as verified.
+ */
+export function kycVerificationOutcomePresentation(
+  status: string | null | undefined,
+): KycVerificationOutcomePresentation {
+  const value = (status ?? '').toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(KYC_OUTCOME_PRESENTATION, value)) {
+    return KYC_OUTCOME_PRESENTATION[value as KycVerificationOutcome];
+  }
+  return KYC_OUTCOME_FALLBACK;
 }
 
 export const KYC_LEVEL_LABELS: Record<string, string> = {
