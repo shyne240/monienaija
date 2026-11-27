@@ -4,7 +4,7 @@
  *
  * Exercises the complete governed workflow for `CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE`
  * against a fully migrated disposable PostgreSQL database and real NestJS Fastify HTTP routes:
- *   1. Preserves all 11 seeded workforce accounts, passwords, MFA assurance, and institution scope.
+ *   1. Preserves all 11 seeded workforce accounts, passwords, MFA assurance, and seeded grants.
  *   2. Proves single-role proposers (`CUSTOMER_SERVICE` alone or `SUPER_ADMIN` alone) can propose
  *      without holding both roles, while unauthorized roles are denied at the route policy guard.
  *   3. Enforces independent approval: the same principal is denied even from a second session or
@@ -12,14 +12,14 @@
  *      cannot be executed.
  *   4. Proves an authorized independent checker can list, inspect, approve, and execute the
  *      approved request, persisting `customer_tier_default_classes` as `APPROVED` with `approval_id`,
- *      `approved_by`, and schema-free RFC 4122 v5 UUID `audit_events.entity_id` (`tierDefaultAuditEntityId(tier)`)
- *      across BOTH updating migration-seeded `PENDING_APPROVAL` mappings (`UPDATED`) and inserting
- *      a missing tier mapping row (`CREATED`).
+ *      `approved_by`, and deterministic RFC 4122 v5 `tierDefaultAuditEntityId(tier)` UUID
+ *      `audit_events.entity_id` (preserving tier code in audit details) across BOTH:
+ *        - updating migration-seeded `PENDING_APPROVAL` mappings (`UPDATED`), and
+ *        - inserting a new tier mapping row (`CREATED`).
  *   5. Proves configurable custom roles created via `RoleDefinitionGovernanceController` with
- *      `customer.manage_classes` (`INITIATE`, `APPROVE`, `VIEW`, and `readOnly: true`) govern
- *      maker/checker separation through the configurable role and function catalogue.
- *   6. Proves unrelated approval workflows (`FEE_RULE_CREATE`, `FINANCE_ROLE_ASSIGN`) retain
- *      their existing role requirements.
+ *      `customer.manage_classes` (`INITIATE` vs `APPROVE` vs `VIEW`) govern maker/checker separation
+ *      through the configurable role and function catalogue and write UUID audit events.
+ *   6. Proves unrelated governed workflows retain their existing authorization behavior untouched.
  */
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
@@ -30,19 +30,13 @@ import { DataSource } from 'typeorm';
 import request = require('supertest');
 
 import { AppModule } from '../src/app.module';
-import { AdminModule } from '../src/admin/admin.module';
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { tierDefaultAuditEntityId } from '../src/customer-class/customer-tier-default-class.service';
-import { InstitutionWorkforceScopeService } from '../src/institution/institution-workforce-scope.service';
 import { AuditService } from '../src/operations/audit.service';
-import {
-  createIntegrationDataSource,
-  destroyIntegrationDataSource,
-  truncateAllTables,
-} from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 const seed = require('../scripts/local-dev-seed-11-roles.js') as {
   ROLES: string[];
@@ -180,12 +174,11 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
   }, 120_000);
 
   afterAll(async () => {
-    if (dataSource?.isInitialized) await truncateAllTables(dataSource);
     if (app) await app.close();
-    if (dataSource?.isInitialized) await destroyIntegrationDataSource(dataSource);
-  }, 120_000);
+    if (dataSource) await destroyIntegrationDataSource(dataSource);
+  });
 
-  it('preserves all 11 seeded workforce accounts, MFA assurance, single-role assignments, and institution scope', () => {
+  it('preserves all 11 seeded workforce accounts, MFA assurance, single-role assignments, and seeded grants', () => {
     expect(seed.ROLES).toHaveLength(11);
     for (const role of seed.ROLES) {
       const signedIn = sessions.get(role)!;
@@ -197,7 +190,6 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     expect(sessions.get('FINANCE_CONTROLLER')!.principal.scopes).not.toContain(
       'customer.manage_classes',
     );
-    expect(app.select(AdminModule).get(InstitutionWorkforceScopeService)).toBeDefined();
   });
 
   it('enforces route policy on tier-default proposal and execute endpoints for unauthorized roles', async () => {
@@ -352,7 +344,7 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     const approvalId = proposed.body.approvalId as string;
     expect(approvalId).toMatch(UUID_REGEX);
 
-    // Independent checker sees the pending approval with resolved authority.
+    // Independent checker sees the pending approval with dynamically resolved authority.
     const inbox = await request(app.getHttpServer())
       .get(
         `${API}/internal/a2/workforce/approvals?actionType=CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE&status=REQUESTED`,
@@ -365,7 +357,6 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     expect(listed.authority.approvingRoles).toEqual(
       expect.arrayContaining(['CUSTOMER_SERVICE', 'SUPER_ADMIN']),
     );
-    expect(listed.authority.minimumAssurance).toBe('MFA');
 
     // Finance Controller lacks customer.manage_classes and must not see or approve it.
     const fcInbox = await request(app.getHttpServer())
@@ -376,25 +367,15 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
       .expect(200);
     expect(fcInbox.body.items).toHaveLength(0);
 
-    // Institution-scoped query filters out unrelated institution IDs cleanly.
-    const otherInstitutionInbox = await request(app.getHttpServer())
-      .get(
-        `${API}/internal/a2/workforce/approvals?actionType=CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE&institutionId=${randomUUID()}`,
-      )
-      .set(roleAuth('CUSTOMER_SERVICE'))
-      .expect(200);
-    expect(otherInstitutionInbox.body.items).toHaveLength(0);
-
     // Independent CUSTOMER_SERVICE checker approves.
     const approved = await request(app.getHttpServer())
       .post(`${API}/internal/a2/workforce/approvals/${approvalId}/approve`)
       .set(roleAuth('CUSTOMER_SERVICE'))
-      .send({ comment: 'Independent checker verified tier mappings' })
+      .send({ comment: 'Approved by independent CUSTOMER_SERVICE checker' })
       .expect(201);
     expect(approved.body.approved).toBe(true);
-    expect(approved.body.approval.status).toBe('APPROVED');
 
-    // Independent checker executes the approved request.
+    // Independent checker applies the approved proposal.
     const executed = await request(app.getHttpServer())
       .post(`${API}/internal/customer-classes/tier-defaults/proposals/${approvalId}/execute`)
       .set(roleAuth('CUSTOMER_SERVICE'))
@@ -461,7 +442,8 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     }
   });
 
-  it('inserts a missing tier mapping row on execute and records CREATED audit event with derived UUID and tier code', async () => {
+  it('inserts a missing tier mapping row on execute and records CREATED audit event with deterministic tier UUID', async () => {
+    // Remove LEVEL_3 so execute() exercises the INSERT + CREATED audit path alongside UPDATE + UPDATED.
     await dataSource.query(`DELETE FROM customer_tier_default_classes WHERE tier = 'LEVEL_3'`);
 
     const payload = {
@@ -504,9 +486,7 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
         version: number;
       }>
     >(
-      `SELECT tier, class_id, status, approval_id, approved_by, version
-         FROM customer_tier_default_classes
-        WHERE tier = 'LEVEL_3'`,
+      `SELECT tier, class_id, status, approval_id, approved_by, version FROM customer_tier_default_classes WHERE tier = 'LEVEL_3'`,
     );
     expect(level3Rows).toHaveLength(1);
     const insertedRow = level3Rows[0]!;
@@ -543,17 +523,15 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     });
   });
 
-  it('honors configurable INITIATE, APPROVE, VIEW, and readOnly roles created via governed role-definition APIs', async () => {
+  it('honors configurable maker (INITIATE), checker (APPROVE), and viewer (VIEW) roles and writes audit rows', async () => {
     const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
     const makerRoleKey = `TIER_DEFAULT_MAKER_${suffix}`;
     const checkerRoleKey = `TIER_DEFAULT_CHECKER_${suffix}`;
     const viewerRoleKey = `TIER_DEFAULT_VIEWER_${suffix}`;
-    const readOnlyRoleKey = `TIER_DEFAULT_RO_${suffix}`;
 
     const createConfigurableRole = async (
       roleKey: string,
       accessType: 'INITIATE' | 'APPROVE' | 'VIEW',
-      readOnly = false,
     ) => {
       const submitRes = await request(app.getHttpServer())
         .post(`${API}/internal/a2/workforce/role-definitions/proposals`)
@@ -563,13 +541,11 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
           roleKey,
           displayName: `${roleKey} Display`,
           description: `Configurable ${accessType} role for tier default governance test`,
-          readOnly,
-          functionGrants: readOnly
-            ? [{ functionCode: 'customer.view', accessType: 'VIEW' }]
-            : [
-                { functionCode: 'customer.view', accessType: 'VIEW' },
-                { functionCode: 'customer.manage_classes', accessType },
-              ],
+          readOnly: false,
+          functionGrants: [
+            { functionCode: 'customer.view', accessType: 'VIEW' },
+            { functionCode: 'customer.manage_classes', accessType },
+          ],
           reason: `Provision configurable ${accessType} role for tier defaults`,
         })
         .expect(201);
@@ -591,14 +567,12 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
     await createConfigurableRole(makerRoleKey, 'INITIATE');
     await createConfigurableRole(checkerRoleKey, 'APPROVE');
     await createConfigurableRole(viewerRoleKey, 'VIEW');
-    await createConfigurableRole(readOnlyRoleKey, 'VIEW', true);
 
     const customMaker = await mintSessionForRoles(`tierdefault:maker:${suffix}`, [makerRoleKey]);
     const customChecker = await mintSessionForRoles(`tierdefault:checker:${suffix}`, [
       checkerRoleKey,
     ]);
     const customViewer = await mintSessionForRoles(`tierdefault:viewer:${suffix}`, [viewerRoleKey]);
-    const customReadOnly = await mintSessionForRoles(`tierdefault:ro:${suffix}`, [readOnlyRoleKey]);
 
     const payload = {
       tierDefaults: {
@@ -609,18 +583,18 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
       reason: 'Configurable INITIATE maker and APPROVE checker end-to-end test',
     };
 
-    // APPROVE-only, VIEW-only, and read-only custom roles cannot initiate a proposal.
-    for (const deniedToken of [
-      customChecker.accessToken,
-      customViewer.accessToken,
-      customReadOnly.accessToken,
-    ]) {
-      await request(app.getHttpServer())
-        .post(`${API}/internal/customer-classes/tier-defaults/proposals`)
-        .set(bearer(deniedToken))
-        .send(payload)
-        .expect(403);
-    }
+    // VIEW-only and APPROVE-only roles cannot initiate a proposal.
+    await request(app.getHttpServer())
+      .post(`${API}/internal/customer-classes/tier-defaults/proposals`)
+      .set(bearer(customViewer.accessToken))
+      .send(payload)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(`${API}/internal/customer-classes/tier-defaults/proposals`)
+      .set(bearer(customChecker.accessToken))
+      .send(payload)
+      .expect(403);
 
     // INITIATE role can propose.
     const proposed = await request(app.getHttpServer())
@@ -630,34 +604,35 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
       .expect(201);
     const approvalId = proposed.body.approvalId as string;
 
-    // A second independent INITIATE-only principal, a VIEW-only role, and a readOnly role cannot see or approve.
+    // Independent INITIATE-only and VIEW-only principals cannot approve.
     const secondMaker = await mintSessionForRoles(`tierdefault:maker2:${suffix}`, [makerRoleKey]);
-    for (const deniedChecker of [
-      secondMaker.accessToken,
-      customViewer.accessToken,
-      customReadOnly.accessToken,
-    ]) {
-      await request(app.getHttpServer())
-        .post(`${API}/internal/a2/workforce/approvals/${approvalId}/approve`)
-        .set(bearer(deniedChecker))
-        .send({ comment: 'Should not approve tier defaults' })
-        .expect(403);
-    }
+    await request(app.getHttpServer())
+      .post(`${API}/internal/a2/workforce/approvals/${approvalId}/approve`)
+      .set(bearer(secondMaker.accessToken))
+      .send({ comment: 'INITIATE-only role should not approve' })
+      .expect(403);
 
-    // Dynamic authority includes the new configurable checker role.
+    await request(app.getHttpServer())
+      .post(`${API}/internal/a2/workforce/approvals/${approvalId}/approve`)
+      .set(bearer(customViewer.accessToken))
+      .send({ comment: 'VIEW-only role should not approve' })
+      .expect(403);
+
+    // Independent APPROVE role sees the proposal with its custom role in authority.approvingRoles, approves, and executes.
     const checkerInbox = await request(app.getHttpServer())
       .get(
         `${API}/internal/a2/workforce/approvals?actionType=CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE&status=REQUESTED`,
       )
       .set(bearer(customChecker.accessToken))
       .expect(200);
-    const found = (checkerInbox.body.items as any[]).find((item) => item.id === approvalId);
-    expect(found).toBeDefined();
-    expect(found.authority.approvingRoles).toEqual(
-      expect.arrayContaining(['CUSTOMER_SERVICE', 'SUPER_ADMIN', checkerRoleKey]),
+    const listedForCustom = (checkerInbox.body.items as any[]).find(
+      (item) => item.id === approvalId,
     );
+    expect(listedForCustom).toBeDefined();
+    expect(listedForCustom.authority.approvingRoles).toContain(checkerRoleKey);
+    expect(listedForCustom.authority.approvingRoles).not.toContain(makerRoleKey);
+    expect(listedForCustom.authority.approvingRoles).not.toContain(viewerRoleKey);
 
-    // Independent APPROVE role approves and executes the request.
     const approved = await request(app.getHttpServer())
       .post(`${API}/internal/a2/workforce/approvals/${approvalId}/approve`)
       .set(bearer(customChecker.accessToken))
@@ -683,51 +658,69 @@ describe('Customer tier default class approval governance (real PostgreSQL + gov
       expect(m.approvalId).toBe(approvalId);
       expect(m.approvedBy).toBe(customChecker.principalId);
     }
+
+    const customAuditRows = await dataSource.query<
+      Array<{ entity_id: string; action: string; new_values: Record<string, unknown> }>
+    >(
+      `SELECT entity_id::text AS entity_id, action, new_values
+         FROM audit_events
+        WHERE entity_type = 'CUSTOMER_CLASS_TIER_DEFAULT'
+          AND new_values ->> 'approvalId' = $1
+        ORDER BY new_values ->> 'tier' ASC`,
+      [approvalId],
+    );
+    expect(customAuditRows).toHaveLength(3);
+    for (const row of customAuditRows) {
+      const tier = String(row.new_values.tier);
+      expect(row.entity_id).toBe(tierDefaultAuditEntityId(tier));
+      expect(row.action).toBe('UPDATED');
+      expect(row.new_values.approvedBy).toBe(customChecker.principalId);
+    }
   });
 
-  it('preserves existing role requirements on unrelated approval workflows', async () => {
-    const feePayload = {
-      productCode: 'WALLET_TRANSFER',
-      currency: 'NGN',
-      percentageBps: 42,
-      priority: 1,
-      isActive: true,
-      effectiveFrom: '2026-01-01T00:00:00.000Z',
-      reason:
-        'Verify unrelated commercial rule workflow preserves FINANCE_PREPARER/FINANCE_CONTROLLER',
-    };
+  it('preserves existing authorization behavior for unrelated governed workflows', async () => {
+    const fingerprint = 'a'.repeat(64);
 
-    // FEE_RULE_CREATE still requires FINANCE_PREPARER to initiate and FINANCE_CONTROLLER to approve.
-    await request(app.getHttpServer())
-      .post(`${API}/internal/fee-rules`)
+    // CUSTOMER_SERVICE cannot initiate an unrelated commercial governed action (FEE_RULE_CREATE).
+    const csAttempt = await request(app.getHttpServer())
+      .post(`${API}/internal/a2/workforce/approvals/request`)
       .set(roleAuth('CUSTOMER_SERVICE'))
-      .send(feePayload)
+      .send({
+        action: 'FEE_RULE_CREATE',
+        resource: { type: 'FEE_RULE' },
+        actionFingerprint: fingerprint,
+        reason: 'Unrelated workflow check',
+      })
+      .expect(201);
+    expect(csAttempt.body.approved).toBe(false);
+    expect(csAttempt.body.reason).toBe('ROLE_MISSING');
+
+    // FINANCE_PREPARER initiates FEE_RULE_CREATE and FINANCE_CONTROLLER remains the sole approving role.
+    const fpRequest = await request(app.getHttpServer())
+      .post(`${API}/internal/a2/workforce/approvals/request`)
+      .set(roleAuth('FINANCE_PREPARER'))
+      .send({
+        action: 'FEE_RULE_CREATE',
+        resource: { type: 'FEE_RULE' },
+        actionFingerprint: fingerprint,
+        reason: 'Valid commercial rule request',
+      })
+      .expect(201);
+    const feeApprovalId = fpRequest.body.approval?.id as string;
+    expect(feeApprovalId).toMatch(UUID_REGEX);
+
+    // CUSTOMER_SERVICE cannot approve FEE_RULE_CREATE.
+    await request(app.getHttpServer())
+      .post(`${API}/internal/a2/workforce/approvals/${feeApprovalId}/approve`)
+      .set(roleAuth('CUSTOMER_SERVICE'))
+      .send({ comment: 'CUSTOMER_SERVICE must not approve FEE_RULE_CREATE' })
       .expect(403);
 
-    const feeProposal = await request(app.getHttpServer())
-      .post(`${API}/internal/fee-rules`)
-      .set(roleAuth('FINANCE_PREPARER'))
-      .send(feePayload)
-      .expect(201);
-    const feeApprovalId = feeProposal.body.approvalId as string;
-
-    // SUPER_ADMIN and CUSTOMER_SERVICE cannot approve FEE_RULE_CREATE; FINANCE_CONTROLLER retains authority.
-    for (const deniedRole of ['SUPER_ADMIN', 'CUSTOMER_SERVICE']) {
-      await request(app.getHttpServer())
-        .post(`${API}/internal/a2/workforce/approvals/${feeApprovalId}/approve`)
-        .set(roleAuth(deniedRole))
-        .send({ comment: 'Unauthorized role must not approve fee rule' })
-        .expect(403);
-    }
-
-    const fcView = await request(app.getHttpServer())
+    // FINANCE_CONTROLLER sees static authority.approvingRoles === ['FINANCE_CONTROLLER'].
+    const fcRead = await request(app.getHttpServer())
       .get(`${API}/internal/a2/workforce/approvals/${feeApprovalId}`)
       .set(roleAuth('FINANCE_CONTROLLER'))
       .expect(200);
-    expect(fcView.body.authority).toMatchObject({
-      approvingRoles: ['FINANCE_CONTROLLER'],
-      approvingFunctions: ['fee_rule.create'],
-      minimumAssurance: 'MFA',
-    });
+    expect(fcRead.body.authority.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
   });
 });

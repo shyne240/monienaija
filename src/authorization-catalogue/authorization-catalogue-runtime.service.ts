@@ -125,7 +125,7 @@ export class AuthorizationCatalogueRuntimeService {
   /**
    * Lists active, non-read-only catalogue role keys that grant every requested
    * `functionCode` with one of `allowedAccessTypes`. Used to project dynamic
-   * checker authority on catalogue-governed approval records (`approvingRoles: []`).
+   * checker authority on catalogue-governed tier-default approval records.
    */
   async listRoleKeysWithFunctionAccess(
     functionCodes: readonly string[],
@@ -148,7 +148,7 @@ export class AuthorizationCatalogueRuntimeService {
       } as never,
     });
     const allowedSet = new Set<string>(allowedAccessTypes);
-    const matchingRoleKeys = roles
+    return roles
       .filter((role) =>
         functionCodes.every((code) =>
           assignments.some(
@@ -158,6 +158,5 @@ export class AuthorizationCatalogueRuntimeService {
       )
       .map((role) => role.roleKey)
       .sort();
-    return matchingRoleKeys;
   }
 }

@@ -167,37 +167,6 @@ describe('AuthorizationService', () => {
     });
     expect(
       testFixture.service.evaluate(
-        {
-          ...customerPrincipal,
-          roles: ['CUSTOMER_SERVICE'],
-        },
-        {
-          ...customerPolicy,
-          anyOfRoles: ['SUPER_ADMIN', 'CUSTOMER_SERVICE'],
-        },
-        { type: 'customer', customerId: CUSTOMER_ID },
-      ),
-    ).toMatchObject({
-      allowed: true,
-    });
-    expect(
-      testFixture.service.evaluate(
-        {
-          ...customerPrincipal,
-          roles: ['OPERATIONS'],
-        },
-        {
-          ...customerPolicy,
-          anyOfRoles: ['SUPER_ADMIN', 'CUSTOMER_SERVICE'],
-        },
-        { type: 'customer', customerId: CUSTOMER_ID },
-      ),
-    ).toMatchObject({
-      allowed: false,
-      reason: 'ROLE_MISSING',
-    });
-    expect(
-      testFixture.service.evaluate(
         customerPrincipal,
         {
           ...customerPolicy,

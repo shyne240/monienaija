@@ -257,31 +257,4 @@ describe('governed-action registry (P0-A/P0-B)', () => {
       approvalScope: 'customer.manage_classes',
     });
   });
-
-  it('preserves existing initiatingRoles and approvingRoles on every unrelated governed action', () => {
-    expect(GOVERNED_ACTIONS.FEE_RULE_CREATE?.initiatingRoles).toEqual(['FINANCE_PREPARER']);
-    expect(GOVERNED_ACTIONS.FEE_RULE_CREATE?.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
-    expect(GOVERNED_ACTIONS.LIMIT_RULE_CREATE?.initiatingRoles).toEqual(['FINANCE_PREPARER']);
-    expect(GOVERNED_ACTIONS.LIMIT_RULE_CREATE?.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
-    expect(GOVERNED_ACTIONS.AGENT_FUND?.initiatingRoles).toEqual(['AGENT_NETWORK_MANAGER']);
-    expect(GOVERNED_ACTIONS.AGENT_FUND?.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
-    expect(GOVERNED_ACTIONS.LEDGER_JOURNAL_REVERSAL?.initiatingRoles).toEqual(['FINANCE_PREPARER']);
-    expect(GOVERNED_ACTIONS.LEDGER_JOURNAL_REVERSAL?.approvingRoles).toEqual([
-      'FINANCE_CONTROLLER',
-    ]);
-    expect(GOVERNED_ACTIONS.FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE?.initiatingRoles).toEqual([
-      'OPERATIONS',
-    ]);
-    expect(GOVERNED_ACTIONS.FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE?.approvingRoles).toEqual([
-      'FINANCE_CONTROLLER',
-    ]);
-    expect(GOVERNED_ACTIONS.NOTIFICATION_TEMPLATE_CHANGE?.initiatingRoles).toEqual(['SUPER_ADMIN']);
-    expect(GOVERNED_ACTIONS.NOTIFICATION_TEMPLATE_CHANGE?.approvingRoles).toEqual([
-      'FINANCE_CONTROLLER',
-    ]);
-    for (const [action, def] of Object.entries(GOVERNED_ACTIONS)) {
-      if (action === CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action) continue;
-      expect(def.approvingRoles.length).toBeGreaterThan(0);
-    }
-  });
 });

@@ -39,7 +39,11 @@ import type {
   A2MakerCheckerRuleV1,
 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
-import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import {
+  AGENT_FUNDING_ACTIONS,
+  CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
+  governedAction,
+} from './governed-action.registry';
 import type { PrivilegedActionApprovalView } from './privileged-action-approval.types';
 import { ApprovalRejectionDto } from './approval-decision.dto';
 interface R extends FastifyRequest {
@@ -197,7 +201,7 @@ export class A2WorkforceAdministrationController {
         resourceType: 'A2_FINANCE_ROLE_ASSIGNMENT',
         action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...this.roleRequirement(rule.initiatingRoles),
+        requiredRoles: rule.initiatingRoles,
         ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
@@ -254,7 +258,7 @@ export class A2WorkforceAdministrationController {
     }
     const approval = await this.approvals.getVisibleApproval(id, principal);
     if (!approval) throw new NotFoundException('Approval not found');
-    return this.withAuthority(approval);
+    return await this.withAuthority(approval);
   }
   @Post('approvals/request') async requestApproval(
     @Body() b: RequestPrivilegedApprovalDto,
@@ -278,7 +282,7 @@ export class A2WorkforceAdministrationController {
         resourceType: b.resource.type,
         action: b.action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...this.roleRequirement(rule.initiatingRoles),
+        requiredRoles: rule.initiatingRoles,
         ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
@@ -301,7 +305,7 @@ export class A2WorkforceAdministrationController {
         resourceType: approval.resourceType,
         action: approval.actionType,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...this.roleRequirement(rule.approvingRoles),
+        requiredRoles: rule.approvingRoles,
         ...(approvingFunctionCodes.length ? { requiredFunctions: approvingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
@@ -310,7 +314,11 @@ export class A2WorkforceAdministrationController {
     );
     if (!decision.allowed)
       throw new ForbiddenException(`Approval authorization denied: ${decision.reason}`);
-    await this.assertApproverCatalogueCapacity(principal, rule, approvingFunctionCodes);
+    await this.assertTierDefaultApproverCapacity(
+      principal,
+      approval.actionType,
+      approvingFunctionCodes,
+    );
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
@@ -352,7 +360,7 @@ export class A2WorkforceAdministrationController {
         resourceType: approval.resourceType,
         action: approval.actionType,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...this.roleRequirement(rule.approvingRoles),
+        requiredRoles: rule.approvingRoles,
         ...(approvingFunctionCodes.length ? { requiredFunctions: approvingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
@@ -361,7 +369,11 @@ export class A2WorkforceAdministrationController {
     );
     if (!decision.allowed)
       throw new ForbiddenException(`Approval authorization denied: ${decision.reason}`);
-    await this.assertApproverCatalogueCapacity(principal, rule, approvingFunctionCodes);
+    await this.assertTierDefaultApproverCapacity(
+      principal,
+      approval.actionType,
+      approvingFunctionCodes,
+    );
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
@@ -439,16 +451,16 @@ export class A2WorkforceAdministrationController {
       const rule = this.rule(view.actionType);
       const approvingFunctions = [...this.approvingFunctionCodes(view.actionType)];
       const approvingRoles =
-        rule.approvingRoles.length > 0
-          ? [...rule.approvingRoles]
-          : this.catalogueRuntime && approvingFunctions.length > 0
-            ? [
-                ...(await this.catalogueRuntime.listRoleKeysWithFunctionAccess(approvingFunctions, [
-                  RoleFunctionAccessType.APPROVE,
-                  RoleFunctionAccessType.EXECUTE,
-                ])),
-              ]
-            : [];
+        view.actionType === CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action &&
+        this.catalogueRuntime &&
+        approvingFunctions.length > 0
+          ? [
+              ...(await this.catalogueRuntime.listRoleKeysWithFunctionAccess(approvingFunctions, [
+                RoleFunctionAccessType.APPROVE,
+                RoleFunctionAccessType.EXECUTE,
+              ])),
+            ]
+          : [...rule.approvingRoles];
       return {
         ...view,
         authority: {
@@ -470,29 +482,18 @@ export class A2WorkforceAdministrationController {
       return { ...view, authority: null };
     }
   }
-  private rateRule(category: string) {
-    const rule = this.config.rateLimits.find((item) => item.category === category);
-    if (!rule) throw new ForbiddenException(`Rate-limit policy missing: ${category}`);
-    return rule;
-  }
-  private roleRequirement(roles: readonly string[]) {
-    if (roles.length > 1) return { anyOfRoles: roles };
-    if (roles.length === 1) return { requiredRoles: roles };
-    return {};
-  }
-  private async assertApproverCatalogueCapacity(
+  private async assertTierDefaultApproverCapacity(
     p: AuthorizationPrincipal,
-    rule: A2MakerCheckerRuleV1,
+    actionType: string,
     approvingFunctionCodes: readonly string[],
   ) {
+    if (actionType !== CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action) {
+      return;
+    }
     if (p.readOnlyPrincipal) {
       throw new ForbiddenException('Approval authorization denied: READ_ONLY_PRINCIPAL');
     }
-    if (
-      rule.approvingRoles.length > 0 ||
-      !approvingFunctionCodes.length ||
-      !this.catalogueRuntime
-    ) {
+    if (!approvingFunctionCodes.length || !this.catalogueRuntime) {
       return;
     }
     const check = await this.catalogueRuntime.evaluateFunctionAccess(
@@ -504,6 +505,11 @@ export class A2WorkforceAdministrationController {
       throw new ForbiddenException('Approval authorization denied: FUNCTION_MISSING');
     }
   }
+  private rateRule(category: string) {
+    const rule = this.config.rateLimits.find((item) => item.category === category);
+    if (!rule) throw new ForbiddenException(`Rate-limit policy missing: ${category}`);
+    return rule;
+  }
   private async authorize(p: AuthorizationPrincipal, action: string, resourceType: string) {
     const rule = this.rule(action);
     const initiatingFunctionCodes = this.initiatingFunctionCodes(action);
@@ -513,7 +519,7 @@ export class A2WorkforceAdministrationController {
         resourceType,
         action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...this.roleRequirement(rule.initiatingRoles),
+        requiredRoles: rule.initiatingRoles,
         ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',

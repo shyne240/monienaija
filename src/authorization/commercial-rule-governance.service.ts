@@ -265,11 +265,7 @@ export class CommercialRuleGovernanceService {
         resourceType: definition.resourceType,
         action: definition.action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        ...(definition.initiatingRoles.length > 1
-          ? { anyOfRoles: definition.initiatingRoles }
-          : definition.initiatingRoles.length === 1
-            ? { requiredRoles: definition.initiatingRoles }
-            : {}),
+        requiredRoles: definition.initiatingRoles,
         requiredFunctions: definition.initiatingFunctionCodes,
         minimumAssurance: definition.minimumAssurance,
         customerAccess: 'NONE',

@@ -62,13 +62,6 @@ export interface AuthorizationPolicy {
   internalScopes?: readonly string[];
   requiredRoles?: readonly string[];
   /**
-   * Candidate role set (any-of semantics): when non-empty, the principal must hold at least one
-   * of these roles. Used for governed maker/checker `initiatingRoles` and `approvingRoles` where
-   * multiple roles may be eligible to initiate or approve without requiring a single principal to
-   * hold every listed role simultaneously (`requiredRoles` retains its all-of semantics).
-   */
-  anyOfRoles?: readonly string[];
-  /**
    * V1-ADMIN-AUTHORIZATION-RUNTIME-01. Function codes from the `authorization_functions`
    * catalogue (e.g. `workforce.role.assign`) that the principal must hold in `principal.scopes`
    * (populated by A2WorkforceSessionService from `authorization_role_functions`). Evaluated with
