@@ -702,6 +702,8 @@ export class AgentCashToCashService {
                 walletLedgerAccountId: walletInTx.ledgerAccountId,
                 principalWalletCustomerId: agentId,
                 requireConfiguration: true,
+                // Agent-initiated Cash→Cash debit: unconfigured or inapplicable limits refuse.
+                requireApplicableLimit: true,
                 institutionId: fundingEvidence.institutionId,
               });
             } catch (error) {

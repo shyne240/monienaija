@@ -31,6 +31,10 @@ import { CustomerService } from '../src/customer/customer.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
+import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
@@ -164,6 +168,12 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       isActive,
       applicableServices: services as unknown,
       actor: 'test-actor',
+    });
+    // Agent money movement now requires a configured limit for the Agent's class. One deliberately
+    // permissive rule per product keeps this suite focused on its own subject.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,

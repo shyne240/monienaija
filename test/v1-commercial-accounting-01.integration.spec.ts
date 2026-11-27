@@ -100,6 +100,10 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -485,6 +489,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       applicableServices: services,
       actor: 'test-actor',
     });
+    // Agent money movement requires a limit for the Agent's class; one permissive rule per product
+    // keeps this suite focused on what it asserts (commercial snapshot / fee / commission).
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
+    });
     const appEntity = await appService.create({
       agentClassId: cls.id,
       applicantReference: `h-${randomUUID()}`,
@@ -538,6 +548,13 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     subjectType: 'AGENT' | 'CUSTOMER',
     subjectId: string,
     product: string,
+    /**
+     * Extra products to cover with the same rules/dimensions. An agent that both moves wallet
+     * value and runs a cash-in needs a rule for each product it touches: a resolved profile with no
+     * applicable rule for the product being exercised is refused (agent money movement is
+     * fail-closed), so the fixture must describe the agent's real scope.
+     */
+    additionalProducts: string[] = [],
   ): Promise<void> {
     await dataSource.query(
       `INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by) VALUES ($1,$2,$3,'ACTIVE',true,'CONFIGURED','test')`,
@@ -548,22 +565,24 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
        VALUES ($1,$2,$3,$4,NULL,0,$5,NULL,true,'test')`,
       [randomUUID(), code, subjectType, subjectId, new Date(Date.now() - 86400000).toISOString()],
     );
-    for (const [dimension, value] of [
-      ['MIN_AMOUNT_PER_TX', '100'],
-      ['DAILY_AMOUNT', '100000000'],
-    ]) {
-      await dataSource.query(
-        `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
-         VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [
-          randomUUID(),
-          code,
-          product,
-          dimension,
-          value,
-          new Date(Date.now() - 86400000).toISOString(),
-        ],
-      );
+    for (const coveredProduct of [product, ...additionalProducts]) {
+      for (const [dimension, value] of [
+        ['MIN_AMOUNT_PER_TX', '100'],
+        ['DAILY_AMOUNT', '100000000'],
+      ]) {
+        await dataSource.query(
+          `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
+           VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
+          [
+            randomUUID(),
+            code,
+            coveredProduct,
+            dimension,
+            value,
+            new Date(Date.now() - 86400000).toISOString(),
+          ],
+        );
+      }
     }
   }
 
@@ -1436,6 +1455,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       'AGENT',
       agent.id,
       'WALLET_TRANSFER',
+      ['CASH_TO_WALLET'],
     );
     const destination = await createWallet(await eligibleCustomerId());
     const phone = newPhone();
@@ -1530,6 +1550,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       'AGENT',
       agent.id,
       'WALLET_TRANSFER',
+      ['CASH_TO_WALLET'],
     );
     const destination = await createWallet(await eligibleCustomerId());
     const phone = newPhone();

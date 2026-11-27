@@ -264,8 +264,16 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
 
   async function createAgent(
     services: unknown,
-    options: { govern?: boolean } = {},
-  ): Promise<{ agentId: string; walletLedgerAccountId: string }> {
+    options: {
+      govern?: boolean;
+      /**
+       * Seed a deliberately permissive AGENT_CLASS limit for this agent's class. Needed by flows
+       * whose *agent leg* is now fail-closed (Cash→Wallet / Wallet→Cash): the matrix seeds limits
+       * for the principal under test, and the agent leg must not decide the outcome of that test.
+       */
+      agentClassLimit?: { product: string; direction: 'INCOMING' | 'OUTGOING' };
+    } = {},
+  ): Promise<{ agentId: string; agentClassId: string; walletLedgerAccountId: string }> {
     const cls = await classService.create({
       reference: `cls-l5-${randomUUID().slice(0, 8)}`,
       code: `L5-${randomUUID().slice(0, 6)}`,
@@ -304,7 +312,31 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       [wallet.id],
     );
     if (options.govern !== false) await governed.provisionAgent(agent.id, wallet.id);
-    return { agentId: agent.id, walletLedgerAccountId: rows[0]!.ledger_account_id };
+    if (options.agentClassLimit) {
+      const code = `L5_AC_${randomUUID().slice(0, 8)}`.toUpperCase();
+      await seedProfile(code, 'AGENT', true);
+      await seedAssignment({
+        profileCode: code,
+        subjectType: 'AGENT_CLASS',
+        subjectId: cls.id,
+        precedence: 100,
+      });
+      await seedRule(
+        code,
+        {
+          product: options.agentClassLimit.product,
+          direction: options.agentClassLimit.direction,
+          dimension: 'MAX_AMOUNT_PER_TX',
+          limitMinor: '9000000000000000',
+        } as RuleSeed,
+        options.agentClassLimit.product,
+      );
+    }
+    return {
+      agentId: agent.id,
+      agentClassId: cls.id,
+      walletLedgerAccountId: rows[0]!.ledger_account_id,
+    };
   }
 
   function agentPrincipal(agentId: string): any {
@@ -502,6 +534,13 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     principalId: string;
     principalWalletLedgerAccountId: string;
     /**
+     * True when the principal under test is an agent whose own money movement is fail-closed
+     * (`requireApplicableLimit`). Cases that previously asserted "nothing resolved → allowed" must
+     * assert the refusal for these flows instead; the legacy permissive contract still applies to
+     * the customer/tier lane.
+     */
+    agentLimitBound?: boolean;
+    /**
      * Concurrency profile for the boundary case. MFA-guarded flows (CASH_OUT, C2C_CLAIM)
      * use smaller concurrency, consistent with the repository's own 2-way MFA concurrency
      * convention (a14 tests W/X/Y); 3 attempts of 30000 against a 70000 cap → exactly 2 commit.
@@ -672,6 +711,23 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     return last;
   }
 
+  /**
+   * Asserts the outcome of "no limit configuration applies to the principal under test".
+   *
+   * Two contracts coexist deliberately: the customer/tier lane keeps its documented legacy
+   * permissive behaviour (nothing configured → not constrained), while an agent moving customer
+   * value is refused with `LIMIT_PROFILE_MISSING` (503) and must leave no usages behind. The matrix
+   * asserts the contract of the lane it exercises rather than one global default.
+   */
+  function expectUnresolvedConfiguration(h: Harness, res: AttemptResult): void {
+    if (h.agentLimitBound) {
+      expect(res.ok).toBe(false);
+      expect(res.code).toBe('LIMIT_PROFILE_MISSING');
+    } else {
+      expect(res.ok).toBe(true);
+    }
+  }
+
   async function buildW2WHarness(): Promise<Harness> {
     const source = await createCustomer({});
     const dest = await createCustomer({});
@@ -741,9 +797,10 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   }
 
   async function buildCashInHarness(): Promise<Harness> {
-    const { agentId, walletLedgerAccountId: agentWalletLedgerAccountId } = await createAgent([
-      AgentService.CASH_IN,
-    ]);
+    const { agentId, walletLedgerAccountId: agentWalletLedgerAccountId } = await createAgent(
+      [AgentService.CASH_IN],
+      { agentClassLimit: { product: 'CASH_TO_WALLET', direction: 'OUTGOING' } },
+    );
     await fundAccount(agentWalletLedgerAccountId, '500000000'); // agent pays cash in; fund generously up-front
     const recipient = await createCustomer({ phone: randPhone() });
     return {
@@ -786,7 +843,9 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   }
 
   async function buildCashOutHarness(): Promise<Harness> {
-    const { agentId } = await createAgent([AgentService.CASH_OUT]);
+    const { agentId } = await createAgent([AgentService.CASH_OUT], {
+      agentClassLimit: { product: 'WALLET_TO_CASH', direction: 'INCOMING' },
+    });
     const payer = await createCustomer({ phone: randPhone(), withPin: true });
     await fundAccount(payer.walletLedgerAccountId, '500000000');
     await ensureCustomerCredential(dataSource, payer.customerId); // governed desk needs a customer credential
@@ -896,6 +955,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       principalType: 'AGENT',
       direction: 'OUTGOING',
       incoming: false,
+      agentLimitBound: true,
       principalId: agentId,
       principalWalletLedgerAccountId: walletLedgerAccountId,
       async attempt(amountMinor: string, key?: string): Promise<AttemptResult> {
@@ -938,9 +998,12 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   }
 
   async function buildC2CClaimHarness(): Promise<Harness> {
-    // Initiating agent carries NO limit assignment — the limit under test belongs to the
+    // The initiating agent carries a single permissive AGENT_CLASS rule so that its own
+    // fail-closed Cash→Cash debit cannot decide this suite: the limit under test belongs to the
     // beneficiary CUSTOMER on claim (INCOMING side of CASH_TO_CASH).
-    const { agentId, walletLedgerAccountId } = await createAgent([AgentService.CASH_TO_CASH]);
+    const { agentId, walletLedgerAccountId } = await createAgent([AgentService.CASH_TO_CASH], {
+      agentClassLimit: { product: 'CASH_TO_CASH', direction: 'OUTGOING' },
+    });
     await fundAccount(walletLedgerAccountId, '500000000');
     const beneficiary = await createCustomer({ phone: randPhone() });
     await ensureCustomerCredential(dataSource, beneficiary.customerId);
@@ -1331,9 +1394,9 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     {
       name: 'no-applicable-limit',
       async run(h) {
-        // No assignment at all → unlimited, no usage rows created for this product.
+        // No assignment at all → legacy lanes run unconstrained; agent money movement is refused.
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true);
+        expectUnresolvedConfiguration(h, res);
         const usages = await usageRowsFor(h.principalId, h.product);
         expect(usages.length).toBe(0);
       },
@@ -1616,7 +1679,8 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           { dimension: 'DAILY_AMOUNT', limitMinor: '10', product: otherProduct },
         ]);
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true); // rule belongs to another product → not applicable
+        // Rule belongs to another product → not applicable to this one.
+        expectUnresolvedConfiguration(h, res);
         const usages = await usageRowsFor(h.principalId, h.product);
         expect(usages.length).toBe(0);
       },
@@ -1633,7 +1697,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         }); // somebody else
         await seedRule(profile, { dimension: 'DAILY_AMOUNT', limitMinor: '10' }, h.product);
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true);
+        expectUnresolvedConfiguration(h, res); // assignment belongs to another principal
         const usages = await usageRowsFor(h.principalId, h.product);
         expect(usages.length).toBe(0);
       },
@@ -1649,7 +1713,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           },
         ]);
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true);
+        expectUnresolvedConfiguration(h, res); // not yet effective → not applicable
         const usages = await usageRowsFor(h.principalId, h.product);
         expect(usages.length).toBe(0);
       },
@@ -1661,7 +1725,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           { dimension: 'DAILY_AMOUNT', limitMinor: '10', isActive: false },
         ]);
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true);
+        expectUnresolvedConfiguration(h, res); // disabled → not an applicable rule
         const usages = await usageRowsFor(h.principalId, h.product);
         expect(usages.length).toBe(0);
       },
@@ -1678,7 +1742,9 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         });
         await seedRule(profile, { dimension: 'DAILY_AMOUNT', limitMinor: '10' }, h.product);
         const res = await h.attempt('50000');
-        expect(res.ok).toBe(true); // disabled profile → unresolved → unlimited
+        // Disabled profile → unresolved. A disabled profile is NOT an approved unlimited grant, so
+        // agent money movement is refused rather than silently unconstrained.
+        expectUnresolvedConfiguration(h, res);
       },
     },
     {
@@ -1702,6 +1768,9 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           precedence: 1,
         });
         await seedRule(blocking, { dimension: 'DAILY_AMOUNT', limitMinor: '10' }, h.product);
+        // The winning profile must itself be a usable configuration: an agent-lane admission with
+        // no applicable rule is refused, so "permissive" here means a large rule, never "absent".
+        await seedRule(permissive, { dimension: 'DAILY_AMOUNT', limitMinor: '1000000' }, h.product);
         const res = await h.attempt('50000');
         expect(res.ok).toBe(true);
         // usage, if any, must be against the permissive (higher-precedence) profile only

@@ -760,6 +760,9 @@ export class AgentCashToCashClaimService {
                 // way to move value to a customer whose tier policy is disabled or unmapped.
                 // The AGENT destination keeps the class/profile contract only.
                 requireConfiguration: true,
+                // When the destination is an AGENT collection point, its class limit must resolve;
+                // a CUSTOMER destination is already tier-strict above.
+                requireApplicableLimit: limitPrincipalType === 'AGENT',
                 requireKycTierPolicy: limitPrincipalType === 'CUSTOMER',
                 institutionId: settlementWallet.institutionId ?? null,
               });

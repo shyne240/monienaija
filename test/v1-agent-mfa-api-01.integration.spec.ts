@@ -39,6 +39,10 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashSecret(secret: string): string {
@@ -135,6 +139,11 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       ],
     );
     const classId = classRows[0]!.id;
+    // Agent money movement requires a limit for the Agent's class.
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: classId,
+      rules: permissiveAgentLimitRules(),
+    });
     const agentRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
       [`agent-mfa-${randomUUID()}`, classId],
