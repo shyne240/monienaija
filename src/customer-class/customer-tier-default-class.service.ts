@@ -18,6 +18,7 @@ import {
   CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
   governedChangeFingerprint,
 } from '../authorization/governed-action.registry';
+import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import { AuditService } from '../operations/audit.service';
 import { CustomerClass } from './customer-class.entity';
@@ -139,6 +140,15 @@ export class CustomerTierDefaultClassService {
     }
     const payload = await this.normalizePayload(command.tierDefaults, command.reason);
     const definition = CUSTOMER_CLASS_TIER_DEFAULTS_ACTION;
+    if (principal.readOnlyPrincipal) {
+      throw new ForbiddenException('Tier default approval execution denied: READ_ONLY_PRINCIPAL');
+    }
+    if (definition.mfaRequired && principal.assuranceLevel !== 'MFA') {
+      throw new ForbiddenException('Tier default approval execution denied: MFA_REQUIRED');
+    }
+    if (!definition.approvingFunctionCodes.every((fn) => principal.scopes.includes(fn))) {
+      throw new ForbiddenException('Tier default approval execution denied: FUNCTION_MISSING');
+    }
     const approval = await this.approvals.getApproval(approvalId);
     if (
       !approval ||
@@ -147,6 +157,14 @@ export class CustomerTierDefaultClassService {
       approval.resourceId !== null
     ) {
       throw new ForbiddenException('Approval does not govern tier default class configuration');
+    }
+    if (
+      approval.status === PrivilegedActionApprovalStatus.APPROVED &&
+      (!approval.approvedBy ||
+        (definition.selfApprovalProhibited &&
+          approval.approvedBy === approval.requesterPrincipalId))
+    ) {
+      throw new ForbiddenException('Tier default approval requires an independent checker');
     }
     const fingerprint = governedChangeFingerprint(
       definition.action,
@@ -171,6 +189,7 @@ export class CustomerTierDefaultClassService {
             'PRINCIPAL_TYPE_DENIED',
             'MFA_REQUIRED',
             'SUPER_ADMIN_NOT_ALLOWED',
+            'READ_ONLY_PRINCIPAL',
           ].includes(decision.reason ?? '')
         ) {
           throw new ForbiddenException(
@@ -183,6 +202,8 @@ export class CustomerTierDefaultClassService {
       const mappings = payload.tierDefaults as Record<CustomerKycTier, string>;
       const actor = principal.principalId;
       const now = new Date();
+      const approvedBy = decision.approval?.approvedBy ?? approval.approvedBy ?? actor;
+      const approvedAt = decision.approval?.approvedAt ?? approval.approvedAt ?? now;
       await this.lockMappings(manager);
       const saved: TierDefaultClassView[] = [];
       for (const tier of CUSTOMER_KYC_TIERS) {
@@ -203,7 +224,7 @@ export class CustomerTierDefaultClassService {
             `INSERT INTO customer_tier_default_classes
               (tier, class_id, status, approved_at, approved_by, approval_id, reason, created_by, updated_by, version)
              VALUES ($1,$2,'APPROVED',$3,$4,$5,$6,$7,$7,1)`,
-            [tier, classId, now, actor, approvalId, payload.reason, actor],
+            [tier, classId, approvedAt, approvedBy, approvalId, payload.reason, actor],
           );
         } else {
           const prev = existing[0] as Record<string, unknown>;
@@ -212,7 +233,7 @@ export class CustomerTierDefaultClassService {
                 SET class_id=$2, status='APPROVED', approved_at=$3, approved_by=$4, approval_id=$5,
                     reason=$6, updated_by=$7, version=version+1, updated_at=NOW()
               WHERE tier=$1`,
-            [tier, classId, now, actor, approvalId, payload.reason, actor],
+            [tier, classId, approvedAt, approvedBy, approvalId, payload.reason, actor],
           );
           await this.auditService.record(manager, {
             entityType: 'CUSTOMER_CLASS_TIER_DEFAULT',
@@ -231,6 +252,8 @@ export class CustomerTierDefaultClassService {
               classId,
               status: 'APPROVED',
               approvalId,
+              approvedBy,
+              reason: payload.reason as string,
               version: Number(prev.version ?? 1) + 1,
             },
           });
@@ -241,7 +264,15 @@ export class CustomerTierDefaultClassService {
             entityId: tierDefaultAuditEntityId(tier),
             action: 'CREATED',
             actor,
-            newValues: { tier, classId, status: 'APPROVED', approvalId },
+            newValues: {
+              tier,
+              classId,
+              status: 'APPROVED',
+              approvalId,
+              approvedBy,
+              reason: payload.reason as string,
+              version: 1,
+            },
           });
         }
         saved.push({
@@ -250,8 +281,8 @@ export class CustomerTierDefaultClassService {
           classCode: classRow.code,
           className: classRow.name,
           status: 'APPROVED',
-          approvedAt: now,
-          approvedBy: actor,
+          approvedAt,
+          approvedBy,
           approvalId,
           reason: payload.reason as string,
           globalDefaultClassCodeAtMigration:
