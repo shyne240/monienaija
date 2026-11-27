@@ -249,11 +249,21 @@ export class PrivilegedActionApprovalService {
           minimumAssurance: registeredAction.minimumAssurance,
         }
       : command.policy;
+    const identityKeys = (command.requestDetailsIdentityKeys ?? []).filter(
+      (key): key is string => typeof key === 'string' && key.trim().length > 0,
+    );
     const safeRequestDetails = command.requestDetails
-      ? redactRecord(command.requestDetails)
+      ? redactRecord(command.requestDetails, { preserveKeys: identityKeys })
       : undefined;
     const recordedPolicy = safeRequestDetails
-      ? { ...policy, requestDetails: safeRequestDetails }
+      ? {
+          ...policy,
+          requestDetails: safeRequestDetails,
+          // Remembered with the record, so the read path can preserve exactly these keys and no
+          // others: re-redacting `requestDetails` on read would otherwise rewrite an entity
+          // identifier (a product `code`) that the executor must replay verbatim.
+          ...(identityKeys.length > 0 ? { requestDetailsIdentityKeys: identityKeys } : {}),
+        }
       : policy;
     const authorization = await this.authorizationService.authorize(
       command.principal,
@@ -893,6 +903,36 @@ export class PrivilegedActionApprovalService {
     }
   }
 
+  /**
+   * Redacts the policy for a response, keeping the identifiers the recording principal declared as
+   * identity keys.
+   *
+   * The stored `requestDetails` were already sanitized and redacted when the approval was written, so
+   * re-redacting them wholesale is not defence in depth but loss: it rewrites a product `code` into
+   * `[REDACTED]`, and the checker's replay of that record can then never reproduce the approved
+   * fingerprint (PR27-BROWSER-02). Only the explicitly recorded keys are preserved, and only at the
+   * top level of `requestDetails`.
+   */
+  private presentPolicy(policy: Record<string, unknown>): Record<string, unknown> {
+    const redacted = redactRecord(policy);
+    const declared = policy.requestDetailsIdentityKeys;
+    const details = policy.requestDetails;
+    if (
+      !Array.isArray(declared) ||
+      declared.length === 0 ||
+      !details ||
+      typeof details !== 'object'
+    ) {
+      return redacted;
+    }
+    const keys = declared.filter((key): key is string => typeof key === 'string');
+    if (keys.length === 0) return redacted;
+    return {
+      ...redacted,
+      requestDetails: redactRecord(details as Record<string, unknown>, { preserveKeys: keys }),
+    };
+  }
+
   toView(approval: PrivilegedActionApproval): PrivilegedActionApprovalView {
     return {
       id: approval.id,
@@ -906,7 +946,7 @@ export class PrivilegedActionApprovalService {
       reason: approval.reason,
       approvalScope: approval.approvalScope,
       requiredAssurance: approval.requiredAssurance,
-      policy: redactRecord(approval.policy ?? {}),
+      policy: this.presentPolicy(approval.policy ?? {}),
       status: approval.status,
       isEmergency: approval.isEmergency,
       requestedAt: approval.requestedAt,

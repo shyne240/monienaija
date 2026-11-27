@@ -2,8 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
@@ -15,7 +17,9 @@ import { AuditService } from '../operations/audit.service';
 import { OutboxService } from '../operations/outbox.service';
 import { SettlementAccountService } from '../payment/settlement-account.service';
 import { SettlementAccountRole } from '../payment/payment.enums';
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import { isRetryableTransactionError } from '../payment/payment-support';
+import { BANK_TO_WALLET } from '../product-catalog/banking-product-identities';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import {
   INBOUND_FUNDING_VERIFIER,
@@ -46,6 +50,14 @@ export class InboundFundingService {
     @Inject(INBOUND_INSTITUTION_AUTHORITY)
     private readonly institution: InboundInstitutionAuthority,
     @Inject(INBOUND_SUSPENSE_POLICY) private readonly suspensePolicy: InboundSuspensePolicy,
+    /**
+     * PR #27 — the bank-credit limit decision.
+     *
+     * Optional so that unit tests constructing this service directly keep working, in the same way
+     * `CustomerFundingService` treats the same dependency. When it is absent no limit decision is
+     * recorded, which is the pre-PR #27 behaviour and is never silently reported as "approved".
+     */
+    @Optional() private readonly limits?: LimitEnforcementService,
   ) {}
 
   /** Standalone intake; product lifecycle callers must use the transaction-bound method. */
@@ -366,6 +378,35 @@ export class InboundFundingService {
       if (policy !== 'AUTHORIZED')
         throw new ConflictException('Inbound suspense policy does not authorize this payment');
     }
+    // PR #27 — the bank-credit commercial limit decision.
+    //
+    // Bank→wallet had NO limit decision at all: a verified bank credit was posted to a customer
+    // wallet with institution authority, wallet boundary, suspense and idempotency checks, but no
+    // commercial rule. That is a real gap, because the catalogue can express a `BANK_TO_WALLET`
+    // limit and the customer has no way to know whether one governs their credit.
+    //
+    // Now, whenever this credit would actually reach a customer wallet, the canonical BANK_TO_WALLET
+    // limit is evaluated in this same SERIALIZABLE transaction. `requireConfiguration` pins the
+    // resolved profile/rules as evidence without turning a *missing* profile into a refusal — the
+    // legacy advisory contract — because a bank credit cannot be refused at the till the way a
+    // customer-initiated debit can: the money has already arrived. Refusing here would strand funds
+    // with no approved treatment (the suspense policy is deliberately unavailable). So the decision
+    // is adversarial in the way that matters: if a rule IS configured and the credit breaches it,
+    // the rules themselves what happens, and nothing is invented.
+    //
+    // `BANK_TO_WALLET` is seeded disabled, so no fee rule can price this credit either — that is the
+    // declared `NOT_APPLICABLE_INBOUND_CREDIT` disposition in banking-product-identities.ts.
+    if (eligible && destination && this.limits) {
+      await this.enforceInboundLimit(manager, {
+        customerId: destination.customer_id,
+        walletLedgerAccountId: destination.ledger_id,
+        currency,
+        amountMinor,
+        providerKey,
+        referenceHash,
+        correlationId,
+      });
+    }
     const asset = await this.accounts.getAccountId(
       manager,
       currency,
@@ -518,5 +559,62 @@ export class InboundFundingService {
 
   private hash(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+  }
+
+  /**
+   * Evaluate the canonical bank-credit limit inside the caller's transaction.
+   *
+   * Idempotency is derived from the provider reference, not from a wall clock: a replay of the same
+   * verified receipt must return the SAME reservation, never double-count a daily window. The
+   * idempotency key is therefore stable for (provider, reference) — the same identity the receipt
+   * itself is keyed by.
+   *
+   * A limit refusal propagates: the ledger credit is in the same transaction, so a refusal cannot
+   * leave a half-posted receipt. That is intentional — a configured rule is an approved control, and
+   * silently bypassing it would be worse than refusing the credit and keeping the verified evidence.
+   */
+  private async enforceInboundLimit(
+    manager: EntityManager,
+    input: {
+      customerId: string;
+      walletLedgerAccountId: string;
+      currency: string;
+      amountMinor: string;
+      providerKey: string;
+      referenceHash: string;
+      correlationId: string;
+    },
+  ): Promise<void> {
+    const idempotencyKey = this.hash(`inbound-limit:${input.providerKey}:${input.referenceHash}`);
+    const requestHash = this.hash(
+      JSON.stringify({
+        product: BANK_TO_WALLET.productCode,
+        customerId: input.customerId,
+        walletLedgerAccountId: input.walletLedgerAccountId,
+        currency: input.currency,
+        amountMinor: input.amountMinor,
+      }),
+    );
+    try {
+      await this.limits!.enforceWithManager(manager, {
+        principalType: 'CUSTOMER',
+        principalId: input.customerId,
+        product: BANK_TO_WALLET.productCode,
+        direction: 'INCOMING',
+        channel: null,
+        currency: input.currency,
+        amountMinor: input.amountMinor,
+        idempotencyKey,
+        requestHash,
+        correlationId: input.correlationId,
+        walletLedgerAccountId: input.walletLedgerAccountId,
+        principalWalletCustomerId: input.customerId,
+        // Pin the decision as evidence; a missing profile stays advisory (see the call site).
+        requireConfiguration: true,
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException('Inbound commercial limit is unavailable');
+    }
   }
 }

@@ -126,7 +126,11 @@ export class RewardRuleRegistryService {
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
-  async createRule(input: RewardRuleCreateInput, actor: string): Promise<RewardRuleSafeProjection> {
+  async createRule(
+    input: RewardRuleCreateInput,
+    actor: string,
+    manager?: EntityManager,
+  ): Promise<RewardRuleSafeProjection> {
     const productCode = this.normalizeProductCode(input.productCode);
     await this.assertProductExists(productCode);
     const currency = this.normalizeCurrency(input.currency ?? 'NGN');
@@ -214,9 +218,10 @@ export class RewardRuleRegistryService {
       version: 1,
     } as never);
 
+    const repo = manager ? manager.getRepository(RewardRuleDefinition) : this.repo;
     let saved: RewardRuleDefinition;
     try {
-      saved = (await this.repo.save(entity as never)) as unknown as RewardRuleDefinition;
+      saved = (await repo.save(entity as never)) as unknown as RewardRuleDefinition;
     } catch (e) {
       if (this.isUniqueViolation(e)) {
         throw new ConflictException(
@@ -230,7 +235,7 @@ export class RewardRuleRegistryService {
       }
       throw e;
     }
-    await this.audit(saved.id, 'CREATED', actor, undefined, this.ruleValues(saved));
+    await this.audit(saved.id, 'CREATED', actor, undefined, this.ruleValues(saved), manager);
     return this.toSafe(saved);
   }
 
@@ -238,6 +243,7 @@ export class RewardRuleRegistryService {
     id: string,
     input: RewardRuleUpdateInput,
     actor: string,
+    manager?: EntityManager,
   ): Promise<RewardRuleSafeProjection> {
     const ruleId = this.normalizeId(id);
     const rule = await this.repo.findOne({ where: { id: ruleId } as never });
@@ -293,13 +299,14 @@ export class RewardRuleRegistryService {
     if (input.isActive !== undefined) rule.isActive = this.parseBoolean(input.isActive, 'isActive');
     rule.updatedBy = actor;
 
+    const repo = manager ? manager.getRepository(RewardRuleDefinition) : this.repo;
     try {
       // Deterministic optimistic concurrency (same discipline proven in V1-COMMISSION-01
       // §11): the UPDATE itself carries  WHERE id = … AND version = <caller version>  so a
       // concurrent winner makes it affect 0 rows → 409. Version/updated_at are set
       // explicitly because repository.update() bypasses TypeORM's column hooks; the whole
       // state's write set is enumerated so nothing silently reverts.
-      const result = await this.repo.update(
+      const result = await repo.update(
         { id: ruleId, version: input.version } as never,
         {
           calculationBasis: rule.calculationBasis,
@@ -318,9 +325,9 @@ export class RewardRuleRegistryService {
       );
       if (result.affected !== 1)
         throw new ConflictException('Reward rule version conflict — stale version');
-      const saved = await this.repo.findOne({ where: { id: ruleId } as never });
+      const saved = await repo.findOne({ where: { id: ruleId } as never });
       if (!saved) throw new NotFoundException(`Reward rule ${ruleId} not found`);
-      await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved));
+      await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved), manager);
       return this.toSafe(saved);
     } catch (e) {
       if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
@@ -713,19 +720,22 @@ export class RewardRuleRegistryService {
     actor: string,
     previousValues: Record<string, unknown> | undefined,
     newValues: Record<string, unknown>,
+    manager?: EntityManager,
   ): Promise<void> {
     if (!this.auditService) return;
+    const write = async (m: EntityManager): Promise<void> => {
+      await this.auditService!.record(m, {
+        entityType: 'REWARD_RULE',
+        entityId,
+        action,
+        actor,
+        previousValues,
+        newValues,
+      } as never);
+    };
     try {
-      await this.dataSource.transaction(async (manager: EntityManager) => {
-        await this.auditService!.record(manager, {
-          entityType: 'REWARD_RULE',
-          entityId,
-          action,
-          actor,
-          previousValues,
-          newValues,
-        } as never);
-      });
+      if (manager) await manager.transaction(write);
+      else await this.dataSource.transaction(write);
     } catch {
       // best-effort audit, consistent with limit-catalog/product-catalog/commission convention
     }

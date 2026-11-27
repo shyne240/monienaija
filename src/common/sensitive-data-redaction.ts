@@ -125,9 +125,33 @@ export function redactSensitiveData(value: unknown): unknown {
   }
 }
 
-export function redactRecord(value: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Redacts a record for storage or display.
+ *
+ * `preserveKeys` is the narrow escape hatch for callers whose payload carries an *entity identifier*
+ * under a key the redactor classifies as credential-shaped by name alone (today: a governed product
+ * registration, whose `code` is the product code, not an authorization code). Preservation applies
+ * only to the named top-level keys and only when the value is a primitive, so a structured value can
+ * never ride through unredacted. Every other key — and every default call with no options — behaves
+ * exactly as before.
+ */
+export function redactRecord(
+  value: Record<string, unknown>,
+  options?: { preserveKeys?: readonly string[] },
+): Record<string, unknown> {
   const redacted = redactSensitiveData(value);
-  return isRecord(redacted) ? redacted : {};
+  if (!isRecord(redacted)) return {};
+  const preserve = options?.preserveKeys;
+  if (!preserve || preserve.length === 0) return redacted;
+  const output: Record<string, unknown> = { ...redacted };
+  for (const key of preserve) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const original = value[key];
+    const primitive =
+      original === null || ['string', 'number', 'boolean'].includes(typeof original);
+    if (primitive) output[key] = original;
+  }
+  return output;
 }
 
 /**
