@@ -18,14 +18,15 @@ export interface RoleDefinitionPriorSnapshot {
   readOnly: boolean;
   isActive: boolean;
   definitionVersion: number;
+  isSystemSeeded: boolean;
   functionGrants: RoleDefinitionFunctionGrant[];
 }
 
 /**
  * V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01
  *
- * The maker/checker ledger for governed role-definition changes (create a new role, or modify a
- * role previously created through this same workflow). A row here NEVER directly mutates
+ * The maker/checker ledger for governed role-definition changes (create a configurable role, or
+ * modify grants on a seeded/configurable role). A row here NEVER directly mutates
  * `authorization_roles` / `authorization_role_functions` — those tables are only ever touched by
  * `RoleDefinitionGovernanceService.apply()`, after independent approval, inside one atomic
  * transaction. A proposal existing, or even being APPROVED, has zero effect on live authorization
