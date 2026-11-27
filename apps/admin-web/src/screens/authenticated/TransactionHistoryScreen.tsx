@@ -44,6 +44,27 @@ const endpoint = '/internal/admin/transaction-history';
 export function transactionDetailLink(type: string, id: string) {
   return `#transaction-history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
 }
+/**
+ * Export URL for a set of applied filters.
+ *
+ * Built from the SAME `query` state the list uses, so "the filters on screen" and "the filters in
+ * the file" cannot drift. Only the four supported filters are forwarded: paging belongs to the
+ * export itself and the server rejects `limit`/`cursor` on this route.
+ */
+export function exportUrl(query: {
+  from: string;
+  to: string;
+  type: string;
+  status: string;
+  reference: string;
+}) {
+  const params = new URLSearchParams();
+  for (const key of ['from', 'to', 'type', 'status', 'reference'] as const) {
+    if (query[key]) params.set(key, query[key]);
+  }
+  const qs = params.toString();
+  return `${endpoint}/export.csv${qs ? `?${qs}` : ''}`;
+}
 export const TransactionHistoryScreen: React.FC<{
   onOpenJournal?: (journalId: string) => void;
 }> = ({ onOpenJournal }) => {
@@ -76,6 +97,11 @@ function History({
   const [key, setKey] = useState('');
   const [detail, setDetail] = useState<Row | null>(null);
   const [detailError, setDetailError] = useState('');
+  // Export state is deliberately separate from list loading: a slow export must not make the
+  // table look like it is reloading, and a list reload must not cancel a running export.
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportError, setExportError] = useState('');
   useEffect(() => {
     const sync = () => {
       const match = /^#transaction-history\/([A-Z_]+)\/([0-9a-f-]+)$/i.exec(window.location.hash);
@@ -132,6 +158,42 @@ function History({
       active = false;
     };
   }, [key, allowed]);
+  const runExport = async () => {
+    setExporting(true);
+    setExportError('');
+    setExportMessage('Preparing export… this can take a moment for a wide date range.');
+    try {
+      const file = await ApiClient.getFile(exportUrl(query));
+      // The browser owns the save dialog; we only hand it a correctly named object URL.
+      const objectUrl = URL.createObjectURL(file.blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = file.fileName;
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.display = 'none';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setExportMessage(
+        file.rowCount === null
+          ? `Exported ${file.fileName}.`
+          : `Exported ${file.rowCount.toLocaleString('en-NG')} ${
+              file.rowCount === 1 ? 'transaction' : 'transactions'
+            } to ${file.fileName}. These are all records matching the applied filters, not just this page.`,
+      );
+    } catch (e) {
+      setExportMessage('');
+      // The server's message for a size refusal already tells the operator what to do.
+      setExportError(
+        (e as Error).message ||
+          'Export failed. No file was produced. Try again, or narrow the date range.',
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (!allowed)
     return (
       <div className="th-workspace" role="alert">
@@ -148,8 +210,50 @@ function History({
         eyebrow="MONEY MOVEMENT · READ ONLY"
         title="Transaction History"
         description="One history for business transactions. Investigate recorded activity without moving money."
-        actions={<button onClick={() => setRevision((x) => x + 1)}>Refresh history</button>}
+        actions={
+          <div className="th-actions">
+            <button onClick={() => setRevision((x) => x + 1)}>Refresh history</button>
+            <button
+              className="th-primary"
+              type="button"
+              onClick={() => void runExport()}
+              disabled={exporting}
+              aria-describedby="th-export-note"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </div>
+        }
       />
+      <div className="th-export" aria-live="polite">
+        {exporting && (
+          <p role="status" className="th-export-progress">
+            <span className="th-spinner" aria-hidden="true" />
+            {exportMessage}
+          </p>
+        )}
+        {!exporting && exportMessage && (
+          <p role="status" className="th-export-success">
+            {exportMessage}
+          </p>
+        )}
+        {exportError && (
+          <div role="alert" className="th-export-error">
+            <strong>Export CSV failed</strong>
+            <p>{exportError}</p>
+            <p className="th-muted">
+              No file was produced. The export covers every record matching the applied filters,
+              across all pages; if the result set is above the supported size, narrow the date
+              range or add a product, status or reference filter.
+            </p>
+          </div>
+        )}
+        <p className="th-muted" id="th-export-note">
+          Export CSV writes every record matching the applied filters — all pages, not just the
+          page on screen — using the same Lagos date boundaries and institution scope as the list.
+          Only CSV is supported.
+        </p>
+      </div>
       <p className="th-muted" role="note">
         Customer Funding includes pending and rejected requests with captured historical custody
         evidence. Requests without trustworthy institution evidence remain hidden from institution

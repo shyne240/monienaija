@@ -11,6 +11,8 @@ import { CustomerTier3ReadinessPanel } from './CustomerTier3ReadinessPanel';
 import { CustomerRegistrationReviewPanel } from './CustomerRegistrationReviewPanel';
 import type { RegistrationReview } from './CustomerRegistrationReviewPanel';
 import { CustomerClassAssignmentPanel } from '../../components/CustomerClassAssignmentPanel';
+import { maskWalletIdentifier } from './customer-masking';
+import { WalletStatementPanel } from './WalletStatementPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
 export interface DirectoryCustomer {
@@ -1190,7 +1192,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
               <p>Read-only wallet information for this customer.</p>
               <dl>
                 <dt>Wallet ID</dt>
-                <dd>{selectedWallet.id}</dd>
+                <dd>{maskWalletIdentifier(selectedWallet.id)}</dd>
                 <dt>Currency</dt>
                 <dd>{selectedWallet.currency}</dd>
                 <dt>Status</dt>
@@ -1205,6 +1207,11 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                     : 'Balance unavailable'}
                 </dd>
               </dl>
+              <WalletStatementPanel
+                customerId={customer.id}
+                walletId={selectedWallet.id}
+                currency={selectedWallet.currency}
+              />
             </div>
           </WorkspaceDrawer>
         )}

@@ -1,4 +1,11 @@
 import { TransactionHistoryController } from './transaction-history.controller';
+import {
+  MAX_EXPORT_ROWS,
+  TRANSACTION_HISTORY_EXPORT_LIMITS,
+  TransactionHistoryExportService,
+} from './transaction-history-export.service';
+import { WalletStatementService } from './wallet-statement/wallet-statement.service';
+import { WalletStatementRenderService } from './wallet-statement/wallet-statement-render.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -34,6 +41,7 @@ import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { InstitutionModule } from '../institution/institution.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
   imports: [
@@ -63,6 +71,10 @@ import { ProductCatalogModule } from '../product-catalog/product-catalog.module'
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
     AuthorizationModule,
+    // The statement reads balances through LedgerService and scope through the institution
+    // workforce assignment service; InstitutionModule is already imported above for
+    // registration-review scope.
+    LedgerModule,
   ],
   controllers: [
     TransactionHistoryController,
@@ -84,6 +96,19 @@ import { ProductCatalogModule } from '../product-catalog/product-catalog.module'
   // `CustomerEffectiveConfigurationService` is deliberately NOT provided here: KycTierModule
   // (imported above) provides and exports it, so AdminCustomerController's registration-review read
   // and KycTierTransitionService's tier-default write share one instance instead of forking.
-  providers: [CustomerTransactionHistoryService],
+  providers: [
+    CustomerTransactionHistoryService,
+    // CSV export shares the history list's read path; it only serialises and audits.
+    TransactionHistoryExportService,
+    // Wallet statement: the ledger read and the scoped, audited PDF generation.
+    WalletStatementService,
+    WalletStatementRenderService,
+    // The supported export ceiling. Above it the export is refused with an explanation, never
+    // truncated; a deployment may override this provider from measured capacity.
+    {
+      provide: TRANSACTION_HISTORY_EXPORT_LIMITS,
+      useValue: { maxRows: MAX_EXPORT_ROWS },
+    },
+  ],
 })
 export class AdminModule {}

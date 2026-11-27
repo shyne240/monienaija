@@ -2,15 +2,28 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
   TransactionHistoryScreen,
+  exportUrl,
   transactionDetailLink,
 } from '../src/screens/authenticated/TransactionHistoryScreen';
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 import {
   canonicalAdminView,
   canAccessAdminView,
 } from '../src/screens/authenticated/navigation-access';
-jest.mock('../src/services/api-client', () => ({ ApiClient: { get: jest.fn() } }));
+jest.mock('../src/services/api-client', () => ({
+  ApiClient: { get: jest.fn(), getFile: jest.fn() },
+  ApiError: class ApiError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+      public readonly code?: string,
+    ) {
+      super(message);
+      this.name = 'ApiError';
+    }
+  },
+}));
 const get = ApiClient.get as jest.Mock;
 const row = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -177,4 +190,139 @@ test.each([true, false])('journal action requires ledger.view (%s)', async (ledg
     expect(within(dialog).queryByRole('button', { name: 'Open journal' })).toBeNull();
     expect(within(dialog).queryByText(journalId)).toBeNull();
   }
+});
+
+describe('Transaction history CSV export', () => {
+  // jsdom has no object-URL implementation; record what the component asked the browser to save.
+  const saved: Array<{ name: string; text: string }> = [];
+  let created: Blob[] = [];
+  beforeAll(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: (blob: Blob) => {
+        created.push(blob);
+        return 'blob:synthetic';
+      },
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => {} });
+    // Capture the download handoff without letting jsdom navigate.
+    const click = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        saved.push({ name: this.download, text: String(created[created.length - 1]?.size ?? '') });
+      });
+    click.mockClear();
+  });
+  beforeEach(() => {
+    saved.length = 0;
+    created = [];
+  });
+
+  test('exports every record matching the applied filters, across pages', async () => {
+    get.mockResolvedValue({ items: [row], nextCursor: 'cursor-2' });
+    render(<TransactionHistoryScreen />);
+    await screen.findByText('SYN-C2C');
+    // Apply a date range and filters, then page forward: the export must ignore the cursor.
+    fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2026-11-24' } });
+    fireEvent.change(screen.getByLabelText('To date'), { target: { value: '2026-11-25' } });
+    fireEvent.change(screen.getByLabelText('Transaction type'), {
+      target: { value: 'CASH_TO_CASH' },
+    });
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'CLAIMED' } });
+    fireEvent.change(screen.getByLabelText('Exact reference'), { target: { value: 'SYN-C2C' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(expect.stringContaining('type=CASH_TO_CASH')),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith(expect.stringContaining('cursor=')));
+
+    const file = {
+      blob: new Blob(['transaction_reference,product\nSYN-C2C,CASH_TO_CASH'], { type: 'text/csv' }),
+      fileName: 'transaction-history_2026-11-24_to_2026-11-25_cash_to_cash.csv',
+      rowCount: 137,
+      exportId: 'export-1',
+    };
+    (ApiClient as unknown as { getFile: jest.Mock }).getFile = jest.fn().mockResolvedValue(file);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    await screen.findByText(/Exported 137 transactions/);
+    const getFile = (ApiClient as unknown as { getFile: jest.Mock }).getFile;
+    expect(getFile).toHaveBeenCalledTimes(1);
+    const url = getFile.mock.calls[0][0] as string;
+    expect(url).toBe(
+      '/internal/admin/transaction-history/export.csv?from=2026-11-24&to=2026-11-25&type=CASH_TO_CASH&status=CLAIMED&reference=SYN-C2C',
+    );
+    // No paging controls: the server owns the walk, so a page cursor cannot truncate the file.
+    expect(url).not.toContain('cursor=');
+    expect(url).not.toContain('limit=');
+    // The file an operator gets is named by the server and states it covers all pages.
+    expect(saved).toEqual([{ name: file.fileName, text: expect.any(String) }]);
+    expect(screen.getByText(/not just this page/)).toBeTruthy();
+  });
+
+  test('shows progress while the export runs', async () => {
+    get.mockResolvedValue({ items: [row], nextCursor: null });
+    let resolveFile!: (v: unknown) => void;
+    (ApiClient as unknown as { getFile: jest.Mock }).getFile = jest
+      .fn()
+      .mockReturnValue(new Promise((r) => (resolveFile = r)));
+    render(<TransactionHistoryScreen />);
+    await screen.findByText('SYN-C2C');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(screen.getByRole('button', { name: 'Exporting…' })).toBeTruthy();
+    expect(screen.getByText(/Preparing export/)).toBeTruthy();
+    resolveFile({
+      blob: new Blob(['x']),
+      fileName: 'transaction-history_all-dates.csv',
+      rowCount: 1,
+      exportId: 'e',
+    });
+    await screen.findByText(/Exported 1 transaction to/);
+    expect(screen.queryByRole('button', { name: 'Exporting…' })).toBeNull();
+  });
+
+  test('an oversized export explains how to narrow it and produces no file', async () => {
+    get.mockResolvedValue({ items: [row], nextCursor: null });
+    (ApiClient as unknown as { getFile: jest.Mock }).getFile = jest.fn().mockRejectedValue(
+      new ApiError(
+        'This export matches more than 50,000 transactions, which is above the supported export size. Narrow the date range or add a product, status or reference filter and export again. No file was produced.',
+        413,
+        'PAYLOAD_TOO_LARGE',
+      ),
+    );
+    render(<TransactionHistoryScreen />);
+    await screen.findByText('SYN-C2C');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('Export CSV failed')).toBeTruthy();
+    expect(within(alert).getByText(/above the supported export size/)).toBeTruthy();
+    expect(within(alert).getAllByText(/No file was produced/).length).toBeGreaterThan(0);
+    expect(saved).toEqual([]);
+  });
+
+  test('an unauthorized export surfaces the denial instead of downloading', async () => {
+    get.mockResolvedValue({ items: [row], nextCursor: null });
+    (ApiClient as unknown as { getFile: jest.Mock }).getFile = jest
+      .fn()
+      .mockRejectedValue(new ApiError('Authorization denied: FUNCTION_MISSING', 403));
+    render(<TransactionHistoryScreen />);
+    await screen.findByText('SYN-C2C');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText(/Authorization denied/)).toBeTruthy();
+    expect(saved).toEqual([]);
+  });
+
+  test('export is unavailable without transaction.view', () => {
+    useAuthStore.setState({ principal: null });
+    render(<TransactionHistoryScreen />);
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+  });
+
+  test('the export URL carries no filters when none are applied', () => {
+    expect(exportUrl({ from: '', to: '', type: '', status: '', reference: '' })).toBe(
+      '/internal/admin/transaction-history/export.csv',
+    );
+  });
 });

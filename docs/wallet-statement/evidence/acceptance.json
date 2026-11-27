@@ -1,0 +1,101 @@
+{
+  "date": "2026-11-27T07:49:15.972Z",
+  "commit": "c9ce20752870b7cee99f2d855a76ebac6158582b",
+  "scope": "Fully migrated disposable PostgreSQL, real AppModule, real workforce email/password sign-in, real Chromium download. Synthetic customers and postings; not a production record.",
+  "browser": true,
+  "statement": {
+    "pages": 2,
+    "rows": 64,
+    "openingMinor": "125777",
+    "closingMinor": "1482737",
+    "file": "statement-sample.pdf"
+  },
+  "checks": [
+    {
+      "name": "fully migrated disposable PostgreSQL, 11 real local workforce accounts seeded",
+      "result": "PASS",
+      "detail": {
+        "accounts": 11
+      }
+    },
+    {
+      "name": "real AppModule booted against the migrated database",
+      "result": "PASS"
+    },
+    {
+      "name": "real email/password sign-in (OPERATIONS, SUPER_ADMIN)",
+      "result": "PASS",
+      "detail": {
+        "operations": "https://idp.example.com:local-admin-credential:6adcd278a142adb5c874c32b1adb3f95"
+      }
+    },
+    {
+      "name": "real ledger fixture: opening balance, 64 in-period postings, Lagos boundary cases",
+      "result": "PASS",
+      "detail": {
+        "openingMinor": "125777",
+        "inPeriod": 64,
+        "microsecondBeforeBoundary": "30 September Lagos, not 1 October"
+      }
+    },
+    {
+      "name": "statement figures reconcile to the ledger and to the Lagos day boundary",
+      "result": "PASS",
+      "detail": {
+        "opening": "125777",
+        "closing": "1482737",
+        "novemberOpening": "1482737"
+      }
+    },
+    {
+      "name": "a real multi-page A4 PDF: brand mark on every page, repeated header, correct page numbers",
+      "result": "PASS",
+      "detail": {
+        "pages": 2,
+        "bytes": 214229
+      }
+    },
+    {
+      "name": "a foreign-institution operator cannot download even by direct request; platform staff can",
+      "result": "PASS",
+      "detail": {
+        "operatorStatus": 404,
+        "platformStatus": 200
+      }
+    },
+    {
+      "name": "anonymous requests are refused and malformed periods are rejected before any ledger read",
+      "result": "PASS"
+    },
+    {
+      "name": "every attempt is audited: operator, wallet, period, outcome — refusals included",
+      "result": "PASS",
+      "detail": {
+        "auditRows": 3
+      }
+    },
+    {
+      "name": "every page rendered for visual review",
+      "result": "PASS",
+      "detail": {
+        "pages": 2
+      }
+    },
+    {
+      "name": "real browser: sign-in, Customer 360 → wallet → statement, multi-page PDF downloaded and reopened",
+      "result": "PASS",
+      "detail": {
+        "suggestedFilename": "monienaija-wallet-statement-0424-2026-10-01_2026-10-31.pdf",
+        "pages": 2,
+        "foreignRequestStatus": 404
+      }
+    },
+    {
+      "name": "the downloaded file rendered page by page",
+      "result": "PASS",
+      "detail": {
+        "pages": 2
+      }
+    }
+  ]
+}
