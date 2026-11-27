@@ -204,10 +204,22 @@ describe('migration inventory', () => {
       file: '1785753600805-CreateCustomerClasses.ts',
     });
     for (const [timestamp, name, file] of [
-      ['1785753600810', 'CustomerTierDefaultClassMappings1785753600810', '1785753600810-CustomerTierDefaultClassMappings.ts'],
+      [
+        '1785753600810',
+        'CustomerTierDefaultClassMappings1785753600810',
+        '1785753600810-CustomerTierDefaultClassMappings.ts',
+      ],
       ['1785753600811', 'LimitRuleUnlimited1785753600811', '1785753600811-LimitRuleUnlimited.ts'],
-      ['1785753600812', 'CustomerRestrictionConfigurationReview1785753600812', '1785753600812-CustomerRestrictionConfigurationReview.ts'],
-      ['1785753600813', 'CreatePlatformFundsBankComparisons1785753600813', '1785753600813-CreatePlatformFundsBankComparisons.ts'],
+      [
+        '1785753600812',
+        'CustomerRestrictionConfigurationReview1785753600812',
+        '1785753600812-CustomerRestrictionConfigurationReview.ts',
+      ],
+      [
+        '1785753600813',
+        'CreatePlatformFundsBankComparisons1785753600813',
+        '1785753600813-CreatePlatformFundsBankComparisons.ts',
+      ],
     ] as const) {
       expect(migrations).toContainEqual({ timestamp, name, file });
     }
