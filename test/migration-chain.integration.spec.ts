@@ -406,6 +406,8 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'DurableInboundIdentity1785753600806',
         'CaptureCustomerFundingScope1785753600807',
         'CreatePlatformFundsBankComparisons1785753600813',
+        'BankToWalletMonnifyJourney1785753600900',
+        'BankToWalletReturnRefunds1785753600901',
       ]);
       const boundary = await db.query<
         Array<{ decisions: string | null; consumptions: string | null; guarded: boolean }>
