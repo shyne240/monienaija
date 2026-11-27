@@ -672,4 +672,77 @@ describe('Customer wallet statement PDF (real migrations, PostgreSQL, workforce 
     expect(rendered.pageCount).toBeGreaterThanOrEqual(1);
     expect(rendered.pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   }, 180_000);
+
+  test('refuses an oversized statement (>2,000 posted rows) with HTTP 413 on both preview and PDF', async () => {
+    const operator = (await fixture.workforce()).operator;
+    const bulkWallet = await fixture.createWallet(customerId, 'EUR');
+    await fixture.attributeWallet(bulkWallet.walletId, ownInstitution);
+    const bulkLedgerAccountId = (
+      await ds.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [
+        bulkWallet.walletId,
+      ])
+    )[0].ledger_account_id as string;
+    const bulkSettlement = await fixture.openInstitutionSettlementAccount(ownInstitution, {
+      purpose: 'CLEARING',
+      currency: 'EUR',
+      code: `STMT-BULK-EUR-${randomUUID().slice(0, 8).toUpperCase()}`,
+      name: 'Statement bulk settlement EUR',
+    });
+
+    const ledger = app.get(LedgerService);
+    const journalIds: string[] = [];
+    let remaining = 2001;
+    let batchNumber = 0;
+    while (remaining > 0) {
+      batchNumber += 1;
+      const count = Math.min(remaining, 99);
+      remaining -= count;
+      const lines: Array<{
+        accountId: string;
+        direction: LedgerEntryDirection;
+        amountMinor: string;
+      }> = [
+        {
+          accountId: bulkSettlement,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: String(count * 100),
+        },
+      ];
+      for (let idx = 0; idx < count; idx += 1) {
+        lines.push({
+          accountId: bulkLedgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '100',
+        });
+      }
+      const bulkJournal = await ledger.postJournal({
+        idempotencyKey: `stmt-bulk-${batchNumber}-${randomUUID()}`,
+        currency: 'EUR',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        reference: `STMT-BULK-${batchNumber}`,
+        description: `Bulk statement batch ${batchNumber}`,
+        metadata: { institutionId: ownInstitution },
+        lines,
+      });
+      journalIds.push(bulkJournal.id);
+    }
+    await ds.transaction(async (manager) => {
+      await manager.query(`SET LOCAL session_replication_role = replica`);
+      await manager.query(
+        `UPDATE ledger_journals SET posted_at = $2, created_at = $2 WHERE id = ANY($1::uuid[])`,
+        [journalIds, '2026-10-15T10:00:00Z'],
+      );
+    });
+
+    for (const tail of ['statement', 'statement.pdf']) {
+      const oversized = await get(
+        `${url(bulkWallet.walletId, tail)}?from=2026-10-01&to=2026-10-31`,
+        operator.token,
+      );
+      expect(oversized.status).toBe(413);
+      expect(oversized.headers['content-disposition']).toBeUndefined();
+      expect(oversized.text ?? '').not.toContain('%PDF');
+      expect(JSON.stringify(oversized.body)).toContain('Shorten the period');
+    }
+  }, 180_000);
 });
