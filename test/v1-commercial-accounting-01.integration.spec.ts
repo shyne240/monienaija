@@ -480,7 +480,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   // Agent harness (mirrors v1-commission-runtime-wiring helpers).
 
-  async function createActiveAgentWithPin(services: unknown, pin: string | null) {
+  async function createActiveAgentWithPin(
+    services: unknown,
+    pin: string | null,
+    options: { seedPermissiveLimitProfile?: boolean } = {},
+  ) {
     const cls = await classService.create({
       reference: `cls-ca01-${randomUUID().slice(0, 8)}`,
       code: `CA01-${randomUUID().slice(0, 6)}`,
@@ -490,11 +494,14 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       actor: 'test-actor',
     });
     // Agent money movement requires a limit for the Agent's class; one permissive rule per product
-    // keeps this suite focused on what it asserts (commercial snapshot / fee / commission).
-    await assignAgentClassLimitProfile(dataSource, {
-      agentClassId: cls.id,
-      rules: permissiveAgentLimitRules(),
-    });
+    // keeps this suite focused on what it asserts (commercial snapshot / fee / commission). Limit
+    // boundary tests can opt out so missing configuration is exercised against the real transfer.
+    if (options.seedPermissiveLimitProfile !== false) {
+      await assignAgentClassLimitProfile(dataSource, {
+        agentClassId: cls.id,
+        rules: permissiveAgentLimitRules(),
+      });
+    }
     const appEntity = await appService.create({
       agentClassId: cls.id,
       applicantReference: `h-${randomUUID()}`,
@@ -1666,6 +1673,104 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       new Set([...successfulCashJournals, ...transferJournals.map((row) => row.journal_id)]),
     );
   }, 180000);
+
+  it('fails closed for missing agent limits on both Wallet→Wallet participant legs without financial effects', async () => {
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quotes = app.get(TransferQuoteService);
+    const financialCounts = async () => {
+      const [row] = await dataSource.query(
+        `SELECT
+           (SELECT count(*)::int FROM transfers) AS transfers,
+           (SELECT count(*)::int FROM ledger_journals) AS journals,
+           (SELECT count(*)::int FROM ledger_lines) AS ledger_lines,
+           (SELECT count(*)::int FROM limit_reservations) AS reservations,
+           (SELECT count(*)::int FROM limit_usages) AS usages,
+           (SELECT count(*)::int FROM idempotency_records) AS idempotency_records`,
+      );
+      return row;
+    };
+    const expectMissingLimitRefusal = async (params: {
+      agentId: string;
+      sourceLedgerAccountId: string;
+      destinationLedgerAccountId: string;
+      destinationWalletId: string;
+      sourceBalance: bigint;
+      destinationBalance: bigint;
+    }) => {
+      const principal = agentPrincipal(params.agentId);
+      const quote = await quotes.create(principal, {
+        destinationWalletId: params.destinationWalletId,
+        amountMinor: '10000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      });
+      const countsBefore = await financialCounts();
+      const refusal = await transferService
+        .createConfirmedTransfer(principal, quote.quoteId, randomUUID(), '1234')
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      expect(refusal).toBeDefined();
+      expect(refusal.getStatus()).toBe(503);
+      expectBlocked(refusal, 'LIMIT_PROFILE_MISSING');
+      expect(await financialCounts()).toEqual(countsBefore);
+      expect(await walletBalance(params.sourceLedgerAccountId)).toBe(params.sourceBalance);
+      expect(await walletBalance(params.destinationLedgerAccountId)).toBe(
+        params.destinationBalance,
+      );
+      expect(
+        await dataSource.query(
+          `SELECT q.status,b.transfer_id FROM payment_quotes q
+             JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+          [quote.quoteId],
+        ),
+      ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+    };
+
+    const { agent: missingSource, wallet: missingSourceWallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+      {
+        seedPermissiveLimitProfile: false,
+      },
+    );
+    const customerWallet = await createWallet(await eligibleCustomerId());
+    await fundWallet(missingSourceWallet.ledgerAccountId, '50000');
+    await expectMissingLimitRefusal({
+      agentId: missingSource.id,
+      sourceLedgerAccountId: missingSourceWallet.ledgerAccountId,
+      destinationLedgerAccountId: customerWallet.ledgerAccountId,
+      destinationWalletId: customerWallet.id,
+      sourceBalance: 50000n,
+      destinationBalance: 0n,
+    });
+
+    const { agent: configuredSource, wallet: configuredSourceWallet } =
+      await createActiveAgentWithPin([AgentService.WALLET_TRANSFER], '1234', {
+        seedPermissiveLimitProfile: false,
+      });
+    const { wallet: missingDestinationWallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      null,
+      { seedPermissiveLimitProfile: false },
+    );
+    await seedLimitProfile(
+      `W2W_${randomUUID().slice(0, 8).toUpperCase()}`,
+      'AGENT',
+      configuredSource.id,
+      'WALLET_TRANSFER',
+    );
+    await fundWallet(configuredSourceWallet.ledgerAccountId, '50000');
+    await expectMissingLimitRefusal({
+      agentId: configuredSource.id,
+      sourceLedgerAccountId: configuredSourceWallet.ledgerAccountId,
+      destinationLedgerAccountId: missingDestinationWallet.ledgerAccountId,
+      destinationWalletId: missingDestinationWallet.id,
+      sourceBalance: 50000n,
+      destinationBalance: 0n,
+    });
+  });
 
   it('agent self quote rejects cross-institution and partially attributed destinations', async () => {
     const { agent, wallet } = await createActiveAgentWithPin(
