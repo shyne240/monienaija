@@ -38,6 +38,42 @@ interface ClassFeeRule {
   isActive: boolean;
 }
 
+interface TierDefaultMapping {
+  tier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
+  classId: string | null;
+  classCode: string | null;
+  className: string | null;
+  status: 'PENDING_APPROVAL' | 'APPROVED';
+  approvedAt: string | null;
+  approvedBy: string | null;
+  approvalId: string | null;
+  reason: string | null;
+  globalDefaultClassCodeAtMigration: string | null;
+  classUsable: boolean;
+  version: number;
+}
+
+interface TierDefaultsView {
+  mappings: TierDefaultMapping[];
+  globalDefault: { classId: string; classCode: string; className: string } | null;
+  allApproved: boolean;
+  pendingApprovalCount: number;
+}
+
+interface TierDefaultProposalRecord {
+  id: string;
+  status: string;
+  requesterPrincipalId: string;
+  approvedBy: string | null;
+  reason?: string | null;
+  policy?: {
+    requestDetails?: {
+      tierDefaults?: Record<string, string>;
+      reason?: string;
+    };
+  } | null;
+}
+
 /** Customer class governance catalogue surface wired into shared Admin Web navigation. */
 export const CustomerClassesScreen: React.FC = () => {
   const { principal } = useAuthStore();
@@ -57,29 +93,117 @@ export const CustomerClassesScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
+  const [tierDefaults, setTierDefaults] = useState<TierDefaultsView | null>(null);
+  const [tierDraft, setTierDraft] = useState<Record<string, string>>({
+    LEVEL_1: '',
+    LEVEL_2: '',
+    LEVEL_3: '',
+  });
+  const [tierReason, setTierReason] = useState('');
+  const [tierApprovalId, setTierApprovalId] = useState('');
+  const [tierMessage, setTierMessage] = useState('');
+  const [tierProposals, setTierProposals] = useState<TierDefaultProposalRecord[]>([]);
+  const normalizeTierDefaults = (value: unknown): TierDefaultsView | null => {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as Partial<TierDefaultsView>;
+    const mappings = Array.isArray(v.mappings) ? v.mappings : [];
+    return {
+      mappings,
+      globalDefault: v.globalDefault && typeof v.globalDefault === 'object' ? v.globalDefault as TierDefaultsView['globalDefault'] : null,
+      allApproved: Boolean(v.allApproved),
+      pendingApprovalCount: typeof v.pendingApprovalCount === 'number' ? v.pendingApprovalCount : 0,
+    };
+  };
+  const normalizeTierProposals = (value: unknown): TierDefaultProposalRecord[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const items = (value as { items?: unknown }).items;
+    if (!Array.isArray(items)) return [];
+    return items.filter(
+      (item): item is TierDefaultProposalRecord =>
+        Boolean(item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string'),
+    );
+  };
+
+  const loadTierProposals = useCallback(async () => {
+    if (!canManage) {
+      setTierProposals([]);
+      return;
+    }
+    const result = await ApiClient.get<unknown>(
+      '/internal/a2/workforce/approvals?actionType=CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
+    );
+    setTierProposals(
+      normalizeTierProposals(result).filter(
+        (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
+      ),
+    );
+  }, [canManage]);
+
+  const loadTierDefaults = useCallback(async () => {
+    const result = await ApiClient.get<TierDefaultsView>('/internal/customer-classes/tier-defaults');
+    const safe = normalizeTierDefaults(result);
+    setTierDefaults(safe);
+    if (safe) {
+      setTierDraft((prev) => ({
+        LEVEL_1: prev.LEVEL_1 || safe.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
+        LEVEL_2: prev.LEVEL_2 || safe.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
+        LEVEL_3: prev.LEVEL_3 || safe.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
+      }));
+    }
+  }, []);
   const load = useCallback(async () => {
-    const result = await ApiClient.get<CustomerClass[]>('/internal/customer-classes');
-    setClasses(result);
+    const [result] = await Promise.all([
+      ApiClient.get<CustomerClass[]>('/internal/customer-classes'),
+      loadTierDefaults().catch(() => undefined),
+      loadTierProposals().catch(() => undefined),
+    ]);
+    setClasses(Array.isArray(result) ? result : []);
     setLoaded(true);
     setError('');
-  }, []);
+  }, [loadTierDefaults, loadTierProposals]);
   useEffect(() => {
     let mounted = true;
     if (canView)
-      ApiClient.get<CustomerClass[]>('/internal/customer-classes')
-        .then((result) => {
+      Promise.all([
+        ApiClient.get<CustomerClass[]>('/internal/customer-classes').catch(() => []),
+        ApiClient.get<TierDefaultsView>('/internal/customer-classes/tier-defaults').catch(() => null),
+        canManage
+          ? ApiClient.get<unknown>(
+              '/internal/a2/workforce/approvals?actionType=CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
+            ).catch(() => null)
+          : Promise.resolve(null),
+      ])
+        .then(([result, defaults, proposals]) => {
           if (mounted) {
-            setClasses(result);
+            setClasses(Array.isArray(result) ? result : []);
+            const safe = normalizeTierDefaults(defaults);
+            setTierDefaults(safe);
+            setTierProposals(
+              normalizeTierProposals(proposals).filter(
+                (item) => item.status === 'REQUESTED' || item.status === 'APPROVED',
+              ),
+            );
+            if (safe) {
+              setTierDraft({
+                LEVEL_1: safe.mappings.find((m) => m.tier === 'LEVEL_1')?.classId || '',
+                LEVEL_2: safe.mappings.find((m) => m.tier === 'LEVEL_2')?.classId || '',
+                LEVEL_3: safe.mappings.find((m) => m.tier === 'LEVEL_3')?.classId || '',
+              });
+            }
             setLoaded(true);
           }
         })
         .catch(() => {
-          if (mounted) setError('Customer classes are unavailable.');
+          if (mounted) {
+            setClasses([]);
+            setTierDefaults(null);
+            setError('Customer classes are unavailable.');
+          }
         });
     return () => {
       mounted = false;
     };
-  }, [canView]);
+  }, [canView, canManage]);
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage || busy) return;
@@ -119,6 +243,98 @@ export const CustomerClassesScreen: React.FC = () => {
       setBusy(false);
     }
   };
+  const proposeTierDefaults = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canManage || busy) return;
+    setBusy(true);
+    setTierMessage('');
+    setError('');
+    try {
+      const res = await ApiClient.post<Record<string, unknown>>(
+        '/internal/customer-classes/tier-defaults/proposals',
+        { tierDefaults: tierDraft, reason: tierReason.trim() },
+      );
+      const approvalId = typeof res.approvalId === 'string' ? res.approvalId : '';
+      setTierApprovalId(approvalId);
+      setTierMessage(
+        approvalId
+          ? `Tier default proposal submitted. Approval ID: ${approvalId}. Execute it after approval.`
+          : 'Tier default proposal submitted.',
+      );
+      await Promise.all([
+        loadTierDefaults().catch(() => undefined),
+        loadTierProposals().catch(() => undefined),
+      ]);
+    } catch {
+      setError('Tier default proposal could not be submitted. Check class usability and approval permissions.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const approveTierProposal = async (proposal: TierDefaultProposalRecord) => {
+    if (!canManage || busy) return;
+    setBusy(true);
+    setTierMessage('');
+    setError('');
+    try {
+      const res = await ApiClient.post<{ approved?: boolean; reason?: string }>(
+        `/internal/a2/workforce/approvals/${encodeURIComponent(proposal.id)}/approve`,
+        { comment: 'Approved via Tier Default Service Classes' },
+      );
+      if (res && res.approved === false) {
+        setError(`Decision not confirmed: ${res.reason ?? 'UNKNOWN'}`);
+      } else {
+        setTierApprovalId(proposal.id);
+        setTierMessage(`Proposal ${proposal.id} approved. Execute it to apply.`);
+      }
+      await loadTierProposals().catch(() => undefined);
+    } catch {
+      setError('Tier default approval could not be confirmed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const executeTierProposalRecord = async (proposal: TierDefaultProposalRecord) => {
+    const details = proposal.policy?.requestDetails;
+    const proposedDefaults = details?.tierDefaults ?? tierDraft;
+    const proposedReason = (details?.reason ?? proposal.reason ?? tierReason).trim();
+    if (!canManage || busy || !proposedReason) return;
+    setBusy(true);
+    setTierMessage('');
+    setError('');
+    try {
+      await ApiClient.post(
+        `/internal/customer-classes/tier-defaults/proposals/${encodeURIComponent(proposal.id)}/execute`,
+        { tierDefaults: proposedDefaults, reason: proposedReason },
+      );
+      setTierMessage('Tier default mappings approved and applied.');
+      setTierApprovalId('');
+      await load();
+    } catch {
+      setError('Tier default execution could not be confirmed. Ensure the approval is approved and payload matches.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const executeTierDefaults = async () => {
+    if (!canManage || busy || !tierApprovalId.trim()) return;
+    setBusy(true);
+    setTierMessage('');
+    setError('');
+    try {
+      await ApiClient.post(
+        `/internal/customer-classes/tier-defaults/proposals/${encodeURIComponent(tierApprovalId.trim())}/execute`,
+        { tierDefaults: tierDraft, reason: tierReason.trim() },
+      );
+      setTierMessage('Tier default mappings approved and applied.');
+      setTierApprovalId('');
+      await load();
+    } catch {
+      setError('Tier default execution could not be confirmed. Ensure the approval is approved and payload matches.');
+    } finally {
+      setBusy(false);
+    }
+  };
   if (!canView)
     return (
       <section>
@@ -133,17 +349,148 @@ export const CustomerClassesScreen: React.FC = () => {
         Class of service is independent of KYC tier. New custom classes start unconfigured and
         disabled.
       </p>
-      {error && (
-        <p role="alert">
-          {error}{' '}
-          <button
-            type="button"
-            onClick={() => load().catch(() => setError('Customer classes are unavailable.'))}
-          >
-            Reload
-          </button>
+      <section className="cm-card" aria-labelledby="cm-tier-defaults-title" style={{ marginBottom: 16 }}>
+        <h2 id="cm-tier-defaults-title">Tier default service classes</h2>
+        <p>
+          Configure one effective default service class per KYC tier. Changes use existing approval and audit mechanisms.
+          {tierDefaults?.globalDefault
+            ? ` Current global default at migration: ${tierDefaults.globalDefault.classCode} — ${tierDefaults.globalDefault.className}.`
+            : ''}
         </p>
-      )}
+        {!tierDefaults ? (
+          <p>Tier defaults unavailable.</p>
+        ) : (
+          <>
+            <table className="cm-table">
+              <thead>
+                <tr>
+                  <th>Tier</th>
+                  <th>Mapped class</th>
+                  <th>Status</th>
+                  <th>Approval</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Array.isArray(tierDefaults.mappings) ? tierDefaults.mappings : []).map((m) => (
+                  <tr key={m.tier}>
+                    <td>{m.tier}</td>
+                    <td>{m.classCode ? `${m.classCode} — ${m.className ?? ''}` : '—'}{m.classUsable ? '' : ' (not usable)'}</td>
+                    <td>{m.status}</td>
+                    <td>{m.approvalId ?? '—'}{m.approvedAt ? ` @ ${m.approvedAt}` : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!tierDefaults.allApproved && (
+              <p role="status">Explicit approval is required for the three tier mappings before activation can use them.</p>
+            )}
+            {canManage && (
+              <form onSubmit={proposeTierDefaults}>
+                {(['LEVEL_1', 'LEVEL_2', 'LEVEL_3'] as const).map((tier) => (
+                  <label key={tier} style={{ display: 'block', marginBottom: 8 }}>
+                    {tier} default class
+                    <select
+                      value={tierDraft[tier] ?? ''}
+                      onChange={(e) => setTierDraft((d) => ({ ...d, [tier]: e.target.value }))}
+                      disabled={busy}
+                    >
+                      <option value="">Select class</option>
+                      {classes
+                        .filter((c) => c.enabled && c.status === 'ACTIVE' && c.configurationStatus === 'CONFIGURED')
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.code} — {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ))}
+                <label style={{ display: 'block', marginBottom: 8 }}>
+                  Reason
+                  <input
+                    value={tierReason}
+                    onChange={(e) => setTierReason(e.target.value)}
+                    disabled={busy}
+                    minLength={3}
+                    maxLength={500}
+                    required
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 8 }}>
+                  Approval ID (optional, to execute an approved proposal)
+                  <input
+                    aria-label="Tier default approval ID"
+                    value={tierApprovalId}
+                    onChange={(e) => setTierApprovalId(e.target.value)}
+                    disabled={busy}
+                  />
+                </label>
+                <button type="submit" disabled={busy}>Propose tier defaults</button>{' '}
+                <button type="button" disabled={busy || !tierApprovalId.trim()} onClick={() => void executeTierDefaults()}>
+                  Execute approved proposal
+                </button>
+                {tierApprovalId ? <p>Approval ID: <code>{tierApprovalId}</code></p> : null}
+                {tierMessage ? <p role="status">{tierMessage}</p> : null}
+              </form>
+            )}
+            {canManage && tierProposals.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <h3>Pending &amp; approved tier default proposals</h3>
+                <table className="cm-table">
+                  <thead>
+                    <tr>
+                      <th>Approval ID</th>
+                      <th>Status</th>
+                      <th>Requester</th>
+                      <th>Reason</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tierProposals.map((proposal) => {
+                      const isSelf = Boolean(
+                        principal?.principalId &&
+                          proposal.requesterPrincipalId === principal.principalId,
+                      );
+                      return (
+                        <tr key={proposal.id}>
+                          <td><code>{proposal.id}</code></td>
+                          <td>{proposal.status}</td>
+                          <td>{proposal.requesterPrincipalId}</td>
+                          <td>{proposal.reason ?? '—'}</td>
+                          <td>
+                            {proposal.status === 'REQUESTED' ? (
+                              isSelf ? (
+                                <span>Independent checker required</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void approveTierProposal(proposal)}
+                                >
+                                  Approve proposal
+                                </button>
+                              )
+                            ) : proposal.status === 'APPROVED' ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void executeTierProposalRecord(proposal)}
+                              >
+                                Apply approved proposal
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </section>
       {!loaded ? (
         <p>Class information unavailable or loading.</p>
       ) : (

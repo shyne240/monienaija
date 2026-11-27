@@ -6,12 +6,15 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
   Req,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { RoleFunctionAccessType } from '../authorization-catalogue/authorization-catalogue.enums';
+import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { AuthorizationService } from './authorization.service';
 import { AssignWorkforceRoleDto } from './dto/assign-workforce-role.dto';
@@ -36,7 +39,11 @@ import type {
   A2MakerCheckerRuleV1,
 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
-import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import {
+  AGENT_FUNDING_ACTIONS,
+  CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
+  governedAction,
+} from './governed-action.registry';
 import type { PrivilegedActionApprovalView } from './privileged-action-approval.types';
 import { ApprovalRejectionDto } from './approval-decision.dto';
 interface R extends FastifyRequest {
@@ -67,6 +74,7 @@ export class A2WorkforceAdministrationController {
     private readonly auth: AuthorizationService,
     private readonly limits: A2SecurityRateLimitService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
+    @Optional() private readonly catalogueRuntime?: AuthorizationCatalogueRuntimeService,
   ) {}
   @Post('sessions') async establish(@Body() b: EstablishWorkforceSessionDto, @Req() r: R) {
     await this.limits.consume(
@@ -229,7 +237,10 @@ export class A2WorkforceAdministrationController {
       limit: q.limit,
       offset: q.offset,
     });
-    return { ...result, items: result.items.map((item) => this.withAuthority(item)) };
+    return {
+      ...result,
+      items: await Promise.all(result.items.map((item) => this.withAuthority(item))),
+    };
   }
   /**
    * Authoritative single-approval read for the checker workspace (Arena B9).
@@ -247,7 +258,7 @@ export class A2WorkforceAdministrationController {
     }
     const approval = await this.approvals.getVisibleApproval(id, principal);
     if (!approval) throw new NotFoundException('Approval not found');
-    return this.withAuthority(approval);
+    return await this.withAuthority(approval);
   }
   @Post('approvals/request') async requestApproval(
     @Body() b: RequestPrivilegedApprovalDto,
@@ -303,6 +314,11 @@ export class A2WorkforceAdministrationController {
     );
     if (!decision.allowed)
       throw new ForbiddenException(`Approval authorization denied: ${decision.reason}`);
+    await this.assertTierDefaultApproverCapacity(
+      principal,
+      approval.actionType,
+      approvingFunctionCodes,
+    );
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
@@ -353,6 +369,11 @@ export class A2WorkforceAdministrationController {
     );
     if (!decision.allowed)
       throw new ForbiddenException(`Approval authorization denied: ${decision.reason}`);
+    await this.assertTierDefaultApproverCapacity(
+      principal,
+      approval.actionType,
+      approvingFunctionCodes,
+    );
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
@@ -425,14 +446,26 @@ export class A2WorkforceAdministrationController {
    * `authority: null` rather than a guess: the screen says the authority is unresolved, and the
    * decide path still fails closed exactly as before.
    */
-  private withAuthority(view: PrivilegedActionApprovalView) {
+  private async withAuthority(view: PrivilegedActionApprovalView) {
     try {
       const rule = this.rule(view.actionType);
+      const approvingFunctions = [...this.approvingFunctionCodes(view.actionType)];
+      const approvingRoles =
+        view.actionType === CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action &&
+        this.catalogueRuntime &&
+        approvingFunctions.length > 0
+          ? [
+              ...(await this.catalogueRuntime.listRoleKeysWithFunctionAccess(approvingFunctions, [
+                RoleFunctionAccessType.APPROVE,
+                RoleFunctionAccessType.EXECUTE,
+              ])),
+            ]
+          : [...rule.approvingRoles];
       return {
         ...view,
         authority: {
-          approvingRoles: [...rule.approvingRoles],
-          approvingFunctions: [...this.approvingFunctionCodes(view.actionType)],
+          approvingRoles,
+          approvingFunctions,
           minimumApprovals: rule.minimumApprovals,
           // `decide()` refuses a requester's own decision unconditionally; a rule may only relax
           // that by explicitly declaring BOTH `selfApprovalProhibited: false` and no separation
@@ -447,6 +480,29 @@ export class A2WorkforceAdministrationController {
       };
     } catch {
       return { ...view, authority: null };
+    }
+  }
+  private async assertTierDefaultApproverCapacity(
+    p: AuthorizationPrincipal,
+    actionType: string,
+    approvingFunctionCodes: readonly string[],
+  ) {
+    if (actionType !== CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action) {
+      return;
+    }
+    if (p.readOnlyPrincipal) {
+      throw new ForbiddenException('Approval authorization denied: READ_ONLY_PRINCIPAL');
+    }
+    if (!approvingFunctionCodes.length || !this.catalogueRuntime) {
+      return;
+    }
+    const check = await this.catalogueRuntime.evaluateFunctionAccess(
+      p.roles,
+      approvingFunctionCodes,
+      [RoleFunctionAccessType.APPROVE, RoleFunctionAccessType.EXECUTE],
+    );
+    if (check.recognized && !check.allowed) {
+      throw new ForbiddenException('Approval authorization denied: FUNCTION_MISSING');
     }
   }
   private rateRule(category: string) {

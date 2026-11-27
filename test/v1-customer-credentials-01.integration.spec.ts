@@ -9,6 +9,7 @@
  * lockout, session, and audit architecture preserved.
  */
 import { UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -150,6 +151,7 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await seedActivationCommercialConfig(dataSource);
     provider.clear();
   });
 

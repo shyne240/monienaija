@@ -570,6 +570,7 @@ export class LimitEnforcementService {
     const newReservationIds: string[] = [];
 
     for (const rule of windowed) {
+      if ((rule as unknown as { is_unlimited?: boolean }).is_unlimited) continue;
       const dim = rule.dimension.trim().toUpperCase();
       const productForRule = rule.product.trim().toUpperCase();
       const currencyForRule = rule.currency.trim().toUpperCase();

@@ -178,7 +178,9 @@ describe('financial admission — administrative restrictions (ARENA 5 §6)', ()
       // The read is issued (uniform placement) but the restriction predicate never selects a
       // non-blocking type, so no freeze/blacklist decision can be produced from it.
       expect(restrictionRead).toHaveLength(1);
-      expect(restrictionRead[0]!.sql).toContain("type IN ('BLACKLISTED','FROZEN')");
+      expect(restrictionRead[0]!.sql).toContain(
+        "type IN ('BLACKLISTED','FROZEN','CONFIGURATION_REVIEW')",
+      );
     },
   );
 

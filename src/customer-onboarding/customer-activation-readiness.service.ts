@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { maskCustomerReference } from '../customer/customer-privacy';
@@ -6,6 +6,7 @@ import type { EffectiveCustomerClass } from '../customer-class/customer-class.ty
 import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { KycTierEvidenceReader } from '../kyc-verification/kyc-tier-evidence.reader';
+import { CustomerEffectiveConfigurationService } from './customer-effective-configuration.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -87,6 +88,10 @@ export interface CustomerOnboardingReadiness {
     eligibility: string | null;
     completed: boolean;
   };
+  commercialConfiguration?: {
+    complete: boolean;
+    issues: string[];
+  };
   requirements: ActivationRequirement[];
   outstanding: string[];
   activatable: boolean;
@@ -111,6 +116,9 @@ export class CustomerActivationReadinessService {
     private readonly classes: CustomerClassResolverService,
     private readonly financialEligibility: CustomerFinancialEligibilityService,
     private readonly evidenceReader: KycTierEvidenceReader,
+    @Optional()
+    @Inject(CustomerEffectiveConfigurationService)
+    private readonly effectiveConfiguration?: CustomerEffectiveConfigurationService,
   ) {}
 
   async evaluateOuter(customerId: string): Promise<CustomerOnboardingReadiness> {
@@ -155,7 +163,7 @@ export class CustomerActivationReadinessService {
     const restrictions = await manager.query<Array<{ type: string }>>(
       `SELECT type FROM customer_restrictions
         WHERE customer_id=$1 AND is_active=true AND deleted_at IS NULL
-          AND type IN ('FROZEN','BLACKLISTED') ORDER BY type`,
+          AND type IN ('FROZEN','BLACKLISTED','CONFIGURATION_REVIEW') ORDER BY type`,
       [customerId],
     );
     const conflicts = await manager.query<Array<{ count: string }>>(
@@ -268,6 +276,53 @@ export class CustomerActivationReadinessService {
       assessment.expires_at !== null &&
       assessment.expires_at.getTime() > Date.now();
 
+    let commercialConfig: {
+      complete: boolean;
+      issues: string[];
+      state: ActivationRequirement['state'];
+      detail?: string;
+    } = {
+      complete: false,
+      issues: [],
+      state: 'UNAVAILABLE',
+      detail: 'Commercial configuration evaluation unavailable',
+    };
+    if (this.effectiveConfiguration) {
+      try {
+        const eff = await this.effectiveConfiguration.evaluateInManager(manager, customerId);
+        const issues: string[] = [];
+        if (!eff.assignedClass) {
+          issues.push('No effective customer class assigned for verified tier');
+        }
+        for (const product of eff.products) {
+          if (product.fee.status === 'NOT_CONFIGURED' || product.fee.status === 'AMBIGUOUS') {
+            issues.push(`${product.productCode}: fee ${product.fee.status.toLowerCase()}`);
+          }
+          for (const limit of product.limits) {
+            if (limit.status === 'MISSING') {
+              issues.push(`${product.productCode}: ${limit.dimension} missing`);
+            }
+          }
+        }
+        commercialConfig =
+          issues.length === 0
+            ? { complete: true, issues: [], state: 'MET' }
+            : {
+                complete: false,
+                issues,
+                state: 'OUTSTANDING',
+                detail: issues.slice(0, 8).join('; '),
+              };
+      } catch (error) {
+        commercialConfig = {
+          complete: false,
+          issues: ['evaluation_failed'],
+          state: 'UNAVAILABLE',
+          detail: error instanceof Error ? error.message.slice(0, 200) : 'Evaluation failed',
+        };
+      }
+    }
+
     const requirements: ActivationRequirement[] = [
       {
         code: 'phone_verified',
@@ -330,6 +385,12 @@ export class CustomerActivationReadinessService {
         ...(eligibility.eligible ? {} : { detail: eligibility.message ?? 'Unavailable' }),
       },
       {
+        code: 'commercial_configuration',
+        label: 'Effective fees and limits configured for enabled products',
+        state: commercialConfig.state,
+        ...(commercialConfig.detail ? { detail: commercialConfig.detail } : {}),
+      },
+      {
         code: 'account_active',
         label: 'Account activated by MonieNaija',
         state: customer.status === 'ACTIVE' ? 'MET' : 'OUTSTANDING',
@@ -356,6 +417,7 @@ export class CustomerActivationReadinessService {
       'identity_conflict',
       'account_restriction',
       'financial_policy',
+      ...(this.effectiveConfiguration ? ['commercial_configuration'] : []),
     ];
     const activatable = preActivationCodes.every(
       (code) => requirements.find((requirement) => requirement.code === code)?.state === 'MET',
@@ -404,6 +466,10 @@ export class CustomerActivationReadinessService {
         status: onboardings[0]?.status ?? null,
         eligibility: eligibilities[0]?.status ?? null,
         completed: onboardings[0]?.status === 'COMPLETED',
+      },
+      commercialConfiguration: {
+        complete: commercialConfig.complete,
+        issues: commercialConfig.issues,
       },
       requirements,
       outstanding,

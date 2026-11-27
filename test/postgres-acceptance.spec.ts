@@ -38,14 +38,14 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
       expect(kinds).toContain('ISOLATED_PG');
     });
 
-    it('finds the eleven isolated suites that CI did not run', () => {
+    it('finds every isolated suite that CI did not run', () => {
       /*
        * The concrete gap. These do not match `.*\.integration\.spec\.ts$`, are run by a separate script, and
        * that script was never invoked from CI — so migration chains, governance singletons, KYC registration and
        * governed ledger reversal were guarded by tests that never ran on a push.
        */
       const isolated = inventory.discovered.filter((suite) => suite.kind === 'ISOLATED_PG');
-      expect(isolated.length).toBe(11);
+      expect(isolated.length).toBe(13);
       for (const suite of isolated) {
         expect(suite.executedBy).toBe('npm run test:pg:isolated-kyc');
       }
@@ -67,7 +67,7 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
       const broken = inventoryRepositorySuites(repoRoot, withoutScript, workflowText);
 
       expect(broken.verdict).toBe('ERROR');
-      expect(broken.unclaimed.length).toBe(11);
+      expect(broken.unclaimed.length).toBe(13);
       expect(broken.unclaimed.every((suite) => suite.kind === 'ISOLATED_PG')).toBe(true);
     });
 
@@ -83,7 +83,7 @@ describe('Group 30 — PostgreSQL acceptance inventory', () => {
       const broken = inventoryRepositorySuites(repoRoot, scripts, workflowWithout);
 
       expect(broken.verdict).toBe('ERROR');
-      expect(broken.unclaimed.length).toBe(11);
+      expect(broken.unclaimed.length).toBe(13);
     });
 
     it('reports an unclaimed file dropped into a synthetic test directory', () => {

@@ -30,7 +30,12 @@ export class CustomerOnboardingController {
   ) {}
 
   @Post(':id/onboarding')
-  createOnboarding(@Param('id') id: string, @Body() dto: CreateCustomerOnboardingDto) {
+  async createOnboarding(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerOnboardingDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceFunction(req, 'customer.create');
     return this.onboardingService.createOnboarding(id, dto);
   }
 
@@ -41,12 +46,22 @@ export class CustomerOnboardingController {
   }
 
   @Patch(':id/onboarding')
-  updateOnboarding(@Param('id') id: string, @Body() dto: UpdateCustomerOnboardingDto) {
+  async updateOnboarding(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerOnboardingDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceFunction(req, 'customer.create');
     return this.onboardingService.updateOnboarding(id, dto);
   }
 
   @Post(':id/agreements')
-  createAgreement(@Param('id') id: string, @Body() dto: CreateCustomerAgreementDto) {
+  async createAgreement(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerAgreementDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceFunction(req, 'customer.create');
     return this.onboardingService.createAgreement(id, dto);
   }
 
@@ -57,7 +72,12 @@ export class CustomerOnboardingController {
   }
 
   @Post(':id/onboarding-task')
-  createTask(@Param('id') id: string, @Body() dto: CreateCustomerOnboardingTaskDto) {
+  async createTask(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerOnboardingTaskDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceFunction(req, 'customer.create');
     return this.onboardingService.createTask(id, dto);
   }
 
@@ -68,7 +88,12 @@ export class CustomerOnboardingController {
   }
 
   @Post(':id/approval')
-  createApproval(@Param('id') id: string, @Body() dto: CreateCustomerApprovalDecisionDto) {
+  async createApproval(
+    @Param('id') id: string,
+    @Body() dto: CreateCustomerApprovalDecisionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforceFunction(req, 'kyc.approve');
     return this.onboardingService.createApproval(id, dto);
   }
 
@@ -82,6 +107,17 @@ export class CustomerOnboardingController {
   async getReadiness(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     await this.requireCustomerView(req);
     return this.onboardingService.getReadiness(id);
+  }
+
+  private async requireWorkforceFunction(
+    req: AuthenticatedRequest,
+    functionCode: string,
+  ): Promise<void> {
+    await this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'customer', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 
   private async requireCustomerView(req: AuthenticatedRequest): Promise<void> {

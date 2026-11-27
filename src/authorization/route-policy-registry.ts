@@ -1421,7 +1421,9 @@ export class RoutePolicyRegistry {
     // Customer class governance is distinct from generic customer inspection routes.
     // auditDeniedWorkforceFunction ensures guard-level 403 denials record an audit event.
     if (
-      /^\/api\/v1\/internal\/customer-classes(?:\/[^/]+)?$/.test(path) ||
+      /^\/api\/v1\/internal\/customer-classes(?:\/tier-defaults\/proposals(?:\/[^/]+\/execute)?|\/[^/]+)?$/.test(
+        path,
+      ) ||
       /^\/api\/v1\/internal\/customers\/[^/]+\/class(?:\/history)?$/.test(path)
     ) {
       const read = lookedUpMethod === 'GET';

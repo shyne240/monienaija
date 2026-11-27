@@ -5,9 +5,11 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
 import { CustomerClass } from './customer-class.entity';
 import { CustomerClassAssignment } from './customer-class-assignment.entity';
+import { CustomerTierDefaultClass } from './customer-tier-default-class.entity';
 import { CustomerClassService } from './customer-class.service';
 import { CustomerClassAssignmentService } from './customer-class-assignment.service';
 import { CustomerClassResolverService } from './customer-class-resolver.service';
+import { CustomerTierDefaultClassService } from './customer-tier-default-class.service';
 import {
   CustomerClassAssignmentController,
   CustomerClassController,
@@ -20,12 +22,22 @@ import {
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CustomerClass, CustomerClassAssignment]),
+    TypeOrmModule.forFeature([CustomerClass, CustomerClassAssignment, CustomerTierDefaultClass]),
     forwardRef(() => AuthorizationModule),
     forwardRef(() => OperationsModule),
   ],
   controllers: [CustomerClassController, CustomerClassAssignmentController],
-  providers: [CustomerClassService, CustomerClassAssignmentService, CustomerClassResolverService],
-  exports: [CustomerClassService, CustomerClassAssignmentService, CustomerClassResolverService],
+  providers: [
+    CustomerClassService,
+    CustomerClassAssignmentService,
+    CustomerClassResolverService,
+    CustomerTierDefaultClassService,
+  ],
+  exports: [
+    CustomerClassService,
+    CustomerClassAssignmentService,
+    CustomerClassResolverService,
+    CustomerTierDefaultClassService,
+  ],
 })
 export class CustomerClassModule {}

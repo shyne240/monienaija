@@ -46,7 +46,12 @@ export interface MobileOnboardingState {
     kycStatus: string;
   } | null;
   claim: { available: boolean; matchedThisSession: boolean } | null;
-  credentials: { passcodeSet: boolean; pinSet: boolean };
+  credentials: {
+    passcodeSet: boolean;
+    pinSet: boolean;
+    rotationRequired?: boolean;
+    mobileOtpRequired?: boolean;
+  };
   requirements: Array<{ code: string; label: string; state: string; detail?: string }>;
   outstanding: string[];
   wallet: { provisioned: boolean; currency: string | null } | null;
@@ -136,16 +141,44 @@ export class MobileOnboardingStateService {
         };
       }
 
-      const credentials = await manager.query<Array<{ passcode: boolean; pin: boolean }>>(
+      const credentials = await manager.query<
+        Array<{
+          passcode: boolean;
+          pin: boolean;
+          rotation_required: boolean;
+          rotated_temporary: boolean;
+          mobile_otp_required: boolean;
+        }>
+      >(
         `SELECT
            EXISTS(SELECT 1 FROM customer_authentication_credentials a
                    WHERE a.customer_id=$1 AND a.deleted_at IS NULL) AS passcode,
            EXISTS(SELECT 1 FROM customer_transaction_pins p
-                   WHERE p.customer_id=$1 AND p.deleted_at IS NULL) AS pin`,
+                   WHERE p.customer_id=$1 AND p.deleted_at IS NULL) AS pin,
+           EXISTS(SELECT 1 FROM customer_authentication_credentials a
+                   WHERE a.customer_id=$1 AND a.deleted_at IS NULL
+                     AND a.status='ACTIVE' AND a.rotation_required=true
+                     AND (a.password_expires_at IS NULL OR a.password_expires_at > clock_timestamp())) AS rotation_required,
+           EXISTS(SELECT 1 FROM password_histories ph
+                    JOIN customer_authentication_credentials a ON a.id=ph.credential_id
+                   WHERE a.customer_id=$1 AND a.deleted_at IS NULL
+                     AND a.status='ACTIVE' AND ph.action='ROTATED') AS rotated_temporary,
+           EXISTS(SELECT 1 FROM customer_authentication_credentials a
+                   WHERE a.customer_id=$1 AND a.deleted_at IS NULL
+                     AND a.status='ACTIVE' AND a.mobile_otp_required=true) AS mobile_otp_required`,
         [customer.id],
       );
       const passcodeSet = Boolean(credentials[0]?.passcode);
       const pinSet = Boolean(credentials[0]?.pin);
+      const rotationRequired = Boolean(credentials[0]?.rotation_required);
+      const rotatedTemporary = Boolean(credentials[0]?.rotated_temporary);
+      const mobileOtpRequired = Boolean(credentials[0]?.mobile_otp_required);
+      const credentialSummary = {
+        passcodeSet,
+        pinSet,
+        ...(rotationRequired ? { rotationRequired: true } : {}),
+        ...(mobileOtpRequired ? { mobileOtpRequired: true } : {}),
+      };
       const claimRows = await manager.query<Array<{ present: boolean }>>(
         `SELECT EXISTS(SELECT 1 FROM mobile_account_claims
                         WHERE session_id=$1 AND customer_id=$2 AND consumed_at IS NULL) AS present`,
@@ -192,7 +225,7 @@ export class MobileOnboardingStateService {
             'Your registration was not approved. Contact support if you believe this is wrong; do not start a second registration with the same phone number.',
           customer: customerSummary,
           claim: null,
-          credentials: { passcodeSet, pinSet },
+          credentials: credentialSummary,
           requirements,
           outstanding: snapshot.outstanding,
           wallet,
@@ -204,12 +237,14 @@ export class MobileOnboardingStateService {
         return {
           ...base,
           stage: 'ACTIVATED',
-          nextAction: passcodeSet
-            ? 'Your account is active. Sign in with your phone number and passcode.'
-            : 'Your account is active. Contact support to recover access to your credentials.',
+          nextAction: rotationRequired
+            ? 'Your account is active. Sign in with your temporary password to set a permanent password.'
+            : passcodeSet
+              ? 'Your account is active. Sign in with your phone number and passcode.'
+              : 'Your account is active. Contact support to recover access to your credentials.',
           customer: customerSummary,
           claim: null,
-          credentials: { passcodeSet, pinSet },
+          credentials: credentialSummary,
           requirements,
           outstanding: snapshot.outstanding,
           wallet,
@@ -220,10 +255,34 @@ export class MobileOnboardingStateService {
         return {
           ...base,
           stage: 'LOGIN',
-          nextAction: 'Sign in with your passcode to continue.',
+          nextAction:
+            customer.status === 'ACTIVE'
+              ? 'Your account is approved. Sign in with your passcode to activate your NGN wallet.'
+              : 'Sign in with your passcode to continue.',
           customer: customerSummary,
           claim: null,
-          credentials: { passcodeSet, pinSet },
+          credentials: credentialSummary,
+          requirements,
+          outstanding: snapshot.outstanding,
+          wallet,
+        };
+      }
+
+      if (
+        customer.status === 'ACTIVE' &&
+        passcodeSet &&
+        !pinSet &&
+        (rotationRequired || rotatedTemporary)
+      ) {
+        return {
+          ...base,
+          stage: 'LOGIN',
+          nextAction: rotationRequired
+            ? 'Staff issued a temporary password for your account. Sign in to set your permanent password.'
+            : 'Sign in with your password to set your transaction PIN and activate your wallet.',
+          customer: customerSummary,
+          claim: null,
+          credentials: credentialSummary,
           requirements,
           outstanding: snapshot.outstanding,
           wallet,
@@ -238,7 +297,7 @@ export class MobileOnboardingStateService {
           nextAction: 'Your sign-in details are incomplete. Contact support before trying again.',
           customer: customerSummary,
           claim: null,
-          credentials: { passcodeSet, pinSet },
+          credentials: credentialSummary,
           requirements,
           outstanding: [...new Set([...snapshot.outstanding, 'credentials_incomplete'])],
           wallet,

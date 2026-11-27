@@ -363,6 +363,27 @@ export const LIMIT_RULE_ACTIONS: Readonly<Record<string, GovernedActionDefinitio
   LIMIT_RULE_UPDATE: rule('LIMIT_RULE_UPDATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
 };
 
+/**
+ * Tier-based customer class default mappings. One effective default class per verified KYC tier.
+ * Maker/checker governed through the existing PrivilegedActionApproval mechanism and the
+ * configurable role/function catalogue (`customer.manage_classes` with `INITIATE`/`EXECUTE` for
+ * makers and `APPROVE`/`EXECUTE` for independent checkers; among the 11 seeded roles only
+ * `CUSTOMER_SERVICE` and `SUPER_ADMIN` hold `customer.manage_classes`).
+ */
+export const CUSTOMER_CLASS_TIER_DEFAULTS_ACTION: GovernedActionDefinition = {
+  action: 'CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
+  resourceType: 'CUSTOMER_CLASS_TIER_DEFAULTS',
+  initiatingFunctionCodes: ['customer.manage_classes'],
+  approvingFunctionCodes: ['customer.manage_classes'],
+  initiatingRoles: [],
+  approvingRoles: [],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'customer.manage_classes',
+};
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
   ...LIMIT_RULE_ACTIONS,
@@ -378,6 +399,7 @@ export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>
   [CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION.action]:
     CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION,
   [BANK_TO_WALLET_EXCEPTION_ACTION.action]: BANK_TO_WALLET_EXCEPTION_ACTION,
+  [CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action]: CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
 };
 
 export function governedAction(action: string): GovernedActionDefinition | undefined {

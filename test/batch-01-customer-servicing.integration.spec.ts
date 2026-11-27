@@ -5,6 +5,7 @@
  * No authorization provider, repository, API response, or customer record is mocked.
  */
 import { ValidationPipe } from '@nestjs/common';
+import { seedActivationCommercialConfig } from './support/activation-config-fixture';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
@@ -119,6 +120,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await seedActivationCommercialConfig(dataSource);
     [superAdmin, administrator, financePreparer] = await Promise.all([
       createRoleSession('SUPER_ADMIN'),
       createRoleSession('ADMINISTRATOR'),

@@ -86,5 +86,7 @@ describe('LoginScreen', () => {
 
     expect(getByText('Start or resume onboarding')).toBeTruthy();
     expect(getByText(/does not enable balances, transfers or cash operations/)).toBeTruthy();
+    fireEvent.press(getByText('Claim a staff-created account'));
+    expect(mockNavigate).toHaveBeenCalledWith('Registration');
   });
 });

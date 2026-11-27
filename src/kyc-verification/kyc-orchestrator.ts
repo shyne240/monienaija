@@ -95,6 +95,7 @@ export class KycOrchestrator {
     consentId: string;
     requestId: string;
     sessionToken: string;
+    workforceSessionId?: string;
     input: VerificationInput;
     /** Route-selected session audience and database identity snapshot revision. */
     audience?: string;
@@ -104,6 +105,16 @@ export class KycOrchestrator {
     const policy = { ...this.policy };
     assertPolicy(policy);
     if (!policy.enabled) throw new KycFoundationError('DISABLED');
+    const isWorkforceSession = command.workforceSessionId !== undefined;
+    const validSessionBinding = isWorkforceSession
+      ? UUID.test(command.workforceSessionId ?? '') &&
+        command.workforceSessionId !== command.customerId &&
+        command.sessionToken === '' &&
+        command.audience === undefined
+      : typeof command.sessionToken === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/.test(command.sessionToken) &&
+        (command.audience === undefined ||
+          ['customer-api', 'customer-onboarding'].includes(command.audience));
     if (
       !UUID.test(command.customerId) ||
       !UUID.test(command.consentId) ||
@@ -115,10 +126,7 @@ export class KycOrchestrator {
       !Buffer.isBuffer(this.ownershipKey) ||
       this.ownershipKey.length < 32 ||
       !/^[A-Za-z0-9._-]{1,64}$/.test(this.ownershipKeyVersion) ||
-      typeof command.sessionToken !== 'string' ||
-      !/^[A-Za-z0-9_-]{43}$/.test(command.sessionToken) ||
-      (command.audience !== undefined &&
-        !['customer-api', 'customer-onboarding'].includes(command.audience)) ||
+      !validSessionBinding ||
       (command.identityRevision !== undefined &&
         !/^[1-9][0-9]{0,18}$/.test(command.identityRevision)) ||
       (command.providerRouteVersion !== undefined &&
@@ -158,6 +166,7 @@ export class KycOrchestrator {
       kind,
       provider: this.provider.code,
       sessionToken: command.sessionToken,
+      ...(command.workforceSessionId ? { workforceSessionId: command.workforceSessionId } : {}),
       ...(command.audience ? { audience: command.audience } : {}),
       ...(command.identityRevision ? { identityRevision: command.identityRevision } : {}),
       ...(command.providerRouteVersion !== undefined
