@@ -1786,31 +1786,34 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     const maker = await provision('FINANCE_PREPARER');
     const checker = await provision('FINANCE_CONTROLLER');
     const reason = 'Controlled settlement recovery test';
+    // The maker request itself is refused: a provider-confirmed settlement is not an ordinary
+    // ledger correction, so no approval is ever minted for it. Recovery goes through the governed
+    // provider verification/refund path instead.
     const created = await request(app.getHttpServer())
       .post(`/api/v1/ledger/journals/${journalId}/reversal-request`)
       .set('Authorization', `Bearer ${maker}`)
       .send({ reason });
-    expect(created.status).toBe(201);
-    const approvalId = (created.body as { approvalId: string }).approvalId;
-    const approved = await request(app.getHttpServer())
-      .post(`/api/v1/internal/a2/workforce/approvals/${approvalId}/approve`)
+    expect(created.status).toBe(409);
+    expect((created.body as { message: string }).message).toContain('governed provider recovery');
+    expect(
+      await db.query(
+        `SELECT id FROM privileged_action_approvals
+          WHERE action_type='LEDGER_JOURNAL_REVERSAL' AND resource_id=$1`,
+        [journalId],
+      ),
+    ).toHaveLength(0);
+    // No approval exists to approve: the checker is refused for the same reason.
+    const approveNothing = await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${randomUUID()}/approve`)
       .set('Authorization', `Bearer ${checker}`)
       .send({ comment: 'controlled test' });
-    expect(approved.status).toBe(201);
-    const reversal = await request(app.getHttpServer())
-      .post(`/api/v1/ledger/journals/${journalId}/reversal`)
-      .set('Authorization', `Bearer ${checker}`)
-      .send({ reason, approvalId, idempotencyKey: 'blocked-commitment-reversal' });
-    expect(reversal.status).toBe(409);
-    expect((reversal.body as { message: string }).message).toContain(
-      'reserve account is restricted',
-    );
-    expect(
-      await db.query('SELECT status FROM privileged_action_approvals WHERE id=$1', [approvalId]),
-    ).toEqual([{ status: 'APPROVED' }]);
-    expect(
-      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [journalId]),
-    ).toHaveLength(0);
+    // There is nothing to approve: the endpoint refuses rather than minting a decision.
+    expect([403, 404]).toContain(approveNothing.status);
+    // The ungoverned primitive still refuses the reserve account, so the raw ledger boundary is
+    // unchanged even for a caller that bypasses the maker-checker request.
+    await expect(
+      ledger.reverseJournal(journalId, 'blocked-commitment-reversal', reason),
+    ).rejects.toThrow('reserve account is restricted');
     expect((await settlement.getByOperation(op.commitment.external_operation_id))?.status).toBe(
       'POSTED',
     );
