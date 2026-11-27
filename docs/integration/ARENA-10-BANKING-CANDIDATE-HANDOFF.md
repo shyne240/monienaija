@@ -11,7 +11,8 @@ the row → History → journal checks can be rerun without re-deriving the chai
 | Pull request | **#44** — `[DRAFT] Banking integration candidate: Monnify Bank→Wallet lifecycle, governed returns + #51 reconciliation`                                                             |
 | Base         | `arena/5-main-web-integration`                                                                                                                                                      |
 | Head branch  | `arena/74f08c9a-monienaija`                                                                                                                                                         |
-| Head SHA     | `6caafcd587d5ff66b2d2cdebf2935c6a5a8bf7d2`                                                                                                                                          |
+| Head SHA     | read it from PR #44 (not pinned here, so the document cannot go stale)                                                                                                              |
+| Verified CI  | [run 46003864871](https://github.com/shyne240/monienaija/actions/runs/46003864871) — 8/8 jobs green, incl. the real-PostgreSQL gate                                                 |
 | State        | draft, unmerged                                                                                                                                                                     |
 | PR #40       | reviewed head `f59a1c87833a892524bc559f9a4a5d8d220bcaba` — **already in this ancestry** (`git merge-base --is-ancestor f59a1c87 <head>` → true). #40 itself stays red and unmerged. |
 
