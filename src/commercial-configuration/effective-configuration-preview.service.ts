@@ -801,6 +801,7 @@ export class EffectiveConfigurationPreviewService {
       currency: rule.currency,
       limitValueMinor: rule.limit_value_minor,
       limitValueCount: rule.limit_value_count,
+      isUnlimited: Boolean((rule as unknown as { is_unlimited?: boolean }).is_unlimited),
       priority: Number(rule.priority),
       effectiveFrom: toIso(rule.effective_from),
       effectiveTo: rule.effective_to === null ? null : toIso(rule.effective_to),

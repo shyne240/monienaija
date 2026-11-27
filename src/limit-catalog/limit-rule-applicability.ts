@@ -56,6 +56,7 @@ export interface ApplicableLimitRuleCandidateRow {
   dimension: string;
   limit_value_minor: string | null;
   limit_value_count: number | null;
+  is_unlimited: boolean;
   effective_from: string;
   effective_to: string | null;
   is_active: boolean;
@@ -100,7 +101,7 @@ export async function fetchApplicableLimitRuleCandidates(
   // matched here, in one place, so no caller can distinguish them.
   const productKeys = limitProductKeysFor(input.product);
   return manager.query(
-    `SELECT id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor::text AS limit_value_minor, limit_value_count, effective_from, effective_to, is_active, priority, created_at
+    `SELECT id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor::text AS limit_value_minor, limit_value_count, COALESCE(is_unlimited, false) AS is_unlimited, effective_from, effective_to, is_active, priority, created_at
        FROM limit_rules
       WHERE limit_profile_code = ANY($1::varchar[])
         AND upper(product) = ANY($2::varchar[])

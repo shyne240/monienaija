@@ -8,8 +8,19 @@ describe('customer class route authorization', () => {
   it.each([
     ['GET', '/api/v1/internal/customer-classes', 'customer.view'],
     ['GET', '/api/v1/internal/customer-classes/123', 'customer.view'],
+    ['GET', '/api/v1/internal/customer-classes/tier-defaults', 'customer.view'],
     ['POST', '/api/v1/internal/customer-classes', 'customer.manage_classes'],
     ['PATCH', '/api/v1/internal/customer-classes/123', 'customer.manage_classes'],
+    [
+      'POST',
+      '/api/v1/internal/customer-classes/tier-defaults/proposals',
+      'customer.manage_classes',
+    ],
+    [
+      'POST',
+      '/api/v1/internal/customer-classes/tier-defaults/proposals/00000000-0000-4000-8000-000000000001/execute',
+      'customer.manage_classes',
+    ],
     ['GET', '/api/v1/internal/customers/123/class', 'customer.view'],
     ['GET', '/api/v1/internal/customers/123/class/history', 'customer.view'],
     ['POST', '/api/v1/internal/customers/123/class', 'customer.manage_classes'],

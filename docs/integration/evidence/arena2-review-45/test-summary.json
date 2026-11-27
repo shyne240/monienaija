@@ -1,0 +1,142 @@
+{
+  "review": "PR #45 Tier 1 acceptance",
+  "exactTestedSha": "0786f2e9c7e0959d3217ab38af9e23aad6d7cff5",
+  "tree": "288ae32ead1646d7a438d44a4eeec3df25f4fa04",
+  "parents": [
+    "cca65c164f33a1989316b691165608c69ea51bd1",
+    "d206fec4d24ffbe5315f45e1191d15b32fae7d9c"
+  ],
+  "prHeads": {
+    "38": "e46aeffbdfb77fba76077aaa9a230d4e8fe65763",
+    "39": "6cb2507a66e1ce99a3068a489a9cb7f4a3a735ba",
+    "45": "d206fec4d24ffbe5315f45e1191d15b32fae7d9c",
+    "46": "fd6e4d0e497622b10aee1abe0d9619ed6d91871a"
+  },
+  "mergeOrder": {
+    "recommendation": "Use #45 as the single successor to #38 after retargeting/rebasing to the current integration tip and rerunning CI; close #38 as superseded; keep #39 unmerged and rebase its remaining unique work separately after #45 if still required.",
+    "noMergePerformed": true,
+    "allRelevantPrsRemainOpenDrafts": true,
+    "ciMustRerunAfterRetarget": true
+  },
+  "ancestorChecks": {
+    "integrationTip": true,
+    "pr45Head": true,
+    "pr38Head": true,
+    "coreClaim2547e291": true,
+    "coreClaimFd2ec83b": true,
+    "pr39Head": false,
+    "customerMobileDiffPr45ToPr39": "empty"
+  },
+  "localVerification": [
+    {
+      "area": "backend build",
+      "command": "npm run build",
+      "result": "PASS"
+    },
+    {
+      "area": "Admin Web production bundle",
+      "command": "ADMIN_WEB_API_BASE_URL=/api/v1 npm --prefix apps/admin-web run build -- --outDir /tmp/tier1-admin-dist-45 --emptyOutDir",
+      "result": "PASS",
+      "apiBaseUrlOccurrences": 1
+    },
+    {
+      "area": "Customer Mobile type check",
+      "command": "npm --prefix apps/customer-mobile run ts:check",
+      "result": "PASS"
+    },
+    {
+      "area": "unit suites",
+      "command": "npx jest --runInBand --config jest.config.js test/migration-inventory.spec.ts test/authorization.service.spec.ts test/customer-class-route-policy.spec.ts test/governed-action.registry.spec.ts test/commercial-decision-snapshot.service.spec.ts",
+      "result": "PASS",
+      "suites": 5,
+      "tests": 46
+    },
+    {
+      "area": "real-PG migration-pin suites",
+      "command": "npx jest --runInBand --config jest.integration.config.js --runTestsByPath test/migration-chain.integration.spec.ts test/migration-0804-owner-authority.integration.spec.ts test/arena5-consolidation-migration-upgrade.integration.spec.ts test/stage8-financial-engine-migration.integration.spec.ts test/stage10-recovery-migration.integration.spec.ts test/a8-agent-lifecycle.integration.spec.ts test/a19-agent-funding.integration.spec.ts test/a20-outlets-terminals.integration.spec.ts",
+      "result": "PASS",
+      "suites": 8,
+      "tests": 128
+    },
+    {
+      "area": "real-PG governance and claim suites",
+      "command": "npx jest --runInBand --config jest.integration.config.js --runTestsByPath test/customer-tier-default-approval.integration.spec.ts test/v1-staff-account-claim-journey.integration.spec.ts",
+      "result": "PASS",
+      "suites": 2,
+      "tests": 10
+    }
+  ],
+  "acceptanceEvidence": {
+    "db/prepare.json": {
+      "result": "PASS",
+      "upgradeBeforeMigrations": 172,
+      "upgradeForwardMigrations": ["1785753600806", "1785753600807", "1785753600813"],
+      "freshMigrations": 175,
+      "workforceCredentials": 11,
+      "activeSeededRoles": 11,
+      "customerTierDefaultClassesIdColumn": false
+    },
+    "db/upgrade-path.json": {
+      "result": "PASS",
+      "steps": 6,
+      "calls": 9,
+      "approvalId": "829fcc85-4fde-4c19-b457-94b306d1f7af",
+      "auditEntityId": "7394d412-36a4-5faf-9162-cbdf1979f584",
+      "postExecuteApprovalStatus": "CONSUMED"
+    },
+    "db/workforce-accounts-mn_upgrade45.json": {"result": "PASS", "accounts": 11, "calls": 11},
+    "db/workforce-accounts-mn_fresh45.json": {"result": "PASS", "accounts": 11, "calls": 11},
+    "http/governed-config.json": {"result": "PASS", "steps": 6, "calls": 38},
+    "http/http-acceptance.json": {
+      "result": "PASS",
+      "steps": 7,
+      "calls": 25,
+      "approvalId": "3421121d-edc9-43e6-bd2a-2fefd99d5738"
+    },
+    "browser/journey-result.json": {
+      "channel": "browser",
+      "result": "PASS scoped staff-onboarding phase",
+      "harnessLabel": "JOURNEY_PARTIAL_OK",
+      "steps": 14,
+      "apiCalls": 58,
+      "consoleErrors": 0,
+      "screenshots": 11,
+      "customerId": "8c92f02c-4a58-4ccc-bf05-c476c8f52ed0",
+      "bvn": "22998877664",
+      "phoneE164": "+2348099110004",
+      "handsetOrEmulatorUi": false
+    },
+    "device/device-acceptance.json": {
+      "channel": "device/customer-mobile services and HTTP",
+      "result": "PASS",
+      "steps": 6,
+      "calls": 16,
+      "customerId": "8c92f02c-4a58-4ccc-bf05-c476c8f52ed0",
+      "walletId": "9b6a8fa2-0f85-4687-9d47-42698b7630e4",
+      "provisioningWalletId": "cfbda697-04a5-47cc-b461-38ef0b63fc12",
+      "currency": "NGN",
+      "activeNgnWalletCount": 1,
+      "sameKeyRetry": "replayed with identical IDs",
+      "differentKeyRetry": "converged",
+      "handsetOrEmulatorUi": false
+    }
+  },
+  "handsetEmulatorEvidence": "NOT_RUN",
+  "rawMergeConflictsResolved": [
+    "src/production/production-readiness.service.ts",
+    "test/migration-inventory.spec.ts",
+    "test/migration-chain.integration.spec.ts",
+    "test/migration-0804-owner-authority.integration.spec.ts",
+    "test/arena5-consolidation-migration-upgrade.integration.spec.ts",
+    "test/stage8-financial-engine-migration.integration.spec.ts",
+    "test/stage10-recovery-migration.integration.spec.ts",
+    "test/a8-agent-lifecycle.integration.spec.ts",
+    "test/a19-agent-funding.integration.spec.ts",
+    "test/a20-outlets-terminals.integration.spec.ts"
+  ],
+  "migrationChain": {
+    "count": 175,
+    "head": "1785753600813",
+    "preceding": ["1785753600807", "1785753600810", "1785753600811", "1785753600812"]
+  }
+}

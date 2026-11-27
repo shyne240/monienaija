@@ -118,7 +118,11 @@ export class CustomerWalletActivationService {
         ...(detail ? { detail } : {}),
       })),
       outstanding: snapshot.outstanding,
-      activatable: snapshot.activatable,
+      activatable:
+        snapshot.activatable &&
+        snapshot.customerStatus === ACTIVE_STATUS &&
+        snapshot.onboardingWorkflow.completed &&
+        snapshot.onboardingWorkflow.eligibility === 'ELIGIBLE',
       wallet: snapshot.wallet.provisioned
         ? {
             walletId: snapshot.wallet.walletId,
@@ -221,16 +225,22 @@ export class CustomerWalletActivationService {
     }
 
     // Canonical financial wallet. `createWalletInTransaction` re-runs the eligibility gate, takes
-    // the per-owner advisory lock and honours the unique idempotency key.
-    const existingCanonical = await manager.query<Array<{ id: string }>>(
-      'SELECT id FROM wallet_accounts WHERE lower(customer_id)=lower($1) AND currency=$2 LIMIT 1',
+    // the per-owner advisory lock and honours the unique idempotency key; if the single canonical
+    // wallet for `(customer, currency)` already exists (same or different idempotency key),
+    // activation converges cleanly on that existing wallet with zero duplicate rows.
+    const existingCanonical = await manager.query<
+      Array<{ id: string; currency: string; status: string }>
+    >(
+      'SELECT id, currency, status FROM wallet_accounts WHERE lower(customer_id)=lower($1) AND currency=$2 LIMIT 1',
       [customerId, CURRENCY],
     );
-    const canonical = await this.walletService.createWalletInTransaction(manager, {
-      customerId,
-      currency: CURRENCY,
-      idempotencyKey: `customer-activation:${customerId}:${idempotencyKey}`.slice(0, 255),
-    });
+    const canonical =
+      existingCanonical[0] ??
+      (await this.walletService.createWalletInTransaction(manager, {
+        customerId,
+        currency: CURRENCY,
+        idempotencyKey: `customer-activation:${customerId}:${idempotencyKey}`.slice(0, 255),
+      }));
     const replayed = !provisioning.created && existingCanonical.length > 0;
     await this.audit.record(manager, {
       entityType: 'CUSTOMER_WALLET_ACTIVATION',

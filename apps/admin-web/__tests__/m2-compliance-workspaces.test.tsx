@@ -316,3 +316,87 @@ test('shell navigation protects a KYC decision draft', async () => {
   fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
   expect(view.queryByLabelText('Assessment reason (optional)')).toBeNull();
 });
+
+test('identity verification is impossible until the operator records the customer consent', async () => {
+  principal(['kyc.view', 'kyc.review']);
+  const customerId = '11111111-1111-4111-8111-111111111111';
+  // The base KYC read must succeed before the review dossier is requested, so the mock answers by
+  // path rather than relying on call order.
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+    Promise.resolve(
+      path.includes('/review-workspace/customers/')
+        ? {
+            customer: {
+              id: customerId,
+              reference: 't1-x',
+              kycLevel: 'LEVEL_1',
+              kycStatus: 'PASSED',
+            },
+            consentNotice: {
+              version: 'v1.0-ng',
+              text: 'I consent to MonieNaija verifying my BVN.',
+            },
+            evidenceStatus: { trustedVerificationEngine: { consents: [] } },
+          }
+        : { customerId, level: 'LEVEL_1', status: 'PASSED', customerType: 'INDIVIDUAL' },
+    ),
+  );
+  render(<ComplianceScreen mode="kyc" initialCustomerId={customerId} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Load KYC evidence dossier' }));
+  const verify = await screen.findByRole('button', { name: 'Verify identity' });
+  // No consent recorded yet: the governed action must be unavailable, not merely discouraged.
+  expect((verify as HTMLButtonElement).disabled).toBe(true);
+  expect(ApiClient.post as jest.Mock).not.toHaveBeenCalled();
+});
+
+test('recording consent sends the attested notice with the verification and reports the consent link', async () => {
+  principal(['kyc.view', 'kyc.review']);
+  const customerId = '11111111-1111-4111-8111-111111111111';
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+    Promise.resolve(
+      path.includes('/review-workspace/customers/')
+        ? {
+            customer: {
+              id: customerId,
+              reference: 't1-x',
+              kycLevel: 'LEVEL_1',
+              kycStatus: 'PASSED',
+            },
+            consentNotice: {
+              version: 'v1.0-ng',
+              text: 'I consent to MonieNaija verifying my BVN.',
+            },
+            evidenceStatus: { trustedVerificationEngine: { consents: [] } },
+          }
+        : { customerId, level: 'LEVEL_1', status: 'PASSED', customerType: 'INDIVIDUAL' },
+    ),
+  );
+  (ApiClient.post as jest.Mock).mockResolvedValue({
+    id: 'attempt-1',
+    consentId: 'consent-1',
+    kind: 'BVN',
+    status: 'VERIFIED',
+    provider: 'PREMBLY',
+    routeVersion: 1,
+  });
+  render(<ComplianceScreen mode="kyc" initialCustomerId={customerId} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Load KYC evidence dossier' }));
+  const verify = await screen.findByRole('button', { name: 'Verify identity' });
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.change(screen.getByPlaceholderText('11 digits'), { target: { value: '12345678901' } });
+  await act(async () => {
+    fireEvent.click(verify);
+  });
+  const call = (ApiClient.post as jest.Mock).mock.calls[0] as [string, any] | undefined;
+  expect(call).toBeDefined();
+  const [path, body] = call!;
+  expect(path).toBe(`/internal/kyc/review-workspace/customers/${customerId}/verify-identity`);
+  // The customer's consent is attested explicitly against the notice version they were read.
+  expect(body).toMatchObject({
+    kind: 'BVN',
+    customerConsentConfirmed: true,
+    noticeVersion: 'v1.0-ng',
+  });
+  expect(String(body.consentRequestId)).toHaveLength(36);
+  expect(await screen.findByTestId('kyc-verify-result')).toBeTruthy();
+});

@@ -1,4 +1,5 @@
 import * as dns from 'node:dns';
+import { readFileSync } from 'node:fs';
 import * as https from 'node:https';
 
 import { isForbiddenOutboundIp } from '../notification/provider-security';
@@ -152,3 +153,76 @@ export function createPremblyHttpsTransport(
 }
 
 export const premblyHttpsTransport = createPremblyHttpsTransport();
+
+/**
+ * Deterministic in-process identity-provider adapter for governed acceptance runs.
+ *
+ * The BVN/NIN registry is a caller-supplied map of synthetic identifiers to the identity fields the
+ * provider would return. It performs the same input validation as the HTTPS transport, accepts no
+ * network dependency, and fails closed for any identifier that is not in the registry, so a
+ * verification can only MATCH against an identity an operator explicitly declared in advance.
+ *
+ * Selection is deliberately narrow: `PREMBLY_DETERMINISTIC_FIXTURES` must name a readable JSON
+ * registry AND `NODE_ENV` must not be `production`. It is a test adapter, never a production path.
+ */
+export type PremblyDeterministicRecord = {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+};
+
+export function createDeterministicPremblyTransport(
+  registry: ReadonlyMap<string, PremblyDeterministicRecord>,
+): PremblyTransport {
+  return (path, options) =>
+    Promise.resolve().then(() => {
+      if (
+        !['/verification/bvn_validation', '/verification/vnin-basic'].includes(path) ||
+        typeof options.apiKey !== 'string' ||
+        options.apiKey.trim().length < 16 ||
+        options.apiKey.length > 512 ||
+        CONTROL_CHARACTERS.test(options.apiKey) ||
+        !IDENTITY_NUMBER.test(options.number) ||
+        !Number.isSafeInteger(options.timeoutMs) ||
+        options.timeoutMs < 1000 ||
+        options.timeoutMs > 30000 ||
+        options.signal.aborted
+      ) {
+        throw new Error('Prembly transport blocked');
+      }
+      const record = registry.get(options.number);
+      // Unknown identifier: report the provider's own "no record" envelope so the governed flow
+      // resolves to REVIEW instead of inventing evidence.
+      if (!record) return { status: 200, body: { status: true, response_code: '00', data: null } };
+      return {
+        status: 200,
+        body: {
+          status: true,
+          response_code: '00',
+          data: {
+            [path === '/verification/vnin-basic' ? 'nin' : 'bvn']: options.number,
+            firstName: record.firstName,
+            lastName: record.lastName,
+            dateOfBirth: record.dateOfBirth,
+          },
+        },
+      };
+    });
+}
+
+export function deterministicPremblyTransportFromEnvironment(): PremblyTransport | undefined {
+  const registryPath = process.env.PREMBLY_DETERMINISTIC_FIXTURES;
+  if (!registryPath || process.env.NODE_ENV === 'production') return undefined;
+  const parsed = JSON.parse(readFileSync(registryPath, 'utf8')) as Record<string, unknown>;
+  const registry = new Map<string, PremblyDeterministicRecord>();
+  for (const [identifier, value] of Object.entries(parsed)) {
+    if (!IDENTITY_NUMBER.test(identifier) || !value || typeof value !== 'object') continue;
+    const record = value as Record<string, unknown>;
+    const firstName = typeof record.firstName === 'string' ? record.firstName.trim() : '';
+    const lastName = typeof record.lastName === 'string' ? record.lastName.trim() : '';
+    const dateOfBirth = typeof record.dateOfBirth === 'string' ? record.dateOfBirth.trim() : '';
+    if (!firstName || !lastName || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) continue;
+    registry.set(identifier, { firstName, lastName, dateOfBirth });
+  }
+  return createDeterministicPremblyTransport(registry);
+}

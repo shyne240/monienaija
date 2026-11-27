@@ -18,6 +18,12 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code?: string,
     public readonly validationErrors?: Record<string, string[]>,
+    /**
+     * Structured refusal detail some governed endpoints attach to a 4xx (`issues`). Activation
+     * uses it to name the exact products whose configuration is incomplete, which is the only
+     * actionable thing staff can be told — a generic "conflict" message is not.
+     */
+    public readonly issues?: Array<{ code?: string; message?: string; productCode?: string }>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -81,12 +87,14 @@ function apiErrorFrom(response: Response, data: any): ApiError {
   const message = data?.message || `Request failed with status ${response.status}`;
   const code = data?.code || data?.error || 'UNKNOWN_ERROR';
   const validationErrors = data?.validationErrors || data?.errors || undefined;
+  const issues = Array.isArray(data?.issues) ? data.issues : undefined;
   clearExpiredSession(response.status);
   return new ApiError(
     Array.isArray(message) ? message.join(', ') : String(message),
     response.status,
     code,
     validationErrors,
+    issues,
   );
 }
 

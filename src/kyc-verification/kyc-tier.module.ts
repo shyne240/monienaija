@@ -2,14 +2,13 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import type { Environment } from '../config/environment';
-import { AuthorizationModule } from '../authorization/authorization.module';
-import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
-import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
-import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
+import { CustomerClassResolverService } from '../customer-class/customer-class-resolver.service';
+import { CustomerTierDefaultClassService } from '../customer-class/customer-tier-default-class.service';
+import { CustomerEffectiveConfigurationService } from '../customer-onboarding/customer-effective-configuration.service';
 import {
   MonnifyVerificationProvider,
   monnifyOptionsFromEnvironment,
@@ -20,6 +19,7 @@ import {
 } from '../identity-verification/dojah-verification.provider';
 import { PremblyVerificationProvider } from '../identity-verification/prembly-verification.provider';
 import {
+  deterministicPremblyTransportFromEnvironment,
   premblyHttpsTransport,
   type PremblyTransport,
 } from '../identity-verification/prembly-transport';
@@ -46,12 +46,19 @@ import { PremblyCredentialGovernanceService } from './prembly-credential-governa
 import { KycProviderSecretEncryptionService } from './kyc-provider-secret-encryption.service';
 import { KycWorkforceReviewController } from './kyc-workforce-review.controller';
 import { KycWorkforceReviewService } from './kyc-workforce-review.service';
-import { InstitutionModule } from '../institution/institution.module';
+import { KycWorkforceVerificationService } from './kyc-workforce-verification.service';
 import { InstitutionWorkforceScopeService } from '../institution/institution-workforce-scope.service';
 import type { KycProvider } from './kyc.types';
 
 const KYC_PROVIDER_RUNTIME = 'KYC_PROVIDER_RUNTIME';
 const PREMBLY_TRANSPORT = 'PREMBLY_TRANSPORT';
+
+// Resolved once at startup: undefined in production and when no synthetic registry is configured.
+const deterministicPrembly = deterministicPremblyTransportFromEnvironment();
+const deterministicPremblyEnabled = deterministicPrembly !== undefined;
+const premblyTransport: PremblyTransport = deterministicPrembly ?? premblyHttpsTransport;
+// Shape-valid placeholder for the deterministic adapter only; it authorises no remote call.
+const DETERMINISTIC_PREMBLY_API_KEY = 'deterministic-acceptance-adapter-key';
 const PREMBLY_VERIFICATION_ADAPTER = 'PREMBLY_VERIFICATION_ADAPTER';
 type ProviderRuntime = {
   providers: readonly KycProvider[];
@@ -61,6 +68,7 @@ function providerRuntimeFromConfig(
   config: ConfigService<Environment, true>,
   premblyCredentials: PremblyCredentialGovernanceService,
   premblyAdapter: PremblyVerificationProvider,
+  deterministicPrembly: boolean,
 ): ProviderRuntime {
   const monnifyOptions = monnifyOptionsFromEnvironment({
     MONNIFY_VERIFICATION_ENABLED: config.get('MONNIFY_VERIFICATION_ENABLED', { infer: true })
@@ -104,7 +112,12 @@ function providerRuntimeFromConfig(
   const readiness: KycProviderRuntimeReadiness = {
     ...readyValues,
     isReady: (provider) =>
-      provider === 'PREMBLY' ? premblyCredentials.isRuntimeReady() : readyValues[provider],
+      provider === 'PREMBLY'
+        ? // A deterministic acceptance adapter answers verification calls itself, so it is ready
+          // without a provider credential. Production never selects it, so the credential-governed
+          // readiness path is unchanged there.
+          deterministicPrembly || premblyCredentials.isRuntimeReady()
+        : readyValues[provider],
   };
   return {
     providers: [
@@ -116,14 +129,26 @@ function providerRuntimeFromConfig(
   };
 }
 
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- lazy require breaks a Nest DI cycle observed in compiled CI/unit bootstrap */
 @Module({
   imports: [
-    ProtectedAuthorityModule,
-    forwardRef(() => InstitutionModule),
-    forwardRef(() => AuthorizationModule),
-    forwardRef(() => OperationsModule),
-    forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(
+      () => require('../authorization/protected-authority.module').ProtectedAuthorityModule,
+    ),
+    forwardRef(() => require('../authorization/authorization.module').AuthorizationModule),
+    forwardRef(() => require('../operations/operations.module').OperationsModule),
+    forwardRef(
+      () =>
+        require('../customer-authentication/customer-authentication.module')
+          .CustomerAuthenticationModule,
+    ),
+    forwardRef(() => require('../customer-class/customer-class.module').CustomerClassModule),
+    forwardRef(() => require('../fee-rules/fee-rules.module').FeeRulesModule),
+    forwardRef(() => require('../limit-catalog/limit-catalog.module').LimitCatalogModule),
+    forwardRef(() => require('../product-catalog/product-catalog.module').ProductCatalogModule),
+    forwardRef(() => require('../institution/institution.module').InstitutionModule),
   ],
+  /* eslint-enable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
   controllers: [
     KycTierPolicyController,
     KycTierReviewController,
@@ -132,7 +157,10 @@ function providerRuntimeFromConfig(
   ],
   providers: [
     CustomerFinancialEligibilityService,
-    { provide: PREMBLY_TRANSPORT, useValue: premblyHttpsTransport },
+    // The HTTPS transport is the production path. A deterministic in-process adapter may replace it
+    // only for a governed acceptance run, and only when the environment names a synthetic registry
+    // (see `deterministicPremblyTransportFromEnvironment`, which also refuses NODE_ENV=production).
+    { provide: PREMBLY_TRANSPORT, useValue: premblyTransport },
     {
       provide: KycProviderSecretEncryptionService,
       inject: [ConfigService],
@@ -173,7 +201,15 @@ function providerRuntimeFromConfig(
       inject: [PremblyCredentialGovernanceService, PREMBLY_TRANSPORT],
       useFactory: (credentials: PremblyCredentialGovernanceService, transport: PremblyTransport) =>
         new PremblyVerificationProvider({
-          credentialResolver: { getApiKey: () => credentials.getRuntimeApiKey() },
+          credentialResolver: {
+            // The deterministic acceptance adapter validates the key's shape itself but authenticates
+            // nothing, so it does not need a managed provider credential. Production never selects
+            // that adapter, so the credential-governed path is unchanged there.
+            getApiKey: () =>
+              deterministicPremblyEnabled
+                ? Promise.resolve(DETERMINISTIC_PREMBLY_API_KEY)
+                : credentials.getRuntimeApiKey(),
+          },
           transport,
         }),
     },
@@ -195,7 +231,7 @@ function providerRuntimeFromConfig(
         config: ConfigService<Environment, true>,
         credentials: PremblyCredentialGovernanceService,
         adapter: PremblyVerificationProvider,
-      ) => providerRuntimeFromConfig(config, credentials, adapter),
+      ) => providerRuntimeFromConfig(config, credentials, adapter, deterministicPremblyEnabled),
     },
     {
       provide: KycProviderGovernanceService,
@@ -257,6 +293,7 @@ function providerRuntimeFromConfig(
           reader,
         ),
     },
+    CustomerEffectiveConfigurationService,
     {
       provide: KycTierTransitionService,
       inject: [
@@ -266,6 +303,9 @@ function providerRuntimeFromConfig(
         AuditService,
         AuthorizationService,
         AuthenticationSessionService,
+        CustomerClassResolverService,
+        CustomerTierDefaultClassService,
+        CustomerEffectiveConfigurationService,
         InstitutionWorkforceScopeService,
       ],
       useFactory: (
@@ -275,6 +315,9 @@ function providerRuntimeFromConfig(
         audit: AuditService,
         auth: AuthorizationService,
         sessions: AuthenticationSessionService,
+        classResolver: CustomerClassResolverService,
+        tierDefaults: CustomerTierDefaultClassService,
+        effectiveConfig: CustomerEffectiveConfigurationService,
         institutionScope: InstitutionWorkforceScopeService,
       ) =>
         new KycTierTransitionService(
@@ -284,6 +327,9 @@ function providerRuntimeFromConfig(
           audit,
           auth,
           sessions,
+          classResolver,
+          tierDefaults,
+          effectiveConfig,
         ).setInstitutionScope(institutionScope),
     },
     {
@@ -327,6 +373,53 @@ function providerRuntimeFromConfig(
           institutionScope,
         ),
     },
+    {
+      provide: KycWorkforceVerificationService,
+      inject: [
+        DataSource,
+        KycCustomerSessionValidator,
+        AuthorizationService,
+        InstitutionWorkforceScopeService,
+        KycProviderGovernanceService,
+        KYC_PROVIDER_RUNTIME,
+        ConfigService,
+        AuditService,
+      ],
+      useFactory: (
+        db: DataSource,
+        sessions: KycCustomerSessionValidator,
+        auth: AuthorizationService,
+        institutionScope: InstitutionWorkforceScopeService,
+        governance: KycProviderGovernanceService,
+        runtime: ProviderRuntime,
+        config: ConfigService<Environment, true>,
+        audit: AuditService,
+      ) =>
+        new KycWorkforceVerificationService(
+          db,
+          sessions,
+          auth,
+          institutionScope,
+          governance,
+          runtime.providers,
+          customerKycConfigurationFromEnvironment({
+            KYC_CUSTOMER_VERIFICATION_ENABLED: config.get('KYC_CUSTOMER_VERIFICATION_ENABLED', {
+              infer: true,
+            }),
+            KYC_VERIFICATION_POLICY_JSON: config.get('KYC_VERIFICATION_POLICY_JSON', {
+              infer: true,
+            }),
+            KYC_CONSENT_NOTICE_VERSION: config.get('KYC_CONSENT_NOTICE_VERSION', { infer: true }),
+            KYC_CONSENT_NOTICE_TEXT: config.get('KYC_CONSENT_NOTICE_TEXT', { infer: true }),
+            KYC_CONSENT_VALIDITY_SECONDS: config.get('KYC_CONSENT_VALIDITY_SECONDS', {
+              infer: true,
+            }),
+            KYC_OWNERSHIP_KEY_BASE64: config.get('KYC_OWNERSHIP_KEY_BASE64', { infer: true }),
+            KYC_OWNERSHIP_KEY_VERSION: config.get('KYC_OWNERSHIP_KEY_VERSION', { infer: true }),
+          }),
+          audit,
+        ),
+    },
   ],
   exports: [
     KycTierTransitionService,
@@ -335,6 +428,8 @@ function providerRuntimeFromConfig(
     KycProviderGovernanceService,
     KycCustomerVerificationService,
     KycWorkforceReviewService,
+    CustomerEffectiveConfigurationService,
+    KycWorkforceVerificationService,
   ],
 })
 export class KycTierModule {}

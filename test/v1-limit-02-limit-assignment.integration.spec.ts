@@ -1035,6 +1035,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
       'CreateLimitUsages1785753600069',
       'DeskMfaAttemptLimit1785753600120',
       'InstitutionKycTierLimitGovernance1785753600504',
+      'LimitRuleUnlimited1785753600811',
     ]);
   });
 

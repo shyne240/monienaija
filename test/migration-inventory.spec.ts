@@ -77,20 +77,20 @@ describe('migration inventory', () => {
       name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
     expect(migrations.at(-2)).toMatchObject({
-      timestamp: '1785753600807',
-      name: 'CaptureCustomerFundingScope1785753600807',
+      timestamp: '1785753600812',
+      name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
     expect(migrations.at(-3)).toMatchObject({
-      timestamp: '1785753600806',
-      name: 'DurableInboundIdentity1785753600806',
+      timestamp: '1785753600811',
+      name: 'LimitRuleUnlimited1785753600811',
     });
     expect(migrations.at(-4)).toMatchObject({
-      timestamp: '1785753600805',
-      name: 'CreateCustomerClasses1785753600805',
+      timestamp: '1785753600810',
+      name: 'CustomerTierDefaultClassMappings1785753600810',
     });
     expect(migrations.at(-5)).toMatchObject({
-      timestamp: '1785753600804',
-      name: 'GeneralizeExternalOperationsForAgents1785753600804',
+      timestamp: '1785753600807',
+      name: 'CaptureCustomerFundingScope1785753600807',
     });
   });
 
@@ -149,7 +149,7 @@ describe('migration inventory', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
-  it('contains the appended identities 0800-0806 after the Arena 3D range in order', () => {
+  it('contains the appended identities 0800-0813 after the Arena 3D range in order', () => {
     // Arena 2C appended 0800-0802 after the Arena 3D range (wallet-transfer quote binding,
     // agent verified-phone proof, typed beneficiary ownership), Arena 5 appended 0803–0804
     // (dual-lane financial authorization + external-operations generalisation), and Arena 1
@@ -163,6 +163,10 @@ describe('migration inventory', () => {
       ['1785753600805', 'CreateCustomerClasses1785753600805'],
       ['1785753600806', 'DurableInboundIdentity1785753600806'],
       ['1785753600807', 'CaptureCustomerFundingScope1785753600807'],
+      ['1785753600810', 'CustomerTierDefaultClassMappings1785753600810'],
+      ['1785753600811', 'LimitRuleUnlimited1785753600811'],
+      ['1785753600812', 'CustomerRestrictionConfigurationReview1785753600812'],
+      ['1785753600813', 'CreatePlatformFundsBankComparisons1785753600813'],
     ] as const;
     const byTimestamp = new Map(
       migrations.map((migration) => [migration.timestamp, migration.name]),
@@ -175,15 +179,15 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 172 migration identities', () => {
+  it('contains exactly 175 migration identities', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
     // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
     // fee-targeting migration contributed by PR #4 (0506), the Prembly credential-governance
     // migration (0507), the customer-class migration contributed by Arena 1 (0805), the durable
-    // inbound identity (0806), captured customer funding scope (0807), and the platform-funds
-    // bank comparisons migration contributed by PR #33 (0813). Any additional or missing file
-    // fails this assertion.
+    // inbound identity (0806), captured customer funding scope (0807), the tier-default
+    // configuration migrations (0810-0812), and the platform-funds bank comparisons migration
+    // contributed by PR #33 (0813). Any additional or missing file fails this assertion.
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
@@ -199,12 +203,27 @@ describe('migration inventory', () => {
       name: 'CreateCustomerClasses1785753600805',
       file: '1785753600805-CreateCustomerClasses.ts',
     });
-    expect(migrations).toContainEqual({
-      timestamp: '1785753600813',
-      name: 'CreatePlatformFundsBankComparisons1785753600813',
-      file: '1785753600813-CreatePlatformFundsBankComparisons.ts',
-    });
-    expect(migrations.length).toBe(172);
+    for (const [timestamp, name, file] of [
+      [
+        '1785753600810',
+        'CustomerTierDefaultClassMappings1785753600810',
+        '1785753600810-CustomerTierDefaultClassMappings.ts',
+      ],
+      ['1785753600811', 'LimitRuleUnlimited1785753600811', '1785753600811-LimitRuleUnlimited.ts'],
+      [
+        '1785753600812',
+        'CustomerRestrictionConfigurationReview1785753600812',
+        '1785753600812-CustomerRestrictionConfigurationReview.ts',
+      ],
+      [
+        '1785753600813',
+        'CreatePlatformFundsBankComparisons1785753600813',
+        '1785753600813-CreatePlatformFundsBankComparisons.ts',
+      ],
+    ] as const) {
+      expect(migrations).toContainEqual({ timestamp, name, file });
+    }
+    expect(migrations.length).toBe(175);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

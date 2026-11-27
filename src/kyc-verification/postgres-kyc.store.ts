@@ -300,6 +300,96 @@ export class PostgresKycStore implements KycStore {
       return id;
     });
   }
+  async grantWorkforceRegistrationConsent(command: {
+    customerId: string;
+    workforceSessionId: string;
+    kind: IdentityKind;
+    noticeVersion: string;
+    expiresAt: Date;
+    requestId: string;
+    provider: string;
+    routeVersion: number;
+    identityRevision: string;
+  }): Promise<string> {
+    if (
+      !UUID.test(command.customerId) ||
+      !UUID.test(command.workforceSessionId) ||
+      command.workforceSessionId === command.customerId ||
+      !UUID.test(command.requestId) ||
+      !['BVN', 'NIN'].includes(command.kind) ||
+      !/^[A-Z][A-Z0-9_]{0,31}$/.test(command.provider) ||
+      !Number.isSafeInteger(command.routeVersion) ||
+      command.routeVersion < 1 ||
+      !/^[1-9][0-9]{0,18}$/.test(command.identityRevision) ||
+      !/^[A-Za-z0-9._-]{1,64}$/.test(command.noticeVersion) ||
+      !(command.expiresAt instanceof Date) ||
+      !Number.isFinite(command.expiresAt.getTime()) ||
+      command.expiresAt <= new Date()
+    )
+      throw new KycFoundationError('INVALID');
+    return this.db.transaction(async (m) => {
+      await this.lockCustomer(m, command.customerId);
+      const revisions = await m.query<Array<{ revision: string }>>(
+        'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1 FOR UPDATE',
+        [command.customerId],
+      );
+      if (revisions[0]?.revision !== command.identityRevision)
+        throw new KycFoundationError('CONFLICT');
+      const existing = await m.query<
+        Array<{
+          id: string;
+          kind: IdentityKind;
+          notice_version: string;
+          actor_id: string;
+          session_id: string | null;
+          provider: string | null;
+          route_version: number | null;
+          identity_revision: string | null;
+        }>
+      >(
+        'SELECT id,kind,notice_version,actor_id,session_id,provider,route_version,identity_revision::text AS identity_revision FROM kyc_consents WHERE customer_id=$1 AND request_id=$2 FOR UPDATE',
+        [command.customerId, command.requestId],
+      );
+      if (existing[0]) {
+        if (
+          existing[0].kind !== command.kind ||
+          existing[0].notice_version !== command.noticeVersion ||
+          existing[0].actor_id !== command.workforceSessionId ||
+          existing[0].session_id !== null ||
+          existing[0].provider !== command.provider ||
+          existing[0].route_version !== command.routeVersion ||
+          existing[0].identity_revision !== command.identityRevision
+        )
+          throw new KycFoundationError('CONFLICT');
+        return existing[0].id;
+      }
+      const id = randomUUID();
+      await m.query(
+        'INSERT INTO kyc_consents (id,customer_id,kind,notice_version,actor_id,expires_at,session_id,request_id,provider,route_version,identity_revision) VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)',
+        [
+          id,
+          command.customerId,
+          command.kind,
+          command.noticeVersion,
+          command.workforceSessionId,
+          command.expiresAt,
+          command.requestId,
+          command.provider,
+          command.routeVersion,
+          command.identityRevision,
+        ],
+      );
+      await this.audit(
+        m,
+        command.customerId,
+        id,
+        'CONSENT_GRANTED',
+        command.workforceSessionId,
+        'WORKFORCE_MFA',
+      );
+      return id;
+    });
+  }
   async withdrawConsent(
     customerId: string,
     consentId: string,
@@ -330,8 +420,16 @@ export class PostgresKycStore implements KycStore {
   async reserve(r: Reservation): Promise<{ attempt: Attempt; isNew: boolean }> {
     assertPolicy(r.policy);
     if (!r.policy.enabled) throw new KycFoundationError('DISABLED');
+    const isWorkforceSession = r.workforceSessionId !== undefined;
     if (
       ![r.customerId, r.consentId, r.requestId].every((s) => UUID.test(s)) ||
+      (isWorkforceSession &&
+        (!UUID.test(r.workforceSessionId ?? '') ||
+          r.workforceSessionId === r.customerId ||
+          r.sessionToken !== '' ||
+          r.audience !== undefined ||
+          r.identityRevision === undefined ||
+          r.providerRouteVersion === undefined)) ||
       !['BVN', 'NIN'].includes(r.kind) ||
       !/^[A-Z][A-Z0-9_]{0,31}$/.test(r.provider) ||
       !/^[0-9a-f]{64}$/.test(r.requestMac) ||
@@ -379,19 +477,16 @@ export class PostgresKycStore implements KycStore {
         (r.identityRevision !== undefined && r.identityRevision !== identityRevision)
       )
         throw new KycFoundationError(r.identityRevision ? 'CONFLICT' : 'BLOCKED');
-      const sessionId = await this.authenticatedSession(
-        m,
-        r.customerId,
-        r.sessionToken,
-        r.audience,
-        'MUTATION',
-      );
+      const sessionId = isWorkforceSession
+        ? null
+        : await this.authenticatedSession(m, r.customerId, r.sessionToken, r.audience, 'MUTATION');
       const prior = await m.query<
         Array<
           AttemptRow & {
             consent_usable: boolean;
             evidence_usable: boolean;
             consent_session_id: string | null;
+            consent_actor_id: string;
             consent_provider: string | null;
             consent_route_version: number | null;
             consent_identity_revision: string | null;
@@ -401,9 +496,12 @@ export class PostgresKycStore implements KycStore {
         >
       >(
         `SELECT a.*,
-          (c.session_id IS NOT NULL AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()) AS consent_usable,
+          ((c.session_id IS NOT NULL OR (c.session_id IS NULL AND c.actor_id <> a.customer_id AND EXISTS (
+             SELECT 1 FROM kyc_private_audit pa
+             WHERE pa.customer_id=a.customer_id AND pa.resource_id=c.id AND pa.action='CONSENT_GRANTED' AND pa.actor_id=c.actor_id AND pa.outcome='WORKFORCE_MFA'
+           ))) AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()) AS consent_usable,
           (a.expires_at > clock_timestamp()) AS evidence_usable,
-          c.session_id AS consent_session_id,c.provider AS consent_provider,
+          c.session_id AS consent_session_id,c.actor_id AS consent_actor_id,c.provider AS consent_provider,
           c.route_version AS consent_route_version,
           c.identity_revision::text AS consent_identity_revision,
           a.provider_route_version AS attempt_route_version,
@@ -413,11 +511,13 @@ export class PostgresKycStore implements KycStore {
         [r.customerId, r.requestId],
       );
       if (prior[0]) {
+        const expectedActorId = isWorkforceSession ? r.workforceSessionId : r.customerId;
         if (
           prior[0].mac_key_version !== r.macKeyVersion ||
           prior[0].consent_id !== r.consentId ||
           !constantTimeMacEqual(prior[0].request_mac, r.requestMac) ||
           prior[0].consent_session_id !== sessionId ||
+          prior[0].consent_actor_id !== expectedActorId ||
           prior[0].consent_identity_revision !== (r.identityRevision ?? null) ||
           prior[0].identity_revision_snapshot !== identityRevision ||
           prior[0].consent_provider !==
@@ -436,22 +536,42 @@ export class PostgresKycStore implements KycStore {
         }
         return { attempt, isNew: false };
       }
-      const consent = await m.query<Array<{ id: string }>>(
-        `SELECT id FROM kyc_consents WHERE id=$1 AND customer_id=$2 AND kind=$3 AND session_id=$4
-         AND withdrawn_at IS NULL AND expires_at > clock_timestamp()
-         AND identity_revision IS NOT DISTINCT FROM $7::bigint
-         AND (($5::integer IS NULL AND provider IS NULL AND route_version IS NULL)
-           OR (provider=$6 AND route_version=$5)) FOR UPDATE`,
-        [
-          r.consentId,
-          r.customerId,
-          r.kind,
-          sessionId,
-          r.providerRouteVersion ?? null,
-          r.provider,
-          r.identityRevision ?? null,
-        ],
-      );
+      const consent = isWorkforceSession
+        ? await m.query<Array<{ id: string }>>(
+            `SELECT c.id FROM kyc_consents c
+             WHERE c.id=$1 AND c.customer_id=$2 AND c.kind=$3 AND c.session_id IS NULL AND c.actor_id=$4
+               AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()
+               AND c.identity_revision = $7::bigint AND c.provider=$6 AND c.route_version=$5
+               AND EXISTS (
+                 SELECT 1 FROM kyc_private_audit pa
+                 WHERE pa.customer_id=$2 AND pa.resource_id=c.id AND pa.action='CONSENT_GRANTED' AND pa.actor_id=$4 AND pa.outcome='WORKFORCE_MFA'
+               ) FOR UPDATE`,
+            [
+              r.consentId,
+              r.customerId,
+              r.kind,
+              r.workforceSessionId,
+              r.providerRouteVersion,
+              r.provider,
+              r.identityRevision,
+            ],
+          )
+        : await m.query<Array<{ id: string }>>(
+            `SELECT id FROM kyc_consents WHERE id=$1 AND customer_id=$2 AND kind=$3 AND session_id=$4
+             AND withdrawn_at IS NULL AND expires_at > clock_timestamp()
+             AND identity_revision IS NOT DISTINCT FROM $7::bigint
+             AND (($5::integer IS NULL AND provider IS NULL AND route_version IS NULL)
+               OR (provider=$6 AND route_version=$5)) FOR UPDATE`,
+            [
+              r.consentId,
+              r.customerId,
+              r.kind,
+              sessionId,
+              r.providerRouteVersion ?? null,
+              r.provider,
+              r.identityRevision ?? null,
+            ],
+          );
       if (!consent.length) throw new KycFoundationError('BLOCKED');
       // Never automatically re-dispatch an ambiguous or in-flight request, even under a new request ID.
       const blocked = await m.query<Array<{ id: string }>>(

@@ -1,0 +1,74 @@
+{
+  "status": "DISPOSABLE DATABASE ONLY — synthetic fixture, no real data",
+  "database": "monienaija_t1",
+  "kycTierPolicyVersion": 1,
+  "institutionId": "957e71e7-9667-41fb-a167-d17dd9f48685",
+  "institutionPolicyVersion": 1,
+  "customerClass": {
+    "code": "STANDARD",
+    "name": "Standard (Tier 1 default)",
+    "id": "8ebbaa40-d28e-4749-b713-89140ef8ad41"
+  },
+  "commercialProfile": {
+    "code": "T1_COMMERCIAL_HIGH",
+    "maxAmountPerTxMinor": "1000000000"
+  },
+  "institutionTierProfile": {
+    "code": "T1_INSTITUTION_TIER_CAP",
+    "maxAmountPerTxMinor": "500000000"
+  },
+  "institutionTierProfileLevel2": {
+    "code": "T1_INSTITUTION_TIER_CAP_L2",
+    "maxAmountPerTxMinor": "750000000"
+  },
+  "transferFee": {
+    "flatFeeMinor": "10000",
+    "percentageBps": 0,
+    "vatBps": 0
+  },
+  "workforce": {
+    "scopedPrincipal": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+    "scopedEmail": "compliance@monienaija.local",
+    "unassignedPrincipal": "https://idp.example.com:local-admin-credential:be3e43f40c9f55bf96a37871c302b0f4",
+    "unassignedEmail": "customer-service@monienaija.local"
+  },
+  "customers": {
+    "sender": {
+      "id": "96d508fe-8b2d-44de-9b34-1db0b03bf004",
+      "reference": "t1-sender-96d508fe",
+      "phone": "+2348099000001",
+      "enrolled": true
+    },
+    "receiver": {
+      "id": "d915337f-96a8-48e8-94ab-1b096e2e7b2e",
+      "reference": "t1-receiver-d915337f",
+      "phone": "+2348099000002"
+    },
+    "misconfigured": {
+      "id": "7539909f-ee67-4126-b352-563cf17bd429",
+      "reference": "t1-unconfigured-7539909f",
+      "phone": "+2348099000003",
+      "approvedClass": "TIER1_MISCONFIGURED"
+    },
+    "tierTwo": {
+      "id": "c1cc0afa-1b7b-424f-b1ce-5a4c0a9f6dbd",
+      "reference": "t1-tiertwo-c1cc0afa",
+      "phone": "+2348099000004",
+      "status": "ACTIVE",
+      "expectedTier": "LEVEL_2",
+      "expectedTierProfile": "T1_INSTITUTION_TIER_CAP_L2",
+      "expectedCapMinor": "750000000",
+      "commercialCapMinor": "1000000000"
+    }
+  },
+  "walletState": {
+    "wallets": 0,
+    "customerSignIns": 0,
+    "transactionPins": 0,
+    "claimCredentials": 0
+  },
+  "customerProducts": [
+    "WALLET_TO_CASH",
+    "WALLET_TRANSFER"
+  ]
+}

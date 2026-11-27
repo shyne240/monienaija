@@ -7,6 +7,7 @@
 import {
   AGENT_FUNDING_ACTIONS,
   COMMERCIAL_RULE_ACTIONS,
+  CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
   GOVERNED_ACTIONS,
   LEDGER_JOURNAL_REVERSAL_ACTION,
   NOTIFICATION_CHANGE_ACTIONS,
@@ -48,6 +49,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         // ARENA 4 Phase 2 institutional financial ownership.
         'WALLET_INSTITUTION_ATTRIBUTION',
         'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
+        'CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
       ].sort(),
     );
     // Governance uses explicit rule actions, not a generic LIMIT_MODIFY action.
@@ -234,6 +236,25 @@ describe('governed-action registry (P0-A/P0-B)', () => {
       expect(
         governedChangeFingerprint(base.action, base.resourceType, 'rule-id-1', base.payload),
       ).not.toBe(original);
+    });
+  });
+
+  it('governs customer tier default mappings via configurable customer.manage_classes function policy and independent MFA approval', () => {
+    expect(governedAction('CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE')).toEqual(
+      CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
+    );
+    expect(CUSTOMER_CLASS_TIER_DEFAULTS_ACTION).toEqual({
+      action: 'CUSTOMER_CLASS_TIER_DEFAULTS_CONFIGURE',
+      resourceType: 'CUSTOMER_CLASS_TIER_DEFAULTS',
+      initiatingFunctionCodes: ['customer.manage_classes'],
+      approvingFunctionCodes: ['customer.manage_classes'],
+      initiatingRoles: [],
+      approvingRoles: [],
+      minimumApprovals: 1,
+      selfApprovalProhibited: true,
+      mfaRequired: true,
+      minimumAssurance: 'MFA',
+      approvalScope: 'customer.manage_classes',
     });
   });
 });

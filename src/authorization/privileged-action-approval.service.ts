@@ -8,9 +8,12 @@ import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
+import { RoleFunctionAccessType } from '../authorization-catalogue/authorization-catalogue.enums';
+import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import { AuthorizationService } from './authorization.service';
 import {
   AGENT_FUNDING_ACTIONS,
+  CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
   GOVERNED_ACTIONS,
   governedAction,
 } from './governed-action.registry';
@@ -50,7 +53,28 @@ export class PrivilegedActionApprovalService {
     private readonly authorizationService: AuthorizationService,
     @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcherService,
+    @Optional() private readonly catalogueRuntime?: AuthorizationCatalogueRuntimeService,
   ) {}
+
+  private isTierDefaultsAction(actionType: string): boolean {
+    return actionType === CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action;
+  }
+
+  private async hasCatalogueFunctionCapacity(
+    roleKeys: readonly string[],
+    functionCodes: readonly string[],
+    allowedAccessTypes: readonly RoleFunctionAccessType[],
+  ): Promise<boolean> {
+    if (!this.catalogueRuntime || functionCodes.length === 0) {
+      return true;
+    }
+    const evaluation = await this.catalogueRuntime.evaluateFunctionAccess(
+      roleKeys,
+      functionCodes,
+      allowedAccessTypes,
+    );
+    return evaluation.recognized ? evaluation.allowed : true;
+  }
 
   /**
    * Writes to privileged approvals happen on the protected-authority connection. A separate
@@ -97,9 +121,25 @@ export class PrivilegedActionApprovalService {
       }
     }
 
-    const forbiddenRegisteredActions = Object.values(GOVERNED_ACTIONS)
-      .filter((def) => !def.approvingRoles.some((role) => principal.roles.includes(role)))
-      .map((def) => def.action);
+    const forbiddenRegisteredActions: string[] = [];
+    for (const def of Object.values(GOVERNED_ACTIONS)) {
+      if (!this.isTierDefaultsAction(def.action)) {
+        if (!def.approvingRoles.some((role) => principal.roles.includes(role))) {
+          forbiddenRegisteredActions.push(def.action);
+        }
+        continue;
+      }
+      if (
+        principal.readOnlyPrincipal ||
+        !def.approvingFunctionCodes.every((fn) => principal.scopes.includes(fn)) ||
+        !(await this.hasCatalogueFunctionCapacity(principal.roles, def.approvingFunctionCodes, [
+          RoleFunctionAccessType.APPROVE,
+          RoleFunctionAccessType.EXECUTE,
+        ]))
+      ) {
+        forbiddenRegisteredActions.push(def.action);
+      }
+    }
     if (forbiddenRegisteredActions.length > 0) {
       qb.andWhere('approval.actionType NOT IN (:...forbiddenRegisteredActions)', {
         forbiddenRegisteredActions,
@@ -273,6 +313,20 @@ export class PrivilegedActionApprovalService {
     if (!authorization.allowed) {
       return { approved: false, authorization, reason: authorization.reason };
     }
+    if (registeredAction && this.isTierDefaultsAction(registeredAction.action)) {
+      if (command.principal.readOnlyPrincipal) {
+        return { approved: false, reason: 'READ_ONLY_PRINCIPAL' };
+      }
+      if (
+        !(await this.hasCatalogueFunctionCapacity(
+          command.principal.roles,
+          registeredAction.initiatingFunctionCodes,
+          [RoleFunctionAccessType.INITIATE, RoleFunctionAccessType.EXECUTE],
+        ))
+      ) {
+        return { approved: false, reason: 'FUNCTION_MISSING' };
+      }
+    }
 
     const now = command.now ?? new Date();
     const expiresAt = new Date(now.getTime() + this.normalizeTtl(command.expiresInSeconds) * 1000);
@@ -421,6 +475,13 @@ export class PrivilegedActionApprovalService {
       };
     }
     const registeredAction = governedAction(command.actionType);
+    if (
+      registeredAction &&
+      this.isTierDefaultsAction(registeredAction.action) &&
+      command.principal.readOnlyPrincipal
+    ) {
+      return { approved: false, approval: this.toView(approval), reason: 'READ_ONLY_PRINCIPAL' };
+    }
     if (
       registeredAction &&
       !['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)
@@ -745,13 +806,33 @@ export class PrivilegedActionApprovalService {
           reason: 'SUPER_ADMIN_NOT_ALLOWED',
         };
       }
-      if (!registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))) {
+      if (this.isTierDefaultsAction(registeredAction.action)) {
+        if (command.principal.readOnlyPrincipal) {
+          return {
+            approved: false,
+            approval: this.toView(approval),
+            reason: 'READ_ONLY_PRINCIPAL',
+          };
+        }
+      } else if (
+        !registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))
+      ) {
         return { approved: false, approval: this.toView(approval), reason: 'ROLE_MISSING' };
       }
       if (
         !registeredAction.approvingFunctionCodes.every((functionCode) =>
           command.principal.scopes.includes(functionCode),
         )
+      ) {
+        return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
+      }
+      if (
+        this.isTierDefaultsAction(registeredAction.action) &&
+        !(await this.hasCatalogueFunctionCapacity(
+          command.principal.roles,
+          registeredAction.approvingFunctionCodes,
+          [RoleFunctionAccessType.APPROVE, RoleFunctionAccessType.EXECUTE],
+        ))
       ) {
         return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
       }

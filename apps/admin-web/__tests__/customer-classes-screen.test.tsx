@@ -122,3 +122,118 @@ test('inspects class limits and assigns a segment limit profile to a customer cl
     }),
   );
 });
+
+test('enforces independent checker UI for tier default proposals and executes approved proposals', async () => {
+  const tierDefaultsPayload = {
+    mappings: [
+      {
+        tier: 'LEVEL_1',
+        classId: 'id-1',
+        classCode: 'STANDARD',
+        className: 'Standard',
+        status: 'PENDING_APPROVAL',
+        approvedAt: null,
+        approvedBy: null,
+        approvalId: null,
+        reason: 'Seeded',
+        globalDefaultClassCodeAtMigration: 'STANDARD',
+        classUsable: true,
+        version: 1,
+      },
+      {
+        tier: 'LEVEL_2',
+        classId: 'id-1',
+        classCode: 'STANDARD',
+        className: 'Standard',
+        status: 'PENDING_APPROVAL',
+        approvedAt: null,
+        approvedBy: null,
+        approvalId: null,
+        reason: 'Seeded',
+        globalDefaultClassCodeAtMigration: 'STANDARD',
+        classUsable: true,
+        version: 1,
+      },
+      {
+        tier: 'LEVEL_3',
+        classId: 'id-1',
+        classCode: 'STANDARD',
+        className: 'Standard',
+        status: 'PENDING_APPROVAL',
+        approvedAt: null,
+        approvedBy: null,
+        approvalId: null,
+        reason: 'Seeded',
+        globalDefaultClassCodeAtMigration: 'STANDARD',
+        classUsable: true,
+        version: 1,
+      },
+    ],
+    globalDefault: { classId: 'id-1', classCode: 'STANDARD', className: 'Standard' },
+    allApproved: false,
+    pendingApprovalCount: 3,
+  };
+
+  principal(['customer.view', 'customer.manage_classes']);
+  let proposalStatus = 'REQUESTED';
+  let requester = 'operator';
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path === '/internal/customer-classes') return Promise.resolve([record]);
+    if (path === '/internal/customer-classes/tier-defaults')
+      return Promise.resolve(tierDefaultsPayload);
+    if (path.startsWith('/internal/a2/workforce/approvals'))
+      return Promise.resolve({
+        items: [
+          {
+            id: 'app-1',
+            status: proposalStatus,
+            requesterPrincipalId: requester,
+            approvedBy: proposalStatus === 'APPROVED' ? 'checker' : null,
+            reason: 'Initial tier mapping approval',
+            policy: {
+              requestDetails: {
+                tierDefaults: { LEVEL_1: 'id-1', LEVEL_2: 'id-1', LEVEL_3: 'id-1' },
+                reason: 'Initial tier mapping approval',
+              },
+            },
+          },
+        ],
+        total: 1,
+      });
+    return Promise.resolve([]);
+  });
+
+  const { unmount } = render(<CustomerClassesScreen />);
+  expect(await screen.findByText('Independent checker required')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Approve proposal' })).toBeNull();
+  unmount();
+
+  requester = 'maker-principal';
+  (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
+    if (path === '/internal/a2/workforce/approvals/app-1/approve') {
+      proposalStatus = 'APPROVED';
+      return Promise.resolve({ approved: true });
+    }
+    return Promise.resolve({});
+  });
+
+  render(<CustomerClassesScreen />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Approve proposal' }));
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith(
+      '/internal/a2/workforce/approvals/app-1/approve',
+      { comment: 'Approved via Tier Default Service Classes' },
+    ),
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Apply approved proposal' }));
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith(
+      '/internal/customer-classes/tier-defaults/proposals/app-1/execute',
+      {
+        tierDefaults: { LEVEL_1: 'id-1', LEVEL_2: 'id-1', LEVEL_3: 'id-1' },
+        reason: 'Initial tier mapping approval',
+      },
+    ),
+  );
+});

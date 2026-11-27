@@ -35,8 +35,13 @@ import { AdminSupportCredentialsController } from './admin-support-credentials.c
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
-import { LedgerModule } from '../ledger/ledger.module';
+import { CustomerClassModule } from '../customer-class/customer-class.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { InstitutionModule } from '../institution/institution.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from '../product-catalog/product-catalog.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
   imports: [
@@ -52,14 +57,24 @@ import { InstitutionModule } from '../institution/institution.module';
     // The registration-review read reuses the shared activation-readiness projection so the
     // administrator and the customer see the same outstanding requirements.
     CustomerWalletModule,
+    CustomerClassModule,
+    FeeRulesModule,
+    KycTierModule,
+    LimitCatalogModule,
+    ProductCatalogModule,
+    // The registration-review and effective-configuration reads are institution-scoped record
+    // reads and delegate that decision to the single authoritative scope service. Without this
+    // import the controller's `@Optional()` scope dependency resolves to nothing, the guard
+    // silently returns, and every staff principal can read every enrolled customer.
+    InstitutionModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,
     // AdminAgentCredentialsController and AdminSupportCredentialsController now call
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
     AuthorizationModule,
     // The statement reads balances through LedgerService and scope through the institution
-    // workforce assignment service, so it reuses both rather than re-deriving either.
+    // workforce assignment service; InstitutionModule is already imported above for
+    // registration-review scope.
     LedgerModule,
-    InstitutionModule,
   ],
   controllers: [
     TransactionHistoryController,
@@ -74,9 +89,13 @@ import { InstitutionModule } from '../institution/institution.module';
     AdminNotificationProviderController,
     NotificationOperationsController,
   ],
-  // `NotificationOperationsService` is provided by NotificationModule (imported below) and consumed
-  // here by NotificationOperationsController; a second provider would give the delivery-log
-  // aggregates two instances with independent caches of nothing but confusion.
+  // `NotificationOperationsService` is provided by NotificationModule (imported above, exported
+  // since ARENA 6) and consumed here by NotificationOperationsController; a second provider would
+  // give the delivery-log aggregates two instances with independent caches of nothing but confusion.
+  //
+  // `CustomerEffectiveConfigurationService` is deliberately NOT provided here: KycTierModule
+  // (imported above) provides and exports it, so AdminCustomerController's registration-review read
+  // and KycTierTransitionService's tier-default write share one instance instead of forking.
   providers: [
     CustomerTransactionHistoryService,
     // CSV export shares the history list's read path; it only serialises and audits.

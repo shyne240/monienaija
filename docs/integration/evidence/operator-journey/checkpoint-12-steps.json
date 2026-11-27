@@ -1,0 +1,4720 @@
+{
+  "steps": [
+    {
+      "step": "Real workforce session established in the Admin Web browser",
+      "detail": "Signed in as admin@monienaija.local through the normal login form (POST /api/v1/internal/a2/workforce/local-admin-sessions). Staff MFA assurance gates the compliance workspace, so the operator authenticates for real rather than receiving a planted token. Navigation rendered 33 sections.",
+      "extra": {
+        "sections": 33
+      },
+      "at": "2026-11-26T19:04:03.062Z"
+    },
+    {
+      "step": "Synthetic Tier 1 customer registered through the supported staff workflow",
+      "detail": "The Admin Web registration wizard created the customer via POST /api/v1/customers (HTTP 201). Customer id 3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53, reference mn-cus-00bb1616871df06490e79a13. No SQL inserted this customer.",
+      "extra": {
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "status": 201
+      },
+      "at": "2026-11-26T19:04:05.211Z"
+    },
+    {
+      "step": "Primary phone verified through the real registration OTP flow",
+      "detail": "\"Send phone OTP\" called POST /api/v1/customers/registration/otp; the server persisted a salted hash of the code (kyc_registration_otps) and delivered the message through the notification provider. The code was read from that delivery boundary as the handset would (JOURNEY_RECORD_SMS), not from the database.",
+      "extra": {
+        "otp": "••••11"
+      },
+      "at": "2026-11-26T19:04:10.380Z"
+    },
+    {
+      "step": "Phone OTP verified",
+      "detail": "POST /api/v1/customers/registration/otp/verify returned HTTP 200. The primary phone is now verified for this customer.",
+      "extra": {
+        "status": 200
+      },
+      "at": "2026-11-26T19:04:13.504Z"
+    },
+    {
+      "step": "BVN identity document recorded by the operator through the Admin Web",
+      "detail": "The wizard saved the document via POST /api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document (HTTP 201). This is the identifier the provider will corroborate; it creates no consent row, no verification attempt and no verified claim, so it is not identity evidence.",
+      "extra": {
+        "status": 201,
+        "response": {
+          "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "type": "BVN",
+          "maskedDocumentNumber": "••••••7661",
+          "issuingCountry": "NG",
+          "issuedAt": null,
+          "expiresAt": null,
+          "createdAt": "2026-11-26T19:04:16.859Z",
+          "updatedAt": "2026-11-26T19:04:16.859Z"
+        }
+      },
+      "at": "2026-11-26T19:04:19.417Z"
+    },
+    {
+      "step": "Registration workflow completed, customer left as an unverified DRAFT",
+      "detail": "Profile, contact and residential address were each saved through the wizard. The customer is a DRAFT with a verified primary phone and no KYC assessment, so the registration review must still refuse activation until identity is verified.",
+      "at": "2026-11-26T19:04:55.046Z"
+    },
+    {
+      "step": "Tier 1 default customer class assigned by registration",
+      "detail": "registration-review reports defaults.customerClass = {\"configured\":true,\"classCode\":\"STANDARD\",\"className\":\"Standard\",\"source\":\"REGISTRATION_DEFAULT\",\"effectiveFrom\":\"2026-11-26T19:04:05.047Z\"} and trustedEvidence.state = MISSING. The class comes from the approved LEVEL_1 tier-default mapping, not a per-customer override.",
+      "extra": {
+        "customerClass": {
+          "configured": true,
+          "classCode": "STANDARD",
+          "className": "Standard",
+          "source": "REGISTRATION_DEFAULT",
+          "effectiveFrom": "2026-11-26T19:04:05.047Z"
+        },
+        "trustedEvidence": {
+          "state": "MISSING",
+          "verifiedKinds": [],
+          "detail": "No trusted, identity-bound identity evidence is on record"
+        },
+        "activatable": false
+      },
+      "at": "2026-11-26T19:04:55.121Z"
+    },
+    {
+      "step": "Compliance operator signed in for the identity decision",
+      "detail": "Signed in as compliance@monienaija.local through the same login form. Separation of duties is preserved: KYC identity verification requires the COMPLIANCE role, and the operator who registered the customer is not the operator who verifies identity.",
+      "at": "2026-11-26T19:04:56.804Z"
+    },
+    {
+      "step": "Customer consent notice served to the operator, and approval correctly refused",
+      "detail": "GET /api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53 returned consentNotice version v1.0-ng (\"I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result …\"). supportedDecisions.approvalEligibleNow = false: KYC approval cannot be recorded before the provider verifies identity.",
+      "extra": {
+        "consentNotice": {
+          "version": "v1.0-ng",
+          "text": "I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result is stored as identity evidence."
+        },
+        "approvalEligibleNow": false,
+        "supportedDecisions": {
+          "readOnlyPrincipal": false,
+          "canPlaceHoldPending": true,
+          "canReject": true,
+          "canApprove": true,
+          "approvalEligibleNow": false,
+          "approvalBlockedReason": "Trusted verification evidence reader is unavailable for this customer.",
+          "governedHoldReasons": [
+            "MANUAL_REVIEW",
+            "IDENTITY_CONFLICT",
+            "EVIDENCE_REVOKED"
+          ],
+          "canEscalateToComplianceCase": true,
+          "canViewCustomer360": true
+        }
+      },
+      "at": "2026-11-26T19:04:56.894Z"
+    },
+    {
+      "step": "Customer consent captured and identity verified through the governed request",
+      "detail": "POST verify-identity answered HTTP 200 with status MATCH from provider PREMBLY (route v1). The request carried customerConsentConfirmed=true and noticeVersion v1.0-ng. The server created consent d632dee2-88d8-4977-9ccb-16c02f349fd2 and verification attempt 81663935-53bb-4cb4-ae66-af7e88221425; the consent row is the link between the customer's attestation and this provider attempt. Nothing was seeded: evidenceStatus.consents was [] before this call.",
+      "extra": {
+        "consentId": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+        "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+        "kind": "BVN",
+        "status": "MATCH",
+        "provider": "PREMBLY",
+        "routeVersion": 1
+      },
+      "at": "2026-11-26T19:04:56.935Z"
+    },
+    {
+      "step": "Consent is linked to the verification attempt and the verified claim",
+      "detail": "The dossier now reports consents=1, verificationAttempts=1, identityClaims=1, readerStatus=READY. The consent id carried by the attempt equals d632dee2-88d8-4977-9ccb-16c02f349fd2, which is the consent returned by the verification call.",
+      "extra": {
+        "consents": [
+          {
+            "id": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+            "kind": "BVN",
+            "noticeVersion": "v1.0-ng",
+            "provider": "PREMBLY",
+            "grantedAt": "2026-11-26T19:04:56.914Z",
+            "expiresAt": "2026-11-27T19:04:56.913Z",
+            "withdrawnAt": null
+          }
+        ],
+        "attempts": [
+          {
+            "id": "81663935-53bb-4cb4-ae66-af7e88221425",
+            "kind": "BVN",
+            "provider": "PREMBLY",
+            "policyVersion": "v1",
+            "outcome": "MATCH",
+            "createdAt": "2026-11-26T19:04:56.925Z",
+            "completedAt": "2026-11-26T19:04:56.929Z",
+            "expiresAt": "2026-11-27T19:04:56.929Z"
+          }
+        ],
+        "claims": [
+          {
+            "id": "d7ecac44-cbf8-4e0c-b4b9-a661435295a8",
+            "kind": "BVN",
+            "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+            "status": "VERIFIED",
+            "createdAt": "2026-11-26T19:04:56.925Z"
+          }
+        ],
+        "readerStatus": "READY",
+        "approvalEligibleNow": true
+      },
+      "at": "2026-11-26T19:04:56.987Z"
+    },
+    {
+      "step": "Tier 1 KYC approved, tier-default class re-assigned",
+      "detail": "POST /api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/kyc-assessment returned HTTP 201. Approval performs a TIER_DEFAULT class re-assignment; that write is the path PR #41 corrected, and it no longer raises. Response: {\"id\":\"0e5c0c1e-049c-443e-8a97-789458972248\",\"customerId\":\"3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53\",\"level\":\"LEVEL_1\",\"status\":\"APPROVED\"}",
+      "extra": {
+        "status": 201,
+        "assessment": {
+          "id": "0e5c0c1e-049c-443e-8a97-789458972248",
+          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "level": "LEVEL_1",
+          "status": "APPROVED"
+        }
+      },
+      "at": "2026-11-26T19:04:57.031Z"
+    }
+  ],
+  "apiCalls": [
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "request": {
+        "email": "admin@monienaija.local",
+        "password": "MonieNaijaAdmin123!"
+      },
+      "response": {
+        "accessToken": "Q4opBeFTX2hJxEtAY0blSLMp8o9K8Mo3-5d3erBh0wY",
+        "tokenType": "Bearer",
+        "sessionId": "25a224c1-e518-40a4-b959-e40b49e322c6",
+        "expiresAt": "2026-11-26T19:19:02.970Z",
+        "principal": {
+          "type": "PRIVILEGED",
+          "principalId": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "sessionId": "25a224c1-e518-40a4-b959-e40b49e322c6",
+          "audience": "workforce-admin",
+          "roles": [
+            "SUPER_ADMIN"
+          ],
+          "scopes": [
+            "agent.activate",
+            "agent.assign_limit",
+            "agent.manage_classes",
+            "agent.manage_credentials",
+            "agent.manage_outlets_terminals",
+            "agent.reactivate",
+            "agent.review_application",
+            "agent.suspend",
+            "agent.terminate",
+            "agent.view",
+            "aggregator.manage",
+            "aggregator.view",
+            "audit.search",
+            "audit.view",
+            "banking.provider.approve",
+            "banking.provider.propose",
+            "banking.provider.view",
+            "banking.reconciliation.resolve",
+            "banking.reconciliation.run",
+            "commission_rule.view",
+            "compliance.manage_case",
+            "compliance.manage_risk_profile",
+            "customer.activate",
+            "customer.archive_proof_of_address",
+            "customer.close",
+            "customer.create",
+            "customer.create_wallet",
+            "customer.download_proof_of_address",
+            "customer.manage_classes",
+            "customer.manage_support_case",
+            "customer.suspend",
+            "customer.upload_proof_of_address",
+            "customer.view",
+            "customer.view_address",
+            "customer.view_contact_methods",
+            "customer.view_identity_documents",
+            "customer.view_proof_of_address_metadata",
+            "customer.view_transactions",
+            "customer.view_wallets",
+            "customer.withdraw_proof_of_address",
+            "diagnostics.view",
+            "fee_rule.view",
+            "institution.attribution.view",
+            "institution.manage",
+            "institution.view",
+            "institution.workforce.assign",
+            "kyc.approve",
+            "kyc.policy.propose",
+            "kyc.policy.view",
+            "kyc.provider.propose",
+            "kyc.provider.view",
+            "kyc.reject",
+            "kyc.review",
+            "kyc.view",
+            "ledger.view",
+            "limit.view",
+            "metrics.view",
+            "notification.provider.configure",
+            "notification.provider.view",
+            "notification.test_send",
+            "notification.view_deliveries",
+            "outbox.view",
+            "privileged:execute",
+            "product.view",
+            "reconciliation.view",
+            "reporting.transaction_summary.view",
+            "reward_rule.view",
+            "transaction.view",
+            "workforce.dashboard.assign",
+            "workforce.dashboard.view",
+            "workforce.role.assign",
+            "workforce.role.assign_operational",
+            "workforce.role.create",
+            "workforce.role.modify",
+            "workforce.role.revoke",
+            "workforce.role.revoke_operational",
+            "workforce.role.view",
+            "workforce.user.create",
+            "workforce.user.suspend",
+            "workforce.user.view"
+          ],
+          "customerAccess": "NONE",
+          "assuranceLevel": "MFA",
+          "readOnlyPrincipal": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200,
+      "request": null,
+      "response": {
+        "templateKey": "EXECUTIVE_GOVERNANCE",
+        "displayName": "Executive & Governance",
+        "description": "Platform-wide executive overview: transaction/financial summary, ledger position, reconciliation health, workforce overview, role-governance queue, audit activity and system health.",
+        "isFallback": false,
+        "widgets": [
+          {
+            "widgetKey": "identity-session",
+            "order": 0,
+            "displayName": "Session Identity",
+            "description": "Your own signed-in principal, session and assurance level. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "identity",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "entitlements-scopes",
+            "order": 1,
+            "displayName": "Entitlements",
+            "description": "Your own effective roles and catalogue function grants. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "entitlements",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "transaction-summary",
+            "order": 2,
+            "displayName": "Transaction Summary",
+            "description": "Completed transaction value/count, success rate, and breakdown by W2W/W2C/C2W/C2C for the selected period, sourced from the authoritative transfers/deposits/withdrawals/cash-to-cash tables.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "drilldown": {
+              "view": "transfers",
+              "label": "Open transaction detail →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/transaction-summary"
+          },
+          {
+            "widgetKey": "transaction-trend",
+            "order": 3,
+            "title": "Platform Volume Trend",
+            "displayName": "Transaction Volume Trend",
+            "description": "V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: daily completed-transaction count and value across all four V1 transaction types for the selected period (maximum 92 days), zero-filled for days with no activity, sourced from the same authoritative tables as Transaction Summary.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "trend",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/transaction-trend"
+          },
+          {
+            "widgetKey": "recent-transactions",
+            "order": 4,
+            "displayName": "Recent Transactions",
+            "description": "The most recent completed/failed/pending transactions across all four V1 transaction types, with reference, type, amount, status and timestamp (no customer PII).",
+            "fetchMode": "proxy",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "drilldown": {
+              "view": "transfers",
+              "label": "Open transaction detail →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/recent-transactions"
+          },
+          {
+            "widgetKey": "ledger-summary",
+            "order": 5,
+            "displayName": "Ledger Summary",
+            "description": "Ledger debit/credit totals by currency, sourced from ledger_journals/ledger_lines.",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "ledger.view"
+            ],
+            "drilldown": {
+              "view": "ledgerExplorer",
+              "label": "Open ledger explorer →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/ledger-summary"
+          },
+          {
+            "widgetKey": "reconciliation-status",
+            "order": 6,
+            "displayName": "Reconciliation Status",
+            "description": "The latest reconciliation run status, exceptions and trial balance, sourced from ReconciliationService.",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "reconciliation.view"
+            ],
+            "drilldown": {
+              "view": "reconciliation",
+              "label": "Open reconciliation workspace →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+          },
+          {
+            "widgetKey": "workforce-overview",
+            "order": 7,
+            "displayName": "Workforce Overview",
+            "description": "Active workforce headcount, role distribution and currently active sessions.",
+            "fetchMode": "proxy",
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "workforce.user.view",
+              "workforce.role.view"
+            ],
+            "drilldown": {
+              "view": "workforceDirectory",
+              "label": "Open workforce directory →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/workforce-overview"
+          },
+          {
+            "widgetKey": "role-governance-queue",
+            "order": 8,
+            "displayName": "Role Definition Proposals",
+            "description": "Pending role-definition governance proposals awaiting approval.",
+            "fetchMode": "direct",
+            "endpoint": "/internal/a2/workforce/role-definitions/proposals",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "workforce.role.view"
+            ],
+            "drilldown": {
+              "view": "roleGovernance",
+              "label": "Open role governance →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/role-definitions/proposals"
+          },
+          {
+            "widgetKey": "audit-trail",
+            "order": 9,
+            "displayName": "Recent Audit Activity",
+            "description": "The most recent audit/security events, sourced from AuditService.",
+            "fetchMode": "proxy",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "audit.view"
+            ],
+            "drilldown": {
+              "view": "auditEvents",
+              "label": "Search audit events →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/audit-trail"
+          },
+          {
+            "widgetKey": "system-health",
+            "order": 10,
+            "displayName": "System Health",
+            "description": "Operational metrics, diagnostics and outbox backlog.",
+            "fetchMode": "direct",
+            "endpoint": "/internal/metrics",
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "metrics.view",
+              "diagnostics.view",
+              "outbox.view"
+            ],
+            "drilldown": {
+              "view": "systemHealth",
+              "label": "Open system health →"
+            },
+            "dataEndpoint": "/internal/metrics"
+          },
+          {
+            "widgetKey": "notification-delivery-exceptions",
+            "order": 11,
+            "displayName": "Notification Delivery Exceptions",
+            "description": "Failed, dead and outcome-unknown notification deliveries in the selected window, with sanitized error codes and the next scheduled automatic retry. Read-only by policy: recovery is the worker's bounded automatic retry, so this card reports the backlog and never offers a retry control.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ],
+            "drilldown": {
+              "view": "notificationOperations",
+              "label": "Open notification operations →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200,
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
+            "reference": "t1-tiertwo-b9661f05",
+            "type": "INDIVIDUAL",
+            "status": "ACTIVE",
+            "kycLevel": "LEVEL_2",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.236Z",
+            "displayName": "Synthetic tiertwo 1f05",
+            "legalName": "Synthetic tiertwo 1f05",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0004",
+              "isVerified": true
+            }
+          }
+        ],
+        "total": 4,
+        "page": 1,
+        "limit": 1,
+        "totalPages": 4,
+        "hasNextPage": true,
+        "hasPreviousPage": false
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:03.121Z",
+        "to": "2026-11-26T19:04:03.121Z",
+        "currency": "NGN",
+        "totalCompletedCount": 0,
+        "totalCompletedValueMinor": "0",
+        "totalFailedCount": 0,
+        "totalPendingCount": 0,
+        "successRatePercent": null,
+        "totalFeeRevenueMinor": "0",
+        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
+        "byType": [
+          {
+            "type": "W2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          },
+          {
+            "type": "C2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "W2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "C2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          }
+        ],
+        "commission": null,
+        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:03.127Z",
+        "to": "2026-11-26T19:04:03.127Z",
+        "window": {
+          "hours": 168,
+          "from": "2026-11-19T19:04:03.127Z",
+          "to": "2026-11-26T19:04:03.127Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "7d window, 2026-11-19T19:04 to 2026-11-26T19:04 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
+        "totals": {
+          "deliveries": 0,
+          "exceptions": 0
+        },
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
+        },
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-26T19:04:03.127Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "30d",
+        "from": "2026-10-27T19:04:03.165Z",
+        "to": "2026-11-26T19:04:03.165Z",
+        "currency": "NGN",
+        "definition": "Completed-transaction count and value, summed across all four V1 transaction types (W2W/C2W/W2C/C2C), grouped by calendar day (UTC). Days with no completed transactions appear as zero rather than being omitted.",
+        "daily": [
+          {
+            "date": "2026-10-27",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-28",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-29",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-30",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-31",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-01",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-02",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-03",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-04",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-05",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-06",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-07",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-08",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-09",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-10",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-11",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-12",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-13",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-14",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-15",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-16",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-17",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-18",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-19",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-20",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-21",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-22",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-23",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-24",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-25",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-26",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200,
+      "request": null,
+      "response": {
+        "items": [],
+        "counts": {
+          "total": 0,
+          "open": 0,
+          "inProgress": 0,
+          "resolved": 0,
+          "closed": 0,
+          "unassigned": 0,
+          "criticalOrHigh": 0
+        },
+        "pagination": {
+          "page": 1,
+          "limit": 1,
+          "total": 0,
+          "totalPages": 0,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200,
+      "request": null,
+      "response": [
+        {
+          "id": "dc02bfa7-c6bf-4683-887a-d96e43569351",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "ledger.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.230Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "ledger.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.231Z"
+        },
+        {
+          "id": "688e7b64-663f-4ef4-a537-6e8597949512",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "audit.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.230Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "audit.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.231Z"
+        },
+        {
+          "id": "1602420c-9f7f-4762-bf41-190e746949b1",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.manage_support_case",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.174Z",
+            "resourceType": "internal-support",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.manage_support_case"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.176Z"
+        },
+        {
+          "id": "45301a30-7d9e-46cc-a2cc-c85dc9aa4c19",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.133Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.134Z"
+        },
+        {
+          "id": "81eb1f10-5709-4808-b88b-490f6f9ac22b",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.129Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.132Z"
+        },
+        {
+          "id": "8bb4e12f-5ba6-40bc-b67c-8815d3f42aeb",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reconciliation.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.109Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reconciliation.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.113Z"
+        },
+        {
+          "id": "8fa22747-4aff-4d90-a525-12b76a0d498a",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "notification.view_deliveries",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.109Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.112Z"
+        },
+        {
+          "id": "844861f1-69ee-4bf8-8743-4120948f82c5",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.103Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.108Z"
+        },
+        {
+          "id": "9547d73c-a365-4933-a4c2-8b0473957db4",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:03.058Z",
+            "resourceType": "internal-customers",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:03.066Z"
+        },
+        {
+          "id": "500dae13-feee-42fa-a524-f50dcb604138",
+          "entityType": "A2_WORKFORCE_SESSION",
+          "entityId": "25a224c1-e518-40a4-b959-e40b49e322c6",
+          "action": "WORKFORCE_SESSION_ESTABLISHED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "roles": [
+              "SUPER_ADMIN"
+            ],
+            "issuer": "https://idp.example.com",
+            "scopes": [
+              "agent.activate",
+              "agent.assign_limit",
+              "agent.manage_classes",
+              "agent.manage_credentials",
+              "agent.manage_outlets_terminals",
+              "agent.reactivate",
+              "agent.review_application",
+              "agent.suspend",
+              "agent.terminate",
+              "agent.view",
+              "aggregator.manage",
+              "aggregator.view",
+              "audit.search",
+              "audit.view",
+              "banking.provider.approve",
+              "banking.provider.propose",
+              "banking.provider.view",
+              "banking.reconciliation.resolve",
+              "banking.reconciliation.run",
+              "commission_rule.view",
+              "compliance.manage_case",
+              "compliance.manage_risk_profile",
+              "customer.activate",
+              "customer.archive_proof_of_address",
+              "customer.close",
+              "customer.create",
+              "customer.create_wallet",
+              "customer.download_proof_of_address",
+              "customer.manage_classes",
+              "customer.manage_support_case",
+              "customer.suspend",
+              "customer.upload_proof_of_address",
+              "customer.view",
+              "customer.view_address",
+              "customer.view_contact_methods",
+              "customer.view_identity_documents",
+              "customer.view_proof_of_address_metadata",
+              "customer.view_transactions",
+              "customer.view_wallets",
+              "customer.withdraw_proof_of_address",
+              "diagnostics.view",
+              "fee_rule.view",
+              "institution.attribution.view",
+              "institution.manage",
+              "institution.view",
+              "institution.workforce.assign",
+              "kyc.approve",
+              "kyc.policy.propose",
+              "kyc.policy.view",
+              "kyc.provider.propose",
+              "kyc.provider.view",
+              "kyc.reject",
+              "kyc.review",
+              "kyc.view",
+              "ledger.view",
+              "limit.view",
+              "metrics.view",
+              "notification.provider.configure",
+              "notification.provider.view",
+              "notification.test_send",
+              "notification.view_deliveries",
+              "outbox.view",
+              "privileged:execute",
+              "product.view",
+              "reconciliation.view",
+              "reporting.transaction_summary.view",
+              "reward_rule.view",
+              "transaction.view",
+              "workforce.dashboard.assign",
+              "workforce.dashboard.view",
+              "workforce.role.assign",
+              "workforce.role.assign_operational",
+              "workforce.role.create",
+              "workforce.role.modify",
+              "workforce.role.revoke",
+              "workforce.role.revoke_operational",
+              "workforce.role.view",
+              "workforce.user.create",
+              "workforce.user.suspend",
+              "workforce.user.view"
+            ],
+            "subject": "local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+            "audience": "workforce-admin",
+            "expiresAt": "2026-11-26T19:19:02.970Z",
+            "assuranceLevel": "MFA"
+          },
+          "occurredAt": "2026-11-26T19:04:02.976Z"
+        },
+        {
+          "id": "e6cec6d1-cd3e-429a-8407-3e6de89e39ea",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.provider.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:01.257Z",
+            "resourceType": "KYC_PROVIDER_CONFIGURATION",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.provider.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:01.257Z"
+        },
+        {
+          "id": "c2df33d4-2893-479d-ad59-63f4844149b9",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.provider.approve",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:01.230Z",
+            "resourceType": "KYC_PROVIDER_CONFIGURATION",
+            "principalType": "OPERATOR",
+            "requiredRoles": [
+              "COMPLIANCE"
+            ],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.provider.approve"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:01.231Z"
+        },
+        {
+          "id": "f3921664-f4c7-4cce-b6b8-86006287b2cd",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.provider.propose",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:01.216Z",
+            "resourceType": "KYC_PROVIDER_CONFIGURATION",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [
+              "SUPER_ADMIN"
+            ],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.provider.propose"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:01.217Z"
+        },
+        {
+          "id": "50469fb8-0205-48d1-bc79-725a5ca1234a",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.provider.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:01.203Z",
+            "resourceType": "KYC_PROVIDER_CONFIGURATION",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.provider.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:01.204Z"
+        },
+        {
+          "id": "7e3bb8fb-6af4-4aef-b814-05a303dbae05",
+          "entityType": "A2_WORKFORCE_SESSION",
+          "entityId": "127caf34-237f-4f22-8b11-cf2468c4dc9f",
+          "action": "WORKFORCE_SESSION_ESTABLISHED",
+          "actor": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "roles": [
+              "COMPLIANCE"
+            ],
+            "issuer": "https://idp.example.com",
+            "scopes": [
+              "compliance.manage_case",
+              "compliance.manage_risk_profile",
+              "customer.archive_proof_of_address",
+              "customer.download_proof_of_address",
+              "customer.view",
+              "customer.view_address",
+              "customer.view_contact_methods",
+              "customer.view_identity_documents",
+              "customer.view_proof_of_address_metadata",
+              "institution.attribution.view",
+              "institution.view",
+              "kyc.approve",
+              "kyc.policy.approve",
+              "kyc.policy.view",
+              "kyc.provider.approve",
+              "kyc.provider.view",
+              "kyc.reject",
+              "kyc.review",
+              "kyc.view"
+            ],
+            "subject": "local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+            "audience": "workforce-admin",
+            "expiresAt": "2026-11-26T19:19:01.185Z",
+            "assuranceLevel": "MFA"
+          },
+          "occurredAt": "2026-11-26T19:04:01.190Z"
+        },
+        {
+          "id": "85f9a298-7bc2-4d6a-a069-624901f3af41",
+          "entityType": "A2_WORKFORCE_SESSION",
+          "entityId": "fbc2ff31-9314-4afc-bb65-3a4e5f5bc828",
+          "action": "WORKFORCE_SESSION_ESTABLISHED",
+          "actor": "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "roles": [
+              "SUPER_ADMIN"
+            ],
+            "issuer": "https://idp.example.com",
+            "scopes": [
+              "agent.activate",
+              "agent.assign_limit",
+              "agent.manage_classes",
+              "agent.manage_credentials",
+              "agent.manage_outlets_terminals",
+              "agent.reactivate",
+              "agent.review_application",
+              "agent.suspend",
+              "agent.terminate",
+              "agent.view",
+              "aggregator.manage",
+              "aggregator.view",
+              "audit.search",
+              "audit.view",
+              "banking.provider.approve",
+              "banking.provider.propose",
+              "banking.provider.view",
+              "banking.reconciliation.resolve",
+              "banking.reconciliation.run",
+              "commission_rule.view",
+              "compliance.manage_case",
+              "compliance.manage_risk_profile",
+              "customer.activate",
+              "customer.archive_proof_of_address",
+              "customer.close",
+              "customer.create",
+              "customer.create_wallet",
+              "customer.download_proof_of_address",
+              "customer.manage_classes",
+              "customer.manage_support_case",
+              "customer.suspend",
+              "customer.upload_proof_of_address",
+              "customer.view",
+              "customer.view_address",
+              "customer.view_contact_methods",
+              "customer.view_identity_documents",
+              "customer.view_proof_of_address_metadata",
+              "customer.view_transactions",
+              "customer.view_wallets",
+              "customer.withdraw_proof_of_address",
+              "diagnostics.view",
+              "fee_rule.view",
+              "institution.attribution.view",
+              "institution.manage",
+              "institution.view",
+              "institution.workforce.assign",
+              "kyc.approve",
+              "kyc.policy.propose",
+              "kyc.policy.view",
+              "kyc.provider.propose",
+              "kyc.provider.view",
+              "kyc.reject",
+              "kyc.review",
+              "kyc.view",
+              "ledger.view",
+              "limit.view",
+              "metrics.view",
+              "notification.provider.configure",
+              "notification.provider.view",
+              "notification.test_send",
+              "notification.view_deliveries",
+              "outbox.view",
+              "privileged:execute",
+              "product.view",
+              "reconciliation.view",
+              "reporting.transaction_summary.view",
+              "reward_rule.view",
+              "transaction.view",
+              "workforce.dashboard.assign",
+              "workforce.dashboard.view",
+              "workforce.role.assign",
+              "workforce.role.assign_operational",
+              "workforce.role.create",
+              "workforce.role.modify",
+              "workforce.role.revoke",
+              "workforce.role.revoke_operational",
+              "workforce.role.view",
+              "workforce.user.create",
+              "workforce.user.suspend",
+              "workforce.user.view"
+            ],
+            "subject": "local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+            "audience": "workforce-admin",
+            "expiresAt": "2026-11-26T19:19:01.161Z",
+            "assuranceLevel": "MFA"
+          },
+          "occurredAt": "2026-11-26T19:04:01.169Z"
+        },
+        {
+          "id": "d36bb0ed-0dbf-4e89-ba98-598faed8e100",
+          "entityType": "A2_FINANCE_ROLE_ASSIGNMENT",
+          "entityId": "eb693750-57b9-406e-b9b1-01f6f850ad67",
+          "action": "LOCAL_ADMIN_SUPER_ADMIN_GRANTED",
+          "actor": "local-dev-seed-admin-script",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "scopes": [
+              "privileged:execute"
+            ],
+            "roleKey": "SUPER_ADMIN",
+            "effectiveTo": "2126-11-02T19:03:54.610Z",
+            "principalId": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+            "effectiveFrom": "2026-11-26T19:03:54.610Z",
+            "assignmentReference": "a2-fin-role-ddbc38bffeca3ef32db44200e3da422f"
+          },
+          "occurredAt": "2026-11-26T19:03:54.614Z"
+        },
+        {
+          "id": "8c9d9f62-cd40-4ead-b80b-05f0604c344c",
+          "entityType": "LOCAL_ADMIN_CREDENTIAL",
+          "entityId": "29ee6eed-a1e0-4104-9e16-891b9ba13492",
+          "action": "LOCAL_ADMIN_CREDENTIAL_SEEDED",
+          "actor": "local-dev-seed-admin-script",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "email": "admin@monienaija.local"
+          },
+          "occurredAt": "2026-11-26T19:03:54.607Z"
+        },
+        {
+          "id": "7394a068-4c11-40bb-af01-51b0834caa9d",
+          "entityType": "A2_FINANCE_ROLE_ASSIGNMENT",
+          "entityId": "d6985986-7c8a-4bed-9849-e2e2e2c467e1",
+          "action": "LOCAL_DEV_ROLE_ASSIGNED",
+          "actor": "local-dev-seed-11-roles",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "roleKey": "TREASURY",
+            "principalId": "https://idp.example.com:local-admin-credential:45e965e8f17dfaae1d8866c38ecdcd9c",
+            "assignmentReference": "a2-fin-role-1dd581ab63cfb12e527c13bb9494b5f8"
+          },
+          "occurredAt": "2026-11-26T19:03:52.919Z"
+        },
+        {
+          "id": "d67947a2-b155-4fe5-bbf0-1e84e7b5ca6c",
+          "entityType": "LOCAL_ADMIN_CREDENTIAL",
+          "entityId": "186a1a86-68d7-4f40-bc83-e217f9d2f647",
+          "action": "LOCAL_ADMIN_CREDENTIAL_SEEDED",
+          "actor": "local-dev-seed-11-roles",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "email": "treasury@monienaija.local"
+          },
+          "occurredAt": "2026-11-26T19:03:52.915Z"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200,
+      "request": null,
+      "response": {
+        "report": {
+          "status": "PASS",
+          "generatedAt": "2026-11-26T19:04:03.243Z",
+          "checks": [
+            {
+              "name": "wallet_balances_ledger_derived",
+              "status": "PASS",
+              "message": "Every wallet has a calculable ledger-derived balance and no negative balance.",
+              "details": {
+                "wallets_checked": "0",
+                "missing_accounts": "0",
+                "currency_mismatches": "0",
+                "negative_balances": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "wallet_liability_account_ownership",
+              "status": "PASS",
+              "message": "Every wallet has exactly one compatible non-negative liability account.",
+              "details": {
+                "wallets_checked": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "journal_balance_integrity",
+              "status": "PASS",
+              "message": "Every journal has at least two lines and equal debit, credit, and recorded totals.",
+              "details": {
+                "journals_checked": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "orphan_ledger_entries",
+              "status": "PASS",
+              "message": "Every ledger line references an existing journal.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "journal_line_account_integrity",
+              "status": "PASS",
+              "message": "Every journal line references an existing ledger account.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "completed_payment_journal_integrity",
+              "status": "PASS",
+              "message": "Every completed transfer, deposit, and withdrawal references an existing journal.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "failed_transfer_attempts",
+              "status": "PASS",
+              "message": "No failed transfer attempts are awaiting investigation.",
+              "details": {
+                "failed_transfers": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "currency_consistency",
+              "status": "PASS",
+              "message": "Wallets, transfers, journals, lines, and accounts use consistent currencies.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "accounting_unit_consistency",
+              "status": "PASS",
+              "message": "Wallet and ledger records use consistent accounting units.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "verified_inbound_unresolved",
+              "status": "PASS",
+              "message": "All verified inbound observations have been credited.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "customer_financial_account_binding_integrity",
+              "status": "PASS",
+              "message": "Customer financial account bindings are consistent with customer-wallet, wallet, and ledger sources.",
+              "details": {
+                "bindings_checked": 0,
+                "active_bindings_checked": 0,
+                "customer_wallets_checked": 0,
+                "financial_wallets_checked": 0,
+                "discrepancies": 0,
+                "errors": 0,
+                "warnings": 0,
+                "repair_performed": false
+              }
+            }
+          ],
+          "binding": {
+            "status": "PASS",
+            "generatedAt": "2026-11-26T19:04:03.243Z",
+            "summary": {
+              "bindingsChecked": 0,
+              "activeBindingsChecked": 0,
+              "customerWalletsChecked": 0,
+              "financialWalletsChecked": 0,
+              "discrepancies": 0,
+              "errors": 0,
+              "warnings": 0,
+              "byType": {}
+            },
+            "discrepancies": [],
+            "repairPerformed": false
+          }
+        },
+        "trialBalance": {
+          "generatedAt": "2026-11-26T19:04:03.154Z",
+          "rows": [
+            {
+              "accountId": "e304ab46-1979-4d6b-88ed-966393a30476",
+              "accountCode": "AGENT_FUNDING_POOL-NGN",
+              "accountName": "Agent Funding Pool NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "aabf9046-26d3-4630-874a-2c958c9e107f",
+              "accountCode": "CASH_TO_CASH-UNCLAIMED-NGN",
+              "accountName": "Cash-to-Cash Unclaimed NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "887a1c78-e024-42a9-9529-f2ba5ae4a665",
+              "accountCode": "FINANCE-COMMISSION_EXPENSE-NGN",
+              "accountName": "Finance Commission Expense NGN",
+              "accountType": "EXPENSE",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "fdbc4340-08eb-4a59-b3ef-3fc3e116ea38",
+              "accountCode": "FINANCE-COMMISSION_PAYABLE-NGN",
+              "accountName": "Finance Commission Payable NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "369cdebf-7616-4d09-a8dd-562362044aeb",
+              "accountCode": "FINANCE-FEE_REVENUE-NGN",
+              "accountName": "Finance Fee Revenue NGN (pooled)",
+              "accountType": "REVENUE",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "c5fc7423-bbd0-4fe5-bc50-4c6298b06ce9",
+              "accountCode": "FINANCE-VAT_PAYABLE-NGN",
+              "accountName": "Finance VAT Payable NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000201",
+              "accountCode": "PAYMENT-SETTLEMENT_ASSET-NGN",
+              "accountName": "Payment settlement asset NGN",
+              "accountType": "ASSET",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000202",
+              "accountCode": "PAYMENT-SETTLEMENT_CLEARING-NGN",
+              "accountName": "Payment settlement clearing NGN",
+              "accountType": "ASSET",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000203",
+              "accountCode": "PAYMENT-SYSTEM_SUSPENSE-NGN",
+              "accountName": "Payment system suspense NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "fb98ec0a-7828-4f6c-8e15-5dda16af1249",
+              "accountCode": "PAYMENT-WITHDRAWAL_RESERVE-NGN",
+              "accountName": "Withdrawal funds reserved NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            }
+          ],
+          "dimensions": [
+            {
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanced": true
+            }
+          ],
+          "balanced": true
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200,
+      "request": null,
+      "response": {
+        "activeWorkforceHeadcount": 12,
+        "roleDistribution": [
+          {
+            "roleKey": "ADMINISTRATOR",
+            "count": 1
+          },
+          {
+            "roleKey": "AGENT_NETWORK_MANAGER",
+            "count": 1
+          },
+          {
+            "roleKey": "COMPLIANCE",
+            "count": 1
+          },
+          {
+            "roleKey": "CUSTOMER_SERVICE",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_AUDITOR",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_CONTROLLER",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_PREPARER",
+            "count": 1
+          },
+          {
+            "roleKey": "OPERATIONS",
+            "count": 1
+          },
+          {
+            "roleKey": "RISK_FRAUD",
+            "count": 1
+          },
+          {
+            "roleKey": "SUPER_ADMIN",
+            "count": 2
+          },
+          {
+            "roleKey": "TREASURY",
+            "count": 1
+          }
+        ],
+        "activeSessionCount": 3
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200,
+      "request": null,
+      "response": {
+        "generatedAt": "2026-11-26T19:04:03.305Z",
+        "metrics": {
+          "reconciliation.duration_ms": "119"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:03.301Z",
+        "to": "2026-11-26T19:04:03.301Z",
+        "currency": "NGN",
+        "totalCompletedCount": 0,
+        "totalCompletedValueMinor": "0",
+        "totalFailedCount": 0,
+        "totalPendingCount": 0,
+        "successRatePercent": null,
+        "totalFeeRevenueMinor": "0",
+        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
+        "byType": [
+          {
+            "type": "W2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          },
+          {
+            "type": "C2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "W2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "C2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          }
+        ],
+        "commission": null,
+        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200,
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
+            "reference": "t1-tiertwo-b9661f05",
+            "type": "INDIVIDUAL",
+            "status": "ACTIVE",
+            "kycLevel": "LEVEL_2",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.236Z",
+            "displayName": "Synthetic tiertwo 1f05",
+            "legalName": "Synthetic tiertwo 1f05",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0004",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
+            "reference": "t1-unconfigured-cb621544",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.233Z",
+            "displayName": "Synthetic unconfigured 1544",
+            "legalName": "Synthetic unconfigured 1544",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0003",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
+            "reference": "t1-receiver-61a3a630",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:03:50.229Z",
+            "displayName": "Synthetic receiver a630",
+            "legalName": "Synthetic receiver a630",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0002",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
+            "reference": "t1-sender-686cc9c7",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.224Z",
+            "displayName": "Synthetic sender c9c7",
+            "legalName": "Synthetic sender c9c7",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0001",
+              "isVerified": true
+            }
+          }
+        ],
+        "total": 4,
+        "page": 1,
+        "limit": 20,
+        "totalPages": 1,
+        "hasNextPage": false,
+        "hasPreviousPage": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers",
+      "status": 201,
+      "request": {
+        "type": "INDIVIDUAL"
+      },
+      "response": {
+        "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "type": "INDIVIDUAL",
+        "status": "DRAFT",
+        "isSynthetic": false,
+        "kycLevel": "NONE",
+        "kycStatus": "NOT_STARTED",
+        "version": 1,
+        "createdAt": "2026-11-26T19:04:05.042Z",
+        "updatedAt": "2026-11-26T19:04:05.042Z",
+        "deletedAt": null
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200,
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:04:05.042Z",
+            "displayName": null,
+            "legalName": null,
+            "primaryContact": null
+          },
+          {
+            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
+            "reference": "t1-tiertwo-b9661f05",
+            "type": "INDIVIDUAL",
+            "status": "ACTIVE",
+            "kycLevel": "LEVEL_2",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.236Z",
+            "displayName": "Synthetic tiertwo 1f05",
+            "legalName": "Synthetic tiertwo 1f05",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0004",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
+            "reference": "t1-unconfigured-cb621544",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.233Z",
+            "displayName": "Synthetic unconfigured 1544",
+            "legalName": "Synthetic unconfigured 1544",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0003",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
+            "reference": "t1-receiver-61a3a630",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:03:50.229Z",
+            "displayName": "Synthetic receiver a630",
+            "legalName": "Synthetic receiver a630",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0002",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
+            "reference": "t1-sender-686cc9c7",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.224Z",
+            "displayName": "Synthetic sender c9c7",
+            "legalName": "Synthetic sender c9c7",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0001",
+              "isVerified": true
+            }
+          }
+        ],
+        "total": 5,
+        "page": 1,
+        "limit": 20,
+        "totalPages": 1,
+        "hasNextPage": false,
+        "hasPreviousPage": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/registration-profile",
+      "status": 201,
+      "request": {
+        "firstName": "Amina",
+        "middleName": "Grace",
+        "lastName": "Bello",
+        "dateOfBirth": "1991-03-18",
+        "nationality": "NG"
+      },
+      "response": {
+        "id": "382698bc-218c-4bc0-a849-6a4aab6355ed",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "displayName": "Amina Grace Bello",
+        "legalName": "Amina Grace Bello",
+        "firstName": "Amina",
+        "middleName": "Grace",
+        "lastName": "Bello",
+        "dateOfBirth": "1991-03-18",
+        "nationality": "NG",
+        "isActive": true,
+        "createdAt": "2026-11-26T19:04:05.091Z",
+        "updatedAt": "2026-11-26T19:04:05.091Z",
+        "deletedAt": null
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200,
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:04:05.042Z",
+            "displayName": "Amina Grace Bello",
+            "legalName": "Amina Grace Bello",
+            "primaryContact": null
+          },
+          {
+            "id": "b9661f05-67c0-4286-b521-28de4d2e861a",
+            "reference": "t1-tiertwo-b9661f05",
+            "type": "INDIVIDUAL",
+            "status": "ACTIVE",
+            "kycLevel": "LEVEL_2",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.236Z",
+            "displayName": "Synthetic tiertwo 1f05",
+            "legalName": "Synthetic tiertwo 1f05",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0004",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "cb621544-2354-4c9b-8e50-093c0f020253",
+            "reference": "t1-unconfigured-cb621544",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.233Z",
+            "displayName": "Synthetic unconfigured 1544",
+            "legalName": "Synthetic unconfigured 1544",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0003",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "61a3a630-0375-4973-adb2-16e1a922ae3c",
+            "reference": "t1-receiver-61a3a630",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:03:50.229Z",
+            "displayName": "Synthetic receiver a630",
+            "legalName": "Synthetic receiver a630",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0002",
+              "isVerified": true
+            }
+          },
+          {
+            "id": "686cc9c7-2480-46a7-aa1c-81bbe6e55df0",
+            "reference": "t1-sender-686cc9c7",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "LEVEL_1",
+            "kycStatus": "APPROVED",
+            "createdAt": "2026-11-26T19:03:50.224Z",
+            "displayName": "Synthetic sender c9c7",
+            "legalName": "Synthetic sender c9c7",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0001",
+              "isVerified": true
+            }
+          }
+        ],
+        "total": 5,
+        "page": 1,
+        "limit": 20,
+        "totalPages": 1,
+        "hasNextPage": false,
+        "hasPreviousPage": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-method",
+      "status": 201,
+      "request": {
+        "type": "PHONE",
+        "value": "+2348099110016",
+        "isPrimary": true,
+        "phoneCountry": "NG"
+      },
+      "response": {
+        "id": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "type": "PHONE",
+        "maskedValue": "+234*****0016",
+        "isPrimary": true,
+        "verifiedAt": null,
+        "createdAt": "2026-11-26T19:04:05.292Z",
+        "updatedAt": "2026-11-26T19:04:05.292Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-method",
+      "status": 201,
+      "request": {
+        "type": "EMAIL",
+        "value": "amina.bello.mwxx8cbp@example.invalid",
+        "isPrimary": false
+      },
+      "response": {
+        "id": "74a529a4-46a4-4803-b44e-1b0e9c857f97",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "type": "EMAIL",
+        "maskedValue": "a•••@example.invalid",
+        "isPrimary": false,
+        "verifiedAt": null,
+        "createdAt": "2026-11-26T19:04:05.324Z",
+        "updatedAt": "2026-11-26T19:04:05.324Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/registration/otp",
+      "status": 200,
+      "request": {
+        "phone": "+2348099110016"
+      },
+      "response": {
+        "status": "OTP_REQUEST_ACCEPTED",
+        "resendAfterSeconds": 60,
+        "expiresInSeconds": 300
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/registration/otp/verify",
+      "status": 200,
+      "request": {
+        "phone": "+2348099110016",
+        "code": "041011"
+      },
+      "response": {
+        "status": "PHONE_VERIFIED",
+        "verificationToken": "-BvLSx__NfcqBBRtt6L4RQYreGoutRNzWMVK5svac6w",
+        "expiresInSeconds": 900
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-methods/ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+      "status": 200,
+      "request": {
+        "value": "+2348099110016",
+        "phoneCountry": "NG",
+        "isPrimary": true,
+        "verificationToken": "-BvLSx__NfcqBBRtt6L4RQYreGoutRNzWMVK5svac6w"
+      },
+      "response": {
+        "id": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "type": "PHONE",
+        "maskedValue": "+234*****0016",
+        "isPrimary": true,
+        "verifiedAt": "2026-11-26T19:04:10.427Z",
+        "createdAt": "2026-11-26T19:04:05.292Z",
+        "updatedAt": "2026-11-26T19:04:10.465Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/address",
+      "status": 201,
+      "request": {
+        "type": "RESIDENTIAL",
+        "lineOne": "31 Murtala Muhammed Way",
+        "city": "Kano",
+        "state": "Kano",
+        "country": "NG",
+        "postalCode": "700241",
+        "isPrimary": true
+      },
+      "response": {
+        "id": "210cd850-d4cb-46aa-85fe-f2b76608d03d",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "type": "RESIDENTIAL",
+        "lineOne": "31 Murtala Muhammed Way",
+        "lineTwo": null,
+        "city": "Kano",
+        "state": "Kano",
+        "country": "NG",
+        "postalCode": "700241",
+        "isPrimary": true,
+        "createdAt": "2026-11-26T19:04:13.739Z",
+        "updatedAt": "2026-11-26T19:04:13.739Z",
+        "deletedAt": null
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document",
+      "status": 201,
+      "request": {
+        "type": "BVN",
+        "documentNumber": "22998877661",
+        "issuingCountry": "NG"
+      },
+      "response": {
+        "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "type": "BVN",
+        "maskedDocumentNumber": "••••••7661",
+        "issuingCountry": "NG",
+        "issuedAt": null,
+        "expiresAt": null,
+        "createdAt": "2026-11-26T19:04:16.859Z",
+        "updatedAt": "2026-11-26T19:04:16.859Z"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/registration-review",
+      "status": 200,
+      "request": null,
+      "response": {
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "reference": "mn-cus-00bb1616871df06490e79a13",
+        "customerType": "INDIVIDUAL",
+        "customerStatus": "DRAFT",
+        "isSynthetic": false,
+        "verifiedTier": "NONE",
+        "assignedClass": {
+          "configured": true,
+          "classCode": "STANDARD",
+          "className": "Standard",
+          "source": "REGISTRATION_DEFAULT",
+          "effectiveFrom": "2026-11-26T19:04:05.047Z"
+        },
+        "defaults": {
+          "customerClass": {
+            "configured": true,
+            "classCode": "STANDARD",
+            "className": "Standard",
+            "source": "REGISTRATION_DEFAULT",
+            "effectiveFrom": "2026-11-26T19:04:05.047Z"
+          },
+          "kyc": {
+            "level": "NONE",
+            "status": "NOT_STARTED",
+            "assessment": null
+          }
+        },
+        "onboardingWorkflow": {
+          "status": null,
+          "eligibility": null,
+          "completed": false
+        },
+        "financialEligibility": "NOT_ELIGIBLE",
+        "restrictions": {
+          "active": []
+        },
+        "identityConflicts": 0,
+        "trustedEvidence": {
+          "state": "MISSING",
+          "verifiedKinds": [],
+          "detail": "No trusted, identity-bound identity evidence is on record"
+        },
+        "wallet": null,
+        "requirements": [
+          {
+            "code": "phone_verified",
+            "label": "Phone verified",
+            "state": "MET"
+          },
+          {
+            "code": "identity_evidence",
+            "label": "Identity verified by an approved provider",
+            "state": "OUTSTANDING",
+            "detail": "No trusted, identity-bound identity evidence is on record"
+          },
+          {
+            "code": "kyc_assessment",
+            "label": "KYC assessment approved",
+            "state": "OUTSTANDING",
+            "detail": "No KYC assessment has been recorded"
+          },
+          {
+            "code": "identity_conflict",
+            "label": "No identity ownership conflict",
+            "state": "MET"
+          },
+          {
+            "code": "account_restriction",
+            "label": "No active financial restriction",
+            "state": "MET"
+          },
+          {
+            "code": "financial_policy",
+            "label": "Financial eligibility policy in force",
+            "state": "OUTSTANDING",
+            "detail": "Customer is not eligible for financial access"
+          },
+          {
+            "code": "commercial_configuration",
+            "label": "Effective fees and limits configured for enabled products",
+            "state": "MET"
+          },
+          {
+            "code": "account_active",
+            "label": "Account activated by MonieNaija",
+            "state": "OUTSTANDING",
+            "detail": "Account status is DRAFT"
+          },
+          {
+            "code": "wallet",
+            "label": "Wallet provisioned",
+            "state": "OUTSTANDING"
+          }
+        ],
+        "outstanding": [
+          "identity_evidence",
+          "kyc_assessment",
+          "financial_policy",
+          "account_active",
+          "wallet"
+        ],
+        "activatable": false,
+        "effectiveConfiguration": {
+          "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "verifiedTier": "NONE",
+          "assignedClass": {
+            "classCode": "STANDARD",
+            "className": "Standard",
+            "source": "REGISTRATION_DEFAULT",
+            "eligibleForVerifiedTier": null,
+            "classId": "ec6661ca-08ee-4678-8522-bc857c4e3fcd"
+          },
+          "products": [
+            {
+              "productCode": "WALLET_TO_CASH",
+              "productName": "Wallet to Cash",
+              "currency": "NGN",
+              "fee": {
+                "status": "ZERO",
+                "ruleId": "3f4da8e0-bd7e-470b-8f2a-b03290d4739b",
+                "ruleVersion": 1,
+                "flatFeeMinor": "0",
+                "percentageBps": 0,
+                "minimumFeeMinor": "0",
+                "maximumFeeMinor": null,
+                "vatBps": 0,
+                "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                "effectiveTo": null,
+                "priority": 100,
+                "quote": {
+                  "amountMinor": "100000",
+                  "feeMinor": "0",
+                  "vatMinor": "0",
+                  "totalMinor": "100000"
+                }
+              },
+              "limits": [
+                {
+                  "dimension": "MAX_AMOUNT_PER_TX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "1000000000",
+                  "limitValueCount": null,
+                  "ruleId": "0e9cb496-b095-4ce6-86ca-cf80d83662a1",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "DAILY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "bcfb82c6-2c79-4874-9e91-02b99c181fd1",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WEEKLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "b9ee45fa-60de-4b94-9409-85a22acbfe7f",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "MONTHLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "a4cb0c44-6903-4ca5-807f-de53e5761dc6",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WALLET_BALANCE_MAX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "96031ae1-69e1-4b40-9cb0-08294f24d89e",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                }
+              ]
+            },
+            {
+              "productCode": "WALLET_TRANSFER",
+              "productName": "Wallet Transfer",
+              "currency": "NGN",
+              "fee": {
+                "status": "RESOLVED",
+                "ruleId": "1a402f5d-a76e-4926-8cfc-e0b41227c8d2",
+                "ruleVersion": 1,
+                "flatFeeMinor": "10000",
+                "percentageBps": 0,
+                "minimumFeeMinor": "0",
+                "maximumFeeMinor": null,
+                "vatBps": 0,
+                "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                "effectiveTo": null,
+                "priority": 100,
+                "quote": {
+                  "amountMinor": "100000",
+                  "feeMinor": "10000",
+                  "vatMinor": "0",
+                  "totalMinor": "110000"
+                }
+              },
+              "limits": [
+                {
+                  "dimension": "MAX_AMOUNT_PER_TX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "1000000000",
+                  "limitValueCount": null,
+                  "ruleId": "693f24e8-8f1b-45e9-b381-a9d32a89d0fd",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "DAILY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "3dd62566-4482-4bee-92fc-00c3e562ae2c",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WEEKLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "7e6e4cdc-73fe-4b6f-a532-a700fb82d712",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "MONTHLY_AMOUNT",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "aee183c2-dfdd-4e2e-aea8-e47ed7964d96",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                },
+                {
+                  "dimension": "WALLET_BALANCE_MAX",
+                  "status": "RESOLVED",
+                  "limitValueMinor": "900000000000",
+                  "limitValueCount": null,
+                  "ruleId": "dab56f60-f4da-497a-90c6-0bf2039045a6",
+                  "profileCode": "T1_COMMERCIAL_HIGH",
+                  "source": "ASSIGNMENT",
+                  "effectiveFrom": "2000-01-01T00:00:00.000Z",
+                  "effectiveTo": null,
+                  "isUnlimited": false
+                }
+              ]
+            }
+          ],
+          "evaluatedAt": "2026-11-26T19:04:55.106Z"
+        },
+        "activationRoute": "PATCH /api/v1/customers/:id",
+        "evaluatedAt": "2026-11-26T19:04:55.112Z"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200,
+      "request": null,
+      "response": {
+        "templateKey": "EXECUTIVE_GOVERNANCE",
+        "displayName": "Executive & Governance",
+        "description": "Platform-wide executive overview: transaction/financial summary, ledger position, reconciliation health, workforce overview, role-governance queue, audit activity and system health.",
+        "isFallback": false,
+        "widgets": [
+          {
+            "widgetKey": "identity-session",
+            "order": 0,
+            "displayName": "Session Identity",
+            "description": "Your own signed-in principal, session and assurance level. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "identity",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "entitlements-scopes",
+            "order": 1,
+            "displayName": "Entitlements",
+            "description": "Your own effective roles and catalogue function grants. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "entitlements",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "transaction-summary",
+            "order": 2,
+            "displayName": "Transaction Summary",
+            "description": "Completed transaction value/count, success rate, and breakdown by W2W/W2C/C2W/C2C for the selected period, sourced from the authoritative transfers/deposits/withdrawals/cash-to-cash tables.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "drilldown": {
+              "view": "transfers",
+              "label": "Open transaction detail →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/transaction-summary"
+          },
+          {
+            "widgetKey": "transaction-trend",
+            "order": 3,
+            "title": "Platform Volume Trend",
+            "displayName": "Transaction Volume Trend",
+            "description": "V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: daily completed-transaction count and value across all four V1 transaction types for the selected period (maximum 92 days), zero-filled for days with no activity, sourced from the same authoritative tables as Transaction Summary.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "trend",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/transaction-trend"
+          },
+          {
+            "widgetKey": "recent-transactions",
+            "order": 4,
+            "displayName": "Recent Transactions",
+            "description": "The most recent completed/failed/pending transactions across all four V1 transaction types, with reference, type, amount, status and timestamp (no customer PII).",
+            "fetchMode": "proxy",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ],
+            "drilldown": {
+              "view": "transfers",
+              "label": "Open transaction detail →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/recent-transactions"
+          },
+          {
+            "widgetKey": "ledger-summary",
+            "order": 5,
+            "displayName": "Ledger Summary",
+            "description": "Ledger debit/credit totals by currency, sourced from ledger_journals/ledger_lines.",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "ledger.view"
+            ],
+            "drilldown": {
+              "view": "ledgerExplorer",
+              "label": "Open ledger explorer →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/ledger-summary"
+          },
+          {
+            "widgetKey": "reconciliation-status",
+            "order": 6,
+            "displayName": "Reconciliation Status",
+            "description": "The latest reconciliation run status, exceptions and trial balance, sourced from ReconciliationService.",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "reconciliation.view"
+            ],
+            "drilldown": {
+              "view": "reconciliation",
+              "label": "Open reconciliation workspace →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/reconciliation-status"
+          },
+          {
+            "widgetKey": "workforce-overview",
+            "order": 7,
+            "displayName": "Workforce Overview",
+            "description": "Active workforce headcount, role distribution and currently active sessions.",
+            "fetchMode": "proxy",
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "workforce.user.view",
+              "workforce.role.view"
+            ],
+            "drilldown": {
+              "view": "workforceDirectory",
+              "label": "Open workforce directory →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/workforce-overview"
+          },
+          {
+            "widgetKey": "role-governance-queue",
+            "order": 8,
+            "displayName": "Role Definition Proposals",
+            "description": "Pending role-definition governance proposals awaiting approval.",
+            "fetchMode": "direct",
+            "endpoint": "/internal/a2/workforce/role-definitions/proposals",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "workforce.role.view"
+            ],
+            "drilldown": {
+              "view": "roleGovernance",
+              "label": "Open role governance →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/role-definitions/proposals"
+          },
+          {
+            "widgetKey": "audit-trail",
+            "order": 9,
+            "displayName": "Recent Audit Activity",
+            "description": "The most recent audit/security events, sourced from AuditService.",
+            "fetchMode": "proxy",
+            "kind": "table",
+            "authorized": true,
+            "requiredFunctions": [
+              "audit.view"
+            ],
+            "drilldown": {
+              "view": "auditEvents",
+              "label": "Search audit events →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/audit-trail"
+          },
+          {
+            "widgetKey": "system-health",
+            "order": 10,
+            "displayName": "System Health",
+            "description": "Operational metrics, diagnostics and outbox backlog.",
+            "fetchMode": "direct",
+            "endpoint": "/internal/metrics",
+            "kind": "kpi-summary",
+            "authorized": true,
+            "requiredFunctions": [
+              "metrics.view",
+              "diagnostics.view",
+              "outbox.view"
+            ],
+            "drilldown": {
+              "view": "systemHealth",
+              "label": "Open system health →"
+            },
+            "dataEndpoint": "/internal/metrics"
+          },
+          {
+            "widgetKey": "notification-delivery-exceptions",
+            "order": 11,
+            "displayName": "Notification Delivery Exceptions",
+            "description": "Failed, dead and outcome-unknown notification deliveries in the selected window, with sanitized error codes and the next scheduled automatic retry. Read-only by policy: recovery is the worker's bounded automatic retry, so this card reports the backlog and never offers a retry control.",
+            "fetchMode": "proxy",
+            "supportsPeriodFilter": true,
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ],
+            "drilldown": {
+              "view": "notificationOperations",
+              "label": "Open notification operations →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200,
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "reference": "mn-cus-00bb1616871df06490e79a13",
+            "type": "INDIVIDUAL",
+            "status": "DRAFT",
+            "kycLevel": "NONE",
+            "kycStatus": "NOT_STARTED",
+            "createdAt": "2026-11-26T19:04:05.042Z",
+            "displayName": "Amina Grace Bello",
+            "legalName": "Amina Grace Bello",
+            "primaryContact": {
+              "type": "PHONE",
+              "maskedValue": "+234*****0016",
+              "isVerified": true
+            }
+          }
+        ],
+        "total": 5,
+        "page": 1,
+        "limit": 1,
+        "totalPages": 5,
+        "hasNextPage": true,
+        "hasPreviousPage": false
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:55.307Z",
+        "to": "2026-11-26T19:04:55.307Z",
+        "currency": "NGN",
+        "totalCompletedCount": 0,
+        "totalCompletedValueMinor": "0",
+        "totalFailedCount": 0,
+        "totalPendingCount": 0,
+        "successRatePercent": null,
+        "totalFeeRevenueMinor": "0",
+        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
+        "byType": [
+          {
+            "type": "W2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          },
+          {
+            "type": "C2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "W2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "C2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          }
+        ],
+        "commission": null,
+        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/notification-delivery-exceptions",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:55.319Z",
+        "to": "2026-11-26T19:04:55.319Z",
+        "window": {
+          "hours": 168,
+          "from": "2026-11-19T19:04:55.319Z",
+          "to": "2026-11-26T19:04:55.319Z",
+          "boundary": "half-open: created_at >= from AND created_at < to (UTC)",
+          "label": "7d window, 2026-11-19T19:04 to 2026-11-26T19:04 UTC"
+        },
+        "availability": "MEASURED",
+        "configuration": "CONFIGURED",
+        "totals": {
+          "deliveries": 0,
+          "exceptions": 0
+        },
+        "policy": {
+          "manualRetrySupported": false,
+          "policyReference": "docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md#notification-deliveries-READ-ONLY"
+        },
+        "definition": "Exception count is FAILED + DEAD + UNKNOWN deliveries created in the window, aggregated by the same read-only query the notification operations queue answers from. Only the aggregate is shown here; the per-delivery list, statuses and provider error codes are in the queue. Read-only: recovery is the worker's bounded automatic retry, and no retry control exists on this card.",
+        "checkedAt": "2026-11-26T19:04:55.319Z",
+        "source": "NotificationOperationsService.summary() over notification_deliveries"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "30d",
+        "from": "2026-10-27T19:04:55.354Z",
+        "to": "2026-11-26T19:04:55.354Z",
+        "currency": "NGN",
+        "definition": "Completed-transaction count and value, summed across all four V1 transaction types (W2W/C2W/W2C/C2C), grouped by calendar day (UTC). Days with no completed transactions appear as zero rather than being omitted.",
+        "daily": [
+          {
+            "date": "2026-10-27",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-28",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-29",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-30",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-10-31",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-01",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-02",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-03",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-04",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-05",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-06",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-07",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-08",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-09",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-10",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-11",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-12",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-13",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-14",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-15",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-16",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-17",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-18",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-19",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-20",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-21",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-22",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-23",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-24",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-25",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          },
+          {
+            "date": "2026-11-26",
+            "completedCount": 0,
+            "completedValueMinor": "0"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200,
+      "request": null,
+      "response": {
+        "items": [],
+        "counts": {
+          "total": 0,
+          "open": 0,
+          "inProgress": 0,
+          "resolved": 0,
+          "closed": 0,
+          "unassigned": 0,
+          "criticalOrHigh": 0
+        },
+        "pagination": {
+          "page": 1,
+          "limit": 1,
+          "total": 0,
+          "totalPages": 0,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200,
+      "request": null,
+      "response": [
+        {
+          "id": "4cf9f9a8-8f8f-445c-809b-31a79e1675ee",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "audit.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.393Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "audit.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.395Z"
+        },
+        {
+          "id": "94f4a7a1-9d56-4550-b7b4-b74d0f250615",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.383Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.386Z"
+        },
+        {
+          "id": "99e11ec9-c9bf-4267-9593-bcb4abb845f7",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.manage_support_case",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.359Z",
+            "resourceType": "internal-support",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.manage_support_case"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.361Z"
+        },
+        {
+          "id": "9169eb47-5e8e-4907-86ee-f4ba49e0400a",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.351Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.354Z"
+        },
+        {
+          "id": "0f24275c-8a37-4d4b-8762-a5b9054da00c",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.339Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.343Z"
+        },
+        {
+          "id": "da2cfdd8-6234-4ef5-a5d5-fd8f3b2098d2",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reconciliation.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.331Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reconciliation.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.340Z"
+        },
+        {
+          "id": "beae2dc7-e837-4498-95b0-62c32fd7c958",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "notification.view_deliveries",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.302Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "notification.view_deliveries"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.306Z"
+        },
+        {
+          "id": "c4c1af50-77fb-4853-9d79-721a2abc9de0",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "reporting.transaction_summary.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.291Z",
+            "resourceType": "dashboard-widget",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "reporting.transaction_summary.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.292Z"
+        },
+        {
+          "id": "d1de1990-a588-402a-ac76-cd701e7e2fbd",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.273Z",
+            "resourceType": "internal-customers",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.278Z"
+        },
+        {
+          "id": "f1fa6740-032f-4017-a842-dcce03857149",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.view",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:55.077Z",
+            "resourceType": "internal-customers",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.view"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:55.077Z"
+        },
+        {
+          "id": "cffc7c8c-1f8d-4804-94b7-21b41f8747e3",
+          "entityType": "CUSTOMER_IDENTITY_DOCUMENT",
+          "entityId": "95ab7f55-0663-405a-bc98-b1735db509f7",
+          "action": "CREATED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "changedFields": [
+              "type",
+              "documentNumber",
+              "issuingCountry",
+              "issuedAt",
+              "expiresAt"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:16.863Z"
+        },
+        {
+          "id": "d2caeda7-d079-4b66-850b-4a5b5fb4a396",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "kyc.review",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:16.857Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "kyc.review"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:16.857Z"
+        },
+        {
+          "id": "cff0669a-00f7-4276-bb29-ee734e6186e4",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.view_identity_documents",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:16.851Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.view_identity_documents"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:16.855Z"
+        },
+        {
+          "id": "88771055-e157-4453-813c-a2f071d56187",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "POST:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/identity-document",
+            "reason": null,
+            "allowed": true,
+            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "evaluatedAt": "2026-11-26T19:04:16.847Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": []
+          },
+          "occurredAt": "2026-11-26T19:04:16.847Z"
+        },
+        {
+          "id": "9b4d8815-0202-4a7a-9da3-f2b175cd9b32",
+          "entityType": "CUSTOMER_ADDRESS",
+          "entityId": "210cd850-d4cb-46aa-85fe-f2b76608d03d",
+          "action": "CREATED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "changedFields": [
+              "type",
+              "lineOne",
+              "lineTwo",
+              "city",
+              "state",
+              "country",
+              "postalCode",
+              "isPrimary"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:13.746Z"
+        },
+        {
+          "id": "bb78e33e-6ee9-46d4-8f22-3de344471545",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.create",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:13.735Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.create"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:13.736Z"
+        },
+        {
+          "id": "5ca1a061-7ec0-4f93-a74e-c0626b746b07",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "POST:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/address",
+            "reason": null,
+            "allowed": true,
+            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "evaluatedAt": "2026-11-26T19:04:13.723Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": []
+          },
+          "occurredAt": "2026-11-26T19:04:13.723Z"
+        },
+        {
+          "id": "87660cd8-c457-44b2-af52-0604da95a594",
+          "entityType": "CUSTOMER_CONTACT_METHOD",
+          "entityId": "ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+          "action": "PHONE_VERIFIED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": {
+            "changedFields": [
+              "phoneVerification"
+            ]
+          },
+          "newValues": {
+            "verified": true,
+            "isPrimary": true,
+            "changedFields": [
+              "phoneVerification"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:10.471Z"
+        },
+        {
+          "id": "47e754df-4c02-4239-bebf-f9ad7c515fa0",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "00000000-0000-4000-8000-000000000000",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "customer.create",
+            "reason": null,
+            "allowed": true,
+            "customerId": null,
+            "resourceId": null,
+            "evaluatedAt": "2026-11-26T19:04:10.463Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": [
+              "customer.create"
+            ]
+          },
+          "occurredAt": "2026-11-26T19:04:10.463Z"
+        },
+        {
+          "id": "67fdd79a-b982-4f56-8aeb-80126eb9693a",
+          "entityType": "AUTHORIZATION_DECISION",
+          "entityId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "action": "ALLOWED",
+          "actor": "https://idp.example.com:local-admin-credential:882fb3c173fcbd58cf1bca953634e15f",
+          "correlationId": null,
+          "requestId": null,
+          "previousValues": null,
+          "newValues": {
+            "action": "PATCH:/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/contact-methods/ba077be6-faa3-4f0b-9b2f-05dbf7552799",
+            "reason": null,
+            "allowed": true,
+            "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "resourceId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+            "evaluatedAt": "2026-11-26T19:04:10.460Z",
+            "resourceType": "customer",
+            "principalType": "PRIVILEGED",
+            "requiredRoles": [],
+            "requiredScopes": [],
+            "requiredFunctions": []
+          },
+          "occurredAt": "2026-11-26T19:04:10.460Z"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200,
+      "request": null,
+      "response": {
+        "report": {
+          "status": "PASS",
+          "generatedAt": "2026-11-26T19:04:55.426Z",
+          "checks": [
+            {
+              "name": "wallet_balances_ledger_derived",
+              "status": "PASS",
+              "message": "Every wallet has a calculable ledger-derived balance and no negative balance.",
+              "details": {
+                "wallets_checked": "0",
+                "missing_accounts": "0",
+                "currency_mismatches": "0",
+                "negative_balances": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "wallet_liability_account_ownership",
+              "status": "PASS",
+              "message": "Every wallet has exactly one compatible non-negative liability account.",
+              "details": {
+                "wallets_checked": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "journal_balance_integrity",
+              "status": "PASS",
+              "message": "Every journal has at least two lines and equal debit, credit, and recorded totals.",
+              "details": {
+                "journals_checked": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "orphan_ledger_entries",
+              "status": "PASS",
+              "message": "Every ledger line references an existing journal.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "journal_line_account_integrity",
+              "status": "PASS",
+              "message": "Every journal line references an existing ledger account.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "completed_payment_journal_integrity",
+              "status": "PASS",
+              "message": "Every completed transfer, deposit, and withdrawal references an existing journal.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "failed_transfer_attempts",
+              "status": "PASS",
+              "message": "No failed transfer attempts are awaiting investigation.",
+              "details": {
+                "failed_transfers": "0",
+                "violations": "0"
+              }
+            },
+            {
+              "name": "currency_consistency",
+              "status": "PASS",
+              "message": "Wallets, transfers, journals, lines, and accounts use consistent currencies.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "accounting_unit_consistency",
+              "status": "PASS",
+              "message": "Wallet and ledger records use consistent accounting units.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "verified_inbound_unresolved",
+              "status": "PASS",
+              "message": "All verified inbound observations have been credited.",
+              "details": {
+                "violations": "0"
+              }
+            },
+            {
+              "name": "customer_financial_account_binding_integrity",
+              "status": "PASS",
+              "message": "Customer financial account bindings are consistent with customer-wallet, wallet, and ledger sources.",
+              "details": {
+                "bindings_checked": 0,
+                "active_bindings_checked": 0,
+                "customer_wallets_checked": 0,
+                "financial_wallets_checked": 0,
+                "discrepancies": 0,
+                "errors": 0,
+                "warnings": 0,
+                "repair_performed": false
+              }
+            }
+          ],
+          "binding": {
+            "status": "PASS",
+            "generatedAt": "2026-11-26T19:04:55.426Z",
+            "summary": {
+              "bindingsChecked": 0,
+              "activeBindingsChecked": 0,
+              "customerWalletsChecked": 0,
+              "financialWalletsChecked": 0,
+              "discrepancies": 0,
+              "errors": 0,
+              "warnings": 0,
+              "byType": {}
+            },
+            "discrepancies": [],
+            "repairPerformed": false
+          }
+        },
+        "trialBalance": {
+          "generatedAt": "2026-11-26T19:04:55.373Z",
+          "rows": [
+            {
+              "accountId": "e304ab46-1979-4d6b-88ed-966393a30476",
+              "accountCode": "AGENT_FUNDING_POOL-NGN",
+              "accountName": "Agent Funding Pool NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "aabf9046-26d3-4630-874a-2c958c9e107f",
+              "accountCode": "CASH_TO_CASH-UNCLAIMED-NGN",
+              "accountName": "Cash-to-Cash Unclaimed NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "887a1c78-e024-42a9-9529-f2ba5ae4a665",
+              "accountCode": "FINANCE-COMMISSION_EXPENSE-NGN",
+              "accountName": "Finance Commission Expense NGN",
+              "accountType": "EXPENSE",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "fdbc4340-08eb-4a59-b3ef-3fc3e116ea38",
+              "accountCode": "FINANCE-COMMISSION_PAYABLE-NGN",
+              "accountName": "Finance Commission Payable NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "369cdebf-7616-4d09-a8dd-562362044aeb",
+              "accountCode": "FINANCE-FEE_REVENUE-NGN",
+              "accountName": "Finance Fee Revenue NGN (pooled)",
+              "accountType": "REVENUE",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "c5fc7423-bbd0-4fe5-bc50-4c6298b06ce9",
+              "accountCode": "FINANCE-VAT_PAYABLE-NGN",
+              "accountName": "Finance VAT Payable NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000201",
+              "accountCode": "PAYMENT-SETTLEMENT_ASSET-NGN",
+              "accountName": "Payment settlement asset NGN",
+              "accountType": "ASSET",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000202",
+              "accountCode": "PAYMENT-SETTLEMENT_CLEARING-NGN",
+              "accountName": "Payment settlement clearing NGN",
+              "accountType": "ASSET",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "00000000-0000-4000-8000-000000000203",
+              "accountCode": "PAYMENT-SYSTEM_SUSPENSE-NGN",
+              "accountName": "Payment system suspense NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            },
+            {
+              "accountId": "fb98ec0a-7828-4f6c-8e15-5dda16af1249",
+              "accountCode": "PAYMENT-WITHDRAWAL_RESERVE-NGN",
+              "accountName": "Withdrawal funds reserved NGN",
+              "accountType": "LIABILITY",
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "entryCount": 0,
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanceMinor": "0"
+            }
+          ],
+          "dimensions": [
+            {
+              "currency": "NGN",
+              "accountingUnit": "CUSTOMER_FUNDS",
+              "totalDebitsMinor": "0",
+              "totalCreditsMinor": "0",
+              "balanced": true
+            }
+          ],
+          "balanced": true
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200,
+      "request": null,
+      "response": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200,
+      "request": null,
+      "response": {
+        "activeWorkforceHeadcount": 12,
+        "roleDistribution": [
+          {
+            "roleKey": "ADMINISTRATOR",
+            "count": 1
+          },
+          {
+            "roleKey": "AGENT_NETWORK_MANAGER",
+            "count": 1
+          },
+          {
+            "roleKey": "COMPLIANCE",
+            "count": 1
+          },
+          {
+            "roleKey": "CUSTOMER_SERVICE",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_AUDITOR",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_CONTROLLER",
+            "count": 1
+          },
+          {
+            "roleKey": "FINANCE_PREPARER",
+            "count": 1
+          },
+          {
+            "roleKey": "OPERATIONS",
+            "count": 1
+          },
+          {
+            "roleKey": "RISK_FRAUD",
+            "count": 1
+          },
+          {
+            "roleKey": "SUPER_ADMIN",
+            "count": 2
+          },
+          {
+            "roleKey": "TREASURY",
+            "count": 1
+          }
+        ],
+        "activeSessionCount": 3
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200,
+      "request": null,
+      "response": {
+        "generatedAt": "2026-11-26T19:04:55.457Z",
+        "metrics": {
+          "reconciliation.duration_ms": "192"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "period": "7d",
+        "from": "2026-11-19T19:04:55.464Z",
+        "to": "2026-11-26T19:04:55.464Z",
+        "currency": "NGN",
+        "totalCompletedCount": 0,
+        "totalCompletedValueMinor": "0",
+        "totalFailedCount": 0,
+        "totalPendingCount": 0,
+        "successRatePercent": null,
+        "totalFeeRevenueMinor": "0",
+        "feeRevenueNote": "Fee revenue is computed only from transfers and cash-to-cash transfers (the only two transaction types carrying a fee_minor column). Deposits and withdrawals carry no fee column in V1 and are not included.",
+        "byType": [
+          {
+            "type": "W2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          },
+          {
+            "type": "C2W",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "W2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": null
+          },
+          {
+            "type": "C2C",
+            "completedCount": 0,
+            "completedValueMinor": "0",
+            "failedCount": 0,
+            "pendingCount": 0,
+            "feeRevenueMinor": "0"
+          }
+        ],
+        "commission": null,
+        "commissionNote": "No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated."
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/local-admin-sessions",
+      "status": 201,
+      "request": {
+        "email": "compliance@monienaija.local",
+        "password": "MonieNaija_COMPLIANCE_123!"
+      },
+      "response": {
+        "accessToken": "-m4Qrwnqdjg9GHZKlzWy88VpJuSp56MZQ9yGH_qKyYE",
+        "tokenType": "Bearer",
+        "sessionId": "ab39302e-5f3b-4578-8041-dd5c71a19618",
+        "expiresAt": "2026-11-26T19:19:56.693Z",
+        "principal": {
+          "type": "OPERATOR",
+          "principalId": "https://idp.example.com:local-admin-credential:99f6b2206f352b41848e28c6297a9ede",
+          "sessionId": "ab39302e-5f3b-4578-8041-dd5c71a19618",
+          "audience": "workforce-admin",
+          "roles": [
+            "COMPLIANCE"
+          ],
+          "scopes": [
+            "compliance.manage_case",
+            "compliance.manage_risk_profile",
+            "customer.archive_proof_of_address",
+            "customer.download_proof_of_address",
+            "customer.view",
+            "customer.view_address",
+            "customer.view_contact_methods",
+            "customer.view_identity_documents",
+            "customer.view_proof_of_address_metadata",
+            "institution.attribution.view",
+            "institution.view",
+            "kyc.approve",
+            "kyc.policy.approve",
+            "kyc.policy.view",
+            "kyc.provider.approve",
+            "kyc.provider.view",
+            "kyc.reject",
+            "kyc.review",
+            "kyc.view"
+          ],
+          "customerAccess": "NONE",
+          "assuranceLevel": "MFA",
+          "readOnlyPrincipal": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200,
+      "request": null,
+      "response": {
+        "templateKey": "COMPLIANCE_KYC",
+        "displayName": "Compliance & KYC",
+        "description": "KYC assessment queue and non-FRAUD compliance case summary (AML/KYC/SANCTIONS).",
+        "isFallback": false,
+        "widgets": [
+          {
+            "widgetKey": "identity-session",
+            "order": 0,
+            "displayName": "Session Identity",
+            "description": "Your own signed-in principal, session and assurance level. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "identity",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "entitlements-scopes",
+            "order": 1,
+            "displayName": "Entitlements",
+            "description": "Your own effective roles and catalogue function grants. No function grant required — this is always your own data.",
+            "fetchMode": "direct",
+            "kind": "entitlements",
+            "authorized": true,
+            "requiredFunctions": []
+          },
+          {
+            "widgetKey": "kyc-queue-summary",
+            "order": 2,
+            "displayName": "KYC Queue",
+            "description": "Customer KYC assessment counts by status.",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "kyc.view"
+            ],
+            "drilldown": {
+              "view": "kycQueue",
+              "label": "Open KYC queue →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/kyc-queue-summary"
+          },
+          {
+            "widgetKey": "compliance-case-summary",
+            "order": 3,
+            "displayName": "Compliance Case Summary",
+            "description": "Non-FRAUD compliance case counts by status/category (AML, KYC, SANCTIONS and related).",
+            "fetchMode": "proxy",
+            "kind": "status-breakdown",
+            "authorized": true,
+            "requiredFunctions": [
+              "compliance.manage_case"
+            ],
+            "drilldown": {
+              "view": "complianceCases",
+              "label": "Open compliance cases →"
+            },
+            "dataEndpoint": "/internal/a2/workforce/dashboard/widgets/compliance-case-summary"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byCategoryStatus": []
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200,
+      "request": null,
+      "response": {
+        "byStatus": [
+          {
+            "status": "APPROVED",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+      "status": 200,
+      "request": null,
+      "response": {
+        "customer": {
+          "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "reference": "mn-cus-00bb1616871df06490e79a13",
+          "type": "INDIVIDUAL",
+          "status": "DRAFT",
+          "kycLevel": "NONE",
+          "kycStatus": "NOT_STARTED",
+          "displayName": "Amina Grace Bello",
+          "legalName": "Amina Grace Bello",
+          "createdAt": "2026-11-26T19:04:05.042Z"
+        },
+        "assessmentState": {
+          "current": null,
+          "manualHold": null
+        },
+        "evidenceStatus": {
+          "trustedVerificationEngine": {
+            "readerStatus": "UNAVAILABLE",
+            "reasonCode": "TRUSTED_EVIDENCE_UNAVAILABLE",
+            "verificationAttempts": [],
+            "identityClaims": [],
+            "consents": []
+          },
+          "primaryPhone": {
+            "access": "GRANTED",
+            "present": true,
+            "verified": true,
+            "maskedValue": "+234***016"
+          },
+          "residentialAddress": {
+            "access": "GRANTED",
+            "count": 1,
+            "primarySummary": "Kano, Kano, NG"
+          },
+          "identityDocuments": {
+            "access": "GRANTED",
+            "items": [
+              {
+                "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+                "type": "BVN",
+                "maskedDocumentNumber": "••••7661",
+                "issuingCountry": "NG",
+                "issuedAt": null,
+                "expiresAt": null,
+                "createdAt": "2026-11-26T19:04:16.859Z"
+              }
+            ]
+          },
+          "proofOfAddress": {
+            "access": "GRANTED",
+            "canDownloadContent": true,
+            "items": []
+          }
+        },
+        "reviewHistory": {
+          "assessments": [],
+          "evaluations": []
+        },
+        "governance": {
+          "tierPolicy": {
+            "access": "GRANTED",
+            "requiredDetailScope": "kyc.policy.view",
+            "publishedVersion": 1,
+            "effectiveVersion": 1,
+            "status": "EFFECTIVE",
+            "latestApprovedAt": "2026-11-26T19:03:50.142Z",
+            "effectiveFrom": "2020-01-01T00:00:00.000Z",
+            "effectiveUntil": null,
+            "pendingProposalsCount": 0,
+            "nextLevelRequirements": {
+              "level": "LEVEL_1",
+              "configured": true,
+              "regulatory": {
+                "all": [],
+                "any": []
+              },
+              "operator": {
+                "all": [],
+                "any": []
+              }
+            }
+          },
+          "providerRouting": {
+            "access": "GRANTED",
+            "version": 1,
+            "dispatchReadyProviders": [
+              "PREMBLY"
+            ],
+            "pendingProposalsCount": 0,
+            "providers": [
+              {
+                "code": "MONNIFY",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "DOJAH",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "PREMBLY",
+                "enabled": true,
+                "ready": true,
+                "testOnly": false,
+                "configuredCapabilities": [
+                  "BVN",
+                  "NIN"
+                ],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "SYNTHETIC",
+                "enabled": false,
+                "ready": true,
+                "testOnly": true,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": [
+                  "BVN",
+                  "NIN"
+                ]
+              }
+            ],
+            "routes": {
+              "BVN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "NIN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "ADDRESS_VERIFICATION": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              },
+              "ENHANCED_DUE_DILIGENCE": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              }
+            },
+            "premblyCredentials": {
+              "encryptionAvailable": false,
+              "sandboxConfigured": false,
+              "productionConfigured": false,
+              "productionReleased": false
+            }
+          }
+        },
+        "blockers": [
+          {
+            "code": "TRUSTED_EVIDENCE_UNAVAILABLE",
+            "severity": "BLOCKING_APPROVAL",
+            "title": "Authoritative verified-evidence reader is unavailable",
+            "detail": "KycTierEvidenceReader returned null (no active provider verification trust anchor / MAC-bound BVN or NIN match on file). APPROVED tier promotions are blocked fail-closed; PENDING manual holds, REJECTED decisions, and Compliance Case escalations remain available."
+          }
+        ],
+        "supportedDecisions": {
+          "readOnlyPrincipal": false,
+          "canPlaceHoldPending": true,
+          "canReject": true,
+          "canApprove": true,
+          "approvalEligibleNow": false,
+          "approvalBlockedReason": "Trusted verification evidence reader is unavailable for this customer.",
+          "governedHoldReasons": [
+            "MANUAL_REVIEW",
+            "IDENTITY_CONFLICT",
+            "EVIDENCE_REVOKED"
+          ],
+          "canEscalateToComplianceCase": true,
+          "canViewCustomer360": true
+        },
+        "consentNotice": {
+          "version": "v1.0-ng",
+          "text": "I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result is stored as identity evidence."
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/verify-identity",
+      "status": 200,
+      "request": {
+        "kind": "BVN",
+        "customerConsentConfirmed": true,
+        "noticeVersion": "v1.0-ng",
+        "consentRequestId": "a5589ef7-6364-41af-bc9c-030852f358cd",
+        "requestId": "c034c9b7-9d8e-4618-bbe0-35897561bc77"
+      },
+      "response": {
+        "id": "81663935-53bb-4cb4-ae66-af7e88221425",
+        "consentId": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+        "kind": "BVN",
+        "status": "MATCH",
+        "provider": "PREMBLY",
+        "routeVersion": 1,
+        "identityRevision": "7",
+        "expiresAt": "2026-11-27T19:04:56.929Z"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/kyc/review-workspace/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+      "status": 200,
+      "request": null,
+      "response": {
+        "customer": {
+          "id": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+          "reference": "mn-cus-00bb1616871df06490e79a13",
+          "type": "INDIVIDUAL",
+          "status": "DRAFT",
+          "kycLevel": "NONE",
+          "kycStatus": "NOT_STARTED",
+          "displayName": "Amina Grace Bello",
+          "legalName": "Amina Grace Bello",
+          "createdAt": "2026-11-26T19:04:05.042Z"
+        },
+        "assessmentState": {
+          "current": null,
+          "manualHold": null
+        },
+        "evidenceStatus": {
+          "trustedVerificationEngine": {
+            "readerStatus": "READY",
+            "reasonCode": null,
+            "verificationAttempts": [
+              {
+                "id": "81663935-53bb-4cb4-ae66-af7e88221425",
+                "kind": "BVN",
+                "provider": "PREMBLY",
+                "policyVersion": "v1",
+                "outcome": "MATCH",
+                "createdAt": "2026-11-26T19:04:56.925Z",
+                "completedAt": "2026-11-26T19:04:56.929Z",
+                "expiresAt": "2026-11-27T19:04:56.929Z"
+              }
+            ],
+            "identityClaims": [
+              {
+                "id": "d7ecac44-cbf8-4e0c-b4b9-a661435295a8",
+                "kind": "BVN",
+                "attemptId": "81663935-53bb-4cb4-ae66-af7e88221425",
+                "status": "VERIFIED",
+                "createdAt": "2026-11-26T19:04:56.925Z"
+              }
+            ],
+            "consents": [
+              {
+                "id": "d632dee2-88d8-4977-9ccb-16c02f349fd2",
+                "kind": "BVN",
+                "noticeVersion": "v1.0-ng",
+                "provider": "PREMBLY",
+                "grantedAt": "2026-11-26T19:04:56.914Z",
+                "expiresAt": "2026-11-27T19:04:56.913Z",
+                "withdrawnAt": null
+              }
+            ]
+          },
+          "primaryPhone": {
+            "access": "GRANTED",
+            "present": true,
+            "verified": true,
+            "maskedValue": "+234***016"
+          },
+          "residentialAddress": {
+            "access": "GRANTED",
+            "count": 1,
+            "primarySummary": "Kano, Kano, NG"
+          },
+          "identityDocuments": {
+            "access": "GRANTED",
+            "items": [
+              {
+                "id": "95ab7f55-0663-405a-bc98-b1735db509f7",
+                "type": "BVN",
+                "maskedDocumentNumber": "••••7661",
+                "issuingCountry": "NG",
+                "issuedAt": null,
+                "expiresAt": null,
+                "createdAt": "2026-11-26T19:04:16.859Z"
+              }
+            ]
+          },
+          "proofOfAddress": {
+            "access": "GRANTED",
+            "canDownloadContent": true,
+            "items": []
+          }
+        },
+        "reviewHistory": {
+          "assessments": [],
+          "evaluations": []
+        },
+        "governance": {
+          "tierPolicy": {
+            "access": "GRANTED",
+            "requiredDetailScope": "kyc.policy.view",
+            "publishedVersion": 1,
+            "effectiveVersion": 1,
+            "status": "EFFECTIVE",
+            "latestApprovedAt": "2026-11-26T19:03:50.142Z",
+            "effectiveFrom": "2020-01-01T00:00:00.000Z",
+            "effectiveUntil": null,
+            "pendingProposalsCount": 0,
+            "nextLevelRequirements": {
+              "level": "LEVEL_1",
+              "configured": true,
+              "regulatory": {
+                "all": [],
+                "any": []
+              },
+              "operator": {
+                "all": [],
+                "any": []
+              }
+            }
+          },
+          "providerRouting": {
+            "access": "GRANTED",
+            "version": 1,
+            "dispatchReadyProviders": [
+              "PREMBLY"
+            ],
+            "pendingProposalsCount": 0,
+            "providers": [
+              {
+                "code": "MONNIFY",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "DOJAH",
+                "enabled": false,
+                "ready": false,
+                "testOnly": false,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "PREMBLY",
+                "enabled": true,
+                "ready": true,
+                "testOnly": false,
+                "configuredCapabilities": [
+                  "BVN",
+                  "NIN"
+                ],
+                "confirmedCapabilities": []
+              },
+              {
+                "code": "SYNTHETIC",
+                "enabled": false,
+                "ready": true,
+                "testOnly": true,
+                "configuredCapabilities": [],
+                "confirmedCapabilities": [
+                  "BVN",
+                  "NIN"
+                ]
+              }
+            ],
+            "routes": {
+              "BVN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "NIN": {
+                "primary": "PREMBLY",
+                "fallback": null,
+                "primaryReady": true,
+                "fallbackReady": false
+              },
+              "ADDRESS_VERIFICATION": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              },
+              "ENHANCED_DUE_DILIGENCE": {
+                "primary": null,
+                "fallback": null,
+                "primaryReady": false,
+                "fallbackReady": false
+              }
+            },
+            "premblyCredentials": {
+              "encryptionAvailable": false,
+              "sandboxConfigured": false,
+              "productionConfigured": false,
+              "productionReleased": false
+            }
+          }
+        },
+        "blockers": [],
+        "supportedDecisions": {
+          "readOnlyPrincipal": false,
+          "canPlaceHoldPending": true,
+          "canReject": true,
+          "canApprove": true,
+          "approvalEligibleNow": true,
+          "approvalBlockedReason": null,
+          "governedHoldReasons": [
+            "MANUAL_REVIEW",
+            "IDENTITY_CONFLICT",
+            "EVIDENCE_REVOKED"
+          ],
+          "canEscalateToComplianceCase": true,
+          "canViewCustomer360": true
+        },
+        "consentNotice": {
+          "version": "v1.0-ng",
+          "text": "I authorise MonieNaija to verify my BVN with the licensed identity provider for Tier 1 KYC, and I understand the result is stored as identity evidence."
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53/kyc-assessment",
+      "status": 201,
+      "request": {
+        "level": "LEVEL_1",
+        "status": "APPROVED",
+        "assessedBy": "operator-journey-compliance",
+        "reason": "Provider BVN match verified through the governed consent flow"
+      },
+      "response": {
+        "id": "0e5c0c1e-049c-443e-8a97-789458972248",
+        "customerId": "3be0a832-ed9d-45eb-9fd7-ecb19d5a4d53",
+        "level": "LEVEL_1",
+        "status": "APPROVED"
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "error": "locator.click: Element is not visible\nCall log:\n  - waiting for locator('[data-testid=\"nav-kycQueue\"]').first()\n    - locator resolved to <button type=\"button\" class=\"mn-nav__item\" data-testid=\"nav-kycQueue\">KYC reviews</button>\n  - attempting click action\n    - scrolling into view if needed\n"
+}
