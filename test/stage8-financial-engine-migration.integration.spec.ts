@@ -106,10 +106,11 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations
         ORDER BY timestamp DESC LIMIT 1`,
     );
-    // The platform-funds migration is appended after the customer-class migration by PR #33.
+    // The published head moves forward by append-only migrations: PR #33 (0813) is followed by the
+    // Monnify Bank→Wallet journey (0900) and its governed return refunds (0901). Never renumbered.
     expect(rows[0]).toEqual({
-      timestamp: '1785753600813',
-      name: 'CreatePlatformFundsBankComparisons1785753600813',
+      timestamp: '1785753600910',
+      name: 'SettlementReportReconciliation1785753600910',
     });
   });
 
@@ -216,7 +217,10 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('CreatePlatformFundsBankComparisons1785753600813');
+      expect(appliedNames.at(-4)).toBe('CreatePlatformFundsBankComparisons1785753600813');
+      expect(appliedNames.at(-3)).toBe('BankToWalletMonnifyJourney1785753600900');
+      expect(appliedNames.at(-2)).toBe('BankToWalletReturnRefunds1785753600901');
+      expect(appliedNames.at(-1)).toBe('SettlementReportReconciliation1785753600910');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
@@ -366,7 +370,7 @@ describe('Stage 8 readiness detection of a missing earlier migration (real Postg
     // The readiness service's expected head is the current migration head. This assertion tracks it
     // rather than re-deriving it, so a stale expectation fails loudly instead of quietly accepting a
     // tree the service does not consider compatible.
-    expect(result.migrations.latestTimestamp).toBe('1785753600813');
+    expect(result.migrations.latestTimestamp).toBe('1785753600910');
     // Financial dependency gates are unverified by design, so overall readiness still refuses.
     expect(result.status).toBe('error');
     expect(result.reason).toBe('financial_dependencies_not_ready');

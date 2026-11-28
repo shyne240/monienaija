@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { verifyWebhook } from './monnify/monnify-webhook.signature';
 import type { BankingInboundService } from './banking-inbound.service';
+import type { BankingOutboundService } from './banking-outbound.service';
+import type { BankToWalletService } from './bank-to-wallet.service';
 
 /**
  * Webhook ingestion.
@@ -60,6 +62,18 @@ export interface BankingWebhookConfiguration {
 /** Event types Monnify documents. Anything else is acknowledged and ignored, never guessed at. */
 const INBOUND_EVENTS = new Set(['SUCCESSFUL_TRANSACTION', 'SETTLEMENT']);
 
+/**
+ * Monnify's documented disbursement notifications. The payload does NOT decide the outcome: it only
+ * identifies our operation reference. Authoritative status is always re-read from the provider by
+ * the outbound service, so a late, repeated, delayed or out-of-order notification cannot credit a
+ * wallet or release a reservation on stale news.
+ */
+const OUTBOUND_EVENTS = new Set([
+  'SUCCESSFUL_DISBURSEMENT',
+  'FAILED_DISBURSEMENT',
+  'REVERSED_DISBURSEMENT',
+]);
+
 @Injectable()
 export class BankingWebhookService {
   private readonly logger = new Logger(BankingWebhookService.name);
@@ -67,7 +81,52 @@ export class BankingWebhookService {
   constructor(
     private readonly inbound: BankingInboundService,
     private readonly config: BankingWebhookConfiguration,
+    private readonly bankToWallet?: BankToWalletService,
+    private readonly outbound?: BankingOutboundService,
   ) {}
+
+  /**
+   * Disbursement notifications are recovery hints, never settlement instructions. The event payload
+   * identifies our operation reference; the provider status enquiry decides the truth. An unknown,
+   * late, delayed, repeated or out-of-order event therefore all take the same safe path: re-read the
+   * authoritative status against the durable record. No second submission is possible here.
+   */
+  private async handleOutboundNotification(
+    eventType: string,
+    rawEventData: unknown,
+  ): Promise<WebhookOutcome> {
+    if (!this.outbound) {
+      return { status: 'IGNORED', reason: 'Outbound recovery is not configured' };
+    }
+    const eventData =
+      typeof rawEventData === 'object' && rawEventData !== null
+        ? (rawEventData as Record<string, unknown>)
+        : null;
+    // Monnify's disbursement webhook calls our original request reference `reference`; the
+    // provider's own identifier is `transactionReference`. Never confuse the two.
+    const operationReference =
+      typeof eventData?.reference === 'string' ? eventData.reference.trim() : '';
+    const providerReference =
+      typeof eventData?.transactionReference === 'string'
+        ? eventData.transactionReference.trim()
+        : '';
+    if (!operationReference) {
+      return { status: 'IGNORED', reason: 'No outbound operation reference' };
+    }
+    const id = await this.outbound.findByOperationReference(operationReference);
+    if (!id) {
+      // Traceable no-op: a notification for an operation this deployment never dispatched is not
+      // evidence of a transfer and must not create one.
+      this.logger.warn(`Disbursement webhook ${eventType} has no matching outbound operation`);
+      return { status: 'IGNORED', reason: 'Outbound operation not found' };
+    }
+    const record = await this.outbound.enquire(id, `webhook:${eventType}`);
+    return {
+      status: 'ACCEPTED',
+      providerTransactionReference: providerReference || operationReference,
+      alreadyRecorded: record.state !== 'CREATED',
+    };
+  }
 
   /**
    * Handles a Monnify collection webhook.
@@ -103,6 +162,9 @@ export class BankingWebhookService {
       return { status: 'REJECTED', reason: 'Unrecognised payload' };
     }
     const eventType = typeof body.eventType === 'string' ? body.eventType : '';
+    if (OUTBOUND_EVENTS.has(eventType)) {
+      return this.handleOutboundNotification(eventType, body.eventData);
+    }
     if (!INBOUND_EVENTS.has(eventType)) {
       // Acknowledged and ignored. Guessing at an unknown event would mean inventing semantics.
       return { status: 'IGNORED', reason: `Unhandled event type ${eventType || '<missing>'}` };
@@ -151,30 +213,59 @@ export class BankingWebhookService {
         typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null,
       providerTransactionReference,
     });
+    const receivingAccountNumber =
+      typeof eventData.destinationAccountNumber === 'string'
+        ? eventData.destinationAccountNumber
+        : null;
+    const receivingBankCode =
+      typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null;
+    const providerPaymentReference =
+      typeof eventData.paymentReference === 'string' ? eventData.paymentReference : null;
+    const currency = typeof eventData.currency === 'string' ? eventData.currency : 'NGN';
+
     if (!attribution) {
-      // Acknowledged (so the provider stops retrying) but not recorded, and surfaced: this is the
-      // "unknown receiving account" case, which must be visible to an operator, not silently dropped.
+      // Acknowledged so the provider stops retrying, but now TRACEABLE: the business reference and
+      // the reason are retained for Finance. No institution is invented and no wallet is credited.
+      if (this.bankToWallet) {
+        await this.bankToWallet.recordUnattributed({
+          environment: this.config.environment,
+          providerTransactionReference,
+          providerPaymentReference,
+          receivingAccountNumber,
+          receivingBankCode,
+          currency,
+          grossAmountMinor: grossMinor,
+          providerFeeMinor: feeMinor,
+        });
+      }
       return { status: 'UNRESOLVED', reason: 'Receiving account could not be attributed' };
     }
 
+    let businessReference: string | undefined;
+    if (this.bankToWallet) {
+      businessReference = this.bankToWallet.businessReferenceFor({
+        providerKey: this.config.providerKey,
+        environment: this.config.environment,
+        providerTransactionReference,
+        institutionId: attribution.institutionId,
+        receivingAccountNumber,
+      });
+    }
     const recorded = await this.inbound.record({
       institutionId: attribution.institutionId,
       providerKey: this.config.providerKey,
       environment: this.config.environment,
       providerTransactionReference,
-      providerPaymentReference:
-        typeof eventData.paymentReference === 'string' ? eventData.paymentReference : null,
-      receivingAccountNumber:
-        typeof eventData.destinationAccountNumber === 'string'
-          ? eventData.destinationAccountNumber
-          : null,
-      receivingBankCode:
-        typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null,
-      currency: typeof eventData.currency === 'string' ? eventData.currency : 'NGN',
+      providerPaymentReference,
+      reservationId: null,
+      receivingAccountNumber,
+      receivingBankCode,
+      currency,
       grossAmountMinor: grossMinor,
       providerFeeMinor: feeMinor,
       creditedAmountMinor: grossMinor,
       paidAt: typeof eventData.paidOn === 'string' ? eventData.paidOn : null,
+      businessReference,
     });
 
     // Recorded, not verified. Verification is a separate server-to-server call driven by the

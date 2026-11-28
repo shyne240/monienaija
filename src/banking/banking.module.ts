@@ -9,6 +9,11 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { OperationsModule } from '../operations/operations.module';
 import { WorkerSupervisorService } from '../operations/worker-supervisor.service';
 import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { PaymentModule } from '../payment/payment.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import { InstitutionModule } from '../institution/institution.module';
 
 import { BankingProviderRegistry } from './banking-provider.registry';
 import {
@@ -17,6 +22,7 @@ import {
 } from './banking-provider-governance.service';
 import { BankingReadinessService } from './banking-readiness.service';
 import { BankingOutboundService } from './banking-outbound.service';
+import { BankToWalletReturnExecutionService } from './bank-to-wallet-return-execution.service';
 import { BankingInboundService } from './banking-inbound.service';
 import { BankingVirtualAccountService } from './banking-virtual-account.service';
 import { BankingReconciliationService } from './banking-reconciliation.service';
@@ -55,6 +61,9 @@ import {
 } from './bank-beneficiary.controller';
 import { buildBankingRegistry } from './banking.config';
 import { PostgresWebhookAttribution } from './banking-webhook.config';
+import { MonnifyIdentityAssertionService } from './monnify-identity-assertion.service';
+import { BankToWalletExceptionService } from './bank-to-wallet-exception.service';
+import { BankToWalletService } from './bank-to-wallet.service';
 
 export const BANKING_RUNTIME = Symbol('BANKING_RUNTIME');
 export const BANKING_PROVIDER_KEYS = Symbol('BANKING_PROVIDER_KEYS');
@@ -90,6 +99,11 @@ export interface BankingRuntime {
     // and its TypeORM feature set; importing the module avoids re-declaring the entities.
     // Circular guard: banking does not depend on customer-beneficiary controllers.
     CustomerBeneficiaryModule,
+    FeeRulesModule,
+    LimitCatalogModule,
+    PaymentModule,
+    KycTierModule,
+    InstitutionModule,
   ],
   providers: [
     {
@@ -104,6 +118,13 @@ export interface BankingRuntime {
             contractCode: config.get('BANKING_MONNIFY_CONTRACT_CODE', { infer: true }),
             apiKey: config.get('BANKING_MONNIFY_API_KEY', { infer: true }),
             secretKey: config.get('BANKING_MONNIFY_SECRET_KEY', { infer: true }),
+            disbursementSourceAccountNumber: config.get(
+              'BANKING_MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER',
+              { infer: true },
+            ),
+            refundsEnabled: config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', {
+              infer: true,
+            }),
           },
           logger,
         );
@@ -129,6 +150,13 @@ export interface BankingRuntime {
             contractCode: config.get('BANKING_MONNIFY_CONTRACT_CODE', { infer: true }),
             apiKey: config.get('BANKING_MONNIFY_API_KEY', { infer: true }),
             secretKey: config.get('BANKING_MONNIFY_SECRET_KEY', { infer: true }),
+            disbursementSourceAccountNumber: config.get(
+              'BANKING_MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER',
+              { infer: true },
+            ),
+            refundsEnabled: config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', {
+              infer: true,
+            }),
           },
           logger,
         ).registry;
@@ -149,6 +177,21 @@ export interface BankingRuntime {
     },
     BankingProviderGovernanceService,
     BankingOutboundService,
+    {
+      // Refund execution is fail-closed: the boolean never defaults from a provider capability.
+      provide: BankToWalletReturnExecutionService,
+      inject: [DataSource, BankingProviderRegistry, ConfigService],
+      useFactory: (
+        db: DataSource,
+        registry: BankingProviderRegistry,
+        config: ConfigService<Environment, true>,
+      ) =>
+        new BankToWalletReturnExecutionService(
+          db,
+          registry,
+          config.get('BANK_TO_WALLET_RETURN_EXECUTION_ENABLED', { infer: true }) === true,
+        ),
+    },
     BankingInboundService,
     BankingVirtualAccountService,
     BankingReconciliationService,
@@ -184,27 +227,43 @@ export interface BankingRuntime {
     AgentFloatFundingService,
     BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
+    MonnifyIdentityAssertionService,
+    BankToWalletExceptionService,
+    BankToWalletService,
     BankingDirectoryService,
     BankingAccountEnquiryService,
     BankBeneficiaryCreationService,
     {
       provide: BankingWebhookService,
-      inject: [BankingInboundService, ConfigService, PostgresWebhookAttribution],
+      inject: [
+        BankingInboundService,
+        ConfigService,
+        PostgresWebhookAttribution,
+        BankToWalletService,
+        BankingOutboundService,
+      ],
       useFactory: (
         inbound: BankingInboundService,
         config: ConfigService<Environment, true>,
         attribution: PostgresWebhookAttribution,
+        bankToWallet: BankToWalletService,
+        outbound: BankingOutboundService,
       ): BankingWebhookService =>
         // One endpoint serves every institution: the provider key is fixed (this is Monnify's
         // endpoint) but the institution is resolved per payment from the receiving account.
-        new BankingWebhookService(inbound, {
-          providerKey: 'MONNIFY',
-          // An absent secret makes every verification fail closed, which is the correct outcome for
-          // a deployment that has not configured the webhook.
-          clientSecret: config.get('BANKING_MONNIFY_CLIENT_SECRET', { infer: true }) ?? '',
-          environment: config.get('BANKING_ENVIRONMENT', { infer: true }),
-          resolveAttribution: (input) => attribution.resolve(input),
-        }),
+        new BankingWebhookService(
+          inbound,
+          {
+            providerKey: 'MONNIFY',
+            // An absent secret makes every verification fail closed, which is the correct outcome for
+            // a deployment that has not configured the webhook.
+            clientSecret: config.get('BANKING_MONNIFY_CLIENT_SECRET', { infer: true }) ?? '',
+            environment: config.get('BANKING_ENVIRONMENT', { infer: true }),
+            resolveAttribution: (input) => attribution.resolve(input),
+          },
+          bankToWallet,
+          outbound,
+        ),
     },
     {
       provide: BankingWithdrawalExecutionAuthority,
@@ -277,6 +336,7 @@ export interface BankingRuntime {
     BankingReadinessService,
     BankingProviderGovernanceService,
     BankingOutboundService,
+    BankToWalletReturnExecutionService,
     BankingInboundService,
     BankingVirtualAccountService,
     BankingReconciliationService,
@@ -292,6 +352,9 @@ export interface BankingRuntime {
     BankingInboundFundingVerifier,
     BankingInboundInstitutionAuthority,
     BankingDispatchWorker,
+    MonnifyIdentityAssertionService,
+    BankToWalletExceptionService,
+    BankToWalletService,
   ],
 })
 export class BankingModule {}

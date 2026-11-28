@@ -65,32 +65,59 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the platform funds bank comparisons migration', () => {
+  it('ends at the settlement-report reconciliation migration after the Banking identities', () => {
     // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
     // banking range, Arena 2C appended 0800-0802 after that, Arena 5 appended 0803–0804 for the
     // dual-lane (customer/agent) A6 financial authorization + external-ops, Arena 1 appended
-    // 0805 (customer classes), followed by 0806 (durable inbound identity) and 0807 (captured
-    // customer funding scope), then PR #33 appended 0813 (Platform Funds vs. Bank Balance).
-    // The head is pinned exactly — a head-only allowance would let a skipped earlier identity pass.
+    // 0805 (customer classes), PR #23 appended 0806 (durable inbound identity) and 0807
+    // (captured customer funding scope), PR #33 appended 0813 (Platform Funds vs. Bank Balance).
+    // Two independent candidates then extend the tail in timestamp order without renumbering:
+    // the Monnify Banking journey (0900) and its governed return refunds (0901), then Arena 10's
+    // settlement-report reconciliation (0910). The head is pinned exactly — a head-only allowance
+    // would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
+      timestamp: '1785753600910',
+      name: 'SettlementReportReconciliation1785753600910',
+    });
+    expect(migrations.at(-2)).toMatchObject({
+      timestamp: '1785753600901',
+      name: 'BankToWalletReturnRefunds1785753600901',
+    });
+    expect(migrations.at(-3)).toMatchObject({
+      timestamp: '1785753600900',
+      name: 'BankToWalletMonnifyJourney1785753600900',
+    });
+    expect(migrations.at(-4)).toMatchObject({
       timestamp: '1785753600813',
       name: 'CreatePlatformFundsBankComparisons1785753600813',
     });
-    expect(migrations.at(-2)).toMatchObject({
+    expect(migrations.at(-5)).toMatchObject({
       timestamp: '1785753600812',
       name: 'CustomerRestrictionConfigurationReview1785753600812',
     });
-    expect(migrations.at(-3)).toMatchObject({
+    expect(migrations.at(-6)).toMatchObject({
       timestamp: '1785753600811',
       name: 'LimitRuleUnlimited1785753600811',
     });
-    expect(migrations.at(-4)).toMatchObject({
+    expect(migrations.at(-7)).toMatchObject({
       timestamp: '1785753600810',
       name: 'CustomerTierDefaultClassMappings1785753600810',
     });
-    expect(migrations.at(-5)).toMatchObject({
+    expect(migrations.at(-8)).toMatchObject({
       timestamp: '1785753600807',
       name: 'CaptureCustomerFundingScope1785753600807',
+    });
+    expect(migrations.at(-9)).toMatchObject({
+      timestamp: '1785753600806',
+      name: 'DurableInboundIdentity1785753600806',
+    });
+    expect(migrations.at(-10)).toMatchObject({
+      timestamp: '1785753600805',
+      name: 'CreateCustomerClasses1785753600805',
+    });
+    expect(migrations.at(-11)).toMatchObject({
+      timestamp: '1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
   });
 
@@ -179,15 +206,17 @@ describe('migration inventory', () => {
     expect(first2c).toBeGreaterThan(last3d);
   });
 
-  it('contains exactly 175 migration identities', () => {
+  it('contains the complete published migration inventory', () => {
     // The consolidated inventory is the union of the two frozen branches: 152 common identities
     // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D, three by
     // Arena 2C, two by Arena 5 (agent financial authorization + external-ops), the additive
     // fee-targeting migration contributed by PR #4 (0506), the Prembly credential-governance
     // migration (0507), the customer-class migration contributed by Arena 1 (0805), the durable
     // inbound identity (0806), captured customer funding scope (0807), the tier-default
-    // configuration migrations (0810-0812), and the platform-funds bank comparisons migration
-    // contributed by PR #33 (0813). Any additional or missing file fails this assertion.
+    // configuration migrations (0810-0812), the platform-funds bank comparisons migration
+    // contributed by PR #33 (0813), the Monnify Bank→Wallet journey (0900) and its governed
+    // return refunds (0901), and the settlement-report reconciliation migration contributed by
+    // Arena 10 (0910). Any additional or missing file fails this assertion.
     expect(migrations).toContainEqual({
       timestamp: '1785753600506',
       name: 'FeeRuleTargeting1785753600506',
@@ -223,7 +252,22 @@ describe('migration inventory', () => {
     ] as const) {
       expect(migrations).toContainEqual({ timestamp, name, file });
     }
-    expect(migrations.length).toBe(175);
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600900',
+      name: 'BankToWalletMonnifyJourney1785753600900',
+      file: '1785753600900-BankToWalletMonnifyJourney.ts',
+    });
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600901',
+      name: 'BankToWalletReturnRefunds1785753600901',
+      file: '1785753600901-BankToWalletReturnRefunds.ts',
+    });
+    expect(migrations).toContainEqual({
+      timestamp: '1785753600910',
+      name: 'SettlementReportReconciliation1785753600910',
+      file: '1785753600910-SettlementReportReconciliation.ts',
+    });
+    expect(migrations.length).toBe(178);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

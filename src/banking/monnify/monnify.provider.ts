@@ -13,6 +13,9 @@ import type {
   OutboundTransferRequest,
   OutboundTransferSubmissionResult,
   ProviderBalanceResult,
+  RefundInitiationRequest,
+  RefundInitiationResult,
+  RefundStatusResult,
   SettlementVerificationResult,
   TransferStatusResult,
   VirtualAccountProvisionRequest,
@@ -48,6 +51,17 @@ export interface MonnifyProviderOptions {
   readonly http: MonnifyHttpClient;
   /** Wallet id for balance enquiry; documented endpoint is deprecated but the parameter is required. */
   readonly walletId?: string;
+  /**
+   * Documented `sourceAccountNumber` for disbursements (the Monnify wallet account number shown on
+   * the disbursements page). Never inferred from a reserved account or from a settlement report.
+   */
+  readonly disbursementSourceAccountNumber?: string;
+  /**
+   * Refunds are not enabled by default on a Monnify contract. Until the provider owner confirms
+   * activation this is false, so the adapter refuses locally rather than sending a request that
+   * would be rejected (or worse, partially processed) by the provider.
+   */
+  readonly refundsEnabled?: boolean;
 }
 
 const PROVIDER_KEY = 'MONNIFY';
@@ -75,7 +89,9 @@ export class MonnifyProvider implements BankingProvider {
         PROVIDER_BALANCE_ENQUIRY: false,
         // Ingestion is a route + signature concern implemented outside the adapter.
         WEBHOOK_INGESTION: false,
-        REFUND_INITIATION: false,
+        // Implemented against Monnify's documented refund contract, but activation is not
+        // presumed: `refundsEnabled` is false until the provider owner confirms it.
+        REFUND_INITIATION: true,
       }),
       descriptors: [
         {
@@ -125,7 +141,7 @@ export class MonnifyProvider implements BankingProvider {
           maturity: 'SUPPORTED',
           documented: true,
           requiresCommercialEntitlement: true,
-          note: 'GET /api/v2/transactions/{transactionReference} — independent verification of an inbound observation.',
+          note: 'GET /api/v2/merchant/transactions/query?transactionReference= — documented independent verification of an inbound observation.',
         },
         {
           key: 'SETTLEMENT_VERIFICATION',
@@ -140,6 +156,13 @@ export class MonnifyProvider implements BankingProvider {
           documented: true,
           requiresCommercialEntitlement: true,
           note: 'GET /api/v1/disbursements/wallet-balance is documented as deprecated; nothing financial depends on it.',
+        },
+        {
+          key: 'REFUND_INITIATION',
+          maturity: 'SUPPORTED',
+          documented: true,
+          requiresCommercialEntitlement: true,
+          note: 'POST /api/v1/refunds/initiate-refund and GET /api/v1/refunds/{refundReference}. Refunds are NOT enabled by default; activation and wallet funding require provider owner approval.',
         },
         {
           key: 'RECONCILIATION_OBSERVATIONS',
@@ -488,6 +511,36 @@ export class MonnifyProvider implements BankingProvider {
     request: OutboundTransferRequest,
     context: BankingRequestContext,
   ): Promise<BankingProviderResult<OutboundTransferSubmissionResult>> {
+    // Fail locally BEFORE the request is sent when the documented source wallet is not configured.
+    // A CONFIGURATION error is NOT_SENT by definition; the dispatch service may keep the record
+    // inspectable, but nothing here can be mistaken for a transfer that might have moved money.
+    const source = this.options.disbursementSourceAccountNumber?.trim();
+    if (!source || !/^[0-9]{6,20}$/.test(source)) {
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_NOT_CONFIGURED',
+          'A documented disbursement sourceAccountNumber is required before any transfer is sent',
+        ),
+      };
+    }
+    if (!/^[1-9][0-9]{0,14}$/.test(request.amountMinor)) {
+      return {
+        ok: false,
+        error: monnifyError('MONNIFY_INVALID_INPUT', 'amountMinor is not a safe positive integer'),
+      };
+    }
+    if (!request.destinationAccountName.trim()) {
+      // Monnify's current disbursement contract requires the verified beneficiary name. Never
+      // synthesize it from a beneficiary label or a webhook payload.
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_INVALID_INPUT',
+          'A verified destinationAccountName is required by the transfer contract',
+        ),
+      };
+    }
     const result = await this.authorized(
       'POST',
       '/api/v2/disbursements/single',
@@ -498,15 +551,22 @@ export class MonnifyProvider implements BankingProvider {
         destinationBankCode: request.destinationBankCode,
         destinationAccountNumber: request.destinationAccountNumber,
         currency: request.currency,
-        sourceAccountNumber: this.options.walletId,
+        sourceAccountNumber: source,
         // The provider contract (2026) expects the verified beneficiary name from name enquiry.
         destinationAccountName: request.destinationAccountName,
       },
       context,
     );
     if (!result.ok) {
-      if (result.error.category === 'TIMEOUT' || result.error.category === 'TRANSPORT') {
-        // Money may have moved. UNKNOWN, never REJECTED.
+      if (
+        result.error.category === 'TIMEOUT' ||
+        result.error.category === 'TRANSPORT' ||
+        // D07 is Monnify's documented duplicate-request response (same destination and amount
+        // within two minutes). It is a refusal of THIS request, not evidence that no earlier
+        // request reached the bank. The only safe remedy is a status enquiry with our reference.
+        result.error.providerCode === 'D07'
+      ) {
+        // Money may have moved. UNKNOWN, never REJECTED — and never a new submission.
         return {
           ok: true,
           value: {
@@ -522,8 +582,10 @@ export class MonnifyProvider implements BankingProvider {
     const status = typeof body.status === 'string' ? body.status.toUpperCase() : '';
     const providerReference = typeof body.reference === 'string' ? body.reference : undefined;
     const requiresOtp =
-      status.includes('OTP') ||
       status === 'PENDING_AUTHORIZATION' ||
+      status === 'PENDING_BATCH_AUTHORIZATION' ||
+      status === 'AWAITING_OTP' ||
+      status === 'OTP_EMAIL_DISPATCH_FAILED' ||
       body.requiresOtp === true ||
       body.otpRequired === true;
 
@@ -540,10 +602,22 @@ export class MonnifyProvider implements BankingProvider {
   }
 
   private mapSubmissionStatus(status: string): 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'UNKNOWN' {
+    // Monnify documents SUCCESS/COMPLETED as terminal success; a response alone is still not
+    // authority to post funds — the shared A6 verifier re-enquires before any settlement journal.
     if (status === 'SUCCESS' || status === 'SUCCESSFUL' || status === 'COMPLETED')
       return 'ACCEPTED';
     if (status === 'FAILED' || status === 'REJECTED' || status === 'FAILED_OTP') return 'REJECTED';
-    if (status === 'PENDING' || status === 'AWAITING' || status === 'IN_PROGRESS') return 'PENDING';
+    if (
+      status === 'PENDING' ||
+      status === 'PENDING_AUTHORIZATION' ||
+      status === 'PENDING_BATCH_AUTHORIZATION' ||
+      status === 'AWAITING_OTP' ||
+      status === 'OTP_EMAIL_DISPATCH_FAILED' ||
+      status === 'AWAITING_PROCESSING' ||
+      status === 'AWAITING' ||
+      status === 'IN_PROGRESS'
+    )
+      return 'PENDING';
     // An unrecognised status is NOT success and NOT failure.
     return 'UNKNOWN';
   }
@@ -609,12 +683,197 @@ export class MonnifyProvider implements BankingProvider {
       case 'PENDING':
       case 'IN_PROGRESS':
       case 'AWAITING':
-      case 'AWAITING_OTP':
+      case 'AWAITING_PROCESSING':
+      case 'PENDING_AUTHORIZATION':
+      case 'PENDING_BATCH_AUTHORIZATION':
+      case 'OTP_EMAIL_DISPATCH_FAILED':
+        // All of these are "not yet a final financial outcome". A pending/OTP state must trigger
+        // another authoritative enquiry, never a second submission and never a ledger release.
         return 'PENDING';
+      case 'EXPIRED':
+        // Documented for batches: the instruction elapsed without completion.
+        return 'FAILED';
       default:
         // Never guess. An unknown status is UNKNOWN, which the caller must resolve by enquiry.
         return 'UNKNOWN';
     }
+  }
+
+  // ------------------------------------------------------------- refunds
+
+  /**
+   * Documented collection refund. Activation and wallet funding are owner decisions; until they are
+   * recorded in configuration this method refuses locally and sends nothing.
+   */
+  async initiateRefund(
+    request: RefundInitiationRequest,
+    context: BankingRequestContext,
+  ): Promise<BankingProviderResult<RefundInitiationResult>> {
+    if (this.options.refundsEnabled !== true) {
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_ENTITLEMENT_DENIED',
+          'Refund API activation has not been confirmed for this contract',
+        ),
+      };
+    }
+    if (
+      !request.originalProviderReference.trim() ||
+      !/^[A-Za-z0-9._|:-]{4,160}$/.test(request.refundReference) ||
+      !/^[1-9][0-9]{0,14}$/.test(request.amountMinor) ||
+      request.reason.trim().length === 0 ||
+      request.reason.length > 64 ||
+      request.customerNote.trim().length === 0 ||
+      request.customerNote.length > 16
+    ) {
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_INVALID_INPUT',
+          'Refund fields do not satisfy the documented contract',
+        ),
+      };
+    }
+    if (
+      (request.destinationAccountNumber === undefined) !==
+      (request.destinationBankCode === undefined)
+    ) {
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_INVALID_INPUT',
+          'Refund destination requires both an account number and a bank code',
+        ),
+      };
+    }
+    const result = await this.authorized(
+      'POST',
+      '/api/v1/refunds/initiate-refund',
+      {
+        transactionReference: request.originalProviderReference,
+        refundReference: request.refundReference,
+        refundAmount: Number(request.amountMinor) / 100,
+        refundReason: request.reason,
+        customerNote: request.customerNote,
+        ...(request.destinationAccountNumber
+          ? {
+              destinationAccountNumber: request.destinationAccountNumber,
+              destinationBankCode: request.destinationBankCode,
+            }
+          : {}),
+      },
+      context,
+    );
+    if (!result.ok) {
+      if (
+        result.error.category === 'TIMEOUT' ||
+        result.error.category === 'TRANSPORT' ||
+        // R9 means this refund reference was already used. That is OUR reference, so the correct
+        // remedy is a status enquiry, never a new refund reference and never a second submission.
+        result.error.providerCode === 'R9'
+      ) {
+        return {
+          ok: true,
+          value: {
+            outcome: 'UNKNOWN',
+            refundReference: request.refundReference,
+            originalProviderReference: request.originalProviderReference,
+            correlationId: context.correlationId,
+          },
+        };
+      }
+      return result;
+    }
+    const body = result.value as Record<string, unknown>;
+    const status = typeof body.refundStatus === 'string' ? body.refundStatus.toUpperCase() : '';
+    return {
+      ok: true,
+      value: {
+        outcome: this.mapRefundSubmissionStatus(status),
+        refundReference:
+          typeof body.refundReference === 'string' ? body.refundReference : request.refundReference,
+        originalProviderReference:
+          typeof body.transactionReference === 'string'
+            ? body.transactionReference
+            : request.originalProviderReference,
+        ...(status ? { providerStatus: status } : {}),
+        correlationId: context.correlationId,
+      },
+    };
+  }
+
+  async getRefundStatus(
+    refundReference: string,
+    context: BankingRequestContext,
+  ): Promise<BankingProviderResult<RefundStatusResult>> {
+    if (this.options.refundsEnabled !== true) {
+      return {
+        ok: false,
+        error: monnifyError(
+          'MONNIFY_ENTITLEMENT_DENIED',
+          'Refund API activation has not been confirmed for this contract',
+        ),
+      };
+    }
+    if (!/^[A-Za-z0-9._|:-]{4,160}$/.test(refundReference)) {
+      return {
+        ok: false,
+        error: monnifyError('MONNIFY_INVALID_INPUT', 'refundReference is invalid'),
+      };
+    }
+    const result = await this.authorized(
+      'GET',
+      `/api/v1/refunds/${encodeURIComponent(refundReference)}`,
+      undefined,
+      context,
+    );
+    if (!result.ok) {
+      return result.error.providerCode === 'R7'
+        ? {
+            ok: true,
+            value: {
+              outcome: 'NOT_FOUND',
+              refundReference,
+              correlationId: context.correlationId,
+            },
+          }
+        : result;
+    }
+    const body = result.value as Record<string, unknown>;
+    const status = typeof body.refundStatus === 'string' ? body.refundStatus.toUpperCase() : '';
+    return {
+      ok: true,
+      value: {
+        outcome: this.mapRefundStatus(status),
+        refundReference,
+        ...(typeof body.transactionReference === 'string'
+          ? { originalProviderReference: body.transactionReference }
+          : {}),
+        ...(typeof body.refundAmount === 'number'
+          ? { amountMinor: this.toMinor(body.refundAmount) }
+          : {}),
+        ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
+        ...(status ? { providerStatus: status } : {}),
+        ...(typeof body.completedOn === 'string' ? { completedAt: body.completedOn } : {}),
+        correlationId: context.correlationId,
+      },
+    };
+  }
+
+  private mapRefundSubmissionStatus(status: string): RefundInitiationResult['outcome'] {
+    if (status === 'COMPLETED') return 'ACCEPTED';
+    if (status === 'FAILED') return 'REJECTED';
+    if (status === 'PENDING' || status === 'IN_PROGRESS' || status === '') return 'PENDING';
+    return 'UNKNOWN';
+  }
+
+  private mapRefundStatus(status: string): RefundStatusResult['outcome'] {
+    if (status === 'COMPLETED') return 'COMPLETED';
+    if (status === 'FAILED') return 'FAILED';
+    if (status === 'PENDING' || status === 'IN_PROGRESS') return 'PENDING';
+    // Never turn a missing/unrecognised status into a completed refund.
+    return 'UNKNOWN';
   }
 
   // ------------------------------------------------------------- inbound
@@ -623,9 +882,12 @@ export class MonnifyProvider implements BankingProvider {
     providerTransactionReference: string,
     context: BankingRequestContext,
   ): Promise<BankingProviderResult<InboundPaymentVerificationResult>> {
+    // Monnify documents verification by transaction reference through the merchant transaction
+    // query endpoint. The reference is a query parameter there; using a different path would be a
+    // guess even if an older SDK happened to expose one.
     const result = await this.authorized(
       'GET',
-      `/api/v2/transactions/${encodeURIComponent(providerTransactionReference)}`,
+      `/api/v2/merchant/transactions/query?transactionReference=${encodeURIComponent(providerTransactionReference)}`,
       undefined,
       context,
     );
@@ -644,26 +906,38 @@ export class MonnifyProvider implements BankingProvider {
     const body = result.value as Record<string, unknown>;
     const status = typeof body.paymentStatus === 'string' ? body.paymentStatus.toUpperCase() : '';
     const amount = typeof body.amountPaid === 'number' ? body.amountPaid : undefined;
+    // The documented response has currencyCode, fee and settlementAmount. It does NOT carry the
+    // reserved account's destination; `paymentSourceInformation` is the PAYER's account, not ours.
+    // Destination attribution therefore comes from the stored assignment, validated against our
+    // accountReference, never from an invented "destination" field in this response.
+    const currency = typeof body.currencyCode === 'string' ? body.currencyCode : undefined;
+    const fee = typeof body.fee === 'number' ? body.fee : undefined;
+    const settlement =
+      typeof body.settlementAmount === 'number' ? body.settlementAmount : undefined;
     return {
       ok: true,
       value: {
-        outcome: status === 'PAID' ? 'VERIFIED' : status === 'PENDING' ? 'PENDING' : 'UNKNOWN',
+        outcome:
+          status === 'PAID'
+            ? 'VERIFIED'
+            : status === 'PENDING'
+              ? 'PENDING'
+              : status === 'PARTIALLY_PAID' || status === 'OVERPAID'
+                ? 'CONFLICT'
+                : 'UNKNOWN',
         providerTransactionReference,
-        ...(amount === undefined ? {} : { amountMinor: String(Math.round(amount * 100)) }),
-        ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
-        ...(typeof body.destinationAccountNumber === 'string'
-          ? { receivingAccountNumber: body.destinationAccountNumber }
-          : {}),
-        ...(typeof body.destinationBankCode === 'string'
-          ? { providerBankCode: body.destinationBankCode }
-          : {}),
+        ...(amount === undefined ? {} : { amountMinor: this.toMinor(amount) }),
+        ...(currency === undefined ? {} : { currency }),
         ...(typeof body.paidOn === 'string' ? { paidAt: body.paidOn } : {}),
         providerStatus: status,
-        ...(amount === undefined ? {} : { grossAmountMinor: String(Math.round(amount * 100)) }),
-        // Provider fee is reported only when the provider states it; never derived.
-        ...(typeof body.settlementAmount === 'number' && amount !== undefined
-          ? { providerFeeMinor: String(Math.round((amount - body.settlementAmount) * 100)) }
+        ...(typeof body.paymentReference === 'string'
+          ? { paymentReference: body.paymentReference }
           : {}),
+        ...(amount === undefined ? {} : { grossAmountMinor: this.toMinor(amount) }),
+        // Monnify publishes both `fee` (its deduction) and `settlementAmount` (merchant proceeds).
+        // Keep them separate and never infer a platform charge from either one.
+        ...(fee === undefined ? {} : { providerFeeMinor: this.toMinor(fee) }),
+        ...(settlement === undefined ? {} : { settlementAmountMinor: this.toMinor(settlement) }),
         correlationId: context.correlationId,
       },
     };
@@ -689,6 +963,11 @@ export class MonnifyProvider implements BankingProvider {
         'Wallet balance endpoint is documented as deprecated; not used for financial decisions',
       ),
     });
+  }
+
+  /** Money in Monnify's JSON is a major-unit number; all platform comparisons use integer minor units. */
+  private toMinor(value: number): string {
+    return String(Math.round(value * 100));
   }
 
   /** Exposed for diagnostics only; never includes credential material. */

@@ -130,7 +130,7 @@ describe('AddMoneyScreen — honest funding entry point', () => {
           amountMinor: '50000',
           currency: 'NGN',
           receivedAt: new Date().toISOString(),
-          state: 'VERIFIED_AWAITING_FLOAT_CREDIT',
+          state: 'CONFIRMED_PENDING_CREDIT',
         },
       ],
     });
@@ -138,6 +138,56 @@ describe('AddMoneyScreen — honest funding entry point', () => {
     // The words matter: a customer told 'credited' when only arrival was proven would think their
     // balance is wrong.
     await waitFor(() => expect(getByText('Received — credit pending')).toBeTruthy());
+  });
+
+  test('shows the durable business reference and never calls an withheld payment credited', async () => {
+    route({
+      dashboard: dashboard(),
+      account: {
+        state: 'PROVISIONED',
+        accountNumber: '9012345678',
+        bankName: 'Wema Bank',
+        accountName: 'MONIENAija',
+        accountReference: 'MN123456789',
+      },
+      deposits: [
+        {
+          id: 'd2',
+          businessReference: 'B2W-0123456789ABCDEF0123456789ABCDEF',
+          reference: 'MNFY|provider-ref',
+          amountMinor: '990000',
+          grossAmountMinor: '1000000',
+          providerFeeMinor: '10000',
+          settlementAmountMinor: '990000',
+          monienaijaFeeMinor: '0',
+          currency: 'NGN',
+          receivedAt: new Date().toISOString(),
+          state: 'CREDITED',
+          exceptionReason: null,
+          permittedNextAction: null,
+        },
+        {
+          id: 'd3',
+          businessReference: 'B2W-FEDCBA9876543210FEDCBA9876543210',
+          reference: 'MNFY|withheld-ref',
+          amountMinor: '0',
+          grossAmountMinor: '50000',
+          providerFeeMinor: '0',
+          settlementAmountMinor: null,
+          monienaijaFeeMinor: '0',
+          currency: 'NGN',
+          receivedAt: new Date().toISOString(),
+          state: 'EXCEPTION',
+          exceptionReason: 'LIMIT_BLOCKED',
+          permittedNextAction: 'FINANCE_DECIDE_RELEASE_OR_RETURN',
+        },
+      ],
+    });
+    const { getByText, queryByText } = render(<AddMoneyScreen />);
+    await waitFor(() => expect(getByText('Credited')).toBeTruthy());
+    expect(getByText(/Reference B2W-0123456789ABCDEF/)).toBeTruthy();
+    expect(getByText('Withheld — Finance review')).toBeTruthy();
+    expect(queryByText('Received — credit pending')).toBeNull();
   });
 
   test('keeps the cash-agent channel usable when banking is unavailable', async () => {

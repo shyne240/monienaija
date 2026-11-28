@@ -70,7 +70,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(Number(rows[0]!.count)).toBe(files.length);
     });
 
-    it('4. places 0402 in timestamp order and keeps 0505 as the published head', async () => {
+    it('4. places 0402 in timestamp order and keeps 0901 as the published head', async () => {
       const rows: Array<{ timestamp: string; name: string }> = await db.query(
         `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`,
       );
@@ -87,8 +87,8 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(positions).toEqual([...positions].sort((left, right) => left - right));
       // The platform-funds migration is appended after the customer-class migration by PR #33.
       expect(rows.at(-1)).toEqual({
-        timestamp: '1785753600813',
-        name: 'CreatePlatformFundsBankComparisons1785753600813',
+        timestamp: '1785753600910',
+        name: 'SettlementReportReconciliation1785753600910',
       });
     });
 
@@ -206,7 +206,10 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('CreatePlatformFundsBankComparisons1785753600813');
+        expect(applied.at(-4)).toBe('CreatePlatformFundsBankComparisons1785753600813');
+        expect(applied.at(-3)).toBe('BankToWalletMonnifyJourney1785753600900');
+        expect(applied.at(-2)).toBe('BankToWalletReturnRefunds1785753600901');
+        expect(applied.at(-1)).toBe('SettlementReportReconciliation1785753600910');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
@@ -388,7 +391,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(result.migrations.missing).toEqual([]);
       expect(result.migrations.unexpected).toEqual([]);
       // Tracks the readiness service's expected parity head.
-      expect(result.migrations.latestTimestamp).toBe('1785753600813');
+      expect(result.migrations.latestTimestamp).toBe('1785753600910');
       expect(result.status).toBe('error');
       expect(result.reason).toBe('financial_dependencies_not_ready');
     }, 120_000);

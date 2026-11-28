@@ -1,3 +1,5 @@
+import { Body } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
   Controller,
@@ -16,6 +18,9 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 import { BankingVirtualAccountService } from './banking-virtual-account.service';
 import { BankingReadinessService } from './banking-readiness.service';
 import { BankingProviderRegistry } from './banking-provider.registry';
+import { MonnifyIdentityAssertionService } from './monnify-identity-assertion.service';
+import { BankToWalletService } from './bank-to-wallet.service';
+import type { Environment } from '../config/environment';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -43,6 +48,9 @@ export class BankingCustomerController {
     private readonly accounts: BankingVirtualAccountService,
     private readonly readiness: BankingReadinessService,
     private readonly registry: BankingProviderRegistry,
+    private readonly identity: MonnifyIdentityAssertionService,
+    private readonly bankToWallet: BankToWalletService,
+    private readonly config: ConfigService<Environment, true>,
   ) {}
 
   /**
@@ -83,7 +91,11 @@ export class BankingCustomerController {
    * instead. The customer sees "we are still confirming" rather than a second account.
    */
   @Post('virtual-account')
-  async provision(@Req() req: AuthenticatedRequest, @Query('walletId') walletId?: string) {
+  async provision(
+    @Req() req: AuthenticatedRequest,
+    @Query('walletId') walletId?: string,
+    @Body() body?: { bvn?: string; nin?: string },
+  ) {
     const customerId = this.customerOf(req);
     if (!walletId || !UUID.test(walletId)) throw new BadRequestException('walletId must be a UUID');
     const context = await this.accounts.customerProvisioningContext(
@@ -112,6 +124,13 @@ export class BankingCustomerController {
         `Virtual account provisioning unavailable: ${usable.state}`,
       );
     }
+    const bvn = typeof body?.bvn === 'string' ? body.bvn.trim() : undefined;
+    const nin = typeof body?.nin === 'string' ? body.nin.trim() : undefined;
+    if (this.config.get('BANKING_ENVIRONMENT', { infer: true }) === 'production' && !bvn && !nin) {
+      throw new ForbiddenException('A verified BVN or NIN is required before live provisioning');
+    }
+    const asserted = bvn || nin ? await this.identity.assert({ customerId, bvn, nin }) : null;
+
     const result = await this.accounts.provision({
       institutionId: context.institutionId,
       walletId: walletId.toLowerCase(),
@@ -123,10 +142,24 @@ export class BankingCustomerController {
       customerEmail: context.customerEmail,
       currency: context.currency,
       correlationId: `va:${context.accountReference}`,
+      ...(asserted?.providerBvn ? { providerBvn: asserted.providerBvn } : {}),
+      ...(asserted?.providerNin ? { providerNin: asserted.providerNin } : {}),
+      ...(asserted?.bvnMac ? { bvnMac: asserted.bvnMac } : {}),
+      ...(asserted?.ninMac ? { ninMac: asserted.ninMac } : {}),
+      ...(asserted ? { identityRevision: asserted.identityRevision } : {}),
     });
+    // The POST response is the same authoritative view as GET. A retry that finds an existing
+    // assignment therefore carries the account number, instead of an empty `accounts` array.
+    const view = await this.accounts.findForWallet(customerId, walletId.toLowerCase());
     return {
-      state: result.outcome,
-      // Only a confirmed provision carries an account number.
+      ...(view ?? {
+        state: result.outcome === 'ALREADY_PROVISIONED' ? 'PROVISIONED' : result.outcome,
+        accountNumber: result.accounts[0]?.accountNumber ?? null,
+        bankName: result.accounts[0]?.bankName ?? null,
+        accountName: result.accounts[0]?.accountName ?? null,
+        accountReference: context.accountReference,
+        providerSupportsProvisioning: true,
+      }),
       accounts: result.accounts,
       unknownPending: result.unknownPending,
     };
@@ -141,6 +174,19 @@ export class BankingCustomerController {
       throw new BadRequestException('limit must be between 1 and 200');
     }
     return this.accounts.depositHistoryForCustomer(customerId, parsed);
+  }
+
+  /** One inbound transfer by our durable business reference. */
+  @Get('deposits/:businessReference')
+  async depositDetail(
+    @Req() req: AuthenticatedRequest,
+    @Param('businessReference') businessReference: string,
+  ) {
+    const customerId = this.customerOf(req);
+    if (!/^B2W-[0-9A-F]{32}$/.test(businessReference)) {
+      throw new BadRequestException('businessReference is invalid');
+    }
+    return this.bankToWallet.customerView(customerId, businessReference);
   }
 
   /**

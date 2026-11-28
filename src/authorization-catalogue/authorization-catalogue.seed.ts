@@ -1119,6 +1119,18 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     notes: 'Decision 6: TREASURY role holds exactly this one function and nothing else.',
   },
   {
+    functionCode: 'reconciliation.settlement_report.review',
+    domain: 'RECONCILIATION',
+    name: 'Review settlement report reconciliation',
+    description:
+      'Independently approve or reject non-posting settlement-report reconciliation proposals.',
+    sensitivity: SENSITIVE,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes:
+      'Evidence-only checker authority; requires ledger.view, MFA, institution scope and independence from the proposal maker and uploader.',
+  },
+  {
     functionCode: 'reconciliation.investigate',
     domain: 'RECONCILIATION',
     name: 'Investigate reconciliation exception',
@@ -1659,6 +1671,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
 
   // ---------------------------------------------------------- FINANCE_CONTROLLER
   nowAssign('FINANCE_CONTROLLER', 'ledger.view', VIEW),
+  // Default checker retains access through the existing assignable evidence-only function.
+  nowAssign('FINANCE_CONTROLLER', 'reconciliation.settlement_report.review', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'fee_rule.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'commission_rule.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'reward_rule.view', VIEW),

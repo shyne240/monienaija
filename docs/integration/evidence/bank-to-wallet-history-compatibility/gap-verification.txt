@@ -1,0 +1,14 @@
+Combined tree before compatibility fix: 0c1953f5481cd02a48a4dcf61bfb896ed53d19f8
+Integration tip fetched: de83c7b3047a47627b702c283ea03b3c32af7c9d (includes PR #23 merge 39e0811d928c54537d120a5efad94cc76afb71ca)
+PR #40 head before merge: cfb6ca219bf63f55b6e4d4c544b2945ab4cd1471
+
+Pre-fix run: PG_TEST_RUN_ID=b2wgap1, test -t "posts through #40"
+FAIL test/bank-to-wallet-history-compatibility.integration.spec.ts (9.771 s)
+    ✕ posts through #40 and shows one CREDITED Bank to Wallet row with canonical IDs and journal (28 ms)
+    Expected length: 1
+    Received length: 0
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 skipped, 4 total
+
+Post-fix run: PG_TEST_RUN_ID=b2whist7
+PASS test/bank-to-wallet-history-compatibility.integration.spec.ts (4/4 tests)

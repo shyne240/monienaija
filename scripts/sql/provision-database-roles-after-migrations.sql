@@ -65,6 +65,10 @@ BEGIN
     EXECUTE 'REVOKE TRUNCATE, REFERENCES, TRIGGER ON public.governed_wallet_institution_attributions FROM monienaija_runtime';
     EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON public.governed_wallet_institution_attributions TO monienaija_authority_core';
   END IF;
+  IF to_regclass('public.settlement_report_imports') IS NOT NULL THEN
+    EXECUTE 'REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.settlement_report_imports, public.settlement_transaction_matches, public.settlement_batch_reconciliations, public.settlement_return_dispute_cases FROM monienaija_runtime';
+    EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.settlement_report_rejected_rows, public.settlement_report_rows, public.settlement_return_dispute_events FROM monienaija_runtime';
+  END IF;
 END $$;
 
 -- Protected governance approvals stay readable and usable for unprotected action types (row level

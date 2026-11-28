@@ -32,7 +32,12 @@ export interface JournalSourceLink {
   id: string;
   reference: string | null;
   status: string;
-  linkedBy: 'JOURNAL_ID' | 'CLAIM_JOURNAL_ID' | 'DURABLE_INBOUND_LINK' | 'LEGACY_RECEIPT_JOURNAL';
+  linkedBy:
+    | 'JOURNAL_ID'
+    | 'CLAIM_JOURNAL_ID'
+    | 'DURABLE_INBOUND_LINK'
+    | 'LEGACY_RECEIPT_JOURNAL'
+    | 'DIRECT_CREDIT_JOURNAL';
   navigable: boolean;
 }
 

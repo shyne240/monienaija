@@ -9,6 +9,7 @@ const VALID_TYPES = new Set([
   'CASH_TO_CASH',
   'FUNDING',
   'EXTERNAL_BANK_TRANSFER',
+  'BANK_TO_WALLET',
 ]);
 
 export interface UnifiedHistoryQuery {
@@ -145,6 +146,16 @@ export class CustomerTransactionHistoryService {
       );
       total += Number(rows[0]?.count ?? '0');
     }
+    if (shouldInclude('BANK_TO_WALLET')) {
+      const rows: Array<{ count: string }> = await this.dataSource.query(
+        `SELECT count(*)::text as count
+           FROM bank_to_wallet_credits c
+           JOIN wallet_accounts w ON w.id=c.wallet_id
+          WHERE w.customer_id=$1 AND w.owner_class='CUSTOMER'`,
+        [customerId],
+      );
+      total += Number(rows[0]?.count ?? '0');
+    }
     if (shouldInclude('CASH_IN') || shouldInclude('CASH_OUT')) {
       if (ledgerAccountIds.length > 0) {
         const services: string[] = [];
@@ -182,6 +193,26 @@ export class CustomerTransactionHistoryService {
     // This is correct global pagination (not per-table page1 concat) and is bounded because queries are filtered by customer_id / wallet_ids / phones.
     // For single customer history, row count is O(hundreds) and stays within limit.
     const allRows: Array<any> = [];
+    if (shouldInclude('BANK_TO_WALLET')) {
+      const rows: Array<any> = await this.dataSource.query(
+        `SELECT p.id::text as id,'BANK_TO_WALLET'::text as type,'COMPLETED'::text as status,
+                c.amount_minor::text as amount_minor,c.currency::text as currency,
+                c.created_at,c.created_at as completed_at,c.business_reference::text as reference,
+                'Bank transfer to wallet'::text as narration,
+                c.monienaija_fee_minor::text as fee_minor,
+                p.provider_transaction_reference::text as provider_reference,
+                p.receiving_account_number::text as receiving_account_number,
+                null::text as source_wallet_id,c.wallet_id::text as destination_wallet_id,
+                null::text as failure_code,null::text as failure_message
+           FROM bank_to_wallet_credits c
+           JOIN wallet_accounts w ON w.id=c.wallet_id
+           JOIN banking_inbound_payments p ON p.id=c.inbound_payment_id
+          WHERE w.customer_id=$1 AND w.owner_class='CUSTOMER'
+          ORDER BY c.created_at DESC,c.id DESC`,
+        [customerId],
+      );
+      allRows.push(...rows);
+    }
 
     if (shouldInclude('WALLET_TRANSFER') && walletIds.length > 0) {
       const rows: Array<any> = await this.dataSource.query(
@@ -544,6 +575,18 @@ export class CustomerTransactionHistoryService {
           failureCode = null;
           failureMessage = null;
         }
+      } else if (r.type === 'BANK_TO_WALLET') {
+        direction = 'CREDIT';
+        const account = String(r.receiving_account_number ?? '');
+        counterparty = {
+          type: 'BANK_ACCOUNT',
+          provider: 'MONNIFY',
+          accountNumberLast4: account.length >= 4 ? `****${account.slice(-4)}` : null,
+          providerReference: r.provider_reference ?? null,
+          businessReference: r.reference ?? null,
+        };
+        failureCode = null;
+        failureMessage = null;
       } else if (r.type === 'CASH_IN') {
         direction = 'CREDIT';
         counterparty = { type: 'AGENT' };

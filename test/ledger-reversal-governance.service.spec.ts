@@ -78,9 +78,16 @@ class MemoryManager {
     string,
     { reversal_journal_id: string; idempotency_key: string; original_journal_id: string }
   >();
+  /** Journal ids the confirmed-provider-settlement guard treats as settled by the provider. */
+  readonly confirmedSettlements = new Set<string>();
   constructor(private readonly repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {}
 
   query(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    if (/external_settlements/i.test(sql)) {
+      return Promise.resolve(
+        this.confirmedSettlements.has(String(parameters[0])) ? [{ id: 'settlement-id' }] : [],
+      );
+    }
     // Protected decision/consumption evidence is written by SQL into a schema this in-memory
     // double does not model; emulate the RETURNING row so the protected-authority contract is
     // exercised here (the real database evidence is covered by the real-PostgreSQL suites).
@@ -108,9 +115,25 @@ class MemoryManager {
 
 class MemoryDataSource {
   readonly manager: MemoryManager;
+  readonly queries: Array<{ sql: string; parameters: unknown[] }> = [];
 
   constructor(repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {
     this.manager = new MemoryManager(repositories);
+  }
+
+  /** Journal ids the confirmed-provider-settlement guard treats as settled by the provider. */
+  get confirmedSettlements(): Set<string> {
+    return this.manager.confirmedSettlements;
+  }
+
+  query(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    this.queries.push({ sql, parameters });
+    if (!/external_settlements/i.test(sql)) {
+      throw new Error(`Unexpected raw query in this unit fixture: ${sql}`);
+    }
+    return Promise.resolve(
+      this.manager.confirmedSettlements.has(String(parameters[0])) ? [{ id: 'settlement-id' }] : [],
+    );
   }
 
   transaction<T>(callback: (manager: EntityManager) => Promise<T>): Promise<T> {
@@ -184,6 +207,7 @@ function fixture(journal?: Partial<LedgerJournal>) {
     journalRepository,
     reverseJournal,
     authorizationService,
+    dataSource,
   };
 }
 
@@ -379,6 +403,34 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
     ).rejects.toMatchObject({ status: 403 });
     expect(() => governance.assertExecuteEntitled(auditor)).toThrow(/privileged:execute/i);
     expect(() => governance.assertExecuteEntitled(checker)).not.toThrow();
+  });
+
+  it('refuses a generic reversal once the provider confirmed the bank transfer settlement', async () => {
+    const blocked = fixture({ reversalOfJournalId: null });
+    blocked.dataSource.confirmedSettlements.add(JOURNAL_ID);
+    await expect(
+      blocked.governance.requestReversal({ principal: maker, journalId: JOURNAL_ID, reason: 'x' }),
+    ).rejects.toThrow(/governed provider recovery/i);
+    expect(blocked.approvalRepository.records.size).toBe(0);
+
+    // An approval requested before confirmation cannot be used to cross the guard afterwards.
+    const late = fixture({ reversalOfJournalId: null });
+    const view = await late.governance.requestReversal({
+      principal: maker,
+      journalId: JOURNAL_ID,
+      reason: 'Correct posting duplicate entry',
+    });
+    await late.approvals.approve({ approvalId: view.approvalId, principal: checker });
+    late.dataSource.confirmedSettlements.add(JOURNAL_ID);
+    await expect(
+      late.governance.executeReversal({
+        principal: checker,
+        journalId: JOURNAL_ID,
+        reason: 'Correct posting duplicate entry',
+        approvalId: view.approvalId,
+      }),
+    ).rejects.toThrow(/governed provider recovery/i);
+    expect(late.reverseJournal).not.toHaveBeenCalled();
   });
 
   it('exposes the deterministic fingerprint helper the request and execute phases share', () => {

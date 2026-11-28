@@ -168,6 +168,7 @@ export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   CASH_IN: 'Cash deposit (agent)',
   CASH_OUT: 'Cash withdrawal (agent)',
   CASH_TO_CASH: 'Cash transfer (agent)',
+  BANK_TO_WALLET: 'Bank transfer to wallet',
 };
 
 export function transactionTypeLabel(code: string | null | undefined): string {

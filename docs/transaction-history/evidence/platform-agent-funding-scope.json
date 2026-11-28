@@ -11,22 +11,22 @@
     {
       "direction": "FUND",
       "before": {
-        "id": "79956b16-1f26-45dc-b2d4-1aa05069fd7f",
+        "id": "fd2d087e-5445-494b-9a3f-88ddd43b5a88",
         "type": "AGENT_FUNDING",
         "status": "PENDING",
-        "reference": "FUND-scope-fab106ff-13dd-426e-adad-1b9c70ff7274",
-        "createdAt": "2026-11-25T13:08:02.252Z",
+        "reference": "FUND-scope-5262c88b-7e66-4e7f-a8e1-0a00a79fd16d",
+        "createdAt": "2026-11-27T20:19:29.870Z",
         "completedAt": null,
         "amountMinor": "1000",
-        "feeMinor": "0",
-        "vatMinor": "0",
+        "feeMinor": null,
+        "vatMinor": null,
         "currency": "NGN",
         "institutionId": null,
         "investigation": {
-          "agentId": "c7610aec-4dce-43cd-978f-59ee4af10c62",
+          "agentId": "3a31d180-1c24-40d1-852a-16377c4acb52",
           "makerId": "test-agent-network-manager",
           "checkerId": null,
-          "approvalId": "79956b16-1f26-45dc-b2d4-1aa05069fd7f",
+          "approvalId": "fd2d087e-5445-494b-9a3f-88ddd43b5a88",
           "rejectionReason": null
         },
         "journals": [
@@ -34,49 +34,49 @@
         ]
       },
       "after": {
-        "id": "79956b16-1f26-45dc-b2d4-1aa05069fd7f",
+        "id": "fd2d087e-5445-494b-9a3f-88ddd43b5a88",
         "type": "AGENT_FUNDING",
         "status": "EXECUTED",
-        "reference": "FUND-scope-fab106ff-13dd-426e-adad-1b9c70ff7274",
-        "createdAt": "2026-11-25T13:08:02.252Z",
-        "completedAt": "2026-11-25T13:08:02.508Z",
+        "reference": "FUND-scope-5262c88b-7e66-4e7f-a8e1-0a00a79fd16d",
+        "createdAt": "2026-11-27T20:19:29.870Z",
+        "completedAt": "2026-11-27T20:19:30.099Z",
         "amountMinor": "1000",
-        "feeMinor": "0",
-        "vatMinor": "0",
+        "feeMinor": null,
+        "vatMinor": null,
         "currency": "NGN",
         "institutionId": null,
         "investigation": {
-          "agentId": "c7610aec-4dce-43cd-978f-59ee4af10c62",
+          "agentId": "3a31d180-1c24-40d1-852a-16377c4acb52",
           "makerId": "test-agent-network-manager",
           "checkerId": "test-finance-controller",
-          "approvalId": "79956b16-1f26-45dc-b2d4-1aa05069fd7f",
+          "approvalId": "fd2d087e-5445-494b-9a3f-88ddd43b5a88",
           "rejectionReason": null
         },
         "journals": [
-          "6e468b0d-53cd-4f26-9255-711b83674607"
+          "cdfa12c4-76d8-4504-a950-1f36a168e59b"
         ]
       },
-      "rejectedId": "641dc420-c6f3-4f28-b7f8-4beb8d649550"
+      "rejectedId": "87259e98-3b62-473c-8c84-a1c37ded24da"
     },
     {
       "direction": "DEFUND",
       "before": {
-        "id": "67440bd5-8253-461f-9b71-3817500994c8",
+        "id": "d1f7c05f-a012-4e34-a7c7-918c75a4fbd8",
         "type": "AGENT_DEFUNDING",
         "status": "PENDING",
-        "reference": "DEFUND-scope-9a4278d1-16b5-4e79-bfc4-84cd44627c26",
-        "createdAt": "2026-11-25T13:08:02.651Z",
+        "reference": "DEFUND-scope-a6307911-184c-485c-a1d6-80bbdfee6cdd",
+        "createdAt": "2026-11-27T20:19:30.255Z",
         "completedAt": null,
         "amountMinor": "1000",
-        "feeMinor": "0",
-        "vatMinor": "0",
+        "feeMinor": null,
+        "vatMinor": null,
         "currency": "NGN",
         "institutionId": null,
         "investigation": {
-          "agentId": "c7610aec-4dce-43cd-978f-59ee4af10c62",
+          "agentId": "3a31d180-1c24-40d1-852a-16377c4acb52",
           "makerId": "test-agent-network-manager",
           "checkerId": null,
-          "approvalId": "67440bd5-8253-461f-9b71-3817500994c8",
+          "approvalId": "d1f7c05f-a012-4e34-a7c7-918c75a4fbd8",
           "rejectionReason": null
         },
         "journals": [
@@ -84,35 +84,29 @@
         ]
       },
       "after": {
-        "id": "67440bd5-8253-461f-9b71-3817500994c8",
+        "id": "d1f7c05f-a012-4e34-a7c7-918c75a4fbd8",
         "type": "AGENT_DEFUNDING",
         "status": "EXECUTED",
-        "reference": "DEFUND-scope-9a4278d1-16b5-4e79-bfc4-84cd44627c26",
-        "createdAt": "2026-11-25T13:08:02.651Z",
-        "completedAt": "2026-11-25T13:08:02.782Z",
+        "reference": "DEFUND-scope-a6307911-184c-485c-a1d6-80bbdfee6cdd",
+        "createdAt": "2026-11-27T20:19:30.255Z",
+        "completedAt": "2026-11-27T20:19:30.444Z",
         "amountMinor": "1000",
-        "feeMinor": "0",
-        "vatMinor": "0",
+        "feeMinor": null,
+        "vatMinor": null,
         "currency": "NGN",
         "institutionId": null,
         "investigation": {
-          "agentId": "c7610aec-4dce-43cd-978f-59ee4af10c62",
+          "agentId": "3a31d180-1c24-40d1-852a-16377c4acb52",
           "makerId": "test-agent-network-manager",
           "checkerId": "test-finance-controller",
-          "approvalId": "67440bd5-8253-461f-9b71-3817500994c8",
+          "approvalId": "d1f7c05f-a012-4e34-a7c7-918c75a4fbd8",
           "rejectionReason": null
         },
         "journals": [
-          "36ca660c-8cf6-498a-b14c-7d65b3b6ca00"
+          "0b105983-cfc1-49f8-a992-1da3c898a4a9"
         ]
       },
-      "rejectedId": "fe589d74-2478-4221-8fcd-f97c0c273125"
+      "rejectedId": "e417b738-94a1-4ef2-8655-7b6a21ead8eb"
     }
-  ],
-  "schemaHead": "CaptureCustomerFundingScope1785753600807",
-  "sourceSha256": {
-    "src/migrations/1785753600807-CaptureCustomerFundingScope.ts": "15ec8a1b79b320f56473b7ace43a08727860f66866b3a14d1e1a12432df09893",
-    "src/admin/transaction-history.controller.ts": "3159b70913f9d005e56d0fb89ad133f73f9fe0267bb293b279345a749e774aa5",
-    "test/a19-agent-funding.integration.spec.ts": "2ec6f6bca62c8883030054718282e06a6f372e74bd81f9284ae22dd8f1cf2b31"
-  }
+  ]
 }

@@ -338,6 +338,26 @@ export const CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION: GovernedActionDefinit
   approvalScope: 'privileged:approve',
 };
 
+/**
+ * Bank → Wallet exception resolution. This definition is deliberately scoped to Finance's
+ * existing FINANCE_PREPARER / FINANCE_CONTROLLER pair and invents no catalogue function code:
+ * no approved function covers inbound-fund exception release or return yet. The owner decision
+ * needed to create such a code (and a return payout authority) is recorded in the journey docs.
+ */
+export const BANK_TO_WALLET_EXCEPTION_ACTION: GovernedActionDefinition = {
+  action: 'BANK_TO_WALLET_EXCEPTION_RESOLUTION',
+  resourceType: 'BANK_TO_WALLET_EXCEPTION',
+  initiatingFunctionCodes: [],
+  approvingFunctionCodes: [],
+  initiatingRoles: [FINANCE_PREPARER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
 export const LIMIT_RULE_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   LIMIT_RULE_CREATE: rule('LIMIT_RULE_CREATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
   LIMIT_RULE_UPDATE: rule('LIMIT_RULE_UPDATE', 'LIMIT_RULE', 'limit.modify', 'limit.modify'),
@@ -378,6 +398,7 @@ export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>
   [WALLET_INSTITUTION_ATTRIBUTION_ACTION.action]: WALLET_INSTITUTION_ATTRIBUTION_ACTION,
   [CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION.action]:
     CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION,
+  [BANK_TO_WALLET_EXCEPTION_ACTION.action]: BANK_TO_WALLET_EXCEPTION_ACTION,
   [CUSTOMER_CLASS_TIER_DEFAULTS_ACTION.action]: CUSTOMER_CLASS_TIER_DEFAULTS_ACTION,
 };
 

@@ -208,6 +208,17 @@ export class LedgerReversalGovernanceService {
           throw new ConflictException(
             'Inbound funding reversal requires governed receipt recovery',
           );
+        const providerSettled = await manager.query<Array<{ id: string }>>(
+          `SELECT id FROM external_settlements
+            WHERE journal_id=$1 AND decision='SETTLE' AND status='POSTED'
+              AND lifecycle_state='SETTLED' AND reversal_journal_id IS NULL
+            LIMIT 1`,
+          [journalId],
+        );
+        if (providerSettled.length)
+          throw new ConflictException(
+            'Confirmed bank transfer settlement requires governed provider recovery, not a generic journal reversal',
+          );
         const consumed = await this.approvals.consumeInTransaction(manager, {
           principal: command.principal,
           approvalId,
@@ -286,7 +297,33 @@ export class LedgerReversalGovernanceService {
     if (existingReversal) {
       throw new ConflictException('This journal has already been reversed');
     }
+    await this.assertNotConfirmedProviderSettlement(journalId);
     return journal;
+  }
+
+  /**
+   * Confirmed successful external bank transfers are not ordinary ledger corrections.
+   *
+   * A generic Admin Web reversal approval has no provider status enquiry, no recall/refund evidence
+   * and no Finance policy decision behind it. Reversing a posted provider settlement journal would
+   * assert the money did not move when the provider said it did. Recovery for those rows runs
+   * through the governed provider verification/refund/recall path instead. This check is applied
+   * at maker request AND checker execution so an approval requested before this guard cannot be
+   * used to cross it later.
+   */
+  private async assertNotConfirmedProviderSettlement(journalId: string): Promise<void> {
+    const rows = await this.dataSource.query<Array<{ id: string }>>(
+      `SELECT id FROM external_settlements
+        WHERE journal_id=$1 AND decision='SETTLE' AND status='POSTED'
+          AND lifecycle_state='SETTLED' AND reversal_journal_id IS NULL
+        LIMIT 1`,
+      [journalId],
+    );
+    if (rows.length) {
+      throw new ConflictException(
+        'Confirmed bank transfer settlement requires governed provider recovery, not a generic journal reversal',
+      );
+    }
   }
 
   private normalizeReason(reason: string): string {

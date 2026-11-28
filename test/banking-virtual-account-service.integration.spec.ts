@@ -37,7 +37,7 @@ describe('banking virtual account service (real PostgreSQL)', () => {
       walletId,
       providerKey: 'MONNIFY',
       environment: 'sandbox' as const,
-      accountReference: `VA-${randomUUID().slice(0, 18)}`,
+      accountReference: `MN${`${Date.now()}${randomUUID().replace(/\D/g, '')}`.slice(0, 20)}`,
       accountName: 'Test Reserved Account',
       customerName: 'John Doe',
       customerEmail: 'john@example.test',
