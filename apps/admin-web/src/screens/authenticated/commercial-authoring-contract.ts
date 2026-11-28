@@ -100,7 +100,7 @@ export const AUTHORING_CONTRACTS: Readonly<Record<AuthoringDomain, AuthoringCont
     createPathTemplate: '/internal/commission-rules',
     modifyPathTemplate: '/internal/commission-rules/{id}',
     reasonRequired: true,
-    note: 'Definition only. Calculation, accrual, settlement and posting remain separate, unwired concerns.',
+    note: 'Definition only. Runtime can calculate an eligible commission allocation, and advisory preview shows what would be allocated. Accounting accrual, settlement and ledger posting remain disabled while commercial accounting is disabled.',
   },
   rewards: {
     domain: 'rewards',

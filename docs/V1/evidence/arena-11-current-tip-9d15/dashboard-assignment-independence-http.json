@@ -1,0 +1,19 @@
+{
+  "result": "PASS",
+  "executedAt": "2026-11-27",
+  "testedCommit": "9d15de47704b3f6d2db596069a352bb97919920a",
+  "testFile": "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts",
+  "suiteResult": "47/47 passed",
+  "coverage": [
+    "Dashboard assignment change never changes role function grants",
+    "All eleven roles resolve dashboards whose authorized flags match the real catalogue grants",
+    "Each authorized widget endpoint is independently fetchable",
+    "Unauthorized widget data requests remain blocked server-side"
+  ],
+  "interpretation": "Dashboard template assignment is a separate persisted workflow from role function grants. This confirms independence; it does not make seeded-role function grants editable.",
+  "relevantSourceSha256": {
+    "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts": "1b846f8980882dea4c20231e24f5691a43c3d866898541d7a7d65ceb7336feb6",
+    "src/dashboard/dashboard.controller.ts": "00ccd367ff7a4a891c78a83af1308fc15fb5115164540735b2bf3685be49b6f0"
+  },
+  "boundary": "Real PostgreSQL and HTTP integration stack; no seeded grants or workforce credentials changed."
+}
