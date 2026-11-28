@@ -7,7 +7,7 @@
  * commercial binding, operation creation, settlement and rejection, plus negative cases.
  */
 import { Test } from '@nestjs/testing';
-import { ValidationPipe } from '@nestjs/common';
+import { HttpException, ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes, createHash } from 'node:crypto';
@@ -612,12 +612,45 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
     ).rejects.toThrow(/Financial authorization evidence is not bound/);
   });
 
-  it('enforces missing limit policy', async () => {
-    const { agent } = await createActiveAgentWithPin([AgentService.EXTERNAL_BANK_TRANSFER], '1234');
+  it('blocks agent Wallet→Bank when no applicable limit is configured, with no financial effect', async () => {
+    const { cls, agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.EXTERNAL_BANK_TRANSFER],
+      '1234',
+    );
     const benId = await createAgentBeneficiary(agent.id);
-    // No limit configured -> should fail closed
-    await expect(
-      service.initiateForAgent({
+    const walletRows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
+      [wallet.id],
+    );
+    const ledgerAccountId = walletRows[0]!.ledger_account_id;
+    const balanceBefore = (await ledger.getAccountBalance(ledgerAccountId)).balanceMinor;
+    const assignmentRows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM limit_assignments
+        WHERE subject_type='AGENT_CLASS' AND subject_id=$1 AND is_active=true AND deleted_at IS NULL`,
+      [cls.id],
+    );
+    expect(assignmentRows[0]!.count).toBe('0');
+
+    const countsBefore: Array<{
+      journals: number;
+      commitments: number;
+      authorizations: number;
+      reservations: number;
+      usages: number;
+      idempotency_records: number;
+    }> = await dataSource.query(
+      `SELECT
+         (SELECT count(*)::int FROM ledger_journals) AS journals,
+         (SELECT count(*)::int FROM financial_commitments c
+           JOIN financial_authorizations a ON a.id=c.authorization_id WHERE a.agent_id=$1) AS commitments,
+         (SELECT count(*)::int FROM financial_authorizations WHERE agent_id=$1) AS authorizations,
+         (SELECT count(*)::int FROM limit_reservations) AS reservations,
+         (SELECT count(*)::int FROM limit_usages) AS usages,
+         (SELECT count(*)::int FROM idempotency_records) AS idempotency_records`,
+      [agent.id],
+    );
+    const refusal = await service
+      .initiateForAgent({
         agentId: agent.id,
         agentSessionId: agentSessions.get(agent.id)!,
         principal: agentPrincipal(agent.id),
@@ -626,7 +659,34 @@ describe('Agent bank-transfer commitment (real PostgreSQL)', () => {
         currency: 'NGN',
         beneficiaryId: benId,
         idempotencyKey: randomUUID(),
-      }),
-    ).rejects.toThrow();
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(refusal).toBeInstanceOf(HttpException);
+    if (!(refusal instanceof HttpException)) {
+      throw new Error('Expected the agent bank transfer to fail with LIMIT_PROFILE_MISSING');
+    }
+    expect(refusal.getStatus()).toBe(503);
+    expect(refusal.getResponse()).toMatchObject({
+      error: 'LIMIT_PROFILE_MISSING',
+      code: 'LIMIT_PROFILE_MISSING',
+    });
+    expect(
+      await dataSource.query(
+        `SELECT
+           (SELECT count(*)::int FROM ledger_journals) AS journals,
+           (SELECT count(*)::int FROM financial_commitments c
+             JOIN financial_authorizations a ON a.id=c.authorization_id WHERE a.agent_id=$1) AS commitments,
+           (SELECT count(*)::int FROM financial_authorizations WHERE agent_id=$1) AS authorizations,
+           (SELECT count(*)::int FROM limit_reservations) AS reservations,
+           (SELECT count(*)::int FROM limit_usages) AS usages,
+           (SELECT count(*)::int FROM idempotency_records) AS idempotency_records`,
+        [agent.id],
+      ),
+    ).toEqual(countsBefore);
+    expect((await ledger.getAccountBalance(ledgerAccountId)).balanceMinor).toBe(balanceBefore);
   });
 });

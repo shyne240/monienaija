@@ -52,6 +52,10 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  assignAgentClassLimitProfile,
+  permissiveAgentLimitRules,
+} from './support/agent-limit-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -181,6 +185,12 @@ describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', 
       isActive,
       applicableServices: services,
       actor: 'test-actor',
+    });
+    // Agent money movement requires a limit for the Agent's class; one permissive rule per product
+    // keeps this suite focused on what it asserts (commercial snapshot / fee / commission).
+    await assignAgentClassLimitProfile(dataSource, {
+      agentClassId: cls.id,
+      rules: permissiveAgentLimitRules(),
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,
@@ -393,8 +403,12 @@ describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', 
     // limit decision = the AUTHORITATIVE live enforcement outcome
     expect(snap.limit_decision.status).toBe('APPROVED');
     expect(snap.limit_decision.profileCode).toBe(profile);
-    const ruleIds = snap.limit_decision.ruleRefs.map((r: any) => r.ruleId).sort();
-    expect(ruleIds).toEqual([minRule, dailyRule].sort());
+    // Both legs of an agency cash movement are limit-enforced: the customer leg under the profile
+    // asserted above, and the agent leg under its own class profile. The decision evidence is the
+    // union, so pin this profile's own rules by containment (the profile assertion above already
+    // pins which profile governed the principal).
+    const ruleIds = snap.limit_decision.ruleRefs.map((r: any) => r.ruleId);
+    expect(ruleIds).toEqual(expect.arrayContaining([minRule, dailyRule]));
     const reservations: Array<any> = await dataSource.query(
       `SELECT id, limit_usage_id, status FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`,
       [idem],

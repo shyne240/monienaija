@@ -281,6 +281,19 @@ describe('Agent operating-context API bindings', () => {
         'The service is temporarily unavailable. Please retry.',
       );
     });
+    test('503 LIMIT_PROFILE_MISSING → operator-action copy, not a generic retry', () => {
+      expect(
+        describeApiError(
+          new ApiError(
+            'No limit profile is assigned for CASH_TO_WALLET (OUTGOING)',
+            503,
+            'LIMIT_PROFILE_MISSING',
+          ),
+        ),
+      ).toBe(
+        "This agent's transaction limits are not set up yet, so this transaction was not carried out. Ask your institution to configure your limits, then try again.",
+      );
+    });
     test('network failure → connection message', () => {
       expect(describeApiError(new NetworkError('fetch failed'))).toBe(
         'No network connection. Check your connection and retry.',

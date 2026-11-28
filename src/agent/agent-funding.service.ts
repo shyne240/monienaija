@@ -1069,6 +1069,11 @@ export class AgentFundingService {
                 now: new Date(),
                 walletLedgerAccountId: walletInTx.ledgerAccountId,
                 principalWalletCustomerId: agentId,
+                // Evidence only, intentionally NOT `requireApplicableLimit`: float funding and
+                // defunding are staff-governed operations with their own approval workflow, and an
+                // agent must be fundable before its class limits are configured (otherwise a newly
+                // onboarded agent could never receive float). Customer-facing agent money movement
+                // is where missing configuration fails closed.
                 requireConfiguration: true,
               });
             } catch (error) {
